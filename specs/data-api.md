@@ -176,7 +176,7 @@ Nodes already publish signed liveness records to the Elder Tree with
 `POST /announce`. The Elder serves `/directory`, `/directory/delta`,
 `/gateway/<onion>`, and `/health` over its onion service. These routes are the
 discovery protocol defined in
-[`docs/PROTOCOL-API.md`](../docs/PROTOCOL-API.md), not the public aggregate Data
+[`docs/WIRE-SPEC.md`](../docs/WIRE-SPEC.md), not the public aggregate Data
 API. They can expose node-level records and must not be mirrored onto the Grove
 website.
 

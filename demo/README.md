@@ -10,6 +10,13 @@ real: real Groth16 proof, real Tor transport, real fleet gateway, real Sepolia r
 
 ## Run
 
+This is an operator-provisioned presentation harness, not the fresh-clone quickstart.
+`keys.local.json` is a private, untracked file supplied locally by the operator; alternatively,
+provide the already-enrolled member secret through `SHADE_TREE_SECRET`. The harness also
+requires `contracts/deployed.local.json` and a matching signed directory. Its bundled
+Sepolia directory is historical pre-v4 material and must not be used as a current profile.
+For a fresh checkout, use [QUICKSTART.md](../docs/QUICKSTART.md) instead.
+
 ```bash
 # needs a local keys.local.json (the demo member) + the signed directory in the repo
 SHADE_TREE_DEMO_WALLET=0x2ec9838Ea920Dc33D2771F4d29CBF6e7784929F9 \

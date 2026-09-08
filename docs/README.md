@@ -32,7 +32,7 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | [`SDK.md`](SDK.md) | The `ShadeTreeClient` SDK surface (`package.json` exports) |
 | [`ADAPTERS.md`](ADAPTERS.md) | Routing tools and agents (curl, SearXNG, browsers, LLM agents) through the local proxy |
 | [`RECEIPTS.md`](RECEIPTS.md) | Signed egress success receipts: proof a gateway actually served traffic, with no linkability channel |
-| [`PROTOCOL-VERSIONING.md`](PROTOCOL-VERSIONING.md) | The explicit v4 boundary, legacy-v3 rejection, artifact rotation, and coordinated fleet rollout |
+| [`VERSIONING.md`](VERSIONING.md) | The explicit v4 boundary, legacy-v3 rejection, artifact rotation, and coordinated fleet rollout |
 | [`../rust/INSTALL.md`](../rust/INSTALL.md) | The static Rust client: platform binaries, checksums, one-shot `egress`, and the embedded-Arti CONNECT Proxy |
 
 ## Run it (gateway, bootnode, fleet)
@@ -66,7 +66,7 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | [`adversarial-review.md`](adversarial-review.md) | Per-party worst case |
 | [`CEREMONY.md`](CEREMONY.md) | The trusted-setup runbook (not run; [issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6)) |
 | [`protocol.md`](../specs/protocol.md) | The canonical anonymous-paid-access protocol specification |
-| [`PROTOCOL-API.md`](PROTOCOL-API.md) | Wire formats and the bootnode HTTP API |
+| [`WIRE-SPEC.md`](WIRE-SPEC.md) | Wire formats and the bootnode HTTP API |
 | [`MUTATION-TESTING.md`](MUTATION-TESTING.md) | Mutation-testing setup and surviving mutants |
 | [`adr/`](adr/README.md) | Decision records: context, decision, consequences, rejected alternatives |
 | [`adr/0001`](adr/0001-client-language.md) | JS stays the reference implementation; the Rust client is the distributable, kept honest by conformance vectors |

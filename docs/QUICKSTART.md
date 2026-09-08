@@ -106,7 +106,9 @@ Research preview and untrusted ZK artifacts: see the README warning and Boundari
 
 ## Path B: the local loop (understand the pieces)
 
-You need a local Tor daemon. This loop publishes two onion services from one Tor process. The
+You need a local Tor daemon and access to the public Tor network; "local" describes where
+the processes run, not an offline transport. On restricted or unreliable networks, start with
+`npm run test:fast` for local checks. This loop publishes two onion services from one Tor process. The
 checked-in `tor/torrc` and `scripts/start-tor.sh` publish one standalone node only, so do not use
 that single-node config unchanged here. Below, each role is a separate terminal.
 
@@ -134,7 +136,8 @@ tor --DataDirectory ./tor/data-local-loop \
 
 This is the local-loop equivalent of two `HiddenServiceDir` blocks: the Elder Tree is onion port
 80 to loopback 8877, and the node is onion port 80 to loopback 8443. Wait for Tor to report
-`Bootstrapped 100%` before continuing.
+`Bootstrapped 100%` before continuing. Tor may warn that these paths are relative; they
+are intentionally relative to the repository root where this command runs.
 
 ### 2. Run the Elder Tree
 
@@ -148,8 +151,8 @@ control is the only requirement; `--admission stake` also requires an on-chain n
 
 ### 3. Enroll one local invited member
 
-For this local loop, choose tier 8 and add its commitment to the repository's demo member
-file. Live bootstrap never accepts this file:
+For this local loop, choose tier 8. The command automatically appends the commitment to
+`group/members.json`; no manual edit is needed. Live bootstrap never accepts this file:
 
 ```bash
 shade-tree enroll --limit 8
@@ -241,6 +244,7 @@ See [CONFIG.md](CONFIG.md) for every variable and [ONCHAIN.md](ONCHAIN.md) for t
 ## Verify everything works
 
 ```bash
-npm test                 # bootnode + shim + rln selftests
+npm run test:fast        # quick first check; slow proof/onchain suites + Foundry skipped
+npm test                 # full pre-PR check: all selftests + Foundry
 npm run test:contracts   # forge test (StakedReputationSet + GatewayRegistry)
 ```

@@ -7,7 +7,7 @@
 - Date: 2026-08-18
 - Task: T-FEAT-9 — per-gateway admission policy + per-provider payment rails, as assigned by the
   2026-08-18 ship loop. NOTE: `docs/SHIP-PLAN.md` also uses the id T-FEAT-9 for the loop-3
-  threshold-signed directory (shipped, `docs/PROTOCOL-API.md` §4.4); the two are unrelated. In
+  threshold-signed directory (shipped, `docs/WIRE-SPEC.md` §4.4); the two are unrelated. In
   code and docs "T-FEAT-9" next to `SHADE_TREE_ADMIT` / `admits` / `pay` / `--max-anon` means THIS ADR.
 
 ## Context
@@ -146,5 +146,5 @@ rails (if any) it sells; the DEFAULT is the maximum-anonymity mode; the client c
   `test/paid-access.selftest.mjs` §7 (slow lane, real proofs), `rust/shade-tree-proto/tests/conformance.rs`
   `caps_with_admission_match_vector`.
 - Docs: `docs/CONFIG.md`, `docs/OPERATOR.md` "Choose what you admit and what you sell",
-  `docs/PROTOCOL-API.md`, `docs/PAYMENTS.md`, `docs/THREAT-MODEL.md`, `docs/CLIENTS.md`,
+  `docs/WIRE-SPEC.md`, `docs/PAYMENTS.md`, `docs/THREAT-MODEL.md`, `docs/CLIENTS.md`,
   `docs/JOIN.md`, `bootnode/deploy/README.md`.

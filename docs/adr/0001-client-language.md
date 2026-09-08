@@ -23,7 +23,7 @@ without that.
 
 Keep the **JavaScript client as the reference implementation**. It defines the
 wire protocol and shares the trust-critical checks with the gateway and bootnode.
-The wire spec `docs/PROTOCOL-API.md` and the byte-pinned fixtures
+The wire spec `docs/WIRE-SPEC.md` and the byte-pinned fixtures
 `testdata/vectors.json` are the neutral contract; where any port disagrees with
 the JS source, the JS source wins.
 
@@ -47,7 +47,7 @@ Stack: `arti` (Tor), `zerokit` (PSE's canonical Rust RLN), `alloy` (chain reads)
 - **JavaScript (stays):** the gateway and the bootnode. They are operator
   controlled, run in a controlled environment, and there is little upside to a
   rewrite and real risk in duplicating the trust-critical checks a second time.
-- **Neutral contract:** `docs/PROTOCOL-API.md` + `testdata/vectors.json`. Both
+- **Neutral contract:** `docs/WIRE-SPEC.md` + `testdata/vectors.json`. Both
   implementations must reproduce every byte-pinned value; the conformance harness
   (T-RUST-1) enforces it on both sides so a Rust port cannot silently drift.
 
@@ -79,7 +79,7 @@ Absent those, the servers stay JS and the Rust surface is the client plus
 ## References
 
 - docs/SHIP-PLAN.md section 7b (decision + T-RUST-0..4)
-- docs/PROTOCOL-API.md (wire contract, conformance map)
+- docs/WIRE-SPEC.md (wire contract, conformance map)
 - testdata/vectors.json (byte-pinned fixtures)
 - arti: https://gitlab.torproject.org/tpo/core/arti
 - zerokit: https://github.com/vacp2p/zerokit

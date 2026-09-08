@@ -5,11 +5,12 @@ ledger per admission path, the open caveats and why they matter, the exit-blocki
 the Rust binary, the local loop, and the repository layout. Everything here is also in the
 per-topic docs; this page is the one-screen-per-topic version. Index: [`README.md`](README.md).
 
-> **v4 network status.** This checkout speaks envelope v4. There is no repo-maintained public
-> v4 network profile yet; obtain explicit discovery and contract values from a v4 operator or
-> run the local loop below. The legacy Sepolia runtime records are incompatible pre-v4 history.
-> A separate `network/sepolia/deployment.json` records the invited-and-staked v4 research Grove behind
-> the public aggregate map, but does not contain the membership inputs required to connect.
+> **v4 network status.** This checkout speaks envelope v4. There is no repo-maintained
+> production network. The bundled Sepolia profile provides a public, permissionless staking
+> path for the disposable v4 research Grove; see [PUBLIC-STAKING.md](PUBLIC-STAKING.md).
+> Its contracts and proof artifacts are untrusted testnet material. The current profile is
+> recorded in `network/sepolia/deployment.json`; the older `network/sepolia/contracts.json`
+> is incompatible pre-v4 history. Run the local loop below to study the components.
 
 ## How it works
 

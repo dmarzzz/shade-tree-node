@@ -151,7 +151,7 @@ Selling access is EACH provider's decision, not the fleet's:
   gateway's SIGNED caps as `caps.pay` (heartbeat `SHADE_TREE_REGISTRAR_ADVERTISE=1`; `onion` names the
   registrar's onion when it is not the gateway's own, e.g. the bootnode's) — and, on a bootnode box,
   in the bootnode's `/health` `pay` as before. Both may coexist; the caps form is what a client
-  learns from `/directory` and cannot be forged by the bootnode (`docs/PROTOCOL-API.md` §3.0.1).
+  learns from `/directory` and cannot be forged by the bootnode (`docs/WIRE-SPEC.md` §3.0.1).
 - **Admit what you sell.** A gateway must ADMIT paid leaves to sell them: `SHADE_TREE_ADMIT` must include
   `paid` (`bootstrap.sh` refuses `SHADE_TREE_REGISTRAR=1` otherwise), and the default policy is `invited`
   ALONE — a provider that never opts in never admits a paid leaf, whoever inserted it. Conversely a

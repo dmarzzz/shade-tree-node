@@ -66,7 +66,7 @@ for (const rel of ['specs/data-api.openapi.yaml']) {
 
 // Render compatibility stubs so old links resolve, but keep those stubs out of
 // navigation so only the canonical specs are listed.
-const NAV_EXCLUDED = new Set(['docs/PROTOCOL.md', 'docs/PUBLIC-GROVE.md']);
+const NAV_EXCLUDED = new Set(['docs/PROTOCOL.md', 'docs/PUBLIC-GROVE.md', 'docs/PROTOCOL-API.md', 'docs/PROTOCOL-VERSIONING.md']);
 
 // ---------------------------------------------------------------------------
 // 2. Categorization. Mapping is explicit for known docs; anything not listed
@@ -90,7 +90,7 @@ const CATEGORIES = [
     'docs/TOR-HARDENING.md', 'docs/adversarial-review.md',
   ]],
   ['Design', [
-    'specs/README.md', 'specs/protocol.md', 'docs/PROTOCOL-API.md', 'docs/ONCHAIN.md',
+    'specs/README.md', 'specs/protocol.md', 'docs/WIRE-SPEC.md', 'docs/VERSIONING.md', 'docs/ONCHAIN.md',
     'docs/PAYMENTS.md', 'docs/ROADMAP.md', 'docs/NEXT-VERSION.md',
     'docs/RLN-MIGRATION.md', 'docs/ADAPTERS.md', 'docs/SDK.md',
     'docs/adr/README.md', 'docs/adr/0001-client-language.md',
