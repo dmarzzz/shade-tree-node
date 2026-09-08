@@ -59,7 +59,7 @@ tokio = { version = "1", default-features = false, features = ["rt-multi-thread"
 # `--contract`) uses direct JSON-RPC over HTTP(S); no Node.js exporter required.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
 num-bigint = { version = "0.4", optional = true }
-getrandom = { version = "0.3", optional = true }
+getrandom = { version = "0.4", optional = true }
 # Native member registration signs EIP-1559 transactions locally. This crate is
 # live-only and already sits in the RLN prover's dependency graph, so the fast
 # deterministic build remains unchanged.
