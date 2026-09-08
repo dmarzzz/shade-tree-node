@@ -207,6 +207,8 @@ contract DeployRegistry is Cheats {
             extraBonds
         );
         set = address(s);
+        console.log("slash reward divisor", s.SLASH_REWARD_DIVISOR());
+        console.log("slash burn address  ", s.SLASH_BURN_ADDRESS());
     }
 
     /// Parse "a,b,c" (decimal, no spaces) into a uint256[]; "" => empty. Reverts on any
@@ -289,9 +291,24 @@ contract DeployRegistry is Cheats {
             vm.toString(minUnbonding),
             ",\n"
         );
+        json = string.concat(json, '  "slashPayout": ', _slashPayoutJson(set), ",\n");
         json = string.concat(json, '  "rpcUrl": "', rpcUrl, '"\n', "}\n");
         vm.writeFile(outPath, json);
         console.log("wrote", outPath);
+    }
+
+    function _slashPayoutJson(address set) internal view returns (string memory) {
+        if (set == address(0)) {
+            return "null";
+        } else {
+            return string.concat(
+                '{"policy":"burn-90-reward-10-v1","rewardDivisor":',
+                vm.toString(StakedReputationSet(set).SLASH_REWARD_DIVISOR()),
+                ',"burnAddress":"',
+                vm.toString(StakedReputationSet(set).SLASH_BURN_ADDRESS()),
+                '"}'
+            );
+        }
     }
 }
 

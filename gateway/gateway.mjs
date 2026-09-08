@@ -780,6 +780,8 @@ async function makeSlasher({ rootContracts = configuredContracts() } = {}) {
 //   rln-v4  slash(commitment, secret, limit, receiver)   — T-FEAT-8b tiered: the leaf is
 //           recomputed at the CLAIMED limit and that tier's bond burns; `limitOf(commitment)`
 //           names the tier a leaf was staked at; `allowedLimits()` is the admitted tier table.
+//           Fresh slash-burn-v1 sets burn >=90% and pay receiver <=10%; older addresses
+//           retain the full payout. The ABI alone does not establish the penalty policy.
 //   paid    PaidAccessSet: the SAME tiered slash signature (no bond to burn — the price is
 //           already the operator's; the leaf is zeroed so the over-spender's access ends).
 // Detected ONCE at startup by probing `DEFAULT_LIMIT()` (v4/paid only). Against a tiered set the
@@ -796,6 +798,7 @@ export async function makeOnchainSlasher({ ethers, wallet, address, receiver }) 
     "function allowedLimits() view returns (uint256[])",
     "function DEFAULT_LIMIT() view returns (uint256)",
     "function isActive(uint256 commitment) view returns (bool)",
+    "event SlashPayout(uint256 indexed commitment, address indexed receiver, uint256 burned, uint256 reward)",
   ];
   const contract = new ethers.Contract(address, ABI, wallet);
   let tiered = false;
@@ -849,9 +852,20 @@ export async function makeOnchainSlasher({ ethers, wallet, address, receiver }) 
     // "SLASH tx <hash>" substring preserved for scripts/integration-sepolia.mjs's regex.
     log.info(`SLASH tx ${tx.hash} (waiting)`, { commitment: String(leaf).slice(0, 18) + "..", via: address, ...(tiered ? { limit } : {}) });
     const rcpt = await waitForTransactionReceipt(tx, { operation: "slash" });
+    // Only report an actual split emitted by this set for this leaf. Legacy and paid
+    // sets emit no SlashPayout; do not infer a burn from a compatible slash selector.
+    let payout;
+    for (const entry of rcpt.logs || []) {
+      if (entry.address?.toLowerCase() !== address.toLowerCase()) continue;
+      let parsed;
+      try { parsed = contract.interface.parseLog(entry); } catch { continue; }
+      if (parsed?.name === "SlashPayout" && String(parsed.args.commitment) === String(leaf)) {
+        payout = { burnedWei: String(parsed.args.burned), rewardWei: String(parsed.args.reward) };
+      }
+    }
     // "SLASH mined block <n>" substring preserved for scripts/integration-sepolia.mjs's regex.
-    log.info(`SLASH mined block ${rcpt.blockNumber}`, { commitment: String(leaf).slice(0, 18) + "..", via: address, ...(tiered ? { limit } : {}) });
-    return { hash: tx.hash, block: rcpt.blockNumber, limit: tiered ? limit : K_SLOTS, commitment: leaf, contract: address };
+    log.info(`SLASH mined block ${rcpt.blockNumber}`, { commitment: String(leaf).slice(0, 18) + "..", via: address, ...(tiered ? { limit } : {}), ...payout });
+    return { hash: tx.hash, block: rcpt.blockNumber, limit: tiered ? limit : K_SLOTS, commitment: leaf, contract: address, ...payout };
   };
   slash.holds = holds;
   slash.address = address;

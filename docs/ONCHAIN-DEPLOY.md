@@ -316,6 +316,48 @@ Rotating the registrar key: `cast send <addr> "setOperator(address)" <new>` from
 operator, then `cast send <addr> "acceptOperator()"` from the new one; `pendingOperator()`
 shows the nomination in between; `setOperator(0x0)` cancels.
 
+
+## Slash-burn-v1 migration
+
+Fresh `StakedReputationSet` deployments enforce the fixed 90% burn / 10% bounty policy
+(`burn-90-reward-10-v1`). The split rounds the reward down. `DeployRegistry.s.sol` prints
+the burn address and reward divisor and records them in the output JSON's `slashPayout`
+object; it records `null` when no member set was deployed. The source-bound staking
+runtime entry in `deploy/v4/public-stake-v1-bytecode.json` is updated for this code. The
+preflight reads that manifest at the pinned service commit, so an older full-payout
+runtime fails validation against this revision; historical revisions keep their old pins. Constructor arguments,
+registration and exit-proof APIs, both slash selectors, the `MemberSlashed` event and
+root storage slot 3 are preserved. The additional `SlashPayout` event reports actual
+amounts; the gateway includes them in its mined-slash log when present. An older ABI
+or absent event is not evidence of a burn.
+
+Existing contracts are not upgradeable. **The addresses in committed Sepolia manifests
+still have their prior full-payout economics; this source change does not repair them.**
+Roll out a new member set as a separate deployment:
+
+1. Deploy and verify the new source and linked contracts, recording its source revision,
+   constructor inputs, deployment block and runtime code hash. Read
+   `SLASH_REWARD_DIVISOR()(uint256)` (must be 10) and
+   `SLASH_BURN_ADDRESS()(address)` (must be the zero address) from the deployed set.
+2. Exercise active and exiting self-slash on disposable local stakes first. The updated
+   `test/onchain-tiers.selftest.mjs` also tests real proofs through the gateway and checks
+   the actual burn/bounty, metadata and root reconstruction. The updated
+   `scripts/integration-tiers.mjs` requires a set exposing this policy; it does not certify
+   older deployments through their compatible slash ABI.
+3. Configure the new admission/slash address and its deployment block together. Update
+   signed directory/deployment metadata and the applicable runtime hash pins, then verify
+   that the gateway reconstructs the new set's root and reports `SlashPayout` amounts.
+   Stop admitting old-set roots when claiming the new penalty; accepting both sets leaves
+   the old self-refund path available. Coordinate the root transition and exit window.
+4. Members use the old contract's ordinary exit/withdraw procedure for old stakes and
+   register fresh identities in the new set. There is no automatic stake transfer or
+   tree copy. A secret already revealed by a slash must not be reused.
+
+This is the payout-policy remediation for audit finding 2.1.1. The other findings in
+[#113](https://github.com/dmarzzz/shade-tree-node/issues/113) and the trusted-setup work
+remain separate rollout requirements. Changing `GatewayRegistry` or burning paid-access
+fees is outside this member-stake policy.
+
 ---
 
 *Reference implementation, unaudited, testnet-only. The mocks are not zero-knowledge; a

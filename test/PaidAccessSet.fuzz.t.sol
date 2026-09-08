@@ -128,7 +128,7 @@ contract PaidAccessSetFuzzTest is FuzzBase {
         uint256 sinkBefore = SINK.balance;
         set.slash(leaf, secret, limit, SINK);
         ref.slash(leaf, secret, limit, SINK);
-        assertEq(SINK.balance, sinkBefore + ref.bondFor(limit), "(the reference staked set DID pay; the paid set has nothing to pay)");
+        assertEq(SINK.balance, sinkBefore + ref.bondFor(limit) / 10, "(the reference staked set pays a bounty; the paid set has nothing to pay)");
         assertEq(address(set).balance, 0);
         assertEq(set.limitOf(leaf), 0);
         assertEq(set.liveCount(), 0);

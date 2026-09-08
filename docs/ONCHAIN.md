@@ -51,7 +51,7 @@ set") sharpened on two axes the roadmap deliberately left open:
 |---|---|---|
 | R1 | Max anonymous: unlinkable funding source ↔ member | Layer-0 shielded funding (Railgun / Privacy Pools) into a fresh staking address; permissionless commitment registration; ZK-authorized, recipient-specified refund |
 | R2 | Refundable: unstake to reclaim the bond | `withdraw`, authorized by a ZK proof of the commitment secret, paid to a caller-specified fresh address |
-| R3 | Slashable: egress claims a spammer's bond | RLN reconstruction of a proven over-spender's secret → permissionless `slash(commitment, secret, receiver)` |
+| R3 | Slashable with a mandatory economic loss | Permissionless `slash` sends >=90% of the member bond to the fixed burn address and <=10% to the caller-named bounty receiver, including on self-slash |
 | R4 | Time-locked exit | `initiateExit` starts an unbonding delay `U`; the bond stays slashable for the whole `U`; `withdraw` only after |
 | R5 | Gateway monitors its own nodes for double-spend / replay and for member exits | Per-nullifier share-collecting spent-set + recent-roots tracking; distinguishes replay (dedup, no slash) from over-spend (reconstruct, slash) |
 
@@ -137,10 +137,41 @@ withdraw(bytes withdrawProof, address recipient)
 
 slash(uint256 commitment, uint256 secret, uint256 limit, address receiver)   // 3-arg == limit 8
     // permissionless. Verify the revealed secret matches the commitment AT THE CLAIMED TIER
-    // (commitment == Poseidon2(Poseidon1(secret), limit), limit == the recorded tier), pay
-    // that tier's bond to `receiver`, remove the member. Callable by whoever reconstructed
-    // the secret — in practice the gateway (which resolves the tier via limitOf(commitment)).
+    // (commitment == Poseidon2(Poseidon1(secret), limit), limit == the recorded tier), remove
+    // the member, burn bond - floor(bond / 10), and pay floor(bond / 10) to `receiver`.
+    // The member knows its own secret too; self-slash enforces the same economic loss.
 ```
+
+### Mandatory slash penalty (slash-burn-v1)
+
+Every successful slash of a `StakedReputationSet` member removes the whole recorded bond.
+`reward = floor(bond / 10)` goes to the caller-named `receiver`; `burned = bond - reward`
+goes to `SLASH_BURN_ADDRESS`, the constant zero address. `SLASH_REWARD_DIVISOR` is the
+constant 10. There is no admin, configurable treasury or destination override. For a
+1 ETH bond, a self-slasher can recover at most 0.1 ETH and loses at least 0.9 ETH, before
+gas. Rounding favors the penalty: a 1–9 wei bond is entirely burned.
+
+This closes the full-refund strategy of staking, exceeding the limit, then self-slashing
+or front-running a gateway's slash. Either transaction order leaves the same mandatory
+loss. A competing transaction cannot claim the deleted bond again. The bounty remains
+front-runnable; it is an incentive available to any successful submitter, not a guaranteed
+payment to the gateway that detected the violation. Honest timed withdrawals still
+return the full bond.
+
+Both existing slash selectors enforce this split. `MemberSlashed` remains unchanged for
+root reconstruction; the additional `SlashPayout(commitment, receiver, burned, reward)`
+event reports the exact amounts. Membership and root updates precede transfers. A failed
+nonzero bounty transfer reverts the entire transaction, including the burn, so a caller
+can retry with a receiver that accepts ETH. Zero rewards do not call the receiver.
+
+“Burn” here means sending ETH to the zero-address sink; it is not Ethereum's protocol-level
+base-fee supply burn. This rule concerns refundable member stakes. `PaidAccessSet` holds no
+fee or bond to divide, and `GatewayRegistry` retains its separate owner-gated slash policy.
+
+This policy applies to **fresh deployments of this source**. Existing addresses keep their
+old full-payout economics. See [the migration procedure](ONCHAIN-DEPLOY.md#slash-burn-v1-migration).
+It fixes audit finding 2.1.1 only; the admission/tier, proof replay and identity/privacy
+findings remain tracked in [#113](https://github.com/dmarzzz/shade-tree-node/issues/113).
 
 **Why authorization is a ZK proof, not `msg.sender`.** This is what makes R1 hold.
 `register` is permissionless: it publishes a commitment and posts the bond from a
@@ -455,9 +486,10 @@ redeploy (`network/sepolia/contracts.json`, release `rln-v4-tiers`,
    `register(commitment)` is `register(commitment, 8)`.
 3. **Tiered slash.** `slash(commitment, secret, limit, receiver)`: the slasher supplies the
    reconstructed secret AND the tier; the contract requires `limit == m.limit` (`BadLimit`)
-   and `hasher.commitmentOf(secret, limit) == commitment` (`BadSecret`), then burns
-   `bondFor(limit)`. `slash(commitment, secret, receiver)` is the limit-8 claim, byte-equivalent
-   to rln-v3. `MemberSlashed(commitment, receiver, limit)`.
+   and `hasher.commitmentOf(secret, limit) == commitment` (`BadSecret`), then removes the
+   recorded bond and applies the mandatory >=90% burn / <=10% bounty.
+   `slash(commitment, secret, receiver)` is the limit-8 claim with the same penalty.
+   `MemberSlashed(commitment, receiver, limit)` remains unchanged; `SlashPayout` reports the split.
 4. **Exit-auth at a tier.** `IWithdrawVerifier.verify(commitment, limit, context, proof)`:
    the set passes the RECORDED limit, and the real Groth16 `WithdrawVerifier` ties the
    circuit's identity commitment to the leaf at that limit

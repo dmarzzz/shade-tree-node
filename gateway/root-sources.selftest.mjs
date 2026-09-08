@@ -7,6 +7,7 @@
 //   node gateway/root-sources.selftest.mjs
 
 import { resolveRootSources, describeRootSources, makeRoutingSlasher, makeOnchainSlasher, PAID_MIN_LEAVES, initRoots, _getRecentRoots, _setRecentRoots } from "./gateway.mjs";
+import { Interface } from "ethers";
 import { registry as gatewayMetrics } from "../lib/metrics.mjs";
 import { identityFor, identitySecretOf, deriveCommitment, K_SLOTS } from "../lib/rln.mjs";
 
@@ -17,13 +18,13 @@ const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { conso
 //   { tiered: bool, tiers: [..], holds: { commitment: limit }, active: Set } and records slash calls.
 function fakeEthers(table, calls) {
   class Contract {
-    constructor(address) { this.address = address; this.t = table[address]; if (!this.t) throw new Error("unknown contract " + address); }
+    constructor(address, abi) { this.interface = new Interface(abi); this.address = address; this.t = table[address]; if (!this.t) throw new Error("unknown contract " + address); }
     async DEFAULT_LIMIT() { if (!this.t.tiered) throw new Error("no DEFAULT_LIMIT"); return 8n; }
     async allowedLimits() { return (this.t.tiers || [8]).map(BigInt); }
     async limitOf(c) { return BigInt(this.t.holds?.[String(c)] || 0); }
     async isActive(c) { return !!this.t.active?.has(String(c)); }
-    async "slash(uint256,uint256,uint256,address)"(leaf, secret, limit, receiver) { calls.push({ via: this.address, leaf: String(leaf), limit: Number(limit), receiver }); return { hash: "0xtx" + calls.length, wait: async () => ({ blockNumber: 7 }) }; }
-    async "slash(uint256,uint256,address)"(leaf, secret, receiver) { calls.push({ via: this.address, leaf: String(leaf), limit: null, receiver }); return { hash: "0xtx" + calls.length, wait: async () => ({ blockNumber: 7 }) }; }
+    async "slash(uint256,uint256,uint256,address)"(leaf, secret, limit, receiver) { calls.push({ via: this.address, leaf: String(leaf), limit: Number(limit), receiver }); return { hash: "0xtx" + calls.length, wait: async () => ({ blockNumber: 7, logs: this.t.logs || [] }) }; }
+    async "slash(uint256,uint256,address)"(leaf, secret, receiver) { calls.push({ via: this.address, leaf: String(leaf), limit: null, receiver }); return { hash: "0xtx" + calls.length, wait: async () => ({ blockNumber: 7, logs: this.t.logs || [] }) }; }
   }
   return { Contract };
 }
@@ -106,6 +107,28 @@ async function main() {
     // single-contract slasher: holds() exposed
     const single = await makeOnchainSlasher({ ethers, wallet, address: "0xP", receiver: "0xR" });
     ok((await single.holds(secret)).limit === 32 && (await single.holds(secretC)) === null && single.address === "0xP", "makeOnchainSlasher.holds(secret) names the tier the contract holds (or null)");
+  }
+
+  // Slash payout reporting uses only a matching event from the configured contract.
+  {
+    const secret = identitySecretOf(identityFor("0x1234"));
+    const leaf = deriveCommitment(secret, 8);
+    const address = "0x00000000000000000000000000000000000000AA";
+    const receiver = "0x00000000000000000000000000000000000000BB";
+    const iface = new Interface(["event SlashPayout(uint256 indexed commitment, address indexed receiver, uint256 burned, uint256 reward)"]);
+    const event = (via, commitment, burned, reward) => ({ address: via, ...iface.encodeEventLog(iface.getEvent("SlashPayout"), [commitment, receiver, burned, reward]) });
+    const logs = [
+      event(receiver, leaf, 999n, 999n), // foreign emitter
+      { address, topics: ["0x00"], data: "0x" }, // malformed event
+      event(address, BigInt(leaf) + 1n, 888n, 888n), // another leaf
+    ];
+    const table = { [address]: { tiered: true, tiers: [8], holds: { [leaf]: 8 }, logs } };
+    const slash = await makeOnchainSlasher({ ethers: fakeEthers(table, []), wallet: {}, address, receiver });
+    let result = await slash(leaf, secret, { resolved: true, commitment: leaf, limit: 8 });
+    ok(result.burnedWei === undefined && result.rewardWei === undefined, "unrelated or malformed logs never claim a payout split");
+    logs.push(event(address.toLowerCase(), leaf, 91n, 10n));
+    result = await slash(leaf, secret, { resolved: true, commitment: leaf, limit: 8 });
+    ok(result.burnedWei === "91" && result.rewardWei === "10", "matching mined SlashPayout reports the actual burn and bounty");
   }
 
   // 5. STARTUP posture of initRoots (fleet crash-loop 2026-08-17: eth_getLogs range cap at boot):

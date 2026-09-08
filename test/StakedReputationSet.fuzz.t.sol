@@ -135,7 +135,7 @@ contract StakedReputationSetFuzzTest is FuzzBase {
         uint256 before = RECEIVER.balance;
         set.slash(commit, secret, RECEIVER);
 
-        assertEq(RECEIVER.balance - before, BOND, "revealed secret pays out");
+        assertEq(RECEIVER.balance - before, BOND / 10, "revealed secret pays only the bounty");
         (uint256 bond,,,) = set.members(commit);
         assertEq(bond, 0, "slashed leaf deleted");
         assertEq(set.activeCount(), 0);
@@ -198,7 +198,7 @@ contract StakedReputationSetFuzzTest is FuzzBase {
     }
 
     /// For ANY secret and tier: the slash succeeds ONLY at the recorded limit (any other
-    /// admitted-or-not limit reverts and changes nothing) and pays exactly that tier's bond.
+    /// admitted-or-not limit reverts and changes nothing) and pays only that tier's bounty.
     function testFuzz_slash_onlyAtRecordedLimit(uint256 rawSecret, bool tierOne, uint256 rawOther, bool exiting)
         public
     {
@@ -218,7 +218,7 @@ contract StakedReputationSetFuzzTest is FuzzBase {
 
         uint256 before = RECEIVER.balance;
         t.slash(commit, secret, limit, RECEIVER);
-        assertEq(RECEIVER.balance - before, due, "pays exactly the tier bond");
+        assertEq(RECEIVER.balance - before, due / 10, "pays exactly the tier bounty");
         assertEq(address(t).balance, 0);
         assertEq(t.limitOf(commit), 0);
     }

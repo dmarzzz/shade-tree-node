@@ -9,17 +9,17 @@
   "contracts": {
     "staking": {
       "artifact": "StakedReputationSet.sol/StakedReputationSet.json",
-      "runtimeBytes": 5149,
-      "normalizedSha256": "dff3ad6ede9a451f3119e0ec1cbd0e320cfe565396b1834cd838b0ce681ed01e",
+      "runtimeBytes": 5478,
+      "normalizedSha256": "4bb7821ef11596d88d86e766be38e71701dc74c63c05bacc7768a4e3a8ab8623",
       "zeroRanges": [
-        { "start": 374, "length": 32 }, { "start": 821, "length": 32 },
-        { "start": 987, "length": 32 }, { "start": 1162, "length": 32 },
-        { "start": 1525, "length": 32 }, { "start": 1723, "length": 32 },
-        { "start": 2286, "length": 32 }, { "start": 2585, "length": 32 },
-        { "start": 2874, "length": 32 }, { "start": 3885, "length": 32 },
-        { "start": 4087, "length": 20 }, { "start": 5096, "length": 53 }
+        { "start": 426, "length": 32 }, { "start": 873, "length": 32 },
+        { "start": 1059, "length": 32 }, { "start": 1234, "length": 32 },
+        { "start": 1616, "length": 32 }, { "start": 1814, "length": 32 },
+        { "start": 2377, "length": 32 }, { "start": 2676, "length": 32 },
+        { "start": 2965, "length": 32 }, { "start": 4183, "length": 32 },
+        { "start": 4385, "length": 20 }, { "start": 5425, "length": 53 }
       ],
-      "links": { "PoseidonT3": [{ "start": 4087, "length": 20 }] }
+      "links": { "PoseidonT3": [{ "start": 4385, "length": 20 }] }
     },
     "hasher": {
       "artifact": "RateCommitmentHasher.sol/RateCommitmentHasher.json",
