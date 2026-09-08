@@ -24,6 +24,9 @@ use shade_tree_proto::artifact_id_of;
 pub const LOCK_KEY_WASM: &str = "circuits/rln/rln.wasm";
 pub const LOCK_KEY_ZKEY: &str = "circuits/rln/rln_final.zkey";
 pub const LOCK_KEY_VKEY: &str = "circuits/rln/verification_key.json";
+pub const LOCK_KEY_WITHDRAW_WASM: &str = "circuits/rln/withdraw.wasm";
+pub const LOCK_KEY_WITHDRAW_ZKEY: &str = "circuits/rln/withdraw_final.zkey";
+pub const LOCK_KEY_WITHDRAW_VKEY: &str = "circuits/rln/withdraw_verification_key.json";
 
 /// The lock is embedded alongside the artifacts so a released binary carries its own pin.
 #[cfg(feature = "embedded-artifacts")]
@@ -122,6 +125,50 @@ pub fn check_against_lock(
 pub fn verify_embedded() -> Result<ArtifactCheck, String> {
     let e = crate::prover::embedded_bytes();
     check_against_lock(LOCK, e.wasm, e.zkey, e.vkey)
+}
+
+/// Verify the exit/withdraw artifacts embedded in the live client. These are a
+/// separate circuit and proving key from the egress RLN set, so lifecycle commands
+/// must check their own three lock entries before touching bearer material.
+pub fn check_withdraw_against_lock(
+    lock_json: &str,
+    wasm: &[u8],
+    zkey: &[u8],
+    vkey: &[u8],
+) -> Result<ArtifactCheck, String> {
+    let lock: serde_json::Value = serde_json::from_str(lock_json)
+        .map_err(|e| format!("zk-artifacts lock is not JSON: {e}"))?;
+    let mut problems = Vec::new();
+    lock_entry_check(&lock, LOCK_KEY_WITHDRAW_WASM, wasm, &mut problems);
+    lock_entry_check(&lock, LOCK_KEY_WITHDRAW_ZKEY, zkey, &mut problems);
+    let provenance = lock_entry_check(&lock, LOCK_KEY_WITHDRAW_VKEY, vkey, &mut problems);
+    let derived = artifact_id_of("withdraw", vkey);
+    let declared = lock["circuits"]["withdraw"]["artifactId"]
+        .as_str()
+        .unwrap_or("");
+    if declared != derived {
+        problems.push(format!(
+            "withdraw artifact id mismatch: lock declares {declared:?} but embedded vkey derives {derived}"
+        ));
+    }
+    if !problems.is_empty() {
+        return Err(format!(
+            "embedded withdraw artifacts do NOT match testdata/zk-artifacts.lock.json:\n  {}",
+            problems.join("\n  ")
+        ));
+    }
+    Ok(ArtifactCheck {
+        artifact_id: derived,
+        trust: lock["trust"].as_str().unwrap_or("?").to_string(),
+        provenance: provenance.unwrap_or_else(|| "?".to_string()),
+        previous_artifact_id: None,
+    })
+}
+
+#[cfg(feature = "embedded-artifacts")]
+pub fn verify_withdraw_embedded() -> Result<ArtifactCheck, String> {
+    let embedded = crate::withdraw::embedded_bytes();
+    check_withdraw_against_lock(LOCK, embedded.wasm, embedded.zkey, embedded.vkey)
 }
 
 #[cfg(test)]
@@ -241,6 +288,11 @@ mod tests {
         assert_eq!(
             c.artifact_id,
             l["circuits"]["rln"]["artifactId"].as_str().unwrap()
+        );
+        let withdraw = verify_withdraw_embedded().expect("withdraw artifacts match embedded lock");
+        assert_eq!(
+            withdraw.artifact_id,
+            l["circuits"]["withdraw"]["artifactId"].as_str().unwrap()
         );
     }
 }

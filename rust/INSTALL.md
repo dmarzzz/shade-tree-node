@@ -18,7 +18,7 @@ testnet RLN artifacts; review
 [`../circuits/rln/ARTIFACTS.md`](../circuits/rln/ARTIFACTS.md) before use.
 
 > [!WARNING]
-> v0.4 is an unaudited research preview built with testnet-only RLN setup
+> v0.6 is an unaudited research preview built with testnet-only RLN setup
 > artifacts. Do not use it as a production anonymity or security boundary.
 
 ## One-line install
@@ -38,11 +38,11 @@ Only a missing live checksum or binary triggers a clearly reported fallback to
 that same release's verifier-only binary; network, TLS, and integrity failures
 remain fail-closed. `SHADE_TREE_LIVE=1` disables fallback. On Apple Silicon the
 installer detects an x86_64 shell running under Rosetta and selects the native
-arm64 live asset. Intel macOS (`x86_64-apple-darwin`) has no v0.4 live asset.
+arm64 live asset. Intel macOS (`x86_64-apple-darwin`) has no live asset.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SHADE_TREE_VERSION` | latest release | Pin a release, such as `v0.5.0` or `0.5.0` |
+| `SHADE_TREE_VERSION` | latest release | Pin a release, such as `v0.6.0` or `0.6.0` |
 | `SHADE_TREE_LIVE` | `auto` | `auto` probes live, falling back only when that release lacks it; `1` requires live; `0` installs verifier-only |
 | `SHADE_TREE_INSTALL_DIR` | `$HOME/.local/bin` | User-writable destination directory, created if missing |
 | `SHADE_TREE_FORCE` | `0` | `1` explicitly permits replacing a destination symlink to a file; directory links are always refused |
@@ -56,7 +56,7 @@ target selection:
 ```sh
 curl -q -fsSL --proto '=https' --proto-redir '=https' \
   https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \
-  | SHADE_TREE_VERSION=v0.5.0 sh
+  | SHADE_TREE_VERSION=v0.6.0 sh
 ```
 
 The one-liner downloads code before you inspect it. To review it first, save it
@@ -68,12 +68,12 @@ installer on x86_64 Windows; PowerShell users can use the manual process below.
 Choose the `-live` asset for your platform from the
 [latest release](https://github.com/dmarzzz/shade-tree-node/releases/latest).
 Linux users can choose GNU for ordinary glibc distributions or musl for a
-statically linked libc target. This x86_64 GNU example installs v0.5.0; change
+statically linked libc target. This x86_64 GNU example installs v0.6.0; change
 `TARGET` to another published target from the table above when needed. `-q`
 must be curl's first option so user configuration cannot disable TLS checks:
 
 ```sh
-VERSION=0.5.0
+VERSION=0.6.0
 TARGET=x86_64-unknown-linux-gnu
 ASSET="shade-tree-$VERSION-$TARGET-live"
 curl -q -fLO --proto '=https' --proto-redir '=https' \
@@ -103,17 +103,50 @@ the macOS asset is checksummed and attested but not notarized. After verifying
 the checksum, remove a Gatekeeper quarantine attribute if macOS added one:
 
 ```sh
-xattr -d com.apple.quarantine ./shade-tree-0.5.0-aarch64-apple-darwin-live
+xattr -d com.apple.quarantine ./shade-tree-0.6.0-aarch64-apple-darwin-live
 ```
 
 On Windows, compare the digest printed by PowerShell with the contents of the
 downloaded `.sha256` file before renaming the binary:
 
 ```powershell
-Get-FileHash .\shade-tree-0.5.0-x86_64-pc-windows-msvc-live.exe -Algorithm SHA256
+Get-FileHash .\shade-tree-0.6.0-x86_64-pc-windows-msvc-live.exe -Algorithm SHA256
 ```
 
 ## No-Node agent quickstart
+
+For the bundled public Sepolia Grove, create an owner-only identity and let the
+client validate the secret/leaf/tier tuple before it contacts an RPC:
+
+```sh
+shade-tree enroll --limit 1 --out identity.json
+chmod 600 funded-sepolia.key
+shade-tree register-member --identity identity.json --key-file funded-sepolia.key
+shade-tree member-status --identity identity.json --json
+```
+
+The payer may register an agent's public leaf as a sponsor without receiving its
+identity file. The sponsor's address, leaf, amount, and timing are public and the
+sponsor bears the slashing risk; only the identity holder can use or recover the
+membership.
+
+To reclaim an unslashed Sepolia bond, begin the ZK-authorized exit, wait for the
+reported unbonding time, and withdraw to an explicit fresh recipient:
+
+```sh
+shade-tree exit-member --identity identity.json --key-file gas.key
+shade-tree member-status --identity identity.json
+shade-tree withdraw-member --identity identity.json \
+  --recipient 0xFRESH_SEPOLIA_ADDRESS --key-file gas.key
+```
+
+The proof is made and checked locally before the exact transaction is simulated.
+The gas wallet can differ from the registration payer and withdrawal recipient.
+Losing `identity.json` makes the bond unrecoverable; exposing it gives away use and
+exit authority.
+
+For an invited, paid, or alternate Grove, continue with its operator-supplied
+parameters.
 
 First ask the Grove operator for:
 

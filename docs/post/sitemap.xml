@@ -13,6 +13,9 @@
     <loc>https://shade-tree-node.vercel.app/agent/</loc>
   </url>
   <url>
+    <loc>https://shade-tree-node.vercel.app/stake/</loc>
+  </url>
+  <url>
     <loc>https://shade-tree-node.vercel.app/operator/</loc>
   </url>
 </urlset>

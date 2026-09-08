@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.6.0 — Private staking and recovery
+
+**Official Sepolia research preview.** This release still uses unaudited,
+untrusted-testnet proof artifacts and testnet ETH. It is not a production anonymity
+or security boundary and must not be used with real funds or sensitive traffic.
+
+The public tier-1 Grove now has a friendly local-first staking page for humans and a
+complete Node-free identity, staking, status, exit, and withdrawal path for agents.
+The on-chain profile is unchanged: 0.1 Sepolia ETH admits one CONNECT tunnel per
+fixed 60-second epoch with a 40 MiB combined payload ceiling.
+
+### Added
+
+- Added a static privacy-first staking page that creates a Semaphore-v3-compatible
+  identity locally, validates imports, requires a recovery download, supports
+  injected-wallet registration, and offers a public-leaf-only sponsor mode.
+- Added `register-member --identity` so the Rust client recomputes and validates the
+  secret, leaf, and exact tier before its first wallet or RPC interaction.
+- Added native Rust `member-status`, `exit-member`, and `withdraw-member` commands.
+  Exit and recipient-bound withdrawal proofs are built and self-verified locally,
+  then the exact EIP-1559 call is simulated and signed locally with a separable gas
+  wallet.
+- Embedded the deployed withdrawal circuit artifacts in the live Rust binary and
+  verified Rust-generated proof calldata against the live Sepolia verifier.
+
+### Hardened
+
+- Pin the browser flow to the current Sepolia chain, contract bytecode, tier, and
+  exact bond; reject active leaves, insufficient balances, changed parameters, and
+  reverted simulations before requesting a staking transaction.
+- Reject malformed, oversized, mismatched, extra-field, wrong-tier, and duplicate
+  identity/CLI inputs without printing bearer material.
+- Document the precise privacy ledger: the static host can see a page load, the
+  wallet/RPC sees the public registration, and the public commitment necessarily
+  links the pseudonymous register/exit/withdraw lifecycle.
+
 ## 0.5.0 — Public Sepolia staking
 
 **Official research preview.** This release uses unaudited, untrusted-testnet

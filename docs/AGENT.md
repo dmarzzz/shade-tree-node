@@ -15,11 +15,11 @@ Node.js nor a system Tor daemon.
 
 Download the `-live` binary and matching `.sha256` for your platform from the
 [latest release](https://github.com/dmarzzz/shade-tree-node/releases/latest).
-This example installs the v0.5.0 x86_64 GNU/Linux asset; change `TARGET` to the
+This example installs the v0.6.0 x86_64 GNU/Linux asset; change `TARGET` to the
 published target for your machine when needed:
 
 ```sh
-VERSION=0.5.0
+VERSION=0.6.0
 TARGET=x86_64-unknown-linux-gnu
 ASSET="shade-tree-$VERSION-$TARGET-live"
 curl -LO "https://github.com/dmarzzz/shade-tree-node/releases/download/v$VERSION/$ASSET"
@@ -44,9 +44,10 @@ payload. Create the identity locally and register its public leaf with a separat
 funded testnet wallet:
 
 ```sh
-shade-tree enroll --out identity.json > public-leaf.txt
+shade-tree enroll --out identity.json
 chmod 600 funded-sepolia.key
-shade-tree register-member "$(cat public-leaf.txt)" --key-file funded-sepolia.key
+shade-tree register-member --identity identity.json --key-file funded-sepolia.key
+shade-tree member-status --identity identity.json --json
 ```
 
 The CLI reads the current contract, RPC, deployment block, tier, Elder, signer,
@@ -54,6 +55,12 @@ and rate policy from its bundled deployment record. The wallet signs locally;
 the private key never goes to the RPC. The receipt confirms mining; wait for that
 block to reach Sepolia finality before starting the Proxy, because client and
 gateway membership snapshots both default to the finalized tree.
+
+The identity is also the recovery credential. To leave, run `shade-tree exit-member
+--identity identity.json --key-file gas.key`, wait until `member-status` reports that
+the 24-hour deadline has passed, then run `shade-tree withdraw-member --identity
+identity.json --recipient 0xFRESH_ADDRESS --key-file gas.key`. Both proofs are generated
+locally; the gas wallet may be unrelated to the original funder or recipient.
 
 For an invited, paid, or alternate Grove, ask its operator for:
 

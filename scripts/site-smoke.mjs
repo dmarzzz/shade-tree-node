@@ -48,11 +48,12 @@ await checkPage("/research/", /id="references"/);
 await checkPage("/grove/", /id="grove-main"/);
 await checkPage("/agent/", /<main\b/);
 await checkPage("/operator/", /<main\b/);
+await checkPage("/stake/", /data-member-steps/);
 
 assert.match(home.html, /class="nav-lab"/, "the Lab route should remain explicitly hidden");
 assert.doesNotMatch(home.html, /The best shade asks for proof, not a name\.<\/p>/, "removed footer copy must stay removed");
 
-for (const asset of ["/site.css", "/site.js", "/grove.js", "/fig/shade-tree-readme.svg"]) {
+for (const asset of ["/site.css", "/site.js", "/grove.js", "/stake/stake.css", "/stake/stake.js", "/fig/shade-tree-readme.svg"]) {
   const response = await fetchWithRetry(asset);
   assert.equal(response.status, 200, `${asset} should return 200`);
   console.log(`  ok   ${asset}`);

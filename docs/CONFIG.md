@@ -180,7 +180,7 @@ loopback HTTP support exists only for its offline selftest.
 
 | Env var | Default | Controls |
 |---|---|---|
-| `SHADE_TREE_VERSION` | latest release | Pin a release tag, for example `v0.5.0` or `0.5.0`. |
+| `SHADE_TREE_VERSION` | latest release | Pin a release tag, for example `v0.6.0` or `0.6.0`. |
 | `SHADE_TREE_LIVE` | `auto` | `auto` probes the selected release for `-live` and falls back only when its checksum or binary is absent; `1` requires live; `0` requests verifier-only. |
 | `SHADE_TREE_INSTALL_DIR` | `$HOME/.local/bin` | User-writable destination; the installer creates it without sudo. |
 | `SHADE_TREE_FORCE` | `0` | `1` permits replacing a destination symlink to a file; unsafe types and directory symlinks remain refused. |

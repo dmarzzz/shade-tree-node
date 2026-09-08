@@ -45,6 +45,7 @@
       <div class="nav-links">
         <a href="#proxy">Agent</a>
         <a href="#node">Node</a>
+        <a href="./stake/">Stake</a>
         <a class="nav-lab" href="./lab/index.html">Lab</a>
         <a href="./grove/">Grove</a>
         <a href="./research/">Research</a>
@@ -64,6 +65,7 @@
       <h1 id="home-title"><span>Cover for</span><span>local agents.</span></h1>
       <div class="hero-actions">
         <a href="#proxy">For agents <span aria-hidden="true">&#8595;</span></a>
+        <a href="./stake/">Stake on Sepolia <span aria-hidden="true">&#8599;</span></a>
         <a href="#node">Run a Shade Tree node <span aria-hidden="true">&#8595;</span></a>
         <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/specs/protocol.md">How it works <span aria-hidden="true">&#8599;</span></a>
       </div>
@@ -96,8 +98,8 @@
                 <div class="step-body">
                   <p class="step-label">Install the live Rust binary</p>
                   <div class="command agent-install" aria-label="Install Shade Tree Grove for an agent">
-                    <code tabindex="0" aria-label="v0.5.0 live binary installation command">curl -q -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADE_TREE_VERSION=v0.5.0 sh</code>
-                    <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADE_TREE_VERSION=v0.5.0 sh" aria-label="Copy v0.5.0 live binary installation command">copy install</button>
+                    <code tabindex="0" aria-label="v0.6.0 live binary installation command">curl -q -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADE_TREE_VERSION=v0.6.0 sh</code>
+                    <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADE_TREE_VERSION=v0.6.0 sh" aria-label="Copy v0.6.0 live binary installation command">copy install</button>
                   </div>
                   <p class="step-note">The installer selects a published <code>-live</code> asset and verifies its checksum. The binary embeds Arti; it needs neither Node.js nor system Tor. See the <a href="./agent/">agent guide</a> for supported platforms and manual verification.</p>
                 </div>
@@ -106,11 +108,11 @@
                 <span class="step-num" aria-hidden="true">02</span>
                 <div class="step-body">
                   <p class="step-label">Agent setup</p>
-                  <button class="copy-command task-copy" type="button" data-copy="Set up Shade Tree Grove using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the verified v0.5.0 Rust -live binary; embedded Arti needs neither Node.js nor system Tor. Create identity.json. Fund a Sepolia key with 0.1 ETH plus gas and register public-leaf.txt. The bundled public-stake-v1 profile grants one CONNECT tunnel per fixed 60-second epoch, capped at 40 MiB combined traffic. Do not add members.json. Keep identity.json, the key, and proxy-token.txt private. Never use real funds or sensitive traffic. Launch with shade-tree run -- &lt;agent-command&gt;." data-copy-target="agent-setup-task" data-copy-noun="Setup brief" aria-label="Copy Shade Tree Grove setup brief for an AI agent">copy agent brief</button>
+                  <button class="copy-command task-copy" type="button" data-copy="Set up Shade Tree Grove using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the verified v0.6.0 Rust -live binary; embedded Arti needs neither Node.js nor system Tor. Create identity.json. Fund a Sepolia key with 0.1 ETH plus gas and run register-member --identity identity.json. The bundled public-stake-v1 profile grants one CONNECT tunnel per fixed 60-second epoch, capped at 40 MiB combined traffic. Do not add members.json. Keep identity.json, the key, and proxy-token.txt private. Never use real funds or sensitive traffic. Launch with shade-tree run -- &lt;agent-command&gt;." data-copy-target="agent-setup-task" data-copy-noun="Setup brief" aria-label="Copy Shade Tree Grove setup brief for an AI agent">copy agent brief</button>
                 </div>
               </li>
             </ol>
-            <code id="agent-setup-task" class="copy-fallback" hidden>Set up Shade Tree Grove using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the verified v0.5.0 Rust -live binary; embedded Arti needs neither Node.js nor system Tor. Create identity.json. Fund a Sepolia key with 0.1 ETH plus gas and register public-leaf.txt. The bundled public-stake-v1 profile grants one CONNECT tunnel per fixed 60-second epoch, capped at 40 MiB combined traffic. Do not add members.json. Keep identity.json, the key, and proxy-token.txt private. Never use real funds or sensitive traffic. Launch with shade-tree run -- &lt;agent-command&gt;.</code>
+            <code id="agent-setup-task" class="copy-fallback" hidden>Set up Shade Tree Grove using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the verified v0.6.0 Rust -live binary; embedded Arti needs neither Node.js nor system Tor. Create identity.json. Fund a Sepolia key with 0.1 ETH plus gas and run register-member --identity identity.json. The bundled public-stake-v1 profile grants one CONNECT tunnel per fixed 60-second epoch, capped at 40 MiB combined traffic. Do not add members.json. Keep identity.json, the key, and proxy-token.txt private. Never use real funds or sensitive traffic. Launch with shade-tree run -- &lt;agent-command&gt;.</code>
           </div>
         </article>
 

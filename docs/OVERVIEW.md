@@ -83,15 +83,15 @@ anonymous: invited, staked, paid.
 
 ## The Rust binary
 
-`shade-tree-0.5.0-<target>-live` needs no Node and no tor daemon; the default non-live binary
+`shade-tree-0.6.0-<target>-live` needs no Node and no tor daemon; the default non-live binary
 verifies, selects and fetches directories but does not egress ([`rust/INSTALL.md`](../rust/INSTALL.md)):
 
 ```bash
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
 read -r SHADE_TREE_LIMIT && export SHADE_TREE_LIMIT                           # exact enrolled tier
-./shade-tree-0.5.0-<target>-live enroll --limit "$SHADE_TREE_LIMIT" --out identity.json
+./shade-tree-0.6.0-<target>-live enroll --limit "$SHADE_TREE_LIMIT" --out identity.json
 shade-tree leaves --contract <v4-member-set-address> --rpc-url <operator-rpc-url> --out members.json
-./shade-tree-0.5.0-<target>-live egress \
+./shade-tree-0.6.0-<target>-live egress \
   --identity identity.json --members members.json --target api.ipify.org:443
 ```
 

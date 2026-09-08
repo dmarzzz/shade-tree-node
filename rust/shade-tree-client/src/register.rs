@@ -15,6 +15,7 @@ use ethers_core::types::{
     NameOrAddress, Signature, U256, U64,
 };
 use ethers_core::utils::{id, keccak256, secret_key_to_address};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{self, IsTerminal, Read};
@@ -34,10 +35,14 @@ const ANVIL_KEY_0: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae7
 const HELP: &str = r#"shade-tree register-member — stake a public member leaf
 
 usage: shade-tree register-member <commitment> [--limit N]
+       shade-tree register-member --identity identity.json
        [--contract 0xaddress] [--rpc-url https://...]
        [--key-file <owner-only-file>]
 
-The funding key is read from --key-file or SHADE_TREE_REGISTER_KEY and signs
+--identity reads the public leaf and exact tier from a Rust-compatible identity
+file, verifies that they match its private identitySecret, and never logs the
+secret. It cannot be combined with a positional commitment. The funding key is
+read from --key-file or SHADE_TREE_REGISTER_KEY and signs
 locally; it is never accepted as an argument or sent to the RPC. Without an
 explicit contract/RPC, the bundled live Sepolia Grove staking profile is used.
 SHADE_TREE_GROUP_CONTRACT, SHADE_TREE_RPC_URL, SHADE_TREE_LIMIT, and
@@ -53,7 +58,17 @@ struct CliOptions {
     contract: Option<String>,
     rpc_url: Option<String>,
     key_file: Option<PathBuf>,
+    identity: Option<PathBuf>,
     bond: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IdentityInput {
+    #[serde(rename = "identitySecret")]
+    identity_secret: String,
+    leaf: String,
+    limit: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,13 +81,13 @@ struct Registration {
     bond_override: Option<U256>,
 }
 
-struct FundingWallet {
+pub(crate) struct FundingWallet {
     signer: SigningKey,
-    address: Address,
+    pub(crate) address: Address,
 }
 
 impl FundingWallet {
-    fn from_key(value: &str) -> Result<Self, String> {
+    pub(crate) fn from_key(value: &str) -> Result<Self, String> {
         let normalized = value.trim().strip_prefix("0x").unwrap_or(value.trim());
         if normalized.len() != 64 || hex::decode(normalized).map_or(true, |bytes| bytes.len() != 32)
         {
@@ -92,11 +107,11 @@ impl FundingWallet {
         Ok(Self { signer, address })
     }
 
-    fn sign(&self, transaction: &TypedTransaction) -> Result<Signature, String> {
+    pub(crate) fn sign(&self, transaction: &TypedTransaction) -> Result<Signature, String> {
         let (signature, recovery): (RecoverableSignature, RecoveryId) = self
             .signer
             .sign_prehash(transaction.sighash().as_bytes())
-            .map_err(|_| "could not sign member registration transaction".to_string())?;
+            .map_err(|_| "could not sign member transaction".to_string())?;
         let bytes = signature.to_bytes();
         Ok(Signature {
             r: U256::from_big_endian(&bytes[..32]),
@@ -142,6 +157,7 @@ fn parse_args(args: &[String]) -> Result<Option<CliOptions>, String> {
             "--group-contract",
             "--rpc-url",
             "--key-file",
+            "--identity",
             "--bond",
         ]
         .iter()
@@ -150,15 +166,36 @@ fn parse_args(args: &[String]) -> Result<Option<CliOptions>, String> {
         if let Some(name) = matched {
             let value = value_for(args, &mut index, name)?;
             match name {
-                "--limit" => out.limit = Some(value),
+                "--limit" => {
+                    if out.limit.replace(value).is_some() {
+                        return Err("pass --limit only once".into());
+                    }
+                }
                 "--contract" | "--group-contract" => {
                     if out.contract.replace(value).is_some() {
                         return Err("pass only one of --contract/--group-contract".into());
                     }
                 }
-                "--rpc-url" => out.rpc_url = Some(value),
-                "--key-file" => out.key_file = Some(PathBuf::from(value)),
-                "--bond" => out.bond = Some(value),
+                "--rpc-url" => {
+                    if out.rpc_url.replace(value).is_some() {
+                        return Err("pass --rpc-url only once".into());
+                    }
+                }
+                "--key-file" => {
+                    if out.key_file.replace(PathBuf::from(value)).is_some() {
+                        return Err("pass --key-file only once".into());
+                    }
+                }
+                "--identity" => {
+                    if out.identity.replace(PathBuf::from(value)).is_some() {
+                        return Err("pass --identity only once".into());
+                    }
+                }
+                "--bond" => {
+                    if out.bond.replace(value).is_some() {
+                        return Err("pass --bond only once".into());
+                    }
+                }
                 _ => unreachable!(),
             }
         } else if arg.starts_with("--") {
@@ -167,6 +204,9 @@ fn parse_args(args: &[String]) -> Result<Option<CliOptions>, String> {
             return Err("register-member accepts exactly one commitment".into());
         }
         index += 1;
+    }
+    if out.identity.is_some() && out.commitment.is_some() {
+        return Err("pass either a positional commitment or --identity, not both".into());
     }
     Ok(Some(out))
 }
@@ -187,7 +227,7 @@ pub(crate) fn registration_defaults_from(
     ))
 }
 
-fn bundled_defaults() -> Result<(String, String, u64, Option<u64>), String> {
+pub(crate) fn bundled_defaults() -> Result<(String, String, u64, Option<u64>), String> {
     let profile = crate::default_public_profile()?;
     Ok((
         profile.contract,
@@ -233,23 +273,109 @@ fn read_commitment(cli: &CliOptions) -> Result<String, String> {
         .ok_or_else(|| "missing commitment (stdin was empty)".to_string())
 }
 
+fn read_identity(path: &Path) -> Result<IdentityInput, String> {
+    let metadata =
+        fs::metadata(path).map_err(|e| format!("read identity {}: {e}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("identity {} is not a file", path.display()));
+    }
+    if metadata.len() > 16 * 1024 {
+        return Err(format!("identity {} exceeds 16 KiB", path.display()));
+    }
+    let bytes =
+        fs::read_to_string(path).map_err(|e| format!("read identity {}: {e}", path.display()))?;
+    serde_json::from_str(&bytes).map_err(|_| {
+        format!(
+            "identity {} is not valid Shade Tree identity JSON",
+            path.display()
+        )
+    })
+}
+
+pub(crate) struct VerifiedIdentity {
+    pub(crate) identity_secret: String,
+    pub(crate) commitment: U256,
+    pub(crate) limit: u64,
+}
+
+pub(crate) fn verified_identity(
+    path: &Path,
+    requested_limit: Option<u64>,
+) -> Result<VerifiedIdentity, String> {
+    let identity = read_identity(path)?;
+    let limit = match (identity.limit, requested_limit) {
+        (Some(file), Some(requested)) if file != requested => {
+            return Err(format!(
+                "identity tier {file} does not match requested tier {requested}"
+            ));
+        }
+        (Some(file), _) => file,
+        (None, Some(requested)) => requested,
+        (None, None) => {
+            return Err(
+                "identity file has no limit; pass --limit explicitly so a legacy tier is never guessed"
+                    .into(),
+            );
+        }
+    };
+    if !(1..=u16::MAX as u64).contains(&limit) {
+        return Err(format!("identity limit must be in 1..={}", u16::MAX));
+    }
+    let commitment = parse_u256(&identity.leaf, "identity leaf")?;
+    let field = U256::from_dec_str(BN254_FIELD).expect("BN254 field constant");
+    if commitment.is_zero() || commitment >= field {
+        return Err("identity leaf must be a non-zero BN254 field element".into());
+    }
+    let expected =
+        shade_tree_rln::identity::commitment_from_identity_secret(&identity.identity_secret, limit)
+            .map_err(|error| format!("identity file is invalid ({error}; value not shown)"))?;
+    if expected != identity.leaf {
+        return Err(
+            "identity file leaf does not match its identitySecret and tier (secret not shown)"
+                .into(),
+        );
+    }
+    Ok(VerifiedIdentity {
+        identity_secret: identity.identity_secret,
+        commitment,
+        limit,
+    })
+}
+
 fn resolve_registration(cli: &CliOptions) -> Result<Registration, String> {
     let (bundled_contract, bundled_rpc, bundled_limit, bundled_chain_id) = bundled_defaults()?;
-    let commitment = parse_u256(&read_commitment(cli)?, "commitment")?;
+    let requested_limit = cli
+        .limit
+        .clone()
+        .or_else(|| std::env::var("SHADE_TREE_LIMIT").ok())
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .ok()
+                .filter(|limit| (1..=u16::MAX as u64).contains(limit))
+                .ok_or_else(|| format!("--limit must be in 1..={}", u16::MAX))
+        })
+        .transpose()?;
+    let verified = cli
+        .identity
+        .as_deref()
+        .map(|path| verified_identity(path, requested_limit))
+        .transpose()?;
+    let commitment_raw = verified
+        .as_ref()
+        .map(|identity| identity.commitment.to_string())
+        .map(Ok)
+        .unwrap_or_else(|| read_commitment(cli))?;
+    let commitment = parse_u256(&commitment_raw, "commitment")?;
     let field = U256::from_dec_str(BN254_FIELD).expect("BN254 field constant");
     if commitment.is_zero() || commitment >= field {
         return Err("commitment must be a non-zero BN254 field element".into());
     }
-    let limit_raw = cli
-        .limit
-        .clone()
-        .or_else(|| std::env::var("SHADE_TREE_LIMIT").ok())
-        .unwrap_or_else(|| bundled_limit.to_string());
-    let limit = limit_raw
-        .parse::<u64>()
-        .ok()
-        .filter(|limit| (1..=u16::MAX as u64).contains(limit))
-        .ok_or_else(|| format!("--limit must be in 1..={}", u16::MAX))?;
+    let limit = verified
+        .as_ref()
+        .map(|identity| identity.limit)
+        .or(requested_limit)
+        .unwrap_or(bundled_limit);
     let bundled_address = Address::from_str(first_contract(&bundled_contract)).ok();
     let contract_raw = cli
         .contract
@@ -306,7 +432,7 @@ fn loopback_rpc(value: &str) -> bool {
     })
 }
 
-fn key_file(path: &Path) -> Result<String, String> {
+pub(crate) fn key_file(path: &Path) -> Result<String, String> {
     let metadata =
         fs::metadata(path).map_err(|e| format!("read funding key {}: {e}", path.display()))?;
     if !metadata.is_file() {
@@ -349,7 +475,7 @@ fn wallet_for(cli: &CliOptions, rpc_url: &str) -> Result<FundingWallet, String> 
     wallet
 }
 
-fn rpc_timeout_ms() -> u64 {
+pub(crate) fn rpc_timeout_ms() -> u64 {
     std::env::var("SHADE_TREE_RPC_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -357,7 +483,7 @@ fn rpc_timeout_ms() -> u64 {
         .unwrap_or(DEFAULT_RPC_TIMEOUT_MS)
 }
 
-fn receipt_timeout_ms() -> u64 {
+pub(crate) fn receipt_timeout_ms() -> u64 {
     std::env::var("SHADE_TREE_TX_RECEIPT_TIMEOUT_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -365,7 +491,7 @@ fn receipt_timeout_ms() -> u64 {
         .unwrap_or(DEFAULT_RECEIPT_TIMEOUT_MS)
 }
 
-fn rpc_label(value: &str) -> String {
+pub(crate) fn rpc_label(value: &str) -> String {
     reqwest::Url::parse(value)
         .ok()
         .and_then(|url| {
@@ -378,11 +504,11 @@ fn rpc_label(value: &str) -> String {
         .unwrap_or_else(|| "[configured RPC]".into())
 }
 
-trait RpcCall {
+pub(crate) trait RpcCall {
     fn call(&mut self, method: &str, params: Value) -> Result<Value, String>;
 }
 
-struct HttpRpc {
+pub(crate) struct HttpRpc {
     client: reqwest::blocking::Client,
     url: String,
     label: String,
@@ -390,7 +516,7 @@ struct HttpRpc {
 }
 
 impl HttpRpc {
-    fn new(url: &str) -> Result<Self, String> {
+    pub(crate) fn new(url: &str) -> Result<Self, String> {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_millis(rpc_timeout_ms()))
             .build()
@@ -452,18 +578,18 @@ fn calldata(signature: &str, tokens: Vec<Token>) -> Bytes {
     bytes.into()
 }
 
-fn hex_quantity(value: U256) -> String {
+pub(crate) fn hex_quantity(value: U256) -> String {
     format!("{value:#x}")
 }
 
-fn result_quantity(value: Value, method: &str) -> Result<U256, String> {
+pub(crate) fn result_quantity(value: Value, method: &str) -> Result<U256, String> {
     let value = value
         .as_str()
         .ok_or_else(|| format!("{method}: expected a hex quantity"))?;
     parse_u256(value, method)
 }
 
-fn receipt_quantity(receipt: &Value, field: &str, hash: &str) -> Result<U256, String> {
+pub(crate) fn receipt_quantity(receipt: &Value, field: &str, hash: &str) -> Result<U256, String> {
     let value = receipt.get(field).cloned().ok_or_else(|| {
         format!("transaction receipt for {hash} has no {field}; check the hash before retrying")
     })?;
@@ -516,7 +642,15 @@ fn is_active<R: RpcCall>(rpc: &mut R, registration: &Registration) -> Result<boo
     eth_call(rpc, registration.contract, &call).map(|value| !value.is_zero())
 }
 
-fn checked_fee(base: U256, priority: U256) -> Result<U256, String> {
+fn existing_limit<R: RpcCall>(rpc: &mut R, registration: &Registration) -> Result<U256, String> {
+    let call = calldata(
+        "limitOf(uint256)",
+        vec![Token::Uint(registration.commitment)],
+    );
+    eth_call(rpc, registration.contract, &call)
+}
+
+pub(crate) fn checked_fee(base: U256, priority: U256) -> Result<U256, String> {
     base.checked_mul(U256::from(2))
         .and_then(|value| value.checked_add(priority))
         .ok_or_else(|| "RPC returned fees too large to encode".to_string())
@@ -558,6 +692,12 @@ where
     }
     if is_active(rpc, registration)? {
         return Ok(SendOutcome::AlreadyActive);
+    }
+    if tiered && !existing_limit(rpc, registration)?.is_zero() {
+        return Err(
+            "member exists but is exiting; withdraw the old bond before registering this leaf again"
+                .into(),
+        );
     }
     let data = if tiered {
         calldata(
@@ -620,6 +760,19 @@ where
         })
         .unwrap_or_else(|| gas_price.min(U256::from(1_000_000_000_u64)));
     let max_fee = checked_fee(base_fee, priority)?.max(gas_price);
+    let balance = result_quantity(
+        rpc.call("eth_getBalance", json!([format!("{from:#x}"), "latest"]))?,
+        "eth_getBalance",
+    )?;
+    let required = gas
+        .checked_mul(max_fee)
+        .and_then(|fee| fee.checked_add(bond))
+        .ok_or_else(|| "estimated registration cost is too large to encode".to_string())?;
+    if balance < required {
+        return Err(format!(
+            "funding wallet balance {balance} wei is below the worst-case bond + gas estimate {required} wei"
+        ));
+    }
 
     let request = Eip1559TransactionRequest {
         from: Some(from),
@@ -798,6 +951,8 @@ mod tests {
                         ))
                     } else if data.starts_with("0x82afd23b") {
                         Value::String(if self.active { "0x1" } else { "0x0" }.into())
+                    } else if data.starts_with("0xd57b50e7") {
+                        Value::String("0x0".into())
                     } else {
                         panic!("unexpected eth_call {data}");
                     }
@@ -807,6 +962,7 @@ mod tests {
                 "eth_estimateGas" => Value::String("0x186a0".into()),
                 "eth_gasPrice" => Value::String("0x77359400".into()),
                 "eth_maxPriorityFeePerGas" => Value::String("0x3b9aca00".into()),
+                "eth_getBalance" => Value::String("0xde0b6b3a7640000".into()),
                 "eth_getBlockByNumber" => json!({"baseFeePerGas":"0x3b9aca00"}),
                 "eth_sendRawTransaction" => {
                     let raw = params[0].as_str().unwrap().to_string();
@@ -862,6 +1018,21 @@ mod tests {
         );
         assert!(parse_args(&["123".into(), "456".into()]).is_err());
         assert!(parse_args(&["123".into(), "--register-key=secret".into()]).is_err());
+        let identity = parse_args(&[
+            "--identity".into(),
+            "identity.json".into(),
+            "--key-file".into(),
+            "wallet.key".into(),
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(identity.identity, Some(PathBuf::from("identity.json")));
+        assert!(parse_args(&["123".into(), "--identity=identity.json".into()]).is_err());
+        assert!(parse_args(&[
+            "--identity=identity.json".into(),
+            "--identity=other.json".into(),
+        ])
+        .is_err());
     }
 
     #[test]
@@ -913,6 +1084,48 @@ mod tests {
         }
         assert_eq!(key_file(&path).unwrap(), ANVIL_KEY_0);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn identity_input_verifies_leaf_and_tier_before_network_use() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "shade-tree-register-identity-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("identity.json");
+        let material =
+            shade_tree_rln::identity::derive_identity(&format!("0x{}", "5a".repeat(32)), 1)
+                .unwrap();
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({
+                "identitySecret": material.identity_secret,
+                "leaf": material.leaf,
+                "limit": material.limit,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let cli = CliOptions {
+            identity: Some(path.clone()),
+            ..CliOptions::default()
+        };
+        let registration = resolve_registration(&cli).unwrap();
+        assert_eq!(registration.limit, 1);
+        assert_eq!(registration.commitment.to_string(), material.leaf);
+
+        let mut wrong: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        wrong["leaf"] = json!("1");
+        fs::write(&path, serde_json::to_vec(&wrong).unwrap()).unwrap();
+        assert!(resolve_registration(&cli)
+            .unwrap_err()
+            .contains("does not match"));
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

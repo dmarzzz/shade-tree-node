@@ -25,6 +25,7 @@ export default [
       "demo/**",
       "contracts/**",
       "testdata/**",
+      "docs/post/stake/stake.js",
       "**/*.min.*",
     ],
   },
@@ -52,6 +53,15 @@ export default [
       "valid-typeof": "error",
       // Style is intentionally NOT enforced (no semi/quotes/indent/eqeqeq).
       eqeqeq: "off",
+    },
+  },
+  {
+    files: ["site-src/**/*.{js,mjs}", "test/site-browser/**/*.{js,mjs}"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.browser,
+      },
     },
   },
 ];

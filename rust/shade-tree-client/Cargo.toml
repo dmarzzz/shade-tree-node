@@ -1,6 +1,6 @@
 [package]
 name = "shade-tree-client"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "MIT"
 description = "Shade Tree distributable client: single static binary with embedded Tor. Rust port of client/shade-tree-client.mjs."

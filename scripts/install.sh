@@ -11,7 +11,7 @@
 # never fetches a binary over cleartext from the network.
 #
 # Knobs (environment; `curl | sh` cannot take flags):
-#   SHADE_TREE_VERSION       release tag to install (`v0.5.0` or `0.5.0`); default: latest
+#   SHADE_TREE_VERSION       release tag to install (`v0.6.0` or `0.6.0`); default: latest
 #   SHADE_TREE_LIVE=auto     install the `-live` agent where published (default); use 0 for
 #                            the verifier-only binary or 1 to require a live binary
 #   SHADE_TREE_INSTALL_DIR   destination directory; default $HOME/.local/bin
@@ -42,7 +42,7 @@ Installs the prebuilt Rust `shade-tree` client from a GitHub Release into ~/.loc
 verifying its sha256 against the published .sha256 asset. No sudo, ever.
 
 environment:
-  SHADE_TREE_VERSION=v0.5.0     pin a release (default: latest)
+  SHADE_TREE_VERSION=v0.6.0     pin a release (default: latest)
   SHADE_TREE_LIVE=auto          default: -live agent where published, verifier otherwise;
                                 1 requires -live, 0 installs the verifier-only binary
   SHADE_TREE_INSTALL_DIR=DIR    destination (default: $HOME/.local/bin)
@@ -426,7 +426,7 @@ case ":$PATH:" in
 esac
 
 say ""
-say "warning: v0.4 is a research preview with testnet-only, unaudited RLN setup artifacts;"
+say "warning: Shade Tree is a research preview with testnet-only, unaudited RLN setup artifacts;"
 say "         do not use it as a production anonymity or security boundary."
 say "note: the checksum establishes transfer integrity, not publisher provenance;"
 say "      verify the GitHub build attestation when provenance matters (rust/INSTALL.md)."
@@ -443,5 +443,5 @@ if [ "$LIVE" = 1 ]; then
   say "  # Slot allocation is automatic and safely coordinated by default; see rust/INSTALL.md."
 else
   say "  $QDEST verify-directory directory.json --signer <canopy-signer-hex>"
-  say "  (tunneling needs a -live build, which v0.4 does not publish for Intel macOS)"
+  say "  (tunneling needs a -live build, which is not published for Intel macOS)"
 fi

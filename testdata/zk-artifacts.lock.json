@@ -98,7 +98,7 @@
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "testdata/gen-withdraw-proof.mjs",
-        "client-side exit-auth proving (not wired: no client command yet)"
+        "rust/shade-tree-rln/src/withdraw.rs (exit-member / withdraw-member)"
       ]
     },
     "circuits/rln/withdraw_final.zkey": {
@@ -108,7 +108,8 @@
       "bytes": 188217,
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
-        "testdata/gen-withdraw-proof.mjs"
+        "testdata/gen-withdraw-proof.mjs",
+        "rust/shade-tree-rln/src/withdraw.rs"
       ]
     },
     "circuits/rln/withdraw_verification_key.json": {
@@ -118,7 +119,8 @@
       "bytes": 3103,
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
-        "testdata/gen-withdraw-proof.mjs (local verify)"
+        "testdata/gen-withdraw-proof.mjs (local verify)",
+        "rust/shade-tree-rln/src/withdraw.rs (self-verify)"
       ]
     },
     "contracts/WithdrawGroth16Verifier.sol": {

@@ -59,6 +59,32 @@ pub fn derive_identity(secret: &str, limit: u64) -> Result<IdentityMaterial, Str
     })
 }
 
+/// Recompute a tiered public leaf from an identity file's already-derived
+/// `identitySecret`. This is the registration/import guard: a malformed or
+/// mismatched bearer file must fail before a wallet or public RPC is touched.
+pub fn commitment_from_identity_secret(
+    identity_secret: &str,
+    limit: u64,
+) -> Result<String, String> {
+    if limit == 0 || limit > u16::MAX as u64 {
+        return Err(format!("limit must be in 1..={}", u16::MAX));
+    }
+    let value = identity_secret.trim();
+    if value.is_empty()
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+        || (value.len() > 1 && value.starts_with('0'))
+    {
+        return Err("identitySecret must be a canonical unsigned decimal field element".into());
+    }
+    let parsed = BigUint::parse_bytes(value.as_bytes(), 10)
+        .ok_or_else(|| "identitySecret is not a decimal field element".to_string())?;
+    let field = BigUint::parse_bytes(FIELD.as_bytes(), 10).expect("BN254 field constant");
+    if parsed == BigUint::from(0_u8) || parsed >= field {
+        return Err("identitySecret is outside the non-zero BN254 field".into());
+    }
+    Ok(fr_to_dec(&rate_commitment(Fr::from(parsed), limit)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,5 +107,17 @@ mod tests {
             tiered.leaf,
             "8531432642199005327621956115945513784566419842920753480654713473814300694991"
         );
+    }
+
+    #[test]
+    fn imported_identity_secret_recomputes_the_public_tier_leaf() {
+        let material = derive_identity(&format!("0x{}", "5a".repeat(32)), 1).unwrap();
+        assert_eq!(
+            commitment_from_identity_secret(&material.identity_secret, material.limit).unwrap(),
+            material.leaf
+        );
+        assert!(commitment_from_identity_secret("0", 1).is_err());
+        assert!(commitment_from_identity_secret("01", 1).is_err());
+        assert!(commitment_from_identity_secret(FIELD, 1).is_err());
     }
 }

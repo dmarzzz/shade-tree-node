@@ -10,3 +10,4 @@ pub mod artifacts;
 pub mod identity;
 pub mod prover;
 pub mod tree;
+pub mod withdraw;

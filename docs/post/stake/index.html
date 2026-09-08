@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Create a private Shade Tree identity locally and stake 0.1 Sepolia ETH for anonymous, proof-gated Grove access.">
+  <meta name="theme-color" content="#07100c">
+  <meta property="og:title" content="Private Sepolia Staking · Shade Tree Grove">
+  <meta property="og:description" content="Create the member secret locally, save its recovery file, and send only the public commitment to Sepolia.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://shade-tree-node.vercel.app/stake/">
+  <meta property="og:site_name" content="Shade Tree Grove">
+  <meta property="og:image" content="https://shade-tree-node.vercel.app/fig/shade-tree-og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="A low-poly grove crossed by a private data path">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://shade-tree-node.vercel.app/stake/">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../site.css">
+  <link rel="stylesheet" href="./stake.css">
+  <script type="module" src="./stake.js"></script>
+  <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"WebApplication","name":"Shade Tree private staking","url":"https://shade-tree-node.vercel.app/stake/","applicationCategory":"FinanceApplication","operatingSystem":"Web browser"}
+  </script>
+  <title>Private Sepolia Staking · Shade Tree Grove</title>
+</head>
+<body class="stake-page">
+  <a class="skip-link" href="#staking">Skip to staking</a>
+  <nav class="site-nav" aria-label="Primary navigation">
+    <a class="wordmark" href="../index.html" aria-label="Shade Tree Grove home">
+      <span class="tree-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>Shade Tree Grove</span>
+    </a>
+    <div class="nav-links">
+      <a href="../agent/index.html">Agents</a>
+      <a href="../grove/index.html">Grove</a>
+      <a href="../research/index.html">Research</a>
+      <a href="https://github.com/dmarzzz/shade-tree-node">Source</a>
+    </div>
+  </nav>
+
+  <main id="staking" class="stake-main">
+    <header class="stake-intro">
+      <p class="stake-eyebrow">Public Sepolia · base tier</p>
+      <h1>Stake without giving us an identity.</h1>
+      <p>Create a bearer credential in this tab, keep its recovery file, and put only its public commitment on chain. The Grove never receives the secret.</p>
+      <div class="mode-switch" aria-label="Choose a staking role">
+        <button type="button" data-mode="member" aria-pressed="true">I’m joining</button>
+        <button type="button" data-mode="sponsor" aria-pressed="false">I’m sponsoring</button>
+      </div>
+    </header>
+
+    <aside class="privacy-ledger" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">What each party learns</h2>
+      <dl>
+        <div><dt>This page</dt><dd>Generates and validates locally. No identity API exists.</dd></div>
+        <div><dt>Your wallet / RPC</dt><dd>Sees your address, public commitment, 0.1 ETH, and timing.</dd></div>
+        <div><dt>The Grove</dt><dd>Later sees a valid anonymous membership proof, not which leaf made it.</dd></div>
+      </dl>
+      <p>Loading any website can expose your IP to its host. This static page never sends the commitment or recovery file to the Shade Tree server.</p>
+    </aside>
+
+    <section class="stake-trail" data-member-steps aria-label="Member staking steps">
+      <article class="stake-step">
+        <span class="trail-number" aria-hidden="true">1</span>
+        <h2>Create locally</h2>
+        <p>Use fresh operating-system randomness, or reopen an identity you already saved. Imported files are read only by this tab.</p>
+        <div class="button-row">
+          <button class="solid-action" type="button" data-create-identity>create identity</button>
+          <button class="line-action" type="button" data-import-identity>import identity</button>
+          <input type="file" accept="application/json,.json" data-identity-file hidden>
+        </div>
+        <div class="leaf-tag" data-leaf-tag data-ready="false">
+          <span>Public commitment</span>
+          <output data-leaf>Generate or import an identity to reveal its public leaf.</output>
+        </div>
+      </article>
+
+      <article class="stake-step">
+        <span class="trail-number" aria-hidden="true">2</span>
+        <h2>Save the bearer file</h2>
+        <p>The Rust client reads this file directly. Whoever has it can use the membership and authorize its eventual exit.</p>
+        <div class="button-row">
+          <button class="solid-action" type="button" data-download-identity disabled>download identity.json</button>
+          <button class="line-action" type="button" data-copy-leaf disabled>copy public commitment</button>
+        </div>
+        <label class="recovery-check"><input type="checkbox" data-recovery-check disabled> I saved the file somewhere private and recoverable.</label>
+        <p class="plain-warning">The download is plaintext. Keep it on an encrypted device or in a secret vault; do not email or paste it into chat.</p>
+      </article>
+
+      <article class="stake-step transaction-step">
+        <span class="trail-number" aria-hidden="true">3</span>
+        <h2>Stake on Sepolia</h2>
+        <p>The wallet sends exactly <strong>0.1 Sepolia ETH</strong> to the pinned tier-1 contract. Gas is additional.</p>
+        <p class="contract-line"><span>Contract</span><a href="https://sepolia.etherscan.io/address/0xEB67Abf066c11D78856BccC63476ed14d51e4275">0xEB67…4275</a></p>
+        <div class="button-row">
+          <button class="line-action" type="button" data-connect-wallet>connect wallet</button>
+          <button class="solid-action" type="button" data-stake disabled>stake 0.1 Sepolia ETH</button>
+        </div>
+        <p class="wallet-state" data-wallet>No wallet connected</p>
+      </article>
+    </section>
+
+    <section class="sponsor-panel" data-sponsor-step hidden aria-labelledby="sponsor-title">
+      <div>
+        <p class="stake-eyebrow">Secret-free handoff</p>
+        <h2 id="sponsor-title">Stake someone else’s public commitment.</h2>
+        <p>Ask the member or agent for its decimal commitment only. The contract permits any wallet to fund it, while only the secret holder can prove as that member or authorize withdrawal.</p>
+        <label for="sponsor-leaf">Public commitment</label>
+        <textarea id="sponsor-leaf" data-sponsor-leaf rows="3" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Decimal field element"></textarea>
+      </div>
+      <div class="sponsor-action">
+        <p><strong>Know the tradeoff:</strong> your wallet, amount, commitment, and timing are public. The member controls the bearer credential and can choose the eventual refund recipient. Misuse can slash your sponsored bond.</p>
+        <div class="button-row">
+          <button class="line-action" type="button" data-connect-wallet>connect wallet</button>
+          <button class="solid-action" type="button" data-stake disabled>stake this commitment</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="stake-feedback" role="status" aria-live="polite">
+      <p data-status>Member mode: the identity stays in this tab until you download it.</p>
+      <p data-receipt hidden>Transaction: <a data-receipt-link href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">view</a></p>
+    </div>
+
+    <section class="agent-handoff" aria-labelledby="agent-handoff-title">
+      <div>
+        <p class="stake-eyebrow">For agents and terminals</p>
+        <h2 id="agent-handoff-title">The same boundary, without a browser.</h2>
+        <p>The live Rust binary creates an owner-only identity file, prints only the public leaf, and signs locally from an owner-only key file. Contract, RPC, tier, and bond come from the same bundled Sepolia record.</p>
+      </div>
+      <pre tabindex="0" aria-label="Agent staking commands"><code>shade-tree enroll --out identity.json
+shade-tree register-member --identity identity.json \
+  --key-file funded-sepolia.key
+shade-tree member-status --identity identity.json --json
+shade-tree proxy --identity identity.json</code></pre>
+      <a class="line-action" href="../agent/index.html">complete agent setup</a>
+    </section>
+
+    <section class="stake-boundary" aria-labelledby="boundary-title">
+      <h2 id="boundary-title">Honest boundary</h2>
+      <p>This buys one new HTTPS tunnel per fixed 60-second epoch, capped at 40 MiB combined traffic. Registration becomes usable after Sepolia finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. The Rust client can later initiate a private, proof-authorized exit and return the testnet bond to a fresh recipient after 24 hours. The current contracts and proof setup are untrusted testnet research artifacts—never use mainnet ETH or sensitive traffic.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Research preview</span>
+    <nav aria-label="Project links">
+      <a href="../index.html">Home</a>
+      <a href="../agent/index.html">Agent guide</a>
+      <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/PUBLIC-STAKING.md">Protocol parameters</a>
+    </nav>
+  </footer>
+</body>
+</html>

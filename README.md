@@ -59,21 +59,22 @@ shade-tree --version
 Automatic mode first tries the selected release's self-contained `-live` agent
 and falls back to its verifier-only binary only when that live asset is absent.
 On Apple Silicon it detects Rosetta shells and still selects the native arm64
-live build. Intel macOS has only the v0.5 verifier binary. Pin v0.5.0 with
-`... | SHADE_TREE_VERSION=v0.5.0 sh`, or read the
+live build. Intel macOS has only the verifier binary. Pin v0.6.0 with
+`... | SHADE_TREE_VERSION=v0.6.0 sh`, or read the
 [installer options and manual verification steps](rust/INSTALL.md). Checksums
 provide transfer integrity; GitHub attestations provide the stronger build
 provenance check.
 
 The bundled Sepolia Grove defaults to public staked tier 1: 0.1 Sepolia ETH buys
 one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload
-ceiling. Create an owner-only identity locally, then register only its printed
-public leaf with a separately funded testnet wallet:
+ceiling. Create an owner-only identity locally, then let the client verify and
+register its public leaf with a separately funded testnet wallet:
 
 ```bash
-shade-tree enroll --out identity.json > leaf.txt
+shade-tree enroll --out identity.json
 chmod 600 funded-sepolia.key
-shade-tree register-member "$(cat leaf.txt)" --key-file funded-sepolia.key
+shade-tree register-member --identity identity.json --key-file funded-sepolia.key
+shade-tree member-status --identity identity.json --json
 ```
 
 `enroll` generates identity material; it does not add the leaf to a Grove.
@@ -108,6 +109,19 @@ can use the `shade-tree-egress` crate; JavaScript applications can import
 [`ShadeTreeClient`](docs/SDK.md). The exact public semantics and their non-atomic
 cross-gateway caveat are recorded in
 [`docs/PUBLIC-STAKING.md`](docs/PUBLIC-STAKING.md).
+
+The same live binary can reclaim an unslashed bond without revealing the identity secret:
+
+```bash
+shade-tree exit-member --identity identity.json --key-file gas.key
+# Wait until `member-status` reports its withdrawal time has passed.
+shade-tree withdraw-member --identity identity.json \
+  --recipient 0xFRESH_SEPOLIA_ADDRESS --key-file gas.key
+```
+
+The gas payer may be unrelated to both the original funder and recipient. Each action is authorized
+by a locally generated Groth16 proof; only the public commitment and action-bound proof reach the
+chain.
 
 ## How it works
 

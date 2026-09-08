@@ -79,6 +79,9 @@ shade-tree proxy-token …       # requires --features live; generates local Pro
 shade-tree enroll …            # requires --features live; creates a new identity
 shade-tree identity …          # requires --features live; derives from an existing secret
 shade-tree register-member …   # requires --features live; stakes a public leaf on chain
+shade-tree member-status …     # requires --features live; reads bond/exit state
+shade-tree exit-member …       # requires --features live; local ZK exit authorization
+shade-tree withdraw-member …   # requires --features live; private refund to a recipient
 shade-tree leaves …            # requires --features live; reconstructs an on-chain set
 shade-tree egress …            # requires --features live
 shade-tree proxy …             # requires --features live
@@ -130,13 +133,16 @@ from the contract, signs locally, broadcasts only the signed EIP-1559
 transaction, and waits for a successful receipt:
 
 ```sh
-leaf="$(shade-tree enroll --limit 1 --out identity.json)"
+shade-tree enroll --limit 1 --out identity.json
 chmod 600 funded-sepolia.key
-shade-tree register-member "$leaf" --key-file funded-sepolia.key
+shade-tree register-member --identity identity.json --key-file funded-sepolia.key
+shade-tree member-status --identity identity.json --json
 ```
 
-The public identity leaf is derived at limit 1 explicitly; `register-member`
-reads the bundled profile's matching `defaultLimit=1` when `--limit` is omitted.
+`register-member --identity` recomputes the public leaf from the secret and tier
+before its first network request. The public identity leaf is derived at limit 1
+explicitly; `register-member` reads the bundled profile's matching `defaultLimit=1`
+when `--limit` is omitted.
 For a custom Grove, pass its tier explicitly to both commands—the enrolled and
 registered limits must match.
 
@@ -147,6 +153,20 @@ and a missing key fails before the first public RPC request. Explicit
 `SHADE_TREE_RPC_URL`) select another Grove. If receipt lookup fails after
 broadcast, the command retains the locally computed transaction hash in its
 error and requires checking that hash before retrying.
+
+The same private file authorizes a complete exit without revealing its secret:
+
+```sh
+shade-tree exit-member --identity identity.json --key-file gas.key
+shade-tree member-status --identity identity.json
+shade-tree withdraw-member --identity identity.json \
+  --recipient 0xFRESH_SEPOLIA_ADDRESS --key-file gas.key
+```
+
+Each action creates and locally verifies a fresh Groth16 proof, checks chain and
+contract bytecode, reads current member state, simulates the exact call, and signs
+locally. The withdrawal proof binds its recipient. Any separately funded wallet
+can pay gas; it need not be the registration payer or refund recipient.
 
 With no transport or explicit membership source, dynamic discovery uses the
 current v4 Sepolia Elder, signer, staked contract, RPC, deployment block,

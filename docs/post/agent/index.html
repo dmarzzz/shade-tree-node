@@ -50,6 +50,7 @@
     </a>
     <div class="nav-links">
       <a href="/operator/">Operators</a>
+      <a href="/stake/">Stake</a>
       <a href="/grove/">Grove</a>
       <a href="/research/">Research</a>
       <a href="https://github.com/dmarzzz/shade-tree-node">Source</a>
@@ -60,29 +61,30 @@
     <header class="guide-intro">
       <h1>Add Shade Tree Grove to an agent.</h1>
       <p>Install one verified Rust binary, start its embedded-Arti Proxy, then give that route to one agent process.</p>
-      <p class="guide-status"><strong>Research preview.</strong> v0.5.0 bundles the public Sepolia tier-1 profile. A 0.1 Sepolia ETH stake admits one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload ceiling.</p>
+      <p class="guide-status"><strong>Research preview.</strong> v0.6.0 bundles the public Sepolia tier-1 profile and private member exit. A 0.1 Sepolia ETH stake admits one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload ceiling.</p>
     </header>
 
     <div class="guide-steps">
       <section class="guide-step" aria-labelledby="agent-install">
         <h2 id="agent-install">1. Download and verify</h2>
-        <p>The installer detects the platform, downloads the matching v0.5.0 <code>-live</code> binary and checksum, verifies both digest and filename, and installs into <code>~/.local/bin</code>. The binary includes the Proxy, RLN prover, and Arti; the agent machine needs neither Node.js nor a system Tor daemon.</p>
-        <div class="command" aria-label="Install the Shade Tree Grove v0.5.0 live binary">
-          <code>curl -q -fsSL --proto '=https' --proto-redir '=https' \<br>&nbsp;&nbsp;https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \<br>&nbsp;&nbsp;| SHADE_TREE_VERSION=v0.5.0 sh<br>shade-tree --version</code>
-          <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' \&#10;  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \&#10;  | SHADE_TREE_VERSION=v0.5.0 sh&#10;shade-tree --version" aria-label="Copy v0.5.0 live binary installation commands">copy</button>
+        <p>The installer detects the platform, downloads the matching v0.6.0 <code>-live</code> binary and checksum, verifies both digest and filename, and installs into <code>~/.local/bin</code>. The binary includes the Proxy, RLN prover, private member lifecycle, and Arti; the agent machine needs neither Node.js nor a system Tor daemon.</p>
+        <div class="command" aria-label="Install the Shade Tree Grove v0.6.0 live binary">
+          <code>curl -q -fsSL --proto '=https' --proto-redir '=https' \<br>&nbsp;&nbsp;https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \<br>&nbsp;&nbsp;| SHADE_TREE_VERSION=v0.6.0 sh<br>shade-tree --version</code>
+          <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' \&#10;  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \&#10;  | SHADE_TREE_VERSION=v0.6.0 sh&#10;shade-tree --version" aria-label="Copy v0.6.0 live binary installation commands">copy</button>
         </div>
-        <p>Intel macOS has no prebuilt live tunnel in v0.5.0. The macOS binary is checksummed and attested but not yet notarized. The <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/rust/INSTALL.md">Rust installation guide</a> lists published targets, manual checksum and attestation verification, and source builds.</p>
+        <p>Intel macOS has no prebuilt live tunnel. The macOS binary is checksummed and attested but not yet notarized. The <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/rust/INSTALL.md">Rust installation guide</a> lists published targets, manual checksum and attestation verification, and source builds.</p>
       </section>
 
       <section class="guide-step" aria-labelledby="agent-profile">
         <h2 id="agent-profile">2. Create an identity and stake</h2>
-        <p>The bundled public profile creates a tier-1 identity. Fund a separate key file with 0.1 Sepolia ETH plus gas; registration signs locally and submits only the signed transaction.</p>
+        <p>The bundled public profile creates a tier-1 identity. For a wallet-guided flow, use the <a href="/stake/">private staking page</a>: the identity is generated in that tab, downloaded locally, and never uploaded. Agents can instead fund a separate key file with 0.1 Sepolia ETH plus gas; registration signs locally and submits only the signed transaction.</p>
         <div class="command" aria-label="Create a local Shade Tree identity">
-          <code>shade-tree enroll --out identity.json &gt; public-leaf.txt<br>chmod 600 funded-sepolia.key<br>shade-tree register-member "$(cat public-leaf.txt)" --key-file funded-sepolia.key</code>
-          <button class="copy-command" type="button" data-copy="shade-tree enroll --out identity.json &gt; public-leaf.txt&#10;chmod 600 funded-sepolia.key&#10;shade-tree register-member &quot;$(cat public-leaf.txt)&quot; --key-file funded-sepolia.key" aria-label="Copy identity enrollment and staking commands">copy</button>
+          <code>shade-tree enroll --out identity.json<br>chmod 600 funded-sepolia.key<br>shade-tree register-member --identity identity.json --key-file funded-sepolia.key<br>shade-tree member-status --identity identity.json --json</code>
+          <button class="copy-command" type="button" data-copy="shade-tree enroll --out identity.json&#10;chmod 600 funded-sepolia.key&#10;shade-tree register-member --identity identity.json --key-file funded-sepolia.key&#10;shade-tree member-status --identity identity.json --json" aria-label="Copy identity enrollment and staking commands">copy</button>
         </div>
         <p><code>identity.json</code> contains the member secret and stays local. The staking wallet address, public leaf, amount, and timing are public. Never post the identity, funded key, member secret, or Proxy token. Alternate invited or paid Groves still require their operator's exact tier and membership input.</p>
         <p>The profile uses untrusted testnet proof artifacts and is not suitable for real funds or sensitive traffic. See the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/PUBLIC-STAKING.md">exact protocol parameters</a> and ask for help in <a href="https://github.com/dmarzzz/shade-tree-node/discussions">GitHub Discussions</a>.</p>
+        <p>To leave, run <code>shade-tree exit-member --identity identity.json --key-file gas.key</code>. After <code>member-status</code> reports that the 24-hour unbonding time has passed, reclaim to a fresh address with <code>shade-tree withdraw-member --identity identity.json --recipient 0x… --key-file gas.key</code>. The proof is generated locally and the gas wallet may be unrelated to the original funder.</p>
       </section>
 
       <section class="guide-step" aria-labelledby="agent-start">

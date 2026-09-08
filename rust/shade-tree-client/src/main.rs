@@ -25,6 +25,8 @@ mod health;
 #[cfg(feature = "live")]
 mod leaves;
 #[cfg(feature = "live")]
+mod member;
+#[cfg(feature = "live")]
 mod register;
 mod run;
 // The crash-safe K-slot coordinator is used by the `live` egress path; its unit
@@ -715,13 +717,33 @@ SUBCOMMANDS:
         precedence is --limit, SHADE_TREE_LIMIT, then bundled staked defaultLimit.
         Requires a --features live build.
 
-    register-member <commitment> [--limit <n>] [--contract <0xaddress>]
+    register-member [<commitment> | --identity <identity.json>] [--limit <n>] [--contract <0xaddress>]
                     [--rpc-url <url>] [--key-file <owner-only-file>]
         Stake a public RLN leaf natively, signing the EIP-1559 transaction locally.
+        --identity verifies and uses the file's matching public leaf + exact tier,
+        keeping its identitySecret local and eliminating a manual leaf handoff.
         Contract, RPC, and --limit default to the bundled live Sepolia staking
         profile (public defaultLimit=1). The funding key comes only from --key-file
         or SHADE_TREE_REGISTER_KEY (never a raw-key argument) and is never sent to
         the RPC. Requires a --features live build.
+
+    member-status --identity <identity.json> [--json]
+                  [--contract <0xaddress>] [--rpc-url <url>]
+        Report whether the identity's verified public leaf is absent, active, or
+        exiting, including its tier, bond, and withdrawal time. Requires live.
+
+    exit-member --identity <identity.json> [--key-file <owner-only-file>]
+                [--contract <0xaddress>] [--rpc-url <url>]
+        Build a Groth16 proof of identity ownership locally, remove the leaf from
+        admission, and begin unbonding. The identity secret never leaves the process.
+        A separate gas wallet is allowed. Requires live.
+
+    withdraw-member --identity <identity.json> --recipient <0xaddress>
+                    [--key-file <owner-only-file>] [--contract <0xaddress>]
+                    [--rpc-url <url>]
+        After unbonding, build a fresh local proof bound to the exact recipient and
+        reclaim the bond. The sender/gas wallet need not be the funding or recipient
+        wallet. Requires live.
 
     leaves --contract <0xaddress> [--rpc-url <url>] [--from-block <n>]
            [--block-tag latest|finalized] [--out <f>]
@@ -1232,6 +1254,25 @@ fn cmd_register_member(args: &[String]) -> ExitCode {
     {
         let _ = args;
         eprintln!("register-member: requires a --features live build");
+        ExitCode::from(3)
+    }
+}
+
+fn cmd_member(action: &str, args: &[String]) -> ExitCode {
+    #[cfg(feature = "live")]
+    {
+        let action = match action {
+            "member-status" => member::Action::Status,
+            "exit-member" => member::Action::Exit,
+            "withdraw-member" => member::Action::Withdraw,
+            _ => unreachable!(),
+        };
+        member::cmd_member(action, args)
+    }
+    #[cfg(not(feature = "live"))]
+    {
+        let _ = (action, args);
+        eprintln!("{action}: requires a --features live build");
         ExitCode::from(3)
     }
 }
@@ -3213,6 +3254,7 @@ fn main() -> ExitCode {
         "verify-receipt" => cmd_verify_receipt(rest),
         "enroll" => cmd_enroll(rest),
         "register-member" => cmd_register_member(rest),
+        "member-status" | "exit-member" | "withdraw-member" => cmd_member(sub, rest),
         "proxy-token" => cmd_proxy_token(rest),
         "identity" => cmd_identity(rest),
         "leaves" => cmd_leaves(rest),

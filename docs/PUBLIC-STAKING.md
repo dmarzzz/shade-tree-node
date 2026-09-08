@@ -52,20 +52,32 @@ close with reason `payload-limit`.
 
 ## Member flow
 
-The JavaScript CLI uses the bundled live Sepolia record by default:
+The privacy-first browser flow is available at
+[shade-tree-node.vercel.app/stake](https://shade-tree-node.vercel.app/stake/). It generates the
+identity entirely in the tab, requires a plaintext recovery download before staking, and calls the
+pinned contract through the user's injected wallet. The static page has no identity or commitment
+API and stores neither in browser storage. Loading any website can still expose an IP address to its
+host, and the injected wallet/RPC sees the public transaction.
+
+For agents and terminals, the released Rust client uses the bundled live Sepolia record by default:
 
 ```bash
-shade-tree enroll --commitment-only
-# Store the secret privately, then fund a separate registration wallet with 0.1 ETH + gas.
-read -s SHADE_TREE_REGISTER_KEY && export SHADE_TREE_REGISTER_KEY
-shade-tree register-member <commitment>
-unset SHADE_TREE_REGISTER_KEY
-shade-tree proxy
+shade-tree enroll --out identity.json
+chmod 600 funded-sepolia.key
+shade-tree register-member --identity identity.json --key-file funded-sepolia.key
+shade-tree member-status --identity identity.json --json
+shade-tree proxy --identity identity.json
 ```
 
-The Rust client provides the same native `enroll`, `register-member`, and proxy/egress path. Both
-clients read the Elder, signer, current staking contract, RPC, deployment block, tier, and rate
-policy from the bundled deployment record. Explicit flags and environment variables still win.
+`register-member --identity` validates that the private secret, public leaf, and exact tier match
+before the first RPC call. The file stays local; the locally signed registration transaction contains
+only its already-public leaf and tier. The payer can instead sponsor an agent by registering only the
+agent's public decimal leaf, but the sponsor bears the slashing risk and does not control the later
+refund.
+
+The JavaScript SDK and Rust client both read the Elder, signer, current staking contract, RPC,
+deployment block, tier, and rate policy from the bundled deployment record. Explicit flags and
+environment variables still win.
 
 Membership proofs use the finalized Sepolia tree by default, matching the gateways' pinned root
 snapshot. A newly mined registration is therefore not usable until its block is finalized; this
@@ -77,6 +89,31 @@ secret stays local. Use a separately funded wallet when address-graph separation
 
 The second local allocation in one epoch fails with
 `SHADE_TREE_EPOCH_BUDGET_EXHAUSTED`; the client does not intentionally manufacture slash evidence.
+
+## Exit and recovery
+
+The identity file is the recovery credential. Losing it makes the stake unrecoverable; anyone who
+obtains it can use the membership and choose the eventual refund recipient. Keep it in encrypted,
+recoverable storage.
+
+The live Rust binary implements the complete ZK-authorized lifecycle:
+
+```bash
+# Any separately funded Sepolia wallet may pay gas; it need not be the staking wallet.
+shade-tree exit-member --identity identity.json --key-file gas.key
+shade-tree member-status --identity identity.json
+
+# After the reported 24-hour unbonding deadline:
+shade-tree withdraw-member --identity identity.json \
+  --recipient 0xFRESH_RECIPIENT --key-file gas.key
+```
+
+Both actions create a fresh Groth16 proof locally. The exit proof removes the leaf from admission and
+starts the clock. The withdrawal proof is bound to the exact recipient, so a captured transaction
+cannot redirect the refund. The identity secret is never sent to the RPC or written into calldata.
+The public commitment necessarily links registration, exit, and withdrawal as one pseudonymous
+membership; a fresh payer and fresh recipient separate the surrounding address graph, not those
+public lifecycle events. The bond remains slashable throughout unbonding.
 
 ## Operator invariants
 

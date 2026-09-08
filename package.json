@@ -1,6 +1,6 @@
 {
   "name": "shade-tree-node",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Run a local proxy for an agent, or a node that provides proof-gated onion egress.",
   "engines": {
     "node": ">=20"
@@ -53,6 +53,7 @@
     "test:contracts": "forge test && npm run test:bytecode-manifest",
     "test:bytecode-manifest": "forge build --force --libraries contracts/PoseidonT2.sol:PoseidonT2:0xB511DF6e75870247911cbd2EFC5830928AE49152 --libraries contracts/PoseidonT3.sol:PoseidonT3:0x16d11F36b218eb7CfC5f087d9910AC35C8089aff && node deploy/v4/check-bytecode-manifest.mjs",
     "site:serve": "node scripts/serve-site.mjs",
+    "site:build:stake": "node scripts/build-stake-site.mjs",
     "site:lighthouse": "npx --yes @lhci/cli@0.15.1 autorun",
     "lint": "eslint .",
     "audit:ci": "npm audit --omit=dev --audit-level=high",
@@ -74,6 +75,7 @@
     "@semaphore-protocol/proof": "^4.14.3",
     "@stryker-mutator/core": "^10.0.0",
     "c8": "^12.0.0",
+    "esbuild": "^0.25.9",
     "eslint": "^10.9.1",
     "globals": "^17.11.0"
   },
