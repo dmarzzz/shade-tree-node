@@ -146,7 +146,10 @@ contract PaidAccessSetFuzzTest is FuzzBase {
             uint256 secret = 1_000 + (r % 6);
             uint256 limit = (r >> 8) % 2 == 0 ? 8 : 32;
             uint256 leaf = hasher.commitmentOf(secret, limit);
-            if (set.limitOf(leaf) == 0) {
+            if (set.burned(leaf)) {
+                // slashed => burned in the paid set; do not re-insert in EITHER set so the
+                // two trees stay in lockstep (the staked ref set has no burned set of its own).
+            } else if (set.limitOf(leaf) == 0) {
                 set.insert(leaf, limit);
                 ref.register{value: ref.bondFor(limit)}(leaf, limit);
                 inserts++;

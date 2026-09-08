@@ -175,8 +175,8 @@ contract PaidAccessSetTest is Cheats {
     }
 
     /// Duplicate policy: a LIVE commitment cannot be inserted twice (the leaf already buys an
-    /// ongoing budget), a SLASHED one may be re-inserted and gets a fresh index (zero-in-place
-    /// never reuses the vacated slot).
+    /// ongoing budget), and a SLASHED one is BURNED — it can never be inserted again, because the
+    /// slash revealed its identitySecret and the leaf is spendable-to-zero by anyone.
     function test_Insert_DuplicatePolicy() public {
         _insert(LEAF_A_8, 8);
         vm.prank(OPERATOR);
@@ -187,14 +187,44 @@ contract PaidAccessSetTest is Cheats {
         set.insert(LEAF_A_8, 32); // even at another tier
         assertEq(set.leafCount(), 1);
 
-        _insert(LEAF_B_32, 32);                    // index 1
-        set.slash(LEAF_A_8, SECRET_A, 8, RECEIVER); // zero @0
+        _insert(LEAF_B_32, 32);                     // index 1
+        set.slash(LEAF_A_8, SECRET_A, 8, RECEIVER); // zero @0; burns LEAF_A_8
         assertEq(set.limitOf(LEAF_A_8), 0);
-        _insert(LEAF_A_8, 8);                       // re-insert: appends at 2
-        (uint64 idx,) = set.leaves(LEAF_A_8);
-        assertEq(uint256(idx), 2, "re-insert appends at a FRESH index, not the vacated 0");
-        assertEq(set.leafCount(), 3);
-        assertEq(set.liveCount(), 2);
+        assertTrue(set.burned(LEAF_A_8), "a slashed commitment is burned");
+        vm.prank(OPERATOR);
+        vm.expectRevert(PaidAccessSet.BurnedCommitment.selector);
+        set.insert(LEAF_A_8, 8);                    // a slashed leaf can never be re-inserted
+        assertEq(set.leafCount(), 2, "no fresh leaf appended for a burned commitment");
+        assertEq(set.liveCount(), 1, "only B_32 remains live");
+    }
+
+    /// Once a commitment is slashed its identitySecret is public (that reveal is how the leaf
+    /// was zeroed), so the leaf is spendable-to-zero by anyone. A slashed commitment is BURNED and
+    /// can never be admitted again — via insert or insertBatch, at its old tier or any other.
+    function test_SlashedCommitment_CannotBeReinserted() public {
+        _insert(LEAF_A_8, 8);                        // index 0
+        set.slash(LEAF_A_8, SECRET_A, 8, RECEIVER);  // secret now public
+        assertEq(set.limitOf(LEAF_A_8), 0, "slashed leaf is not live");
+        assertTrue(set.burned(LEAF_A_8), "slashed commitment is burned");
+
+        vm.prank(OPERATOR);
+        vm.expectRevert(PaidAccessSet.BurnedCommitment.selector);
+        set.insert(LEAF_A_8, 8);                      // same tier
+        vm.prank(OPERATOR);
+        vm.expectRevert(PaidAccessSet.BurnedCommitment.selector);
+        set.insert(LEAF_A_8, 32);                     // and any other tier
+
+        // a batch that contains the burned commitment reverts the whole round (all-or-nothing)
+        uint256[] memory c = new uint256[](2);
+        uint256[] memory l = new uint256[](2);
+        c[0] = LEAF_B_32; l[0] = 32;
+        c[1] = LEAF_A_8;  l[1] = 8;
+        vm.prank(OPERATOR);
+        vm.expectRevert(PaidAccessSet.BurnedCommitment.selector);
+        set.insertBatch(c, l);
+
+        assertEq(set.leafCount(), 1, "no new leaf appended");
+        assertEq(set.liveCount(), 0, "still nothing live");
     }
 
     function test_InsertBatch_AllOrNothing_EmitsPerLeaf() public {
@@ -220,39 +250,33 @@ contract PaidAccessSetTest is Cheats {
         assertEq(set.currentRoot(), EMPTY_ROOT);
         l[2] = 8;
         // a live duplicate inside the batch reverts it too
-        _insert(LEAF_D_32, 32);
+        _insert(LEAF_A_8, 8);                         // A8 (a batch leaf) live at index 0
         vm.prank(OPERATOR);
         vm.expectRevert(PaidAccessSet.AlreadyInserted.selector);
         set.insertBatch(c, l);
-        set.slash(LEAF_D_32, SECRET_D, 32, RECEIVER); // vacate index 0
         assertEq(set.leafCount(), 1);
+        // A slashed leaf is BURNED, so a live batch leaf cannot be "vacated" and re-batched;
+        // the good-batch case is proven on a fresh set (indices 0..3) just below.
 
-        // the good batch: four Inserted events, indices 1..4 in array order, root == JS golden
-        // for [zero, A8, B32, C8, D32]? no — assert per-step against a fresh set below; here
-        // just the events + indices.
-        vm.prank(OPERATOR);
-        vm.expectEmit(true, false, false, false);
-        emit Inserted(LEAF_A_8, 8, 1, 0);
-        vm.expectEmit(true, false, false, false);
-        emit Inserted(LEAF_B_32, 32, 2, 0);
-        vm.expectEmit(true, false, false, false);
-        emit Inserted(LEAF_C_8, 8, 3, 0);
-        vm.expectEmit(true, false, false, false);
-        emit Inserted(LEAF_D_32, 32, 4, 0);
-        set.insertBatch(c, l);
-        assertEq(set.leafCount(), 5);
-        assertEq(set.liveCount(), 4);
-        (uint64 iA,) = set.leaves(LEAF_A_8);
-        (uint64 iD,) = set.leaves(LEAF_D_32);
-        assertEq(uint256(iA), 1);
-        assertEq(uint256(iD), 4);
-
-        // batch == the same singles: a fresh set batched matches the JS golden ROOT_ABCD
+        // the good batch on a fresh set: four Inserted events, indices 0..3 in array order, and the
+        // root equals the JS golden newGroup([A8,B32,C8,D32]).root.
         PaidAccessSet fresh = _newSet(_table());
         vm.prank(OPERATOR);
         vm.expectEmit(true, false, false, true);
-        emit Inserted(LEAF_A_8, 8, 0, ROOT_A8); // first event carries the root after leaf 0
+        emit Inserted(LEAF_A_8, 8, 0, ROOT_A8);       // first event carries the root after leaf 0
+        vm.expectEmit(true, false, false, false);
+        emit Inserted(LEAF_B_32, 32, 1, 0);
+        vm.expectEmit(true, false, false, false);
+        emit Inserted(LEAF_C_8, 8, 2, 0);
+        vm.expectEmit(true, false, false, false);
+        emit Inserted(LEAF_D_32, 32, 3, 0);
         fresh.insertBatch(c, l);
+        assertEq(fresh.leafCount(), 4);
+        assertEq(fresh.liveCount(), 4);
+        (uint64 iA,) = fresh.leaves(LEAF_A_8);
+        (uint64 iD,) = fresh.leaves(LEAF_D_32);
+        assertEq(uint256(iA), 0);
+        assertEq(uint256(iD), 3);
         assertEq(fresh.currentRoot(), ROOT_ABCD, "batch root == newGroup([A8,B32,C8,D32]).root");
     }
 
@@ -416,10 +440,13 @@ contract PaidAccessSetTest is Cheats {
         staked.slash(LEAF_B_32, SECRET_B, 32, RECEIVER);
         set.slash(LEAF_B_32, SECRET_B, 32, RECEIVER);
         assertEq(staked.currentRoot(), set.currentRoot(), "roots equal after slash-middle");
-        staked.register{value: staked.bondFor(32)}(LEAF_B_32, 32);
-        _insert(LEAF_B_32, 32);
-        (, uint64 si,,) = staked.members(LEAF_B_32);
-        (uint64 pi,) = set.leaves(LEAF_B_32);
+        // Re-append a FRESH leaf at index 4 (B32 is now burned in the paid set, so it cannot
+        // be re-inserted here); the two trees must still track each other on the new append.
+        uint256 leafA32 = hasher.commitmentOf(SECRET_A, 32); // distinct from every leaf so far
+        staked.register{value: staked.bondFor(32)}(leafA32, 32);
+        _insert(leafA32, 32);
+        (, uint64 si,,) = staked.members(leafA32);
+        (uint64 pi,) = set.leaves(leafA32);
         assertEq(uint256(si), 4);
         assertEq(uint256(pi), 4);
         assertEq(staked.currentRoot(), set.currentRoot(), "roots equal after re-append");

@@ -79,7 +79,7 @@ contract PaidHandler is Cheats {
 
     function insert(uint256 seed) external {
         (, uint256 commit, uint256 limit) = _pick(seed);
-        if (set.limitOf(commit) != 0) return; // AlreadyInserted
+        if (set.limitOf(commit) != 0 || set.burned(commit)) return; // AlreadyInserted / burned
         // a non-operator must always be refused
         vm.prank(STRANGER);
         (bool ok,) = address(set).call(abi.encodeWithSelector(PaidAccessSet.insert.selector, commit, limit));
@@ -96,12 +96,12 @@ contract PaidHandler is Cheats {
     function insertBatch(uint256 seed) external {
         // batch every currently-absent pool leaf, in pool order
         uint256 n;
-        for (uint256 i = 0; i < 6; i++) if (set.limitOf(commits[i]) == 0) n++;
+        for (uint256 i = 0; i < 6; i++) if (set.limitOf(commits[i]) == 0 && !set.burned(commits[i])) n++;
         if (n == 0) return;
         uint256[] memory c = new uint256[](n);
         uint256[] memory l = new uint256[](n);
         uint256 k;
-        for (uint256 i = 0; i < 6; i++) if (set.limitOf(commits[i]) == 0) { c[k] = commits[i]; l[k] = limits[i]; k++; }
+        for (uint256 i = 0; i < 6; i++) if (set.limitOf(commits[i]) == 0 && !set.burned(commits[i])) { c[k] = commits[i]; l[k] = limits[i]; k++; }
         seed; // order fixed; seed unused
         if (ghostOperator == address(this)) set.insertBatch(c, l);
         else require(alt.call(address(set), abi.encodeWithSelector(PaidAccessSet.insertBatch.selector, c, l)), "alt batch failed");
