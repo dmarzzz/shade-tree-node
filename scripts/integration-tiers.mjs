@@ -17,7 +17,7 @@
 //      only tier 32 has) -> PASS;
 //   5. BOB over-spends slot 0 (two distinct signals, one nullifier) -> the gateway reconstructs
 //      his identitySecret, resolves the tier ON CHAIN (limitOf), and submits
-//      slash(leaf32, secret, 32, receiver) -> BOB's TIER-32 bond burns to the receiver;
+//      slash(leaf32, secret, 32, receiver) -> >=90% of BOB's TIER-32 bond burns, <=10% bounty;
 //   6. a wrong-limit slash of ALICE (limit 32 for a tier-8 leaf) REVERTS (BadLimit) — proven
 //      by a static call — and ALICE's bond is intact; the on-chain root now equals the JS tree
 //      with BOB's leaf zeroed in place.
@@ -52,6 +52,9 @@ const CLI = join(ROOT, "bin", "shade-tree.mjs");
 const GATEWAY_PORT = 8443; // gateway/gateway.mjs LISTEN_PORT (fixed; Tor maps the onion here)
 
 export const SET_ABI = [
+  "function SLASH_REWARD_DIVISOR() view returns (uint256)",
+  "function SLASH_BURN_ADDRESS() view returns (address)",
+  "event SlashPayout(uint256 indexed commitment, address indexed receiver, uint256 burned, uint256 reward)",
   "function BOND() view returns (uint256)",
   "function bondFor(uint256 limit) view returns (uint256)",
   "function allowedLimits() view returns (uint256[])",
@@ -169,6 +172,12 @@ export async function runTierIntegration(opts) {
   const rcv = receiver || slasher.address;
   const c = new ethers.Contract(set, SET_ABI, provider);
   const [bond8, bond32, tiers, chainId] = await Promise.all([c.bondFor(8), c.bondFor(32), c.allowedLimits(), provider.getNetwork().then((n) => Number(n.chainId))]);
+  // This acceptance run requires a fresh slash-burn-v1 set. An old compatible ABI
+  // must not produce a passing report for a penalty it does not actually enforce.
+  const [rewardDivisor, burnAddress] = await Promise.all([c.SLASH_REWARD_DIVISOR(), c.SLASH_BURN_ADDRESS()]);
+  if (rewardDivisor !== 10n || burnAddress !== ethers.ZeroAddress) throw new Error("expected slash-burn-v1 (90% burn, 10% bounty)");
+  const reward32 = bond32 / rewardDivisor;
+  const burn32 = bond32 - reward32;
   log("setup", `StakedReputationSet ${set} chainId=${chainId} tiers=[${tiers.map(String).join(",")}] bond(8)=${ethers.formatEther(bond8)} ETH bond(32)=${ethers.formatEther(bond32)} ETH epoch ${currentEpoch()} (${EPOCH_SECONDS}s)`);
   check(bond32 > 0n && bond8 > 0n, "contract admits tiers 8 and 32 (bondFor nonzero)");
 
@@ -177,6 +186,7 @@ export async function runTierIntegration(opts) {
   log("setup", `member ALICE tier 8  leaf ${A.leaf.slice(0, 20)}..`);
   log("setup", `member BOB   tier 32 leaf ${B.leaf.slice(0, 20)}..`);
   const rcvBefore = await provider.getBalance(rcv);
+  const burnBefore = await provider.getBalance(burnAddress);
 
   // 1. stake both at their tiers via the CLI
   let gw = null;
@@ -275,16 +285,16 @@ export async function runTierIntegration(opts) {
     check(!!slashed, `gateway submitted the on-chain slash (tx ${slashed ? slashed.hash.slice(0, 12) + ".." : "none"} block ${slashed && slashed.block})`);
     check(/SLASH tx .*?(?:\blimit=32\b|"limit":32(?:[,}]))/.test(gw.out), "the slash named tier 32 (resolved via limitOf on chain, not the default tier)");
 
-    // 6. outcomes: BOB's tier-32 bond burned to the receiver, ALICE intact, root updated
+    // 6. outcomes: BOB loses the whole bond, >=90% reaches the fixed sink, <=10% bounty.
     const [mA2, mB2, active2] = await Promise.all([c.members(A.leaf), c.members(B.leaf), c.activeCount()]);
     check(mB2.bond === 0n && (await c.limitOf(B.leaf)) === 0n, "BOB's tier-32 bond is gone (slashed)");
     check(mA2.bond === bond8 && Number(mA2.limit) === 8, "ALICE's tier-8 bond is intact");
     check(active2 === 1n, "activeCount == 1");
     const rcvAfter = await provider.getBalance(rcv);
-    // The receiver is also the slasher (pays gas), so compare against the tier bond loosely:
-    // it must have gained at least bond32 minus the gas it spent (a small fraction of bond32).
-    log("verify", `receiver ${rcv} balance delta ${ethers.formatEther(rcvAfter - rcvBefore)} ETH (bond32 ${ethers.formatEther(bond32)} minus gas${rcv.toLowerCase() === slasher.address.toLowerCase() ? "" : "; receiver != slasher"})`);
-    if (rcv.toLowerCase() !== slasher.address.toLowerCase()) check(rcvAfter - rcvBefore === bond32, "receiver got exactly the tier-32 bond");
+    log("verify", `receiver ${rcv} balance delta ${ethers.formatEther(rcvAfter - rcvBefore)} ETH (bounty ${ethers.formatEther(reward32)}; penalty ${ethers.formatEther(burn32)} ETH)`);
+    if (rcv.toLowerCase() !== slasher.address.toLowerCase()) check(rcvAfter - rcvBefore === reward32, "receiver got only the tier-32 bounty");
+    check((await provider.getBalance(burnAddress)) - burnBefore >= burn32, "fixed burn address received at least 90% of the tier-32 bond");
+    check(gw.out.includes(`"burnedWei":"${burn32}"`) && gw.out.includes(`"rewardWei":"${reward32}"`), "gateway reports the mined SlashPayout split");
     const g2 = newGroup([BigInt(A.leaf), BigInt(B.leaf)]);
     g2.removeMember(1);
     check((await c.currentRoot()).toString() === g2.root.toString(), "currentRoot() == JS tree with BOB's leaf zeroed in place");

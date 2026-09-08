@@ -219,7 +219,7 @@ contract StakedReputationSetTest is Cheats {
 
         // revealing the identitySecret slashes the leaf
         set.slash(COMMIT_A_EXPECTED, SECRET_A, RECEIVER);
-        assertEq(RECEIVER.balance - before, BOND, "revealed identitySecret pays out the bond");
+        assertEq(RECEIVER.balance - before, BOND / 10, "revealed identitySecret pays only the bounty");
         (uint256 bond,,,) = set.members(COMMIT_A_EXPECTED);
         assertEq(bond, 0, "slashed leaf deleted");
 
@@ -229,13 +229,13 @@ contract StakedReputationSetTest is Cheats {
         set.slash(commitB, SECRET_A, RECEIVER);
     }
 
-    function test_Slash_ActiveMember_BurnsBondPaysReceiver() public {
+    function test_Slash_ActiveMember_BurnsPenaltyPaysBounty() public {
         set.register{value: BOND}(commitA);
         uint256 before = RECEIVER.balance;
 
         set.slash(commitA, SECRET_A, RECEIVER);
 
-        assertEq(RECEIVER.balance - before, BOND, "receiver paid the bond");
+        assertEq(RECEIVER.balance - before, BOND / 10, "receiver paid only the bounty");
         (uint256 bond,,,) = set.members(commitA);
         assertEq(bond, 0, "slashed member deleted");
         assertEq(set.activeCount(), 0, "activeCount decremented on slash of active member");
@@ -261,7 +261,7 @@ contract StakedReputationSetTest is Cheats {
         // over-spend detected mid-unbonding => slash lands
         uint256 before = RECEIVER.balance;
         set.slash(commitA, SECRET_A, RECEIVER);
-        assertEq(RECEIVER.balance - before, BOND, "slash pays during unbonding");
+        assertEq(RECEIVER.balance - before, BOND / 10, "slash pays only the bounty during unbonding");
         assertEq(set.activeCount(), 0, "already-exiting member not double-decremented");
 
         // the escape is closed: the later withdraw finds no bond

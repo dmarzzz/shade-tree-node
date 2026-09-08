@@ -15,7 +15,8 @@ pragma solidity ^0.8.24;
 //   withdraw    ZK-authorized: after UNBONDING and if not slashed, pay the bond to a
 //                caller-named fresh recipient (R2). Unlinkable fund-in vs fund-out.
 //   slash       permissionless: whoever reconstructed the secret from an RLN
-//                over-spend (in practice the gateway) claims the bond (R3).
+//                over-spend (in practice the gateway) claims at most 10% of the bond;
+//                the remaining >=90% goes to the fixed burn address (R3).
 //
 // The bond stays fully slashable for the entire unbonding window, which is what makes
 // "spam then instantly unstake" impossible (R4). UNBONDING must be >= F + E + C
@@ -50,7 +51,7 @@ pragma solidity ^0.8.24;
 // `slash(commitment, secret, limit, receiver)` recomputes the leaf at the CLAIMED limit through
 // the tiered hasher, so a tier-32 leaf slashes only with limit 32 and burns the tier-32 bond.
 // The one-argument `register(commitment)` / three-argument `slash(..)` overloads are the
-// DEFAULT_LIMIT (= 8, the pre-tier K) path and stay byte-equivalent to the rln-v3 behaviour.
+// DEFAULT_LIMIT (= 8, the pre-tier K) path. Both slash overloads enforce the same burn.
 // The exit-auth verifier receives the recorded limit so a real Groth16 exit proof ties the
 // revealed identity commitment to the leaf at that member's tier (contracts/WithdrawVerifier.sol).
 
@@ -90,6 +91,12 @@ contract StakedReputationSet {
     /// App-level upper bound on a tier limit: the circuit range-checks messageId with
     /// LessThan(16), which is NOT sound for a limit >= 2^16 (lib/rln.mjs MAX_LIMIT).
     uint256 public constant MAX_LIMIT = 65535;
+
+    /// Slash economics v1: floor(bond / 10) is the maximum caller-directed reward.
+    /// All remaining wei go to address(0). Even a member slashing itself loses >=90%.
+    /// This is an ETH sink transfer, not Ethereum's protocol-level base-fee burn.
+    uint256 public constant SLASH_REWARD_DIVISOR = 10;
+    address public constant SLASH_BURN_ADDRESS = address(0);
 
     IWithdrawVerifier public immutable withdrawVerifier;
     ICommitmentHasher public immutable hasher;
@@ -163,6 +170,8 @@ contract StakedReputationSet {
     event MemberExiting(uint256 indexed commitment, uint64 exitInitiatedAt, uint64 withdrawableAt);
     event MemberWithdrawn(uint256 indexed commitment, address indexed recipient);
     event MemberSlashed(uint256 indexed commitment, address indexed receiver, uint256 limit);
+    // Keep MemberSlashed unchanged for existing root-event readers; publish the split separately.
+    event SlashPayout(uint256 indexed commitment, address indexed receiver, uint256 burned, uint256 reward);
 
     error BadBond();
     error BadLimit();
@@ -369,10 +378,11 @@ contract StakedReputationSet {
 
     /// Permissionless. The gateway reconstructs a proven over-spender's secret from
     /// L+1 RLN shares (docs/ONCHAIN.md), then calls this. Possession of a valid
-    /// (commitment, secret) pair is the authorization: it only exists after a genuine
-    /// rate violation, so honest members are never slashable. Works whether the member
-    /// is active or mid-unbonding, which is what closes the "exit to dodge slash"
-    /// escape (R4). Pays the member's tier bond to `receiver` (the gateway / a treasury).
+    /// (commitment, secret) pair is the authorization. A member also knows its own
+    /// secret and can self-slash, but cannot redirect or recover the burned portion.
+    /// Works whether the member is active or mid-unbonding, which is what closes the "exit to dodge slash"
+    /// escape (R4). Pays floor(bond / 10) to `receiver` and the remainder to the fixed
+    /// burn address. The receiver argument controls only the bounty, never the penalty.
     ///
     /// T-FEAT-8b: `limit` is the tier the slasher resolved for the leaf (the gateway's
     /// resolveSlashLeaf, or `limitOf(commitment)`). The leaf is recomputed at THAT limit,
@@ -387,22 +397,29 @@ contract StakedReputationSet {
         if (hasher.commitmentOf(secret, limit) != commitment) revert BadSecret();
 
         uint256 amount = m.bond;
+        uint256 reward = amount / SLASH_REWARD_DIVISOR;
+        uint256 burned = amount - reward; // round toward the penalty, including bonds < 10 wei
         bool wasActive = m.exitInitiatedAt == 0;
         uint64 idx = m.index; // capture before delete for the tree update
         delete members[commitment];
         if (wasActive) activeCount--;
         emit MemberSlashed(commitment, receiver, limit);
+        emit SlashPayout(commitment, receiver, burned, reward);
         // Zero the leaf ONLY if the member was still in the admission set. A slash of an
         // already-exiting member left the tree at initiateExit; re-zeroing would be a no-op
         // here but is skipped to mirror reconstructRoot (which ignores a removal event for a
         // commitment no longer live), keeping the two roots identical event-for-event.
         if (wasActive) _updateLeaf(idx, _zeroes[0]);
 
-        (bool ok,) = receiver.call{value: amount}("");
+        (bool ok,) = SLASH_BURN_ADDRESS.call{value: burned}("");
         if (!ok) revert PayoutFailed();
+        if (reward != 0) {
+            (ok,) = receiver.call{value: reward}("");
+            if (!ok) revert PayoutFailed(); // rolls back the burn, membership and root together
+        }
     }
 
-    /// The pre-tier entry point: slash a DEFAULT_LIMIT leaf (byte-equivalent to rln-v3).
+    /// The pre-tier ABI entry point: slash a DEFAULT_LIMIT leaf with the same mandatory burn.
     function slash(uint256 commitment, uint256 secret, address receiver) external {
         slash(commitment, secret, DEFAULT_LIMIT, receiver);
     }

@@ -16,6 +16,11 @@ Solc: `0.8.24`, optimizer on, 200 runs (`foundry.toml`). Two contracts carry the
 
 ## 1. Contract inventory
 
+The current `StakedReputationSet` source implements **slash-burn-v1**: at least 90% of
+each slashed bond goes to the constant zero-address sink and at most 10% is a bounty.
+The deployed addresses listed below predate this change and retain their old payout
+rules; a source merge does not upgrade them. See [migration](ONCHAIN-DEPLOY.md#slash-burn-v1-migration).
+
 | Contract | File | Purpose | Deployment status |
 |---|---|---|---|
 | `StakedReputationSet` | `StakedReputationSet.sol` | Member admission gate: per-tier fixed-bond, refundable, slashable, time-locked-exit stake keyed by RLN rate-commitment (anonymous leaf), with the depth-20 Poseidon incremental tree ON CHAIN (`currentRoot` at storage slot 3, T-DEV-9) and a reputation-tier table fixed at construction (`register(commitment, limit)` / `bondFor(limit)` / `slash(commitment, secret, limit, receiver)`, T-FEAT-8b). No owner. | Sepolia `0xFe48De8b9aCA4386DC31C845d579ae62f04f9d25` was deployed in the historical `rln-v4-tiers` bundle (`network/sepolia/contracts.json`, 2026-08-17) and is explicitly reused by the live envelope-v4 research Grove in `network/sepolia/deployment.json` since 2026-09-03. Superseded within the earlier experiment: `0xdAE242AE…20FC` (`rln-v3`, no on-chain tree, hasher pinned K=8). |
@@ -38,7 +43,8 @@ Solc: `0.8.24`, optimizer on, 200 runs (`foundry.toml`). Two contracts carry the
 - Member `slash` is permissionless **because member over-spend is cryptographically
   provable**: reconstructing the identity secret from L+1 RLN shares yields exactly the
   authorization `slash` checks (`StakedReputationSet.slash`, line ~172). An honest member's
-  secret is never exposed, so an honest member is never slashable.
+  secret remains private from outsiders. A member knows its own secret and can self-slash;
+  the mandatory burn prevents recovering the full stake through that path.
 - `GatewayRegistry.slash` is **owner-gated** (`onlyOwner` via `if (msg.sender != owner)
   revert NotOwner()`), the one deliberate asymmetry. Gateway misbehavior (censoring,
   tampering, downtime) is a subjective off-chain judgment, so slashing authority is a
@@ -72,16 +78,15 @@ where `wasActive = exitInitiatedAt == 0`. The `wasActive` guard is what prevents
 double-decrement when an already-exiting stake is slashed
 (`StakedReputationSet.slash` / `GatewayRegistry.slash`).
 
-**I2. Contract ETH balance == Σ live bonds (per tier). No wei created or destroyed.**
+**I2. Contract ETH balance == Σ live bonds (per tier), with all lifecycle outflows accounted for.**
 Live = bond still held (active OR exiting). Encoded:
 `invariant_ethEqualsSumOfLiveBonds` in both suites (registry: `balance == ghostLive * BOND`;
-set: `balance == ghostLiveWei`, the handler's pool mixing tier-8 (`BOND`) and tier-32
-(`4*BOND`) leaves since T-FEAT-8b). Source: the only inflow is `register(commitment, limit)`
-which requires `msg.value == bondFor(limit)` exactly (`BadLimit` for an unadmitted tier,
-`BadBond` otherwise); the only outflows are `withdraw` and `slash`, each paying exactly the
-recorded `amount == m.bond == bondFor(m.limit)` and deleting the record first. There is no
-other `payable` function and no `receive`/`fallback`, so ETH cannot enter except through
-`register`.
+set: `balance == ghostLiveWei`, with tier-1 and tier-8 members). Registration requires
+exactly `bondFor(limit)`. Withdrawal returns the whole recorded bond. Member slashing
+splits the whole recorded bond into `floor(bond / 10)` reward and the remainder sent to
+`SLASH_BURN_ADDRESS`; neither part stays in the set. The invariant also tracks cumulative
+burns and receiver balances separately from honest withdrawals. This equality covers the
+modeled lifecycle; forced unsolicited ETH is outside that accounting model.
 
 **I3. A slashed or withdrawn stake cannot be re-withdrawn (delete-before-payout, CEI).**
 Both `withdraw` and `slash` execute `delete members[commitment]` /
@@ -91,7 +96,7 @@ subsequent `withdraw` / `slash` on the same key hits `if (bond == 0) revert NotM
 `test_Slash_WorksDuringUnbonding_AndBlocksLaterWithdraw` (slash then later withdraw reverts
 `NotMember`) and by the balance invariant.
 
-**I4. The "exit to dodge slash" escape is closed.**
+**I4. Exit and self-slash cannot recover a slashable bond in full.**
 `slash` succeeds whether the stake is active or mid-unbonding: it only checks
 `bond != 0`, never `exitInitiatedAt`. `initiateExit` leaves the active set but does NOT
 return funds and does NOT delete the record, so the bond stays fully slashable for the
@@ -101,6 +106,15 @@ entire `UNBONDING` window. `withdraw` additionally requires
 Confirmed by `test_owner_can_slash_while_exiting` (registry) and
 `test_Slash_WorksDuringUnbonding_AndBlocksLaterWithdraw` (set), and by the fuzz test
 `testFuzz_slash_anyStakedPays(address,bool exiting)`.
+
+For member stakes, both slash overloads additionally impose `burned = bond - floor(bond / 10)`
+regardless of `msg.sender` or the named receiver. The receiver controls only the bounty;
+no caller or owner can redirect the burn. Active and exiting self-slash and both orderings
+of competing keeper/member transactions are fuzzed over the full uint256 bond range in
+`test/StakedReputationSet.slash-penalty.t.sol`. The same suite checks rounding, tiny bonds,
+a rejecting receiver's atomic rollback, retry, reentry, and root slot 3. Honest withdrawal
+still returns the whole stake after its delay. This economics fix does not address the
+other admission or proof-context findings in #113.
 
 **I5. `bondFor(limit)` is the only accepted deposit for tier `limit`.**
 `register(commitment, limit)` reverts `BadLimit` unless `bondFor(limit) != 0` (the tier is
@@ -135,13 +149,13 @@ reconstructed secret would slash the wrong leaf (silent `BadSecret`). Pinned on-
 and `test/StakedReputationSet.tiers.t.sol` (`test_Hasher_MatchesJsTierGoldens`: 111/222/1 at 32
 and 64; `testFuzz_hasher_tiersDistinctAndDefaultEqual`).
 
-**I9. A leaf slashes ONLY at its recorded tier, and burns exactly that tier's bond.**
+**I9. A successful slash uses the recorded tier and splits its entire bond.**
 `slash(commitment, secret, limit, receiver)` reverts `NotMember` (no bond), `BadLimit`
 (`m.limit != limit`), then `BadSecret` (`hasher.commitmentOf(secret, limit) != commitment`),
-in that order; the payout is `m.bond == bondFor(m.limit)`. The three-argument `slash` is
-the `limit = 8` claim. Because `Poseidon2(x, 32)` is never `Poseidon2(y, 8)` for the leaf
-the set holds, a wrong tier is unreachable through the hasher check alone; the explicit
-`BadLimit` names it. Encoded: `test_Slash_Tier32_OnlyWithLimit32_BurnsTierBond`,
+in that order. The source amount is `m.bond == bondFor(m.limit)`; at most one tenth is
+paid to the receiver and the rest goes to the fixed sink. The three-argument `slash` is
+the `limit = 8` claim. This check does not prove a raw leaf was admitted at the correct
+tier; wrong-tier admission remains an open finding in #113. Encoded: `test_Slash_Tier32_OnlyWithLimit32_BurnsTierBond`,
 `test_Slash_Tier8_OnlyWithLimit8`, `testFuzz_slash_onlyAtRecordedLimit` (any other limit,
 0..70000, reverts and is a no-op), and the invariant handler's `slash` (the OTHER tier's
 claim must revert before the right one succeeds, every call). Live: the Sepolia rln-v4
@@ -315,16 +329,20 @@ time-locked payout. This is the CEI-critical path.
   required for I1 (no double count).
 
 **`slash` (SRS `slash(commitment, secret, receiver)`, GR `slash(operator, receiver)`)** —
-burn bond to a receiver.
+SRS burns >=90% and rewards <=10%; GR retains its owner-directed full payout.
 - Access: **SRS permissionless but cryptographically gated** —
   `if (hasher.commitmentOf(secret) != commitment) revert BadSecret()`. Authorization IS
-  possession of a secret that hashes to the leaf; only a genuine over-spend reveals it.
+  possession of a secret that hashes to the leaf. The member can supply its own secret;
+  the fixed penalty makes self-slash costly.
   **GR owner-gated** — `if (msg.sender != owner) revert NotOwner()` first line.
 - Precondition: `bond != 0` (`NotMember`/`NotStaked`).
 - Works active or exiting: no `exitInitiatedAt` gate, closing the dodge (I4).
 - CEI: `amount = bond`, capture `wasActive = exitInitiatedAt == 0`, **`delete`**,
-  `if (wasActive) activeCount--`, `emit`, then `.call{value: amount}` + `PayoutFailed`
-  check. Delete-before-payout again gives reentrancy safety (I3). `wasActive` guard prevents
+  `if (wasActive) activeCount--`, `emit`, and (SRS) zero the active leaf before transfers.
+  SRS sends `amount - amount / 10` to the fixed sink, then sends a nonzero `amount / 10`
+  bounty to `receiver`; both calls check `PayoutFailed`, reverting the entire transaction
+  on failure. GR sends the full amount to its receiver. Delete-before-payout protects
+  the old bond from reentry (I3). `wasActive` guard prevents
   double-decrement of `activeCount` when slashing a mid-unbonding stake (I1).
 - Overflow: `activeCount--` guarded by `wasActive` (only decrement when it was counted).
 - SRS note: `hasher.commitmentOf` is an external `view` call to `RateCommitmentHasher`
@@ -448,6 +466,6 @@ strict checks-effects-interactions with delete-before-payout on every `.call` (s
 so the common Slither high/medium detectors to scrutinize are `reentrancy-eth` /
 `reentrancy-no-eth` (expected: none real — state is deleted before the external call) and
 `arbitrary-send-eth` (expected: benign — `withdraw` sends to a proof-bound / operator-named
-recipient, `slash` to a caller-named receiver, both by design). `low-level-calls` will fire
+recipient, member `slash` to a fixed burn sink plus a caller-named bounty receiver). `low-level-calls` will fire
 on the intentional `.call{value:}` payouts (informational). Populate this section with the
 actual `slither . 2>&1 | tail` summary (high/medium counts, or "no high/medium") once run.

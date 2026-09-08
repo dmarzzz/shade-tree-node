@@ -9,7 +9,7 @@ pragma solidity ^0.8.24;
 //   * the contract's ETH balance always equals the sum of live bonds — no wei created or
 //     destroyed across the register/exit/withdraw/slash lifecycle. T-FEAT-8b: the pool mixes
 //     public tier-1 (0.1 ether) and tier-8 (0.8 ether) members, so this now also proves per-tier bond
-//     accounting (register takes, slash/withdraw pay, exactly bondFor(limit)) and that a
+//     accounting (register takes the bond; slash splits it and withdrawal returns it) and that a
 //     member's recorded limit is the only limit its slash succeeds at.
 //
 // No forge-std: `targetContracts()` / `targetSelectors()` are implemented directly.
@@ -40,6 +40,11 @@ contract SetHandler is Cheats {
 
     uint256 public ghostActive; // active members
     uint256 public ghostLiveWei; // bond wei still held (active or exiting), summed per tier
+    uint256 public ghostBurnedWei;
+    uint256 public ghostRewardWei;
+    uint256 public ghostWithdrawnWei;
+    uint256 public initialBurnBalance;
+    uint256 public initialSinkBalance;
 
     constructor() {
         hasher = new RateCommitmentHasher();
@@ -53,6 +58,8 @@ contract SetHandler is Cheats {
             _tierLimits(),
             _tierBonds()
         );
+        initialBurnBalance = set.SLASH_BURN_ADDRESS().balance;
+        initialSinkBalance = SINK.balance;
         for (uint256 i = 0; i < 6; i++) {
             uint256 secret = 1_000 + i; // distinct, small secrets => distinct leaves
             secrets[i] = secret;
@@ -110,6 +117,7 @@ contract SetHandler is Cheats {
 
         set.withdraw(commit, SINK, _proof(secret));
         ghostLiveWei -= bond;
+        ghostWithdrawnWei += bond;
     }
 
     function slash(uint256 seed) external {
@@ -128,6 +136,12 @@ contract SetHandler is Cheats {
         set.slash(commit, secret, limit, SINK);
         if (wasActive) ghostActive--;
         ghostLiveWei -= bond;
+        ghostRewardWei += bond / 10;
+        ghostBurnedWei += bond - bond / 10;
+    }
+
+    function sinkBalance() external view returns (uint256) {
+        return SINK.balance;
     }
 
     function warp(uint256 dt) external {
@@ -169,5 +183,15 @@ contract StakedReputationSetInvariantTest is Cheats {
     /// forge-config: default.invariant.depth = 64
     function invariant_ethEqualsSumOfLiveBonds() public view {
         assertEq(address(handler.set()).balance, handler.ghostLiveWei(), "contract ETH != sum of live bonds (per tier)");
+        assertEq(
+            handler.set().SLASH_BURN_ADDRESS().balance - handler.initialBurnBalance(),
+            handler.ghostBurnedWei(),
+            "mandatory burn differs from accumulated penalties"
+        );
+        assertEq(
+            handler.sinkBalance() - handler.initialSinkBalance(),
+            handler.ghostRewardWei() + handler.ghostWithdrawnWei(),
+            "receiver got more than bounties plus honest withdrawals"
+        );
     }
 }

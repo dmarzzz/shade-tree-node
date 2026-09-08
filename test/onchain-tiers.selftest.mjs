@@ -11,8 +11,8 @@
 //   currentRoot() == JS groupFromIdentities root; the gateway's NodeRootProvider reconstructs it
 //   from the rln-v4 (limit-carrying) events; requests at both tiers PASS (BOB at slot 20);
 //   over-spend at tier 32 -> gateway reconstructs the secret, resolves the tier via limitOf,
-//   slash(leaf, secret, 32, receiver) burns the TIER-32 bond; wrong-limit slash reverts BadLimit;
-//   ALICE intact; root == JS tree with the slashed leaf zeroed in place.
+//   slash(leaf, secret, 32, receiver) burns >=90% of the TIER-32 bond and pays <=10% bounty;
+//   ALICE intact; wrong-limit slash reverts; root == JS tree with the slashed leaf zeroed in place.
 // Plus, directly: LightClientRootProvider (proof mode, eth_getProof) reads the SAME root from
 // storage slot 3 of the tiered contract — the T-DEV-9c property, locally.
 //
@@ -89,6 +89,7 @@ async function main() {
     if (dep.status !== 0) { console.log((dep.stdout || "").split("\n").slice(-15).join("\n"), dep.stderr); return; }
     ok(/tier\s+32/.test(dep.stdout) && /REAL Groth16 exit-auth/.test(dep.stdout), "deploy log names tier 32 + the real exit-auth verifier");
     const deployed = JSON.parse(readFileSync(outJson, "utf8"));
+    ok(deployed.slashPayout?.policy === "burn-90-reward-10-v1" && deployed.slashPayout.rewardDivisor === 10 && /^0x0{40}$/.test(deployed.slashPayout.burnAddress), "deployment records the immutable slash penalty policy");
     const set = deployed.stakedReputationSet;
     ok(/^0x[0-9a-fA-F]{40}$/.test(set), `StakedReputationSet deployed at ${set}`);
     rmSync(outJson, { force: true });

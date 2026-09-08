@@ -14,7 +14,7 @@ import {WithdrawVerifier} from "../contracts/WithdrawVerifier.sol";
 ///
 /// What is proven here (the ADR's Foundry ask): a tier-32 leaf slashes ONLY with limit 32
 /// and burns the tier-32 bond; a tier-8 leaf only with limit 8; the legacy one-argument
-/// paths are byte-equivalent to rln-v3 (limit 8, BOND); the tiered hasher matches the JS
+/// paths retain the rln-v3 selectors (limit 8) and enforce the same burn; the tiered hasher matches the JS
 /// goldens (lib/tiers.selftest.mjs / rust tree_parity `rate_commitment_tiers_*`); a
 /// two-tier tree's on-chain root equals the JS newGroup root; the REAL Groth16 exit proof
 /// authorizes the same identity's tier-32 leaf when the set passes 32 (and never at 8).
@@ -259,12 +259,12 @@ contract StakedReputationSetTiersTest is Cheats {
         assertEq(set.limitOf(leaf32), 32);
         assertEq(address(set).balance, BOND32);
 
-        // right tier + right secret: burns the TIER-32 bond to the receiver
+        // right tier + right secret: burns 90% of the TIER-32 bond and pays a 10% bounty
         uint256 before = RECEIVER.balance;
         vm.expectEmit(true, true, false, true);
         emit MemberSlashed(leaf32, RECEIVER, 32);
         set.slash(leaf32, SECRET_B, 32, RECEIVER);
-        assertEq(RECEIVER.balance - before, BOND32, "receiver gets the tier-32 bond");
+        assertEq(RECEIVER.balance - before, BOND32 / 10, "receiver gets only the tier-32 bounty");
         assertEq(address(set).balance, 0);
         assertEq(set.limitOf(leaf32), 0);
         assertFalse(set.isActive(leaf32));
@@ -275,10 +275,10 @@ contract StakedReputationSetTiersTest is Cheats {
         set.register{value: BOND}(LEAF_A_8, 8);
         vm.expectRevert(StakedReputationSet.BadLimit.selector);
         set.slash(LEAF_A_8, SECRET_A, 32, RECEIVER);
-        // legacy 3-arg == limit 8: byte-equivalent to rln-v3
+        // legacy 3-arg == limit 8: same mandatory burn
         uint256 before = RECEIVER.balance;
         set.slash(LEAF_A_8, SECRET_A, RECEIVER);
-        assertEq(RECEIVER.balance - before, BOND);
+        assertEq(RECEIVER.balance - before, BOND / 10);
     }
 
     function test_Slash_Tier32_WhileExiting_StillBurns() public {
@@ -287,7 +287,7 @@ contract StakedReputationSetTiersTest is Cheats {
         set.initiateExit(leaf32, _proof(SECRET_B)); // mock verifier: verify(leaf, 32, ctx, secret)
         assertEq(set.activeCount(), 0);
         set.slash(leaf32, SECRET_B, 32, RECEIVER);
-        assertEq(RECEIVER.balance, BOND32);
+        assertEq(RECEIVER.balance, BOND32 / 10);
         assertEq(address(set).balance, 0);
     }
 

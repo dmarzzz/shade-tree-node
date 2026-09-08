@@ -171,7 +171,7 @@ async function main() {
   const mA = await set.members(commA), mB = await set.members(commB);
   log("verify", `ALICE bond on-chain = ${ethers.formatEther(mA.bond)} ETH (intact expected)`);
   log("verify", `BOB   bond on-chain = ${ethers.formatEther(mB.bond)} ETH (0 = slashed expected)`);
-  log("verify", `slasher balance = ${ethers.formatEther(await provider.getBalance(slasher.address))} ETH (received BOB's bond)`);
+  log("verify", `slasher balance = ${ethers.formatEther(await provider.getBalance(slasher.address))} ETH (slash reward depends on the deployed contract policy)`);
   const pass = mA.bond === BOND && mB.bond === 0n;
   log("result", pass ? "PASS — honest member intact, over-spender slashed on-chain" : "FAIL — see bonds above");
 

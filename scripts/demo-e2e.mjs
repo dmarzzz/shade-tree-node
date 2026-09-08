@@ -166,7 +166,7 @@ async function main() {
   await (await setAsSlasher.slash(slashed.commitment, BigInt(toField(slashed.secret)), receiver)).wait();
   ok((await set.members(commA)).bond === 0n, "member A's on-chain bond is burned (slashed)");
   ok((await set.activeCount()) === 1n, "activeCount drops to 1");
-  ok((await provider.getBalance(receiver)) - balBefore === BOND, "slash paid the bond to the receiver");
+  ok((await provider.getBalance(receiver)) - balBefore === BOND / 10n, "slash paid only the 10% bounty to the receiver");
   ok(await reverts(set.withdraw(commA, receiver, enc(idsecA))), "slashed member A cannot withdraw (bond gone)");
 
   h("5. clean member B: time-locked exit + withdraw (increment C, R4)");
