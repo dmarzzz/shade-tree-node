@@ -38,7 +38,7 @@ serde = { version = "1", features = ["derive"] } # derive Deserialize on the unt
 serde_json = "1"                                 # parse the directory/receipt files
 # hex: render pubkeys recovered from a verified receipt for display.
 hex = "0.4"
-base64 = "0.22"
+base64 = "0.23"
 
 # OPTIONAL, feature-gated (`live`): embedded Tor transport for the onion egress dial
 # (T-RUST-2e). CRITICAL dep note: `default-features = false` with an explicit feature list
