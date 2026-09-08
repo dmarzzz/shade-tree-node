@@ -49,7 +49,7 @@ desync the spent-set. Reasons, in cheap→expensive order:
 3b. `bad-artifact:*` / `artifact-retired:<id>` / `artifact-unknown:<id>` — (T-HARD-8) the
    envelope's optional `artifact` id must resolve to a vkey in the gateway's accepted set
    (`SHADE_TREE_ZK_ARTIFACTS`; absent field ⇒ the legacy id). Cheap map lookup; see
-   `docs/PROTOCOL-VERSIONING.md` "Artifact-version negotiation".
+   `docs/VERSIONING.md` "Artifact-version negotiation".
 4. `invalid-proof` / `verify-threw:*` — the RLN Groth16 verify under THAT vkey (last, expensive).
 
 ## Semantic changes the gateway MUST make

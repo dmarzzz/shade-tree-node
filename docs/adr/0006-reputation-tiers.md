@@ -41,7 +41,7 @@ limit. Nothing else changes:
 
 - **Proven in ZK, without revealing which member — or which tier.** The proof opens a leaf
   that commits to `limit` and asserts `messageId < limit`; both are private. The public
-  signals, the envelope (`docs/PROTOCOL-API.md`), and `verifyEnvelope`'s result are
+  signals, the envelope (`docs/WIRE-SPEC.md`), and `verifyEnvelope`'s result are
   byte-identical across tiers. The gateway learns nothing about a proof's tier — strictly
   more private than the task's "public tier input", and than the separate-root alternative
   below.

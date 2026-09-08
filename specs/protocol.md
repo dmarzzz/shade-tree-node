@@ -4,7 +4,7 @@
 
 Shade Tree carries an HTTPS tunnel from a local client to a destination through a
 proof-gated Tor onion service. This page describes the current protocol and its
-boundaries. [`PROTOCOL-API.md`](../docs/PROTOCOL-API.md) contains the byte-level directory,
+boundaries. [`WIRE-SPEC.md`](../docs/WIRE-SPEC.md) contains the byte-level directory,
 announce, and error formats.
 
 ## Roles
@@ -220,5 +220,5 @@ Read [`THREAT-MODEL.md`](../docs/THREAT-MODEL.md) before operating or depending 
 Protocol v4 is the first Shade Tree release. Envelope-version and proof-artifact
 negotiation are separate axes: a wire shape can remain v4 while verification keys rotate
 through a dual-artifact window. See
-[`PROTOCOL-VERSIONING.md`](../docs/PROTOCOL-VERSIONING.md) and
+[`VERSIONING.md`](../docs/VERSIONING.md) and
 [`CEREMONY.md`](../docs/CEREMONY.md).

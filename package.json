@@ -81,7 +81,7 @@
   },
   "overrides": {
     "circom_tester": "0.0.24",
-    "qs": "6.15.2",
+    "qs": "6.16.0",
     "underscore": "1.13.8",
     "ws": "8.21.3"
   }

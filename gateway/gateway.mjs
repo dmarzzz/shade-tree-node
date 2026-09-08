@@ -1798,6 +1798,12 @@ async function main() {
     log.info("operator metrics ready", { event: "metrics.ready", listen: `127.0.0.1:${metricsPort}` });
   }
 
+  server.on("error", (error) => {
+    log.error(error.code === "EADDRINUSE"
+      ? `port ${LISTEN_PORT} is already in use; stop the other node or set SHADE_TREE_GATEWAY_PORT`
+      : "node listener failed", { event: "service.failed", code: error.code || "UNKNOWN" });
+    process.exit(1);
+  });
   server.listen(LISTEN_PORT, LISTEN_HOST, () => {
     // "gateway up on <host>:<port>" substring preserved for scripts/integration-sepolia.mjs.
     printOperatorBanner({ role: "node", rows: [

@@ -145,7 +145,10 @@ export function makeProxyServer(client, { reg = metrics, logger = log, now = () 
       M.tunnels.inc({ result: "failed", reason });
       try { clientSocket.write(`HTTP/1.1 502 Bad Gateway\r\n\r\n${msg}\n`); } catch {}
       clientSocket.destroy();
-      logger.debug("tunnel failed", { reason });
+      // Surface a bounded stage label at the default log level. The raw error can carry
+      // a destination, onion, or provider response and must stay out of operator logs.
+      if (reason === "client-closed") logger.debug("tunnel canceled", { reason });
+      else logger.warn("tunnel failed", { reason });
     }
   });
 
@@ -177,6 +180,12 @@ async function startClientProxy() {
     log.info("operator metrics ready", { event: "metrics.ready", listen: `127.0.0.1:${metricsPort}` });
   }
 
+  server.on("error", (error) => {
+    log.error(error.code === "EADDRINUSE"
+      ? `port ${LISTEN_PORT} is already in use; stop the other Proxy or set SHADE_TREE_SHIM_PORT`
+      : "Proxy listener failed", { event: "service.failed", code: error.code || "UNKNOWN" });
+    process.exit(1);
+  });
   server.listen(LISTEN_PORT, "127.0.0.1", () => {
     const mode = client.onion ? "pinned node" : "Canopy rotation";
     printOperatorBanner({ role: "proxy", rows: [

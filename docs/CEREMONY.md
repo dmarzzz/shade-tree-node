@@ -346,7 +346,7 @@ tag + asset hashes that first embed the ceremony output.
 
 The proving key (client) and the verification key (gateway) must come from the same zkey.
 Since T-HARD-8 the wire carries WHICH set a proof was made with, and a gateway can hold
-several vkeys at once, so the swap is a **window**, not a flag day (`docs/PROTOCOL-VERSIONING.md`
+several vkeys at once, so the swap is a **window**, not a flag day (`docs/VERSIONING.md`
 "Artifact-version negotiation", `lib/zk-artifacts.mjs`):
 
 - **Artifact id** = `rln-<sha256(verification_key.json)[0:16]>` — the vkey's hash prefix in the

@@ -219,7 +219,8 @@ allowance per RLN epoch slot on each node; reaching it closes the tunnel. Read t
 
 ```bash
 npm ci
-npm test
+npm run test:fast       # quick first check; skips slow proof/onchain suites and Foundry
+npm test                # full pre-PR check
 (cd rust && cargo test --workspace)
 ```
 

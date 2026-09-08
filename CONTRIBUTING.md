@@ -1,14 +1,15 @@
 # Contributing
 
-A research-preview reference implementation of Shade Tree. The checked-in
-Sepolia fleet is retired pre-v4 history, not a current client profile. The code
-is unaudited (see [`SECURITY.md`](SECURITY.md)). Contributions are welcome; this
-page is how to run the tests and the house rules a change must hold to.
+A research-preview reference implementation of Shade Tree. The bundled v4 Sepolia
+profile is a disposable test network; the older `network/sepolia/contracts.json`
+record is retired pre-v4 history. The code is unaudited (see [`SECURITY.md`](SECURITY.md)).
+Contributions are welcome; this page is how to run the tests and the house rules a change must hold to.
 
 ## Run the tests
 
 ```bash
-npm install
+npm ci
+npm run test:fast        # quick iteration; slow proof/onchain suites + Foundry skipped
 npm test                 # every *selftest.mjs (auto-discovered) + `forge test`
 npm run test:node        # node selftests only, no foundry toolchain
 npm run test:contracts   # forge test only
@@ -39,7 +40,7 @@ Every change is expected to meet these before it lands (from
   seed, or an onion secret key. `test/log-hygiene.selftest.mjs` scans for this;
   keep it passing.
 - **Docs are updated in the same change**, never deferred to a "docs later"
-  task. If you touch a wire format, update `docs/PROTOCOL-API.md`; if you touch a
+  task. If you touch a wire format, update `docs/WIRE-SPEC.md`; if you touch a
   command or flag, update `docs/CLI.md` / `docs/CONFIG.md`.
 - **No new dependency without a note on why.** Prefer the standard library and
   what is already in `package.json`.
@@ -90,8 +91,9 @@ need to, that is a design discussion, not a quiet edit. All are grounded in
 The shipping backlog and priorities live in
 [`docs/SHIP-PLAN.md`](docs/SHIP-PLAN.md); the protocol-design milestones are in
 `docs/ROADMAP.md`. The 2026-08-17 go-live log records the retired pre-v4
-research deployment. There is no repo-published current v4 fleet. Keep wire
-formats and signed capabilities versioned (`docs/PROTOCOL-VERSIONING.md`), keep
+research deployment; `network/sepolia/deployment.json` records the current disposable
+v4 research profile. Keep wire
+formats and signed capabilities versioned (`docs/VERSIONING.md`), keep
 the golden vectors and Rust conformance suite green, and read
 `docs/OPERATOR.md` before touching service code.
 

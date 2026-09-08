@@ -12,7 +12,7 @@
 //! below cites the reference `file:symbol` and the section of the wire spec it
 //! implements:
 //!
-//! - Wire spec: `docs/PROTOCOL-API.md`
+//! - Wire spec: `docs/WIRE-SPEC.md`
 //! - Golden fixtures (byte-pinned): `testdata/vectors.json`
 //!
 //! ## Determinism contract (spec 6.5)
@@ -1539,7 +1539,7 @@ pub fn sign_receipt(v: u64, onion: &str, epoch: &str, ok: bool, onion_seed: &[u8
 //
 // Reference: `gateway/gateway.mjs` (`PROTO_MIN`/`PROTO_MAX`/`acceptEnvelopeVersion`/
 // `versionRepr`) + `client/shade-tree-client.mjs` (`CLIENT_PROTO_*`/`selectProtoVersion`).
-// See docs/PROTOCOL-VERSIONING.md. The bounded reason LABELS are byte-pinned in
+// See docs/VERSIONING.md. The bounded reason LABELS are byte-pinned in
 // `testdata/vectors.json` `protoReasons`; the full runtime reason strings additionally
 // carry the offending version/ranges, which are context-dependent and NOT pinned.
 
