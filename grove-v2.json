@@ -1,0 +1,98 @@
+{
+  "schema": "shade-tree-public-grove-v2",
+  "network": "sepolia",
+  "observedAt": "2026-09-19T14:00:00.000Z",
+  "source": {
+    "bootnodeReachable": true,
+    "directoryVerified": true,
+    "definition": "announced-within-ttl",
+    "cadenceMinutes": 15
+  },
+  "nodes": {
+    "announced": 3
+  },
+  "growth": {
+    "windowHours": 24,
+    "announcedNodeHours": 6,
+    "samples": 9
+  },
+  "privacy": {
+    "identities": false,
+    "locations": false,
+    "traffic": false,
+    "stablePositions": false,
+    "futureSharedStatsMinReportingNodes": 5
+  },
+  "history": [
+    {
+      "at": "2026-09-17T18:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-17T21:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-17T23:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-18T06:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-18T18:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-18T21:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-18T23:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-19T10:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-19T14:00:00.000Z",
+      "announced": 3
+    }
+  ],
+  "relay": {
+    "definition": "payload-bytes-relayed",
+    "unit": "bytes",
+    "generatedAt": "2026-09-19T14:00:00.000Z",
+    "delayHours": 6,
+    "minimumCohort": 5,
+    "rounding": {
+      "method": "ceiling",
+      "bucketBytes": "1073741824"
+    },
+    "windows": {
+      "sixHour": {
+        "status": "suppressed",
+        "windowHours": 6,
+        "windowStart": "2026-09-19T02:00:00.000Z",
+        "windowEnd": "2026-09-19T08:00:00.000Z",
+        "reportingNodes": 0,
+        "suppressionReason": "unavailable"
+      },
+      "twentyFourHour": {
+        "status": "suppressed",
+        "windowHours": 24,
+        "windowStart": "2026-09-18T08:00:00.000Z",
+        "windowEnd": "2026-09-19T08:00:00.000Z",
+        "reportingNodes": 0,
+        "suppressionReason": "unavailable"
+      }
+    }
+  },
+  "attestation": {
+    "algorithm": "Ed25519",
+    "keyId": "grove-2026-08",
+    "signature": "Pb+6hRlEWk+zLRJJW7xjY9f92EPb6skqirrhjGMYuVCYSHZ8votDQ7kf7V819ZBkgzaarIdb3u3J/MUp4LbxBQ=="
+  }
+}
