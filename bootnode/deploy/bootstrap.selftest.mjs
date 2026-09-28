@@ -264,6 +264,12 @@ async function main() {
     ok(preRetired.status !== 0 && /not joinable/.test(preRetired.stderr), "preset: a retired record is refused");
     ok(render(work, "preset-bad", { SHADENET_NETWORK: "../x" }).status !== 0, "preset: a bad network name is refused");
     ok(/^ImportCredential=SHADE_TREE_\*$/m.test(preGw) && !/KEY=/.test(preGw), "units import SHADE_TREE_* credentials and hold no key material");
+    // OPS-9: a joining Elder federates with the record's Elder and checks stake on chain.
+    const preElder = render(work, "preset-elder", { SHADE_TREE_ELDER_ONLY: "1", SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath });
+    const preElderUnit = await readFile(join(preElder.out, "etc/systemd/system/shade-tree-bootnode.service"), "utf8");
+    ok(preElder.status === 0 && unitEnv(preElderUnit, "SHADE_TREE_BOOTNODE_PEERS") === record.elder.onion && unitEnv(preElderUnit, "SHADE_TREE_STAKE_MODE") === "onchain"
+      && unitEnv(preElderUnit, "SHADE_TREE_GATEWAY_REGISTRY") === record.elder.gatewayRegistry, "preset + ELDER_ONLY: federated stake-admission Elder");
+    ok(render(work, "peers-bad", { SHADE_TREE_BOOTNODE_PEERS: "nope.onion" }).status !== 0, "malformed federation peer rejected");
     // --render <dir> CLI form == env form.
     const cli = render(work, "cli", { SHADE_TREE_BOOTNODE_ONION: ONION }, ["--render", join(work, "cli")]);
     ok(cli.status === 0 && (await readAll(join(work, "cli"))).get("etc/systemd/system/shade-tree-heartbeat.service") === hb, "`--render <dir>` == SHADE_TREE_RENDER_ONLY=<dir>");

@@ -167,15 +167,17 @@ if [ -n "$SHADENET_NETWORK" ]; then
   fi
   [ -f "$SHADENET_NETWORK_RECORD" ] || die "SHADENET_NETWORK_RECORD not found: $SHADENET_NETWORK_RECORD"
   command -v python3 >/dev/null || die "SHADENET_NETWORK needs python3 to read the deployment record"
-  preset="$(python3 - "$SHADENET_NETWORK_RECORD" <<'PY'
+  preset="$(python3 - "$SHADENET_NETWORK_RECORD" "${SHADE_TREE_ELDER_ONLY:-0}" <<'PY'
 import json, re, shlex, sys
 r = json.load(open(sys.argv[1], encoding="utf-8"))
 if r.get("status") not in ("live", "staging"):
     sys.exit(f"record status is {r.get('status')!r}; only live or staging records can be joined")
 elder, adm, rate = r["elder"], r["admission"], r["ratePolicy"]
 staked = (adm.get("roots") or {}).get("staked") or {}
+elder_only = sys.argv[2] in ("1", "true", "yes", "on")
 out = {
-    "SHADE_TREE_BOOTNODE_ONION": elder["onion"],
+    # A joining node announces to the Elder in the record; a joining Elder federates with it instead.
+    ("SHADE_TREE_BOOTNODE_PEERS" if elder_only else "SHADE_TREE_BOOTNODE_ONION"): elder["onion"],
     "SHADE_TREE_BOOTNODE_SIGNER": elder["canopySigner"],
     "SHADE_TREE_EPOCH_SECONDS": rate["epochSeconds"],
     "SHADE_TREE_ROOT_FRESHNESS_SECONDS": rate["rootFreshnessSeconds"],
@@ -196,6 +198,8 @@ if arts:
     out["SHADE_TREE_ZK_ARTIFACTS"] = ",".join(arts)
 if elder.get("admission"):
     out["SHADE_TREE_ADMISSION"] = elder["admission"]
+if elder.get("gatewayRegistry"):
+    out["SHADE_TREE_GATEWAY_REGISTRY"] = elder["gatewayRegistry"]
 for k, v in out.items():
     v = str(v)
     if not re.fullmatch(r"[A-Za-z0-9._:/,=@%+-]{1,512}", v):
@@ -230,6 +234,8 @@ SHADE_TREE_ENABLE_POW="${SHADE_TREE_ENABLE_POW:-0}"
 SHADE_TREE_BOOTNODE_ONION="${SHADE_TREE_BOOTNODE_ONION:-}"
 SHADE_TREE_BOOTNODE_SIGNER="${SHADE_TREE_BOOTNODE_SIGNER:-}"
 SHADE_TREE_ELDER_ONLY="${SHADE_TREE_ELDER_ONLY:-0}"
+SHADE_TREE_BOOTNODE_PEERS="${SHADE_TREE_BOOTNODE_PEERS:-}"
+SHADE_TREE_GATEWAY_REGISTRY="${SHADE_TREE_GATEWAY_REGISTRY:-}"
 SHADE_TREE_GATEWAY_REGION="${SHADE_TREE_GATEWAY_REGION:-}"
 SHADE_TREE_RENDER_ONLY="${SHADE_TREE_RENDER_ONLY:-}"
 RUN_USER="${SHADE_TREE_USER:-shade-tree}"
@@ -526,6 +532,14 @@ fi
 [[ "$SHADE_TREE_NODE_VERSION" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || die "SHADE_TREE_NODE_VERSION must be x.y.z"
 [ -z "$SHADE_TREE_CREDENTIALS_FROM" ] || [ -d "$SHADE_TREE_CREDENTIALS_FROM" ] || die "SHADE_TREE_CREDENTIALS_FROM must be a directory"
 
+for peer in ${SHADE_TREE_BOOTNODE_PEERS//,/ }; do
+  [[ "${peer%.onion}" =~ ^[a-z2-7]{56}$ ]] || die "SHADE_TREE_BOOTNODE_PEERS must be comma-separated v3 onions"
+done
+if [ -n "$SHADE_TREE_GATEWAY_REGISTRY" ]; then
+  [[ "$SHADE_TREE_GATEWAY_REGISTRY" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "SHADE_TREE_GATEWAY_REGISTRY must be 0x<40 hex>"
+  [ -n "$SHADE_TREE_RPC_URL" ] || die "SHADE_TREE_GATEWAY_REGISTRY needs SHADE_TREE_RPC_URL"
+fi
+
 # --- renderers: the ONLY places torrc / unit text is produced (live + render mode share them) ---
 # torrc include: one HiddenServiceDir block per onion this box publishes. The PoW line is a
 # per-service option, so it sits INSIDE each block right after its HiddenServicePort.
@@ -642,6 +656,14 @@ Environment=SHADE_TREE_LOG_FORMAT=${SHADE_TREE_LOG_FORMAT}
 Environment=SHADE_TREE_BANNER=${SHADE_TREE_BANNER}
 SyslogIdentifier=shade-tree-elder
 EOF
+    if [ "$SHADE_TREE_ADMISSION" = "stake" ] && [ -n "$SHADE_TREE_GATEWAY_REGISTRY" ]; then
+      # Stake admission: the Elder checks each announcing operator in GatewayRegistry.
+      echo "Environment=SHADE_TREE_STAKE_MODE=onchain"
+      echo "Environment=SHADE_TREE_GATEWAY_REGISTRY=${SHADE_TREE_GATEWAY_REGISTRY}"
+      echo "Environment=SHADE_TREE_RPC_URL=${SHADE_TREE_RPC_URL}"
+    fi
+    # Federation (T-FEAT-1, OPS-9): pull and re-verify peers' announces.
+    [ -z "$SHADE_TREE_BOOTNODE_PEERS" ] || echo "Environment=SHADE_TREE_BOOTNODE_PEERS=${SHADE_TREE_BOOTNODE_PEERS}"
     if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
       # Advertise the registrar in GET /health (`pay: {port, protocols, asset, chain, tiers}`).
       echo "Environment=SHADE_TREE_REGISTRAR_ADVERTISE=1"
