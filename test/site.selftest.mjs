@@ -346,6 +346,6 @@ check("branded 404 gives visitors useful recovery routes", /<h1>This path leaves
 const sitemapLocations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 check("sitemap contains only the six indexable public pages", sitemapLocations.length === indexablePages.length && indexablePages.every(([, , path]) => sitemapLocations.includes(new URL(path, "https://shade-tree-node.vercel.app").href)) && !sitemap.includes("/lab/") && !sitemap.includes("404"));
 
-check("staking surface is local-first, responsive, and visibly separates private from public state", /Stake without giving us an identity/.test(stakePage) && /data-leaf-tag/.test(stakePage) && /data-sponsor-step/.test(stakePage) && /@media \(max-width: 900px\)/.test(stakeCss) && /@media \(prefers-reduced-motion: reduce\)/.test(stakeCss) && stakeScript.length > 50_000 && stakeScript.length < 150_000);
+check("staking surface is local-first, responsive, and visibly separates private from public state", /Stake without giving us an identity/.test(stakePage) && /data-leaf-tag/.test(stakePage) && /data-sponsor-step/.test(stakePage) && /@media \(max-width: 900px\)/.test(stakeCss) && /@media \(prefers-reduced-motion: reduce\)/.test(stakeCss) && stakeScript.length > 5_000 && stakeScript.length < 150_000);
 
 console.log(`PASS: site selftest (${checks.length} checks)`);

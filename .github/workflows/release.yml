@@ -512,6 +512,18 @@ jobs:
           path: src
           sparse-checkout: scripts/release
 
+      - name: Check out the third-party notices
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: notices
+          sparse-checkout: THIRD-PARTY-NOTICES.md
+          sparse-checkout-cone-mode: false
+
+      - name: Ship the third-party notices with the binaries
+        shell: bash
+        run: cp notices/THIRD-PARTY-NOTICES.md dist/THIRD-PARTY-NOTICES.md
+
       - name: Render the Homebrew formula
         shell: bash
         env:

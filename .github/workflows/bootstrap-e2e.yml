@@ -14,14 +14,10 @@ name: bootstrap-e2e
 on:
   push:
     branches: [main]
+  # Runs on every PR so its two matrix checks always report (they are required). The gate
+  # step below turns a PR that touches no bootstrap input into a fast success; a job-level
+  # `if:` would skip under the unexpanded matrix name and never report the required contexts.
   pull_request:
-    paths:
-      - "bootnode/**"
-      - "gateway/**"
-      - "lib/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/bootstrap-e2e.yml"
   schedule:
     - cron: "29 7 * * *"
   workflow_dispatch:
@@ -48,9 +44,20 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
+      - name: Path gate
+        id: gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci-changes.sh '^(bootnode/|gateway/|lib/|bin/|group/|payments/|network/|tor/|package(-lock)?\.json$|\.github/workflows/bootstrap-e2e\.yml$|scripts/ci-changes\.sh$)'
+
+      - name: No bootstrap inputs changed
+        if: steps.gate.outputs.run != 'true'
+        run: echo "No bootstrap input changed in this PR; reporting success without booting the fleet."
+
       # ubuntu-latest ships Docker and can run privileged containers, which is what
       # systemd-in-container needs. The runner script does everything else.
       - name: Run bootstrap.sh e2e in a systemd container (${{ matrix.mode }})
+        if: steps.gate.outputs.run == 'true'
         env:
           E2E_MODE: ${{ matrix.mode }}
         run: bash bootnode/deploy/e2e-container.sh
