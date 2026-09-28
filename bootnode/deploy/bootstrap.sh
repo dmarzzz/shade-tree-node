@@ -30,7 +30,7 @@
 #   SHADE_TREE_HS_MAX_STREAMS  per-circuit stream cap on every HS block (default 32; OPS-10).
 #                    Default OFF: a client tor built without the pow module (e.g. the Homebrew
 #                    bottle, `tor --list-modules` -> `pow: no`) could NOT reach a PoW-enabled
-#                    onion (docs/DEPLOYMENT.md "PoW capability mismatch"); the agent-devops
+#                    onion (docs/history/DEPLOYMENT.md "PoW capability mismatch"); the agent-devops
 #                    fleet role defaults `shade_tree_enable_pow: false` for the same reason. Turn it
 #                    on (=1) once every client you serve runs a pow-capable tor. Toggling
 #                    later = edit /etc/tor/torrc.d-shade-tree + `systemctl reload tor` (keys/onions
@@ -674,7 +674,12 @@ EOF
       echo "Environment=SHADE_TREE_RPC_URL=${SHADE_TREE_RPC_URL}"
     fi
     # Federation (T-FEAT-1, OPS-9): pull and re-verify peers' announces.
-    [ -z "$SHADE_TREE_BOOTNODE_PEERS" ] || echo "Environment=SHADE_TREE_BOOTNODE_PEERS=${SHADE_TREE_BOOTNODE_PEERS}"
+    if [ -n "$SHADE_TREE_BOOTNODE_PEERS" ]; then
+      echo "Environment=SHADE_TREE_BOOTNODE_PEERS=${SHADE_TREE_BOOTNODE_PEERS}"
+      # Peers are pulled over this box's system tor (the federation default of 9250 is not it).
+      echo "Environment=SHADE_TREE_TOR_HOST=127.0.0.1"
+      echo "Environment=SHADE_TREE_TOR_PORT=9050"
+    fi
     if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
       # Advertise the registrar in GET /health (`pay: {port, protocols, asset, chain, tiers}`).
       echo "Environment=SHADE_TREE_REGISTRAR_ADVERTISE=1"
@@ -811,7 +816,7 @@ Wants=network-online.target
 User=${RUN_USER}
 WorkingDirectory=${SHADE_TREE_DIR}
 Environment=RUST_LOG=info
-Environment=EXECUTION_RPC=${SHADE_TREE_RPC_URL}
+Environment=EXECUTION_RPC=${SHADE_TREE_RPC_URL%%,*}
 Environment=CONSENSUS_RPC=${SHADE_TREE_HELIOS_CONSENSUS_RPC}
 EOF
     if [ -n "$SHADE_TREE_HELIOS_CHECKPOINT" ]; then
@@ -917,7 +922,7 @@ fi
 log "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl gnupg ca-certificates git apt-transport-https >/dev/null
+apt-get install -y -qq curl gnupg ca-certificates git apt-transport-https xz-utils >/dev/null
 
 log "node 24"
 # Node < 24 is upgraded, not tolerated: the units below run under
@@ -925,7 +930,7 @@ log "node 24"
 # startup, which that allowlist does not include -> every unit dies with SIGSYS
 # (status=31/SYS) in a restart loop. Observed on the 2026-08-17 go-live box (pre-installed
 # NodeSource 20.20.2); Node 24 starts clean under the same filter. See
-# docs/GO-LIVE-LOG-2026-08-17.md (Phase 1.3).
+# docs/history/GO-LIVE-LOG-2026-08-17.md (Phase 1.3).
 # The runtime is a pinned, checksum-verified nodejs.org release (OPS-11), not an unpinned
 # `curl | bash` of a third-party apt setup script. Another version must bring its own sha256.
 case "$(uname -m)" in x86_64) NODE_ARCH=x64 ;; aarch64|arm64) NODE_ARCH=arm64 ;; *) die "unsupported CPU $(uname -m)" ;; esac
@@ -939,7 +944,8 @@ if [ -z "${SHADE_TREE_NODE_BIN:-}" ] && [ "$("$node_dir/bin/node" -p process.ver
   curl -fsSL --proto '=https' "https://nodejs.org/dist/v${SHADE_TREE_NODE_VERSION}/node-v${SHADE_TREE_NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o "$node_tar"
   echo "${NODE_SHA256}  ${node_tar}" | sha256sum -c --quiet - || die "node tarball checksum mismatch"
   rm -rf "$node_dir" && mkdir -p "$node_dir"
-  tar -xJf "$node_tar" -C "$node_dir" --strip-components=1 && rm -f "$node_tar"
+  tar -xJf "$node_tar" -C "$node_dir" --strip-components=1 || die "could not unpack node $SHADE_TREE_NODE_VERSION"
+  rm -f "$node_tar"
 fi
 NODE_BIN="${SHADE_TREE_NODE_BIN:-$node_dir/bin/node}"
 "$NODE_BIN" --version
@@ -973,8 +979,15 @@ esac
 if [ -d "$SHADE_TREE_DIR/.git" ]; then
   git -C "$SHADE_TREE_DIR" fetch --depth 1 origin "$SHADE_TREE_REF" -q && git -C "$SHADE_TREE_DIR" checkout -q FETCH_HEAD
 else
-  git clone --depth 1 --branch "$SHADE_TREE_REF" "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q \
-    || { git clone --depth 1 "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q && git -C "$SHADE_TREE_DIR" checkout -q "$SHADE_TREE_REF"; }
+  # init + fetch works for a branch, a tag and a bare commit SHA alike (a shallow
+  # `clone --branch` cannot take a SHA, which is what SHADENET_NETWORK pins).
+  # Never delete an existing install: its deploy-state holds the onion identities.
+  if [ -e "$SHADE_TREE_DIR" ] && [ -n "$(ls -A "$SHADE_TREE_DIR" 2>/dev/null)" ]; then
+    die "$SHADE_TREE_DIR exists, is not a git checkout and is not empty; move it aside first"
+  fi
+  git init -q "$SHADE_TREE_DIR"
+  git -C "$SHADE_TREE_DIR" remote add origin "$SHADE_TREE_REPO"
+  git -C "$SHADE_TREE_DIR" fetch --depth 1 -q origin "$SHADE_TREE_REF" && git -C "$SHADE_TREE_DIR" checkout -q FETCH_HEAD
 fi
 ( cd "$SHADE_TREE_DIR" && PATH="$(dirname "$NODE_BIN"):$PATH" npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 )
 

@@ -53,7 +53,7 @@ async function main() {
   const proxyHelp = shadeTreeCli(["proxy", "--help"]);
   ok(proxyHelp.code === 0 && /read -s SHADE_TREE_SECRET/.test(proxyHelp.out) && /--limit N/.test(proxyHelp.out) && /docs\/AGENT\.md/.test(proxyHelp.out), "`shade-tree proxy --help` gives the secret, tier, and agent-guide path");
   const nodeHelp = shadeTreeCli(["node", "--help"]);
-  ok(nodeHelp.code === 0 && /shade-tree join node/.test(nodeHelp.out) && /development ZK setup/.test(nodeHelp.out), "`shade-tree node --help` gives the guided setup and deployment boundary");
+  ok(nodeHelp.code === 0 && /shade-tree-node join node/.test(nodeHelp.out) && /development ZK setup/.test(nodeHelp.out), "`shade-tree node --help` gives the guided setup and deployment boundary");
 
   // --- version ---------------------------------------------------------------
   console.log("\nversion:");
@@ -71,7 +71,7 @@ async function main() {
   console.log("\ndoctor:");
   const doc = shadeTreeCli(["doctor"]);
   ok(doc.code === 0 || doc.code === 1, "`shade-tree doctor` runs and exits 0 or 1 (health check)");
-  ok(/shade-tree doctor/.test(doc.out), "`shade-tree doctor` prints its `shade-tree doctor` banner");
+  ok(/shade-tree-node doctor/.test(doc.out), "`shade-tree doctor` prints its `shade-tree doctor` banner");
 
   // --- --help short-circuits BEFORE running a service -------------------------
   // A durable service (bootnode) must print its help and exit 0 without ever binding a port.

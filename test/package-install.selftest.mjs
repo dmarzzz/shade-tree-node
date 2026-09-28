@@ -58,7 +58,7 @@ try {
   ].map((path) => pathToFileURL(join(installed, path)).href);
   run(process.execPath, ["--input-type=module", "-e", `await Promise.all(${JSON.stringify(imports)}.map((url) => import(url)))`], { cwd: work });
 
-  const cli = join(prefix, "bin", "shade-tree");
+  const cli = join(prefix, "bin", "shade-tree-node");
   const joined = run(cli, ["join", "node", hsDir], { cwd: work });
   assert.match(joined.stdout, /joining as a SHADE TREE NODE operator/);
   assert.match(joined.stdout, /SAFETY: disposable research only/);
@@ -66,7 +66,7 @@ try {
   assert.doesNotMatch(joined.stdout, /issue #73/);
   assert.match(joined.stdout, /issue #6/);
   assert.match(joined.stdout, /untrusted development Groth16 artifacts/);
-  assert.match(joined.stdout, /shade-tree node/);
+  assert.match(joined.stdout, /shade-tree-node node/);
   assert.ok(existsSync(join(hsDir, "hostname")), "installed CLI did not mint the node onion identity");
   assert.ok(existsSync(join(hsDir, "identity.local.json")), "installed CLI did not write the node announcement identity");
 

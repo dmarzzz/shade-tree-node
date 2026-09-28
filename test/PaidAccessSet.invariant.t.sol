@@ -18,6 +18,7 @@ import {Cheats} from "./Cheats.sol";
 import {FuzzSelector} from "./FuzzHelpers.sol";
 import {PaidAccessSet} from "../contracts/PaidAccessSet.sol";
 import {StakedReputationSet, IWithdrawVerifier, ICommitmentHasher} from "../contracts/StakedReputationSet.sol";
+import {StakedReputationSetHarness} from "./StakedReputationSetHarness.sol";
 import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
@@ -30,7 +31,7 @@ contract OperatorProxy {
 
 contract PaidHandler is Cheats {
     PaidAccessSet public set;
-    StakedReputationSet public ref;
+    StakedReputationSetHarness public ref;
     RateCommitmentHasher public hasher;
     OperatorProxy public alt;
 
@@ -57,7 +58,7 @@ contract PaidHandler is Cheats {
         uint256[] memory xl = new uint256[](1);
         uint256[] memory xb = new uint256[](1);
         xl[0] = 32; xb[0] = 4 * BOND;
-        ref = new StakedReputationSet(BOND, 300, 270, IWithdrawVerifier(address(v)), ICommitmentHasher(address(hasher)), xl, xb);
+        ref = new StakedReputationSetHarness(BOND, 300, 270, IWithdrawVerifier(address(v)), ICommitmentHasher(address(hasher)), xl, xb);
         for (uint256 i = 0; i < 6; i++) {
             secrets[i] = 1_000 + i;
             limits[i] = (i % 2 == 0) ? 8 : 32;

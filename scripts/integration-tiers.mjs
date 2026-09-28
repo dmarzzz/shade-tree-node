@@ -42,7 +42,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ethers } from "ethers";
 import {
-  identityFor, identitySecretOf, rateCommitmentOf, groupFromIdentities, newGroup, deriveCommitment,
+  identityFor, identitySecretOf, identityCommitmentOf, rateCommitmentOf, groupFromIdentities, newGroup, deriveCommitment,
   currentEpoch, requestSignal, proveForSlot, toField, EPOCH_SECONDS,
 } from "../lib/rln.mjs";
 import { makeSlotPool, buildEnvelope } from "../client/shade-tree-client.mjs";
@@ -75,7 +75,8 @@ export function memberOf(seedHex, limit) {
   const identity = identityFor(toField(seedHex));
   const identitySecret = identitySecretOf(identity);
   const leaf = rateCommitmentOf(identity, limit).toString();
-  return { seed: seedHex, identity, identitySecret, leaf, limit };
+  const identityCommitment = identityCommitmentOf(identity).toString(); // what registerIdentity takes
+  return { seed: seedHex, identity, identitySecret, identityCommitment, leaf, limit };
 }
 
 function makeLog(sink) {
@@ -139,9 +140,10 @@ async function waitFor(pred, ms, stepMs = 500) {
   return null;
 }
 
-// Stake `member` at its tier through the real CLI (`shade-tree register-member <leaf> --limit N`).
+// Stake `member` at its tier through the real CLI
+// (`shade-tree register-member <identity-commitment> --limit N`; the set derives member.leaf).
 export function stakeViaCli(member, { rpcUrl, set, key }) {
-  const r = spawnSync(process.execPath, [CLI, "register-member", member.leaf, "--limit", String(member.limit), "--rpc-url", rpcUrl, "--group-contract", set], {
+  const r = spawnSync(process.execPath, [CLI, "register-member", member.identityCommitment, "--limit", String(member.limit), "--rpc-url", rpcUrl, "--group-contract", set], {
     cwd: ROOT, encoding: "utf8", env: { ...process.env, SHADE_TREE_REGISTER_KEY: key, SHADE_TREE_NETWORK: "" }, timeout: 180000,
   });
   const out = (r.stdout || "") + (r.stderr || "");
@@ -192,7 +194,7 @@ export async function runTierIntegration(opts) {
   let gw = null;
   try {
     for (const [name, m] of [["ALICE", A], ["BOB", B]]) {
-      log("stake", `${name} register(leaf, ${m.limit}) + bond ${ethers.formatEther(m.limit === 8 ? bond8 : bond32)} ETH ...`);
+      log("stake", `${name} registerIdentity(idc, ${m.limit}) + bond ${ethers.formatEther(m.limit === 8 ? bond8 : bond32)} ETH ...`);
       const r = stakeViaCli(m, { rpcUrl, set, key: registerKey });
       txs[`stake${name}`] = { tx: r.tx, block: r.block };
       check(r.code === 0 && !!r.tx, `${name} staked at tier ${m.limit} via \`shade-tree register-member --limit ${m.limit}\` (tx ${r.tx ? r.tx.slice(0, 12) + ".." : "none"} block ${r.block})`);

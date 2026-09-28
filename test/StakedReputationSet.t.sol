@@ -7,7 +7,7 @@ import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
 contract StakedReputationSetTest is Cheats {
-    // Demo params (docs/NEXT-VERSION.md), matching script/Deploy.s.sol.
+    // Demo params (docs/history/NEXT-VERSION.md), matching script/Deploy.s.sol.
     uint256 constant BOND = 0.01 ether;
     uint256 constant UNBONDING = 300;
     uint256 constant MIN_UNBONDING = 270;
@@ -28,6 +28,9 @@ contract StakedReputationSetTest is Cheats {
     uint256 commitA;
     uint256 commitB;
     uint256 commitC;
+    uint256 idcA;
+    uint256 idcB;
+    uint256 idcC;
 
     address constant RECIPIENT = address(0xBEEF);
     address constant RECEIVER = address(0xCAFE); // gateway/treasury slash receiver
@@ -47,6 +50,9 @@ contract StakedReputationSetTest is Cheats {
         commitA = hasher.commitmentOf(SECRET_A);
         commitB = hasher.commitmentOf(SECRET_B);
         commitC = hasher.commitmentOf(SECRET_C);
+        idcA = hasher.identityCommitmentOf(SECRET_A);
+        idcB = hasher.identityCommitmentOf(SECRET_B);
+        idcC = hasher.identityCommitmentOf(SECRET_C);
         vm.deal(address(this), 100 ether);
     }
 
@@ -85,7 +91,7 @@ contract StakedReputationSetTest is Cheats {
     // ---- register (R1) --------------------------------------------------------
 
     function test_Register_Succeeds() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         assertTrue(set.isActive(commitA), "A should be active");
         assertEq(set.activeCount(), 1);
         (uint256 bond, uint64 index, uint64 exitAt,) = set.members(commitA);
@@ -97,24 +103,24 @@ contract StakedReputationSetTest is Cheats {
 
     function test_Register_RequiresExactBond() public {
         vm.expectRevert(StakedReputationSet.BadBond.selector);
-        set.register{value: BOND - 1}(commitA);
+        set.registerIdentity{value: BOND - 1}(idcA, 8);
 
         vm.expectRevert(StakedReputationSet.BadBond.selector);
-        set.register{value: BOND + 1}(commitA);
+        set.registerIdentity{value: BOND + 1}(idcA, 8);
 
         vm.expectRevert(StakedReputationSet.BadBond.selector);
-        set.register{value: 0}(commitA);
+        set.registerIdentity{value: 0}(idcA, 8);
     }
 
     function test_Register_RejectsDuplicate() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         vm.expectRevert(StakedReputationSet.AlreadyMember.selector);
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
     }
 
     function test_Register_AppendOnlyIndex() public {
-        set.register{value: BOND}(commitA);
-        set.register{value: BOND}(commitB);
+        set.registerIdentity{value: BOND}(idcA, 8);
+        set.registerIdentity{value: BOND}(idcB, 8);
         (, uint64 idxA,,) = set.members(commitA);
         (, uint64 idxB,,) = set.members(commitB);
         assertEq(uint256(idxA), 0);
@@ -126,7 +132,7 @@ contract StakedReputationSetTest is Cheats {
     // ---- initiateExit (R2/R4) -------------------------------------------------
 
     function test_InitiateExit_RequiresValidProof() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         // wrong secret => verifier returns false => BadProof
         vm.expectRevert(StakedReputationSet.BadProof.selector);
         set.initiateExit(commitA, _proof(SECRET_B));
@@ -136,7 +142,7 @@ contract StakedReputationSetTest is Cheats {
     }
 
     function test_InitiateExit_StartsClockAndLeavesActiveSet() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         uint256 t = block.timestamp;
         set.initiateExit(commitA, _proof(SECRET_A));
 
@@ -153,7 +159,7 @@ contract StakedReputationSetTest is Cheats {
     }
 
     function test_InitiateExit_RejectsDoubleExit() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         set.initiateExit(commitA, _proof(SECRET_A));
         vm.expectRevert(StakedReputationSet.AlreadyExiting.selector);
         set.initiateExit(commitA, _proof(SECRET_A));
@@ -162,13 +168,13 @@ contract StakedReputationSetTest is Cheats {
     // ---- withdraw (R2/R4) -----------------------------------------------------
 
     function test_Withdraw_BlockedBeforeExit() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         vm.expectRevert(StakedReputationSet.NotExiting.selector);
         set.withdraw(commitA, RECIPIENT, _proof(SECRET_A));
     }
 
     function test_Withdraw_BlockedBeforeUnbondingElapses() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         set.initiateExit(commitA, _proof(SECRET_A));
 
         // one second short of the unbonding delay
@@ -178,7 +184,7 @@ contract StakedReputationSetTest is Cheats {
     }
 
     function test_Withdraw_SucceedsAfterUnbondingAndPaysRecipient() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         set.initiateExit(commitA, _proof(SECRET_A));
         vm.warp(block.timestamp + UNBONDING);
 
@@ -192,7 +198,7 @@ contract StakedReputationSetTest is Cheats {
     }
 
     function test_Withdraw_RequiresValidProofEvenAfterUnbonding() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         set.initiateExit(commitA, _proof(SECRET_A));
         vm.warp(block.timestamp + UNBONDING);
         vm.expectRevert(StakedReputationSet.BadProof.selector);
@@ -214,7 +220,7 @@ contract StakedReputationSetTest is Cheats {
             "on-chain commitmentOf(identitySecret) must equal poseidon2([poseidon1([s]),8])"
         );
 
-        set.register{value: BOND}(COMMIT_A_EXPECTED);
+        assertEq(set.registerIdentity{value: BOND}(idcA, 8), COMMIT_A_EXPECTED, "the contract derives the rate-commitment leaf");
         uint256 before = RECEIVER.balance;
 
         // revealing the identitySecret slashes the leaf
@@ -224,13 +230,13 @@ contract StakedReputationSetTest is Cheats {
         assertEq(bond, 0, "slashed leaf deleted");
 
         // a WRONG secret does not hash to the leaf => BadSecret
-        set.register{value: BOND}(commitB);
+        set.registerIdentity{value: BOND}(idcB, 8);
         vm.expectRevert(StakedReputationSet.BadSecret.selector);
         set.slash(commitB, SECRET_A, RECEIVER);
     }
 
     function test_Slash_ActiveMember_BurnsPenaltyPaysBounty() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         uint256 before = RECEIVER.balance;
 
         set.slash(commitA, SECRET_A, RECEIVER);
@@ -243,7 +249,7 @@ contract StakedReputationSetTest is Cheats {
     }
 
     function test_Slash_RejectsWrongSecret() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         vm.expectRevert(StakedReputationSet.BadSecret.selector);
         set.slash(commitA, SECRET_B, RECEIVER); // secret doesn't hash to commitA
     }
@@ -254,7 +260,7 @@ contract StakedReputationSetTest is Cheats {
     }
 
     function test_Slash_WorksDuringUnbonding_AndBlocksLaterWithdraw() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         set.initiateExit(commitA, _proof(SECRET_A));
         assertEq(set.activeCount(), 0);
 
@@ -282,9 +288,9 @@ contract StakedReputationSetTest is Cheats {
     /// the SAME leaves (rate commitments for secrets 111/222/333) at the SAME indices, the
     /// JS root and the contract's membership state agree by construction.
     function test_Slash_Middle_PreservesIndices() public {
-        set.register{value: BOND}(commitA); // index 0
-        set.register{value: BOND}(commitB); // index 1 (the middle)
-        set.register{value: BOND}(commitC); // index 2
+        set.registerIdentity{value: BOND}(idcA, 8); // index 0
+        set.registerIdentity{value: BOND}(idcB, 8); // index 1 (the middle)
+        set.registerIdentity{value: BOND}(idcC, 8); // index 2
         assertEq(uint256(set.nextIndex()), 3, "three appends -> nextIndex 3");
         assertEq(set.activeCount(), 3);
 
@@ -307,7 +313,7 @@ contract StakedReputationSetTest is Cheats {
 
         // ...and the vacated index 1 is never reused: the next registration appends at 3.
         assertEq(uint256(set.nextIndex()), 3, "slash does not decrement/reuse nextIndex");
-        set.register{value: BOND}(commitB); // re-register the same commitment
+        set.registerIdentity{value: BOND}(idcB, 8); // re-register the same commitment
         (, uint64 idxBnew, ,) = set.members(commitB);
         assertEq(uint256(idxBnew), 3, "re-registration appends at a FRESH index, not the vacated 1");
     }
@@ -343,14 +349,14 @@ contract StakedReputationSetTest is Cheats {
     function test_Root_KnownStorageSlot() public {
         // The light client reads currentRoot at a fixed, known slot via eth_getProof. Pin it
         // so a storage reorder that moves the root fails here instead of silently.
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         bytes32 atSlot = vm.load(address(set), bytes32(set.ROOT_STORAGE_SLOT()));
         assertEq(uint256(atSlot), set.currentRoot(), "ROOT_STORAGE_SLOT holds currentRoot");
         assertEq(set.ROOT_STORAGE_SLOT(), 3, "root lives at storage slot 3");
     }
 
     function test_Root_SingleRegister_MatchesOffchain() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         assertEq(set.currentRoot(), ROOT_A_ONLY, "root after one register == newGroup([c0]) root");
     }
 
@@ -358,9 +364,9 @@ contract StakedReputationSetTest is Cheats {
     /// equals the off-chain reconstructRoot zero-in-place golden. Proves the on-chain
     /// incremental tree mirrors lib/root-provider.mjs exactly.
     function test_Root_RegisterThreeSlashMiddle_EqualsReconstructRoot() public {
-        set.register{value: BOND}(commitA); // index 0
-        set.register{value: BOND}(commitB); // index 1 (middle)
-        set.register{value: BOND}(commitC); // index 2
+        set.registerIdentity{value: BOND}(idcA, 8); // index 0
+        set.registerIdentity{value: BOND}(idcB, 8); // index 1 (middle)
+        set.registerIdentity{value: BOND}(idcC, 8); // index 2
         set.slash(commitB, SECRET_B, RECEIVER); // zero leaf 1 in place
         assertEq(
             set.currentRoot(),
@@ -373,9 +379,9 @@ contract StakedReputationSetTest is Cheats {
     /// treats MemberExiting/MemberSlashed identically): register-3 / exit-middle reaches the
     /// SAME golden root as slash-middle.
     function test_Root_RegisterThreeExitMiddle_EqualsSlashMiddle() public {
-        set.register{value: BOND}(commitA);
-        set.register{value: BOND}(commitB);
-        set.register{value: BOND}(commitC);
+        set.registerIdentity{value: BOND}(idcA, 8);
+        set.registerIdentity{value: BOND}(idcB, 8);
+        set.registerIdentity{value: BOND}(idcC, 8);
         set.initiateExit(commitB, _proof(SECRET_B)); // zero leaf 1 in place
         assertEq(
             set.currentRoot(),
@@ -387,8 +393,8 @@ contract StakedReputationSetTest is Cheats {
     /// Withdraw must NOT touch the tree (the leaf was already zeroed at initiateExit), and a
     /// slash of an already-exiting member must not re-zero: both keep the root stable.
     function test_Root_WithdrawAndReExitAreStable() public {
-        set.register{value: BOND}(commitA);
-        set.register{value: BOND}(commitB);
+        set.registerIdentity{value: BOND}(idcA, 8);
+        set.registerIdentity{value: BOND}(idcB, 8);
         set.initiateExit(commitB, _proof(SECRET_B));
         uint256 afterExit = set.currentRoot();
 
@@ -397,7 +403,7 @@ contract StakedReputationSetTest is Cheats {
         assertEq(set.currentRoot(), afterExit, "slash of exiting member does not move the root");
 
         // register another member then exit+withdraw it; withdraw leaves the root as exit set it
-        set.register{value: BOND}(commitC); // index 2
+        set.registerIdentity{value: BOND}(idcC, 8); // index 2
         set.initiateExit(commitC, _proof(SECRET_C));
         uint256 afterExitC = set.currentRoot();
         vm.warp(block.timestamp + UNBONDING);
@@ -409,13 +415,13 @@ contract StakedReputationSetTest is Cheats {
     /// reuses the vacated slot), so the root reflects leaves c0, zero, c2, c1 at indices
     /// 0,1,2,3 -- matching the off-chain reconstructRoot re-registration case.
     function test_Root_ReRegisterAfterSlash_AppendsFreshLeaf() public {
-        set.register{value: BOND}(commitA); // 0
-        set.register{value: BOND}(commitB); // 1
-        set.register{value: BOND}(commitC); // 2
+        set.registerIdentity{value: BOND}(idcA, 8); // 0
+        set.registerIdentity{value: BOND}(idcB, 8); // 1
+        set.registerIdentity{value: BOND}(idcC, 8); // 2
         set.slash(commitB, SECRET_B, RECEIVER); // zero @1
         uint256 rMiddleGone = set.currentRoot();
 
-        set.register{value: BOND}(commitB); // re-append at index 3 (NOT the vacated 1)
+        set.registerIdentity{value: BOND}(idcB, 8); // re-append at index 3 (NOT the vacated 1)
         (, uint64 idxNew,,) = set.members(commitB);
         assertEq(uint256(idxNew), 3, "re-register appends at fresh index 3");
         // the root must change (a new live leaf at index 3) and differ from the middle-gone root
@@ -425,23 +431,23 @@ contract StakedReputationSetTest is Cheats {
     // ---- re-registration ------------------------------------------------------
 
     function test_ReRegister_AfterWithdraw() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         set.initiateExit(commitA, _proof(SECRET_A));
         vm.warp(block.timestamp + UNBONDING);
         set.withdraw(commitA, RECIPIENT, _proof(SECRET_A));
 
         // commitment was deleted, so it can be registered again (new leaf index)
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         assertTrue(set.isActive(commitA), "re-registered after withdraw");
         (, uint64 idx,,) = set.members(commitA);
         assertEq(uint256(idx), 1, "re-registration gets a fresh append-only index");
     }
 
     function test_ReRegister_AfterSlash() public {
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         set.slash(commitA, SECRET_A, RECEIVER);
 
-        set.register{value: BOND}(commitA);
+        set.registerIdentity{value: BOND}(idcA, 8);
         assertTrue(set.isActive(commitA), "re-registered after slash");
         assertEq(set.activeCount(), 1);
     }

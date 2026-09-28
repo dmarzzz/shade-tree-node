@@ -488,6 +488,32 @@ fn enroll_with_secret(
     Ok((material.leaf, count))
 }
 
+/// Create a new owner-only identity at `path` with tier `limit`, returning its public leaf. Refuses
+/// to overwrite an existing file.
+pub fn create_identity(path: &Path, limit: u64) -> Result<String, String> {
+    if !(1..=u16::MAX as u64).contains(&limit) {
+        return Err(format!("limit must be in 1..={}", u16::MAX));
+    }
+    let mut seed = zeroize::Zeroizing::new([0u8; 32]);
+    getrandom::fill(seed.as_mut())
+        .map_err(|error| format!("operating-system randomness unavailable: {error}"))?;
+    let secret = zeroize::Zeroizing::new(format!("0x{}", hex::encode(seed.as_ref())));
+    let options = EnrollOptions {
+        limit,
+        out: path.to_path_buf(),
+        members: None,
+    };
+    enroll_with_secret(&options, &secret).map(|(leaf, _)| leaf)
+}
+
+/// A fresh 256-bit proxy token (64 hex characters).
+pub fn fresh_token() -> Result<String, String> {
+    let mut token = zeroize::Zeroizing::new([0_u8; 32]);
+    getrandom::fill(token.as_mut())
+        .map_err(|error| format!("operating-system randomness unavailable: {error}"))?;
+    Ok(hex::encode(token.as_ref()))
+}
+
 pub fn cmd_enroll(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(Some(options)) => options,
@@ -522,7 +548,10 @@ pub fn cmd_enroll(args: &[String]) -> ExitCode {
                     if count == 1 { "" } else { "s" }
                 );
             } else {
-                eprintln!("  stake the stdout leaf with `shade-tree register-member`, or submit it to your Grove operator; no local member set was changed");
+                eprintln!(
+                    "  stake it with `shade-tree register-member --identity {}`, or submit the stdout leaf to your Grove operator; no local member set was changed",
+                    options.out.display()
+                );
             }
             ExitCode::SUCCESS
         }

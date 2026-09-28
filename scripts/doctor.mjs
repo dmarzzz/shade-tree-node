@@ -1,4 +1,4 @@
-// shade-tree doctor — a quick local health check. Confirms the environment can run the pieces
+// shade-tree-node doctor — a quick local health check. Confirms the environment can run the pieces
 // before you try to, and points at the fix when something is missing. Read-only.
 
 import { existsSync } from "node:fs";
@@ -30,7 +30,7 @@ function portOpen(host, port, timeout = 500) {
   });
 }
 
-console.log("shade-tree doctor\n");
+console.log("shade-tree-node doctor\n");
 
 // node
 const major = Number(process.versions.node.split(".")[0]);
@@ -63,7 +63,7 @@ forge ? okLine(forge) : warnLine("forge not on PATH — only needed to build/dep
 // onion identity
 existsSync(join(ROOT, "tor", "hs", "identity.local.json"))
   ? okLine("gateway onion identity present (tor/hs/identity.local.json)")
-  : warnLine("no onion identity yet — run `shade-tree keygen tor/hs` before announcing to a bootnode");
+  : warnLine("no onion identity yet — run `shade-tree-node keygen tor/hs` before announcing to a bootnode");
 
 // deployed contracts
 existsSync(join(ROOT, "contracts", "deployed.local.json"))

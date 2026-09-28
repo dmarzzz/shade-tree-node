@@ -249,7 +249,7 @@ SHADE_TREE_TOR_TIMEOUT_SECS="${HERMES_E2E_ARTI_TIMEOUT_SECS:-300}" \
     > "$WORK/proxy.log" 2>&1 &
 PROXY_PID=$!
 track "$PROXY_PID"
-node "$INTEROP/wait-log.mjs" "$WORK/proxy.log" "shade-tree proxy listening" 30000 || {
+node "$INTEROP/wait-log.mjs" "$WORK/proxy.log" "proxy listening on" 30000 || {
   cat "$WORK/proxy.log" >&2
   fail "Proxy did not become ready"
 }

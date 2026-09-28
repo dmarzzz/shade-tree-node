@@ -4,7 +4,7 @@
 eyeballed the output. This makes it a **repeatable test**. The exact same install
 path a fresh Ubuntu 24.04 droplet takes is exercised on every relevant PR.
 
-- **Runner:** [`e2e-container.sh`](./e2e-container.sh) — run it locally.
+- **Runner:** [`e2e-container.sh`](e2e-container.sh) — run it locally.
 - **CI:** [`.github/workflows/bootstrap-e2e.yml`](../../.github/workflows/bootstrap-e2e.yml)
   — the authoritative execution path; it just calls the runner.
 

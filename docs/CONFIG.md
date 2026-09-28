@@ -120,7 +120,7 @@ Read by `lib/gateway-registry.mjs` (StakeVerifier), `lib/root-provider.mjs` (Roo
 
 ## Registrar (402 payments, T-FEAT-7)
 
-Read by `payments/registrar.mjs` (the operator's HTTP-402 service that sells membership leaves over x402 / MPP and inserts them into `PaidAccessSet`; `docs/PAYMENTS.md` "Shipped 2026-08-17") and by `shade-tree pay` (`group/pay.mjs`, the buyer). Published as an extra port of an onion the box already runs (`bootstrap.sh` `SHADE_TREE_REGISTRAR=1`): the bootnode onion on a bootnode+gateway box, or — T-FEAT-9 — the GATEWAY onion on a gateway-only box (every provider may run its own registrar + its own `PaidAccessSet`; `docs/adr/0008`).
+Read by `payments/registrar.mjs` (the operator's HTTP-402 service that sells membership leaves over x402 / MPP and inserts them into `PaidAccessSet`; `docs/PAYMENTS.md` "Shipped 2026-08-17") and by `shade-tree-node pay` (`group/pay.mjs`, the buyer). Published as an extra port of an onion the box already runs (`bootstrap.sh` `SHADE_TREE_REGISTRAR=1`): the bootnode onion on a bootnode+gateway box, or — T-FEAT-9 — the GATEWAY onion on a gateway-only box (every provider may run its own registrar + its own `PaidAccessSet`; `docs/adr/0008`).
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
@@ -130,8 +130,8 @@ Read by `payments/registrar.mjs` (the operator's HTTP-402 service that sells mem
 | `SHADE_TREE_PAY_ASSET_NAME` / `SHADE_TREE_PAY_ASSET_VERSION` | token `name()` / `version()` | EIP-712 domain overrides for a token whose `version()` is missing or differs from its domain. | registrar | (none) |
 | `SHADE_TREE_PAY_PRICES` | (required) | Price per tier in the asset's atomic units: `8=100000,32=400000` (= 0.10 / 0.40 with 6 decimals). Limits 1..65535, one price per tier; the price IS the tier's public fingerprint, so keep it fixed. | registrar; bootnode advert | (none) |
 | `SHADE_TREE_PAY_TO` | the operator key's address | Recipient of the stablecoin (`payTo` in x402, `recipient` in MPP). | registrar | (none) |
-| `SHADE_TREE_PAY_PROTOCOLS` | `x402,mpp` | **Which rails this provider serves** (T-FEAT-9): any non-empty subset of `x402`, `mpp` (canonical order `x402,mpp`; unknown ⇒ startup error). A disabled rail gets NO challenge in any 402 (`GET /pay/quote`, the bodied `POST /pay`), is absent from the 402 body / `/health` `pay.protocols`, and a `POST /pay` carrying its header (`PAYMENT-SIGNATURE` for x402, `Authorization: Payment` for MPP) is refused `400 {err:"protocol-disabled", protocol, protocols:[enabled]}` before any parsing. Also read by the **bootnode** (`/health` `pay.protocols`, with `SHADE_TREE_REGISTRAR_ADVERTISE`) and the **heartbeat** (signed `caps.pay.protocols`). `shade-tree pay` turns a missing challenge into "this registrar does not serve <rail>; retry with --protocol <enabled>". | registrar; bootnode + heartbeat adverts | `--pay-protocols` |
-| `SHADE_TREE_REGISTRAR_PORT` | `8878` (or `contracts.json` `registrar.port`) | Loopback listen port == the onion virtual port. | registrar, `shade-tree pay` (`--registrar-port`) | (none) |
+| `SHADE_TREE_PAY_PROTOCOLS` | `x402,mpp` | **Which rails this provider serves** (T-FEAT-9): any non-empty subset of `x402`, `mpp` (canonical order `x402,mpp`; unknown ⇒ startup error). A disabled rail gets NO challenge in any 402 (`GET /pay/quote`, the bodied `POST /pay`), is absent from the 402 body / `/health` `pay.protocols`, and a `POST /pay` carrying its header (`PAYMENT-SIGNATURE` for x402, `Authorization: Payment` for MPP) is refused `400 {err:"protocol-disabled", protocol, protocols:[enabled]}` before any parsing. Also read by the **bootnode** (`/health` `pay.protocols`, with `SHADE_TREE_REGISTRAR_ADVERTISE`) and the **heartbeat** (signed `caps.pay.protocols`). `shade-tree-node pay` turns a missing challenge into "this registrar does not serve <rail>; retry with --protocol <enabled>". | registrar; bootnode + heartbeat adverts | `--pay-protocols` |
+| `SHADE_TREE_REGISTRAR_PORT` | `8878` (or `contracts.json` `registrar.port`) | Loopback listen port == the onion virtual port. | registrar, `shade-tree-node pay` (`--registrar-port`) | (none) |
 | `SHADE_TREE_REGISTRAR_ONION` | (unset → `127.0.0.1`) | This registrar's onion: becomes the x402 `resource.url` host and the MPP `realm` (`SHADE_TREE_REGISTRAR_REALM` overrides the realm alone). | registrar | (none) |
 | `SHADE_TREE_REGISTRAR_STORE` | `payments/registrar-state.local.json` | JSON order store (idempotency by `(asset, from, nonce)`, settle→insert crash recovery, the MPP challenge-binding secret). Atomic writes, mode 0600. | registrar | (none) |
 | `SHADE_TREE_PAY_TIMEOUT` | `600` | Challenge validity in seconds: x402 `maxTimeoutSeconds`, MPP `expires`; the client sets `validBefore = now + this`. | registrar | (none) |
@@ -142,10 +142,10 @@ Read by `payments/registrar.mjs` (the operator's HTTP-402 service that sells mem
 | `SHADE_TREE_REGISTRAR_MAX_INFLIGHT` | `8` | Concurrent settlements; over → `503` + `Retry-After`. Operator txs are serialized regardless (one key, one nonce sequence). | registrar | (none) |
 | `SHADE_TREE_REGISTRAR_HEADERS_TIMEOUT_MS` / `_REQUEST_TIMEOUT_MS` / `_KEEPALIVE_TIMEOUT_MS` / `_MAX_HEADER_BYTES` / `_CONN_CHECK_MS` | `10000` / `30000` / `5000` / `8192` / `1000` | HTTP slow-client limits, same semantics and defaults as the bootnode's (`SHADE_TREE_BOOTNODE_*`). Body cap is fixed at 4 KiB. | registrar | (none) |
 | `SHADE_TREE_REGISTRAR_ADVERTISE` | (unset) | On the **bootnode**: `1` = add `pay: {port, protocols, asset, chain, tiers}` to `GET /health`, composed from `SHADE_TREE_REGISTRAR_PORT` + `SHADE_TREE_PAY_ASSET` + `SHADE_TREE_PAY_PRICES` + `SHADE_TREE_PAY_CHAIN_ID` (`11155111`) + `SHADE_TREE_PAY_PROTOCOLS`; or a JSON object literal passed through. Unset = `/health` unchanged. On the **heartbeat** (T-FEAT-9): the SAME advert rides in the gateway's signed caps as `caps.pay` (plus `onion` = `SHADE_TREE_REGISTRAR_ONION` when the registrar rides another onion than the gateway's, e.g. the bootnode's), so a gateway-only provider's offer is discoverable from `/directory`. Both adverts may coexist. | bootnode `/health`; heartbeat `caps.pay` | (none) |
-| `SHADE_TREE_PAY_KEY` | (unset) | **Buyer** wallet key for `shade-tree pay` (holds the stablecoin; needs no ETH). Alternatives: `--key-file <path>` (raw hex) or `--account <keystore.json>` + `SHADE_TREE_PAY_PASSPHRASE`. Never argv. | `shade-tree pay` | `--key-file` / `--account` |
-| `SHADE_TREE_PAY_PROTOCOL` | `x402` | `shade-tree pay` rail: `x402` or `mpp`. | `shade-tree pay` | `--protocol` |
-| `SHADE_TREE_REGISTRAR_URL` | (unset) | `shade-tree pay` direct URL (no Tor; tests / a local registrar). Production goes through Tor to `SHADE_TREE_BOOTNODE_ONION:SHADE_TREE_REGISTRAR_PORT`. | `shade-tree pay` | `--registrar-url` |
-| `SHADE_TREE_PAY_HTTP_TIMEOUT_MS` | `240000` | Per-attempt deadline for the paying `POST /pay`, which may span settlement and insertion receipts over Tor. The buyer retries once with the same idempotent order. This is separate from the operator's per-transaction `SHADE_TREE_TX_RECEIPT_TIMEOUT_MS`. | `shade-tree pay` | (none) |
+| `SHADE_TREE_PAY_KEY` | (unset) | **Buyer** wallet key for `shade-tree-node pay` (holds the stablecoin; needs no ETH). Alternatives: `--key-file <path>` (raw hex) or `--account <keystore.json>` + `SHADE_TREE_PAY_PASSPHRASE`. Never argv. | `shade-tree-node pay` | `--key-file` / `--account` |
+| `SHADE_TREE_PAY_PROTOCOL` | `x402` | `shade-tree-node pay` rail: `x402` or `mpp`. | `shade-tree-node pay` | `--protocol` |
+| `SHADE_TREE_REGISTRAR_URL` | (unset) | `shade-tree-node pay` direct URL (no Tor; tests / a local registrar). Production goes through Tor to `SHADE_TREE_BOOTNODE_ONION:SHADE_TREE_REGISTRAR_PORT`. | `shade-tree-node pay` | `--registrar-url` |
+| `SHADE_TREE_PAY_HTTP_TIMEOUT_MS` | `240000` | Per-attempt deadline for the paying `POST /pay`, which may span settlement and insertion receipts over Tor. The buyer retries once with the same idempotent order. This is separate from the operator's per-transaction `SHADE_TREE_TX_RECEIPT_TIMEOUT_MS`. | `shade-tree-node pay` | (none) |
 
 ## Common
 
@@ -231,12 +231,12 @@ Chainless: mock stake (everyone counts as staked), members root from the local `
 ```bash
 # gateway (members.json root, dry-run slashing, mock stake)
 export SHADE_TREE_STAKE_MODE=mock
-# shade-tree gateway
+# shade-tree-node gateway
 
 # bootnode (open admission; no stake checks)
 export SHADE_TREE_BOOTNODE_PORT=8877
 export SHADE_TREE_BOOTNODE_ADMISSION=open
-# shade-tree bootnode
+# shade-tree-node bootnode
 
 # client — pinned single onion (simplest), OR static directory
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
@@ -248,7 +248,7 @@ export SHADE_TREE_ONION=<gateway-onion>            # pin one gateway
 # export SHADE_TREE_BOOTNODE_ONION=<bootnode-onion>   # live discovery instead of a file
 export SHADE_TREE_TOR_HOST=127.0.0.1
 export SHADE_TREE_TOR_PORT=9250
-# shade-tree client
+# shade-tree-node client
 ```
 
 ### (b) Staked bootnode on a public chain
@@ -265,13 +265,13 @@ export SHADE_TREE_ADMIT=staked               # enforced by the node; advertised 
 export SHADE_TREE_BOOTNODE_ADMISSION=stake
 export SHADE_TREE_STAKE_MODE=onchain
 export SHADE_TREE_GATEWAY_REGISTRY=0x<GatewayRegistry>
-# shade-tree elder
+# shade-tree-node elder
 
 # gateway operator heartbeat (durably authorizes this onion for the staked operator)
 export SHADE_TREE_BOOTNODE_ONION=<bootnode-onion>
 export SHADE_TREE_GW_IDENTITY=tor/hs/identity.local.json
 read -s SHADE_TREE_GW_OPERATOR_KEY && export SHADE_TREE_GW_OPERATOR_KEY
-# shade-tree heartbeat
+# shade-tree-node heartbeat
 
 # gateway — on-chain root + real slashing
 export SHADE_TREE_GROUP_CONTRACT=0x<StakedReputationSet>
@@ -279,7 +279,7 @@ export SHADE_TREE_ROOT_PROVIDER=node
 read -s SHADE_TREE_SLASH_KEY && export SHADE_TREE_SLASH_KEY
 export SHADE_TREE_SLASH_CONTRACT=0x<StakedReputationSet>
 # export SHADE_TREE_SLASH_RECEIVER=0x<receiver>    # optional; defaults to the slasher address
-# shade-tree node
+# shade-tree-node node
 
 # client — bundled current-v4 Elder+signer by default
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET

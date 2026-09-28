@@ -59,7 +59,7 @@ by rendezvous, so there is no exit node and the gateway never learns the client 
   holds operator bonds; an operator can configure the bootnode to admit staked operators only.
   The values in [`network/sepolia/contracts.json`](../network/sepolia/contracts.json) are
   historical and must not be substituted for current v4 contract inputs.
-- **Payment is a leaf, not a token.** `shade-tree pay` speaks HTTP 402 in x402 v2 or MPP to the
+- **Payment is a leaf, not a token.** `shade-tree-node pay` speaks HTTP 402 in x402 v2 or MPP to the
   provider's registrar (`payments/registrar.mjs`), signs one EIP-3009 authorization, the
   operator settles it and inserts the commitment; egress is the same RLN proof
   ([`PAYMENTS.md`](PAYMENTS.md)).
@@ -135,7 +135,7 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
   [issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6).
 - **No audit.** Trust boundaries, per-party threat model and review order:
   [`AUDIT.md`](AUDIT.md), [`CONTRACTS-AUDIT.md`](CONTRACTS-AUDIT.md),
-  [`adversarial-review.md`](adversarial-review.md). `npm test` runs every
+  [`adversarial-review.md`](history/adversarial-review.md). `npm test` runs every
   `*selftest.mjs` plus the Foundry suite.
 - **One operator, one provider.** Two regions, same AS14061; every asset is Sepolia testnet;
   onion PoW is off (`SHADE_TREE_ENABLE_POW=0`, most client tors lack the module), so rendezvous DoS
@@ -160,7 +160,7 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
 | `bootnode/` | Discovery server, announce, keygen, heartbeat, fetch; `deploy/` = the one-command droplet |
 | `client/` | The fleet client library (`shade-tree-client.mjs`), HTTP-CONNECT proxy (`shim.mjs`), selection |
 | `payments/` | The 402 registrar, both wire dialects, EIP-3009 typed data, test-asset deploy |
-| `group/` | Self-enrollment, `shade-tree pay`, `shade-tree leaves`, on-chain register (member / gateway), the committed `members.json` |
+| `group/` | Self-enrollment, `shade-tree-node pay`, `shade-tree leaves`, on-chain register (member / gateway), the committed `members.json` |
 | `network/` | Committed deployment records per network; `SHADE_TREE_NETWORK` reads them |
 | `crates/` | The distributable client: `shadenet-proto` (wire), `shadenet-rln` (prover + tree), `shadenet-cli` (embedded arti, `-live`) |
 | `test/`, `testdata/`, `scripts/test-all.mjs` | Foundry suite + cross-module selftests; golden vectors + artifact lock; the audit entrypoint |

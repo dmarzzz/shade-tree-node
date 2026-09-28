@@ -1,7 +1,7 @@
 # SLOs and error budget
 
 Service level objectives for the fleet: a set of Shade Tree gateways plus a
-discovery bootnode. This is milestone T-MON-5 in [SHIP-PLAN.md](SHIP-PLAN.md).
+discovery bootnode. This is milestone T-MON-5 in [SHIP-PLAN.md](history/SHIP-PLAN.md).
 
 **Status: proposals, not commitments.** This is a reference implementation. The targets below are
 starting points chosen to be honest and defensible, not numbers anyone has yet held over 30 days of
@@ -69,7 +69,7 @@ still did not get bytes, because no gateway was dialable, the chosen gateway dro
 the upstream connect failed.
 
 Why 99% and not higher: the request path crosses two Tor circuits (client->gateway rendezvous, and
-the load test in [STATUS.md](STATUS.md) showed Tor circuit variance dominates the tail). Client-side
+the load test in [STATUS.md](history/STATUS.md) showed Tor circuit variance dominates the tail). Client-side
 failover already routes around a single bad gateway (`reportHealth` marks a gateway `down` after 2
 failures, `selectionOrder` tries the rest of the fleet), so most single-gateway failures are absorbed
 and never reach the member as a failed request. 99% leaves headroom for Tor-level flakiness the

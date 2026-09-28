@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // record-deploy: write a broadcast contract deployment into network/<name>/contracts.json in ONE
-// command (T-DEPLOY-5 / GAP-2, docs/GO-LIVE.md rows 3.2 + 7.1).
+// command (T-DEPLOY-5 / GAP-2, docs/history/GO-LIVE.md rows 3.2 + 7.1).
 //
 // `forge script ... --broadcast` leaves the truth in two places the repo does NOT commit:
 // contracts/deployed.local.json (addresses only) and broadcast/<Script>/<chainId>/run-latest.json
@@ -13,7 +13,7 @@
 //        --from-broadcast broadcast/DeployRegistry.s.sol/11155111/run-latest.json
 //   node scripts/record-deploy.mjs --network devnet --contract gatewayRegistry \
 //        --address 0x... --tx 0x... --block 1234567
-//   (or: shade-tree record-deploy --network <name> --from-broadcast <run-latest.json>)
+//   (or: shade-tree-node record-deploy --network <name> --from-broadcast <run-latest.json>)
 //
 // Flags:
 //   --network <name>        network/<name>/contracts.json to update   (or SHADE_TREE_NETWORK)

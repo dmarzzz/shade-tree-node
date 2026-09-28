@@ -99,3 +99,9 @@ jobs:
 
       - name: Rust CONNECT Proxy -> JavaScript gateway + early payload (blocking)
         run: bash crates/shadenet-rln/interop/proxy-run.sh
+
+      - name: Rust failover + last-known-good canopy (blocking)
+        run: bash crates/shadenet-rln/interop/failover-lkg-run.sh
+
+      - name: Rust Proxy 8 concurrent tunnels + structured 429 + status endpoint (blocking)
+        run: bash crates/shadenet-rln/interop/proxy-concurrency-run.sh

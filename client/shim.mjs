@@ -9,7 +9,7 @@
 // Application code may also use ShadeTreeClient directly, but CONNECT is the stable integration
 // surface for agents and existing HTTP clients.
 //
-// Two anti-correlation rotations run together (docs/NEXT-VERSION.md B), inside ShadeTreeClient:
+// Two anti-correlation rotations run together (docs/history/NEXT-VERSION.md B), inside ShadeTreeClient:
 // a different gateway onion per CONNECT tunnel and a different per-tunnel slot nullifier. The
 // deterministic-retry invariant (same signal reused across failover) also lives there.
 

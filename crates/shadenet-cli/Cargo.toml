@@ -2,13 +2,23 @@
 name = "shadenet-cli"
 version = "0.6.0"
 edition = "2021"
+rust-version = "1.98"
 license = "MIT"
-description = "Shade Tree distributable client: single static binary with embedded Tor. Rust port of client/shade-tree-client.mjs."
+description = "ShadeNet CLI: the `shadenet` binary (single static binary with embedded Tor) over the shadenet SDK"
 publish = false
 
+[lib]
+name = "shadenet_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "shadenet"
+path = "src/main.rs"
+
+# Alias kept for one minor release so existing scripts, units and docs keep working.
 [[bin]]
 name = "shade-tree"
-path = "src/main.rs"
+path = "src/bin/shade-tree.rs"
 
 [features]
 # `live` pulls the RLN prover (shadenet-rln -> ark-circom/wasmer) so `shade-tree egress` can mint a
@@ -22,7 +32,9 @@ path = "src/main.rs"
 # (`--circuits` becomes optional; omit it to use the embedded artifacts). The ~8MB of
 # artifacts land only in the `live` build — the default deterministic binary never pulls
 # shadenet-rln at all, so it stays small.
-live = ["dep:shadenet-rln", "shadenet-rln/embedded-artifacts", "dep:shadenet-egress", "dep:tokio", "dep:reqwest", "dep:num-bigint", "dep:getrandom", "dep:ethers-core"]
+live = ["dep:shadenet-rln", "shadenet-rln/embedded-artifacts", "shadenet/live", "dep:tokio", "dep:reqwest", "dep:num-bigint", "dep:getrandom", "dep:ethers-core"]
+# Session tickets (#103) stay off until the economics pass decides on them.
+session-tickets = ["shadenet/session-tickets"]
 
 [dependencies]
 shadenet-proto = { path = "../shadenet-proto" }
@@ -30,7 +42,7 @@ shadenet-proto = { path = "../shadenet-proto" }
 # (T-RUST-2b/2c). Excluded from default-members and only compiled under `--features live`,
 # so the default build stays fast (no ark-circom / wasmer).
 shadenet-rln = { path = "../shadenet-rln", optional = true }
-shadenet-egress = { path = "../shadenet-egress", optional = true }
+shadenet = { path = "../shadenet", default-features = false }
 # T-RUST-2 deterministic client: parse UNTRUSTED directory/announce/receipt JSON into
 # local DTOs, then hand the mapped shadenet-proto structs to the trust-critical checks.
 # serde/serde_json live ONLY here — shadenet-proto's canonical byte path stays serde-free.
@@ -39,6 +51,11 @@ serde_json = "1"                                 # parse the directory/receipt f
 # hex: render pubkeys recovered from a verified receipt for display.
 hex = "0.4"
 base64 = "0.23"
+clap = { version = "4", features = ["derive", "wrap_help"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "json", "std"] }
+toml = { version = "0.8", default-features = false, features = ["parse"] }
+zeroize = "1"
 
 # OPTIONAL, feature-gated (`live`): embedded Tor transport for the onion egress dial
 # (T-RUST-2e). CRITICAL dep note: `default-features = false` with an explicit feature list
@@ -65,10 +82,9 @@ getrandom = { version = "0.4", optional = true }
 # deterministic build remains unchanged.
 ethers-core = { version = "2.0.14", default-features = false, optional = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
-# arg parsing is hand-rolled (no clap) to keep the dep tree tiny; a small seeded PRNG
-# (mulberry32, in-crate) drives `select` so no `rand` runtime dep is needed either.
+# A small seeded PRNG (mulberry32, in-crate) drives `select` so no `rand` runtime dep is needed.
 
 # DONE under `live`: arti-client / tor-rtcompat + tokio (embedded Tor onion dial, T-RUST-2e)
 # and shadenet-rln (RLN Groth16 prover + native tree, T-RUST-2b/2c/2d).

@@ -18,7 +18,7 @@ formats), `payments/eip3009.mjs` (the settlement typed data), `group/pay.mjs` (`
 Tests: `payments/wire.selftest.mjs` (fast, chainless; includes the x402 spec's worked-example
 signature as a cross-implementation golden), `payments/registrar.selftest.mjs` (anvil: both
 rails end to end via `shade-tree pay`, replay/idempotency, the adversarial matrix, slow-loris, crash
-recovery), `test/Eip3009Token.t.sol` (Foundry). Live receipts: `docs/GO-LIVE-LOG-2026-08-17.md`
+recovery), `test/Eip3009Token.t.sol` (Foundry). Live receipts: `docs/history/GO-LIVE-LOG-2026-08-17.md`
 "(payments)".
 
 ### The flow

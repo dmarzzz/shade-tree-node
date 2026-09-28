@@ -22,14 +22,14 @@ Everything is one CLI: `shade-tree <command> [--flags]`. Install it:
 
 ```bash
 npm install
-npm link           # puts `shade-tree` on PATH; or just use `node bin/shade-tree.mjs` everywhere
-shade-tree doctor        # checks node, tor, deps, keys
+npm link           # puts `shade-tree-node` on PATH; or just use `node bin/shade-tree.mjs` everywhere
+shade-tree-node doctor        # checks node, tor, deps, keys
 ```
 
 Common `--flags` map to `SHADE_TREE_*` variables; command-specific flags pass through to the
 underlying module (see [CONFIG.md](CONFIG.md)).
 Agent developers who do not need the repository can use the shorter
-[agent install](AGENT.md#1-install-the-agent-cli).
+[agent install](AGENT.md#1-install-the-live-binary).
 
 ## Path A: connect to an operator's v4 canopy
 
@@ -85,13 +85,13 @@ shade-tree enroll --commitment-only --limit "$SHADE_TREE_LIMIT"
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
 
 # paid admission, when offered by the v4 operator
-shade-tree pay --bootnode <v4-elder.onion> --limit "$SHADE_TREE_LIMIT" \
+shade-tree-node pay --bootnode <v4-elder.onion> --limit "$SHADE_TREE_LIMIT" \
   --protocol x402 --key-file buyer.key
 
 # staked admission, when offered by the v4 operator
 read -s SHADE_TREE_REGISTER_KEY
 SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" \
-shade-tree register-member <commitment> --limit "$SHADE_TREE_LIMIT" \
+shade-tree register-member <identity-commitment> --limit "$SHADE_TREE_LIMIT" \
   --rpc-url <operator-rpc-url> --group-contract <v4-staked-set-address>
 unset SHADE_TREE_REGISTER_KEY
 ```
@@ -115,8 +115,8 @@ that single-node config unchanged here. Below, each role is a separate terminal.
 ### 1. Mint onion identities
 
 ```bash
-shade-tree keygen tor/hs-bootnode --label bootnode   # Elder Tree identity; internal path/label
-shade-tree keygen tor/hs-gateway  --label gateway    # node identity; internal path/label
+shade-tree-node keygen tor/hs-bootnode --label bootnode   # Elder Tree identity; internal path/label
+shade-tree-node keygen tor/hs-gateway  --label gateway    # node identity; internal path/label
 ```
 
 Each writes Tor HS key files plus `identity.local.json` (the announce-signing seed). In another
@@ -142,7 +142,7 @@ are intentionally relative to the repository root where this command runs.
 ### 2. Run the Elder Tree
 
 ```bash
-shade-tree elder --port 8877 --admission open
+shade-tree-node elder --port 8877 --admission open
 ```
 
 It prints its **pinned signer pubkey**. Proxies need it. (`--admission open` means onion
@@ -163,8 +163,8 @@ Copy only the printed secret value into the hidden prompt in step 5.
 ### 4. Run a Shade Tree node and announce it
 
 ```bash
-SHADE_TREE_MEMBERS_FILE=./group/members.json shade-tree node
-shade-tree heartbeat --bootnode <elder-onion> \
+SHADE_TREE_MEMBERS_FILE=./group/members.json shade-tree-node node
+shade-tree-node heartbeat --bootnode <elder-onion> \
   --identity tor/hs-gateway/identity.local.json
 ```
 
@@ -233,9 +233,9 @@ anvil &
 forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --broadcast \
   --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-shade-tree register-member <commitment> --limit 8 # stake a tier-8 member from `shade-tree enroll --commitment-only --limit 8`
+shade-tree register-member <identity-commitment> --limit 8 # stake a tier-8 member; `enroll` prints its identity commitment
 shade-tree register-gateway                      # stake a node operator; command retains wire name
-shade-tree elder --admission stake --stake-mode onchain \
+shade-tree-node elder --admission stake --stake-mode onchain \
   --gateway-registry <addr> --rpc-url http://127.0.0.1:8545
 ```
 

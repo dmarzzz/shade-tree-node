@@ -7,7 +7,7 @@
 //                                             then `shade-tree proxy ...`).
 //   node group/join.mjs node [hsDir]       -> become a SHADE TREE NODE operator: mint an
 //                                             onion identity and print the EXACT next commands
-//                                             (optional stake, then `shade-tree node` + heartbeat).
+//                                             (optional stake, then `shade-tree-node node` + heartbeat).
 //   node group/join.mjs gateway [hsDir]    -> compatibility alias for `node`.
 //
 // This composes the EXISTING flows — it never reimplements crypto. The member path spawns
@@ -26,7 +26,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { generateOnionIdentity } from "../bootnode/keygen.mjs";
-import { K_SLOTS, normLimit } from "../lib/rln.mjs";
+import { K_SLOTS, normLimit, identityFor, identityCommitmentOf } from "../lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENROLL = join(HERE, "enroll.mjs");
@@ -69,7 +69,7 @@ function joinMember() {
   }
 
   // --- the guide (stdout) ---------------------------------------------------
-  out("shade-tree join — you are joining as a MEMBER of the reputation set.");
+  out("shade-tree-node join — you are joining as a MEMBER of the reputation set.");
   out("You generated this identity locally; only the commitment ever leaves this machine.");
   out("");
   out("  commitment:   " + commitment + "   (public; hand this to the operator or stake it on chain)");
@@ -99,7 +99,7 @@ function joinMember() {
   out("       read -r SHADE_TREE_RPC_URL && export SHADE_TREE_RPC_URL");
   out("       read -r SHADE_TREE_GROUP_CONTRACT && export SHADE_TREE_GROUP_CONTRACT");
   out("       read -s SHADE_TREE_REGISTER_KEY");
-  out("       SHADE_TREE_REGISTER_KEY=\"$SHADE_TREE_REGISTER_KEY\" shade-tree register-member " + commitment + " --limit " + memberLimit);
+  out("       SHADE_TREE_REGISTER_KEY=\"$SHADE_TREE_REGISTER_KEY\" shade-tree register-member " + identityCommitmentOf(identityFor(secret)).toString() + " --limit " + memberLimit);
   out("       unset SHADE_TREE_REGISTER_KEY");
   out("       shade-tree proxy --limit " + memberLimit + " --leaf-source staked");
   out("");
@@ -124,7 +124,7 @@ async function joinNode() {
   const force = args.includes("--force");
   const id = await generateOnionIdentity(hsDir, { label: "gateway", force });
 
-  out("shade-tree join: you are joining as a SHADE TREE NODE operator.");
+  out("shade-tree-node join: you are joining as a SHADE TREE NODE operator.");
   out("Minted a fresh onion identity that Tor can publish and this node can use to sign announcements.");
   out("");
   out("  onion:        " + id.onion);
@@ -148,11 +148,11 @@ async function joinNode() {
   out("");
   out("  2. Run the egress gateway (verifies member proofs, tunnels :443):");
   out("");
-  out("       shade-tree node");
+  out("       shade-tree-node node");
   out("");
   out("  3. Announce it to an Elder Tree and keep it live:");
   out("");
-  out("       shade-tree heartbeat --bootnode <elder-onion> \\");
+  out("       shade-tree-node heartbeat --bootnode <elder-onion> \\");
   out("         --identity " + join(id.dir, "identity.local.json"));
   out("");
   out("     (get <elder-onion> from the Grove operator; its Canopy signer is the pin Proxies need.)");
@@ -169,7 +169,7 @@ if (mode === "node") {
   try {
     await joinNode();
   } catch (error) {
-    err(`shade-tree join node: ${error.message}`);
+    err(`shade-tree-node join node: ${error.message}`);
     process.exit(1);
   }
 } else {

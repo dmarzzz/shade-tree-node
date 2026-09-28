@@ -1,197 +1,139 @@
-# Shade Tree for Rust
+# ShadeNet for Rust
 
-The Rust workspace contains the distributable `shade-tree` client and the
-trust-critical protocol implementation behind it.
+The Rust workspace holds the `shadenet` SDK, the `shadenet` command-line
+binary built on it, and the trust-critical protocol code behind both.
 
 > Research preview. The bundled RLN artifacts are suitable for testing, not a
 > production trusted setup. See [`../circuits/rln/ARTIFACTS.md`](../circuits/rln/ARTIFACTS.md).
 
-The JavaScript client in [`../client/shade-tree-client.mjs`](../client/shade-tree-client.mjs)
-is the reference implementation. Golden vectors in
-[`../testdata/vectors.json`](../testdata/vectors.json) keep both implementations
-on the same v4 wire format.
+The protocol spec, [`../docs/WIRE-SPEC.md`](../docs/WIRE-SPEC.md) and the golden
+vectors in [`../testdata/vectors.json`](../testdata/vectors.json) are the
+reference. The Rust SDK and the JavaScript SDK both test against them
+([ADR 0010](../docs/adr/0010-two-sdks-one-spec.md)).
 
 ## Workspace
 
 ```text
 crates/
-├── shadenet-proto/   canonical bytes, signatures, selection, receipts
-├── shadenet-cli/     the `shade-tree` binary
-├── shadenet-egress/  reusable async admission, proving, Tor, and tunnel client
+├── shadenet/         THE RUST SDK: Client, config, status, connect, fetch, the local proxy
+├── shadenet-cli/     the `shadenet` binary (also installed as `shade-tree` for one minor release)
+├── shadenet-proto/   canonical bytes, signatures, selection, receipts (no I/O)
 └── shadenet-rln/     RLN proving, verification, and artifact bindings
 ```
 
-The default binary verifies directories and receipts, selects gateways, and
-maintains a last-known-good directory cache. The optional `live` feature adds
-identity creation, RLN proof generation, the reusable egress crate, embedded
-Arti, the loopback Proxy, and the agent `run` wrapper.
+`shadenet-proto` owns every deterministic security decision and has no I/O or
+JSON serializer dependency. The SDK parses untrusted input into local structures
+and hands them to it. The CLI is a thin clap shell over the SDK.
 
-```sh
-# Fast deterministic client
-cargo build --release -p shadenet-cli
+## The SDK
 
-# Live egress client with embedded Tor and RLN artifacts
-cargo build --release -p shadenet-cli --features live
+```rust
+use std::sync::Arc;
 
-# Complete workspace checks
-cargo test --workspace --all-features
-cargo check --workspace --all-targets --all-features
-bash shadenet-rln/interop/proxy-run.sh
+let config = shadenet::Config::builder()
+    .identity_file("identity.json")      // from `shadenet init`
+    .build()?;                           // bundled Sepolia network by default
+let client = Arc::new(shadenet::Client::new(config)?);
+client.spawn_canopy_refresh();           // keep the signed canopy fresh in the background
+
+let status = client.status().await;      // admitted? finalized? tunnels left? resets when?
+let page = client.fetch(shadenet::FetchRequest::get("https://example.com/")).await?;
+let tunnel = client.connect("example.com:443").await?;   // raw stream; speak TLS over it
+
+// The same proxy the CLI runs:
+let proxy = shadenet::ProxyConfig::new("127.0.0.1:8118", token);
+let listener = shadenet::proxy::bind(&proxy).await?;
+shadenet::proxy::serve(client, listener, proxy).await?;
 ```
 
-The binary is written to `target/release/shade-tree`. Release binaries and
-checksums are attached to tagged GitHub releases; see [`INSTALL.md`](INSTALL.md).
+One `Client` serves many tunnels. It keeps the verified canopy in memory (with a
+last-known-good copy on disk and a rollback floor), reuses the member set for 30
+seconds instead of replaying chain logs per tunnel, remembers node health, and
+shares one embedded Arti bootstrap and one bounded prover across tunnels.
 
-## Trust boundary
+Every failure is a typed `shadenet::Error` with a stable code, exit code and
+HTTP status:
 
-`shadenet-proto` owns deterministic security decisions and deliberately has
-no I/O or JSON serializer dependency. The client parses untrusted input into
-local data structures, then hands it to that crate for canonicalization and
-verification.
+| Code | HTTP | Exit | Meaning |
+|---|---|---|---|
+| `not_admitted` | 403 | 2 | The leaf is not in the admission set |
+| `not_finalized` | 403 | 2 | Registered, but the block is not final yet |
+| `port_not_allowed` | 403 | 2 | No node egresses to this port (nodes serve 443) |
+| `budget_exhausted` | 429 | 4 | This epoch's tunnels are used up; `Retry-After` says when it resets |
+| `no_eligible_node` | 503 | 2 | No node fits the admission, rate or capability policy |
+| `canopy` | 503 | 2 | The signed canopy is unavailable and no last-known-good copy exists |
+| `rpc` | 503 | 2 | Member discovery over JSON-RPC failed |
+| `transport` | 503 | 3 | Every candidate failed at the Tor or TCP level |
+| `node_refused` | 502 | 1 | A node answered and refused |
+| `config`, `artifact`, `slot_state`, `prove`, `internal` | 500 | 2–3 | Local problems; nothing was sent |
 
-The conformance suite covers:
+Without the default `live` feature the crate is the deterministic half only:
+network profiles, canopy verification and caching, selection filters and the
+health cache. The fast default CLI build links it that way.
 
-- signed directory and onion/public-key binding verification;
-- capability and admission-aware gateway selection;
-- explicit protocol-v4 negotiation and v3 rejection;
-- request signal and receipt domain separation;
-- JavaScript/Rust byte parity for the checked-in vectors.
+The crate is not on crates.io yet (`publish = false`): its embedded circuit
+artifacts and network record are read from the repository at build time. Use a
+Git or path dependency.
 
-The `live` path also validates the embedded ZK artifact lock before proving.
-It does not make the artifact ceremony more trustworthy: provenance remains a
-separate deployment requirement.
+## Build and test
 
-Live RLN slots are allocated through the same default-on `{version, epoch,
-nextSlot}` file and directory-lock protocol as the JavaScript Proxy/SDK. The
-file is keyed by the public member leaf, contains no secret, never wraps at K,
-and fails closed on corrupt, unavailable, or locked state.
+```sh
+cargo build --release -p shadenet-cli                   # deterministic commands only
+cargo build --release -p shadenet-cli --features live   # the full client
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+bash shadenet-rln/interop/proxy-concurrency-run.sh      # 8 tunnels at once through the real JS node
+```
 
-## Client commands
+The binaries are `target/release/shadenet` and `target/release/shade-tree`.
+Release binaries and checksums are attached to tagged GitHub releases; see
+[`INSTALL.md`](INSTALL.md).
+
+## Commands
 
 ```text
-shade-tree verify-directory …
-shade-tree fetch-directory …
-shade-tree select …
-shade-tree verify-receipt …
-shade-tree proxy-token …       # requires --features live; generates local Proxy auth
-shade-tree enroll …            # requires --features live; creates a new identity
-shade-tree identity …          # requires --features live; derives from an existing secret
-shade-tree register-member …   # requires --features live; stakes a public leaf on chain
-shade-tree member-status …     # requires --features live; reads bond/exit state
-shade-tree exit-member …       # requires --features live; local ZK exit authorization
-shade-tree withdraw-member …   # requires --features live; private refund to a recipient
-shade-tree leaves …            # requires --features live; reconstructs an on-chain set
-shade-tree egress …            # requires --features live
-shade-tree proxy …             # requires --features live
-shade-tree run -- <agent>      # process-scoped use of an existing Proxy
+shadenet init                  # identity, proxy token, config file; then what is left to do
+shadenet status [--json]       # admission, budget, canopy; --wait polls until ready
+shadenet doctor [--json]       # every local problem at once
+shadenet proxy                 # the local HTTP CONNECT proxy for agents and SearXNG
+shadenet run -- <agent>        # run a command through that proxy
+shadenet mcp                   # MCP tools shadenet_fetch, shadenet_status, shadenet_search
+shadenet fetch <https-url>     # one request through ShadeNet
+shadenet register-member …     # stake a leaf on chain
+shadenet member-status …       # read bond and exit state
+shadenet exit-member …         # local ZK exit authorization
+shadenet withdraw-member …     # private refund to a recipient
+shadenet egress …              # one tunnel, for scripts and debugging
+shadenet enroll | identity | proxy-token | leaves
+shadenet verify-directory | fetch-directory | select | verify-receipt
 ```
 
-Run `shade-tree --help` for the complete option set. The live binary's `proxy`
-command is the language-neutral agent boundary: it listens on loopback for HTTP
-CONNECT and embeds Arti, so the client host needs no system Tor daemon or SOCKS
-port. One successfully bootstrapped base Arti client is reused across CONNECT
-tunnels, while each logical tunnel gets a separate isolation view. Proof
-generation runs outside the async network executor.
+`shadenet <command> --help` documents each one. Global flags: `--network
+<name|deployment.json>` selects a network record (so a staging canopy needs no
+new binary), `--config`, `--log-level`, `--log-format json`.
 
-```sh
-(umask 077; set -C; ./target/release/shade-tree proxy-token > proxy-token.txt)
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-./target/release/shade-tree proxy \
-  --onion <gateway.onion>:80 \
-  --identity identity.json \
-  --members members.json \
-  --listen 127.0.0.1:8118
-```
+Configuration is read in this order: flags, then `SHADENET_*` environment
+variables, then `~/.config/shadenet/config.toml`, then the network record.
+`SHADE_TREE_*` names still work for one minor release; setting both names of one
+variable to different values is an error. `shadenet run` removes every
+variable under either prefix from the child's environment.
 
-The Proxy requires this unpredictable local token. The process-scoped wrapper
-performs an authenticated, fail-closed preflight and puts Basic credentials
-only in the child proxy URLs:
+## Safety notes
 
-```sh
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-shade-tree run --proxy http://127.0.0.1:8118 -- your-agent
-```
-
-Create a new identity with `shade-tree enroll --limit N --out identity.json`,
-then send only its printed public leaf through a Grove operator's admission
-process. `enroll` does not change a remote member root or submit an on-chain
-transaction; its optional `--members` flag updates only a local version-2 demo
-set. Use `shade-tree identity` only when deterministically deriving
-from an existing secret. In both cases, `identity.json` contains the member
-secret and must remain local. Omitting `--limit` uses the bundled staked
-`defaultLimit` (1 in the public profile); `SHADE_TREE_LIMIT` or an explicit
-flag selects a custom tier. New identity files always record the exact tier so
-their leaves cannot later be interpreted under a different default.
-
-The live Rust binary can stake that public leaf without Node.js. It defaults to
-the current bundled Sepolia staking contract and RPC, reads the exact tier bond
-from the contract, signs locally, broadcasts only the signed EIP-1559
-transaction, and waits for a successful receipt:
-
-```sh
-shade-tree enroll --limit 1 --out identity.json
-chmod 600 funded-sepolia.key
-shade-tree register-member --identity identity.json --key-file funded-sepolia.key
-shade-tree member-status --identity identity.json --json
-```
-
-`register-member --identity` recomputes the public leaf from the secret and tier
-before its first network request. The public identity leaf is derived at limit 1
-explicitly; `register-member` reads the bundled profile's matching `defaultLimit=1`
-when `--limit` is omitted.
-For a custom Grove, pass its tier explicitly to both commands—the enrolled and
-registered limits must match.
-
-`SHADE_TREE_REGISTER_KEY` is also supported for parity with the JavaScript CLI;
-no raw-key command-line flag is accepted. A key file must be owner-only on Unix,
-and a missing key fails before the first public RPC request. Explicit
-`--contract`/`--rpc-url` flags (or `SHADE_TREE_GROUP_CONTRACT`/
-`SHADE_TREE_RPC_URL`) select another Grove. If receipt lookup fails after
-broadcast, the command retains the locally computed transaction hash in its
-error and requires checking that hash before retrying.
-
-The same private file authorizes a complete exit without revealing its secret:
-
-```sh
-shade-tree exit-member --identity identity.json --key-file gas.key
-shade-tree member-status --identity identity.json
-shade-tree withdraw-member --identity identity.json \
-  --recipient 0xFRESH_SEPOLIA_ADDRESS --key-file gas.key
-```
-
-Each action creates and locally verifies a fresh Groth16 proof, checks chain and
-contract bytecode, reads current member state, simulates the exact call, and signs
-locally. The withdrawal proof binds its recipient. Any separately funded wallet
-can pay gas; it need not be the registration payer or refund recipient.
-
-With no transport or explicit membership source, dynamic discovery uses the
-current v4 Sepolia Elder, signer, staked contract, RPC, deployment block,
-60-second epoch, and `defaultLimit=1` embedded in
-`network/sepolia/deployment.json`. Each eligible gateway must carry the exact
-matching `caps.rate` in its onion-signed capabilities; a missing or different
-policy fails before proof construction. An RPC-only override retains this public
-profile while changing how the bundled contract is read. Explicit membership,
-contract, or leaf-source configuration keeps the custom-Grove defaults of a
-120-second epoch and limit 8. Override discovery with
-`--directory <file> --signer <hex>`, `--bootnode-onion <onion> --signer <hex>`,
-or `--onion <node.onion>`; see `shade-tree --help` for all egress options.
-Directory-backed tunnels use smooth weighted round-robin for their first gateway
-by default. Pass `--no-rotation-spread` or set `SHADE_TREE_ROTATION_SPREAD=0` to
-restore independent weighted-random first choices.
-
-Rust applications that need an in-process stream API can use the
-`shadenet-egress` workspace crate through a Git or path dependency. It is not
-currently published on crates.io. The CLI `egress` and `proxy` paths consume
-the same client rather than maintaining a second implementation. Other
-languages should use the loopback Proxy.
+- RLN slot state lives in `…/shade-tree/rln-slots/<leaf>.json`, shared with the
+  JavaScript client. The directory keeps that name through the rename: a fresh
+  directory mid-epoch would reuse a nullifier and get the member slashed.
+- The slot file is written and fsynced before a proof is built, so a crash burns
+  a slot rather than reusing one. A lock left by a dead process is recovered.
+- The proxy binds loopback only unless `--allow-non-loopback` is given, and it
+  always requires the token.
+- `--plain-tcp` (no Tor) exists only in debug builds, for test harnesses.
+- Identity secrets are never accepted on the command line and are zeroized in
+  memory after use.
 
 ## Protocol changes
 
-Shade Tree v4 is a clean boundary. Old v3 envelopes and request proofs are not
-accepted under the new name. Operators must regenerate operator-authorization,
-capability, and receipt signatures; domain-neutral signatures over unchanged
-canonical bytes are unaffected. Deployments using the changed exit and
-withdrawal domains require new contracts. See
-[`../docs/MIGRATING-TO-SHADE-TREE.md`](../docs/MIGRATING-TO-SHADE-TREE.md).
+ShadeNet speaks protocol v4. Signed, hashed and proved strings keep their
+"Shade Tree" spelling until a versioned v5; `test/wire-freeze.selftest.mjs`
+pins them. See [`../docs/MIGRATING-TO-SHADE-TREE.md`](../docs/history/MIGRATING-TO-SHADE-TREE.md)
+for the v3 to v4 boundary.

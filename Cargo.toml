@@ -3,12 +3,14 @@ resolver = "2"
 members = [
     "crates/shadenet-proto",
     "crates/shadenet-cli",
-    "crates/shadenet-egress",
+    "crates/shadenet",
     "crates/shadenet-rln",
 ]
 # shadenet-rln (T-RUST-2b RLN-INTEROP) has a heavy dep tree (ark-circom -> wasmer). Keep
 # it OUT of default-members so the everyday `cargo build` / `cargo test` only touch
 # the fast shadenet-proto + shadenet-cli crates; build the RLN probe with `-p shadenet-rln`.
+# The `shadenet` SDK defaults to its `live` feature, so it is also kept out of default-members;
+# the fast CLI build links it with default features off.
 default-members = [
     "crates/shadenet-proto",
     "crates/shadenet-cli",

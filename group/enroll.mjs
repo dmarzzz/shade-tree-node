@@ -33,7 +33,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { identityFor, rateCommitmentOf, MEMBERS_PATH, loadGroup, K_SLOTS, normLimit } from "../lib/rln.mjs";
+import { identityFor, identityCommitmentOf, rateCommitmentOf, MEMBERS_PATH, loadGroup, K_SLOTS, normLimit } from "../lib/rln.mjs";
 
 const args = process.argv.slice(2);
 const commitmentOnly = args.includes("--commitment-only") || args.includes("--no-local");
@@ -58,13 +58,15 @@ const label = args.find((a) => !a.startsWith("--")) || "member-" + randomBytes(2
 // deriveCommitment() lands here). One coherent leaf, no scheme flag.
 const secret = "0x" + randomBytes(32).toString("hex");
 const commitment = rateCommitmentOf(identityFor(secret), limit).toString();
+// What the staking contract takes: it derives the leaf above from this and the tier.
+const identityCommitment = identityCommitmentOf(identityFor(secret)).toString();
 const tierNote = limit === K_SLOTS ? "" : `   (tier limit ${limit}: run the client with SHADE_TREE_LIMIT=${limit})`;
 
 function printRegistrationGuide(write) {
-  write("To stake this commitment on the bundled public Sepolia Grove, load a funded key");
+  write("To stake this identity on the bundled public Sepolia Grove, load a funded key");
   write("without putting the key in argv or shell history (contract/RPC/tier come from the record):");
   write("  read -s SHADE_TREE_REGISTER_KEY");
-  write(`  SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" shade-tree register-member ${commitment} --limit ${limit}`);
+  write(`  SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" shade-tree register-member ${identityCommitment} --limit ${limit}`);
   write("  unset SHADE_TREE_REGISTER_KEY");
   write("");
   write("For another Grove, explicitly supply its network/contract, RPC, and matching tier.");
@@ -97,7 +99,8 @@ const { root, count } = await loadGroup();
 
 console.log("Self-enrolled a member (you generated the identity; only the commitment left this machine).");
 console.log("  label:        " + label + "   (local only, never enters the set)");
-console.log("  commitment:   " + commitment + "   (public; added to the set / stake this on chain)");
+console.log("  commitment:   " + commitment + "   (public leaf; added to the set)");
+console.log("  identity commitment: " + identityCommitment + "   (public; stake this on chain)");
 console.log("  tier limit:   " + limit + (limit === K_SLOTS ? "   (default K)" : "   (per-epoch budget baked into the leaf)") + tierNote);
 console.log("  set size:     " + count);
 console.log("  group root:   " + root);

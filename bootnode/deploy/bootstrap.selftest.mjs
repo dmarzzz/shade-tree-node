@@ -277,7 +277,7 @@ async function main() {
     const preElder = render(work, "preset-elder", { SHADE_TREE_ELDER_ONLY: "1", SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath });
     const preElderUnit = await readFile(join(preElder.out, "etc/systemd/system/shade-tree-bootnode.service"), "utf8");
     ok(preElder.status === 0 && unitEnv(preElderUnit, "SHADE_TREE_BOOTNODE_PEERS") === record.elder.onion && unitEnv(preElderUnit, "SHADE_TREE_STAKE_MODE") === "onchain"
-      && unitEnv(preElderUnit, "SHADE_TREE_GATEWAY_REGISTRY") === record.elder.gatewayRegistry, "preset + ELDER_ONLY: federated stake-admission Elder");
+      && unitEnv(preElderUnit, "SHADE_TREE_GATEWAY_REGISTRY") === record.elder.gatewayRegistry && unitEnv(preElderUnit, "SHADE_TREE_TOR_PORT") === "9050", "preset + ELDER_ONLY: federated stake-admission Elder");
     ok(render(work, "peers-bad", { SHADE_TREE_BOOTNODE_PEERS: "nope.onion" }).status !== 0, "malformed federation peer rejected");
     // --render <dir> CLI form == env form.
     const cli = render(work, "cli", { SHADE_TREE_BOOTNODE_ONION: ONION }, ["--render", join(work, "cli")]);

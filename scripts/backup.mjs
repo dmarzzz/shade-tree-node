@@ -98,7 +98,7 @@ export function encrypt(files, passphrase) {
 export function decrypt(envelope, passphrase) {
   if (!passphrase) throw new Error("passphrase required");
   if (!envelope || envelope.cipher !== "aes-256-gcm" || envelope.kdf !== "scrypt") {
-    throw new Error("not a recognized shade-tree backup envelope");
+    throw new Error("not a recognized shade-tree-node backup envelope");
   }
   const kp = envelope.kdfParams || KDF;
   const salt = Buffer.from(envelope.salt, "base64");
