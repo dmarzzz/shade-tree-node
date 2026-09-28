@@ -14,7 +14,9 @@ on:
       - "test/site.selftest.mjs"
       - "test/site-browser/**"
   # The main-branch ruleset requires this check for every pull request. Keep
-  # the PR trigger unconditional so non-site changes cannot deadlock a merge.
+  # the PR trigger unconditional so non-site changes cannot deadlock a merge;
+  # the `changes` job skips the browser run when a PR touches no site input,
+  # and a skipped job satisfies the required check (HYG-10).
   pull_request:
   workflow_dispatch:
 
@@ -26,8 +28,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: site path gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci-changes.sh '^(docs/post/|site-src/|docs-site/|web/|assets/|test/site|test/site-browser/|playwright\.config\.mjs$|scripts/serve-site\.mjs$|\.lighthouserc\.json$|package(-lock)?\.json$|\.github/workflows/site-quality\.yml$|scripts/ci-changes\.sh$)'
+
   quality:
     name: site quality
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

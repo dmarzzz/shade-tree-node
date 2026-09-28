@@ -57,7 +57,7 @@
     "site:lighthouse": "npx --yes @lhci/cli@0.15.1 autorun",
     "lint": "eslint .",
     "audit:ci": "npm audit --omit=dev --audit-level=high",
-    "coverage": "c8 --reporter=text --reporter=lcov --check-coverage --lines 60 --functions 63 --branches 78 node scripts/test-all.mjs --no-contracts",
+    "coverage": "c8 --reporter=text --reporter=lcov --check-coverage --lines 90 --functions 90 --branches 80 node scripts/test-all.mjs --no-contracts",
     "mutation:test": "stryker run"
   },
   "dependencies": {
