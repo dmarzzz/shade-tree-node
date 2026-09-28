@@ -26,6 +26,11 @@ const REWRITES = new Map([
   ["/lab.css", "lab/lab.css"],
   ["/lab.js", "lab/lab.js"],
   ["/api/v2/openapi.json", "openapi-v2.json"],
+  // Local stand-ins for the aggregate APIs the Get access page reads (Vercel functions in production).
+  ["/api/v1/data/grove/sepolia/head", "grove/network.fallback.json"],
+]);
+const FIXTURES = new Map([
+  ["/api/v1/data/stake/sepolia/head", resolve(dirname(fileURLToPath(import.meta.url)), "..", "test", "fixtures", "stake-head.json")],
 ]);
 
 function safePath(relativePath) {
@@ -44,6 +49,9 @@ async function existingFile(path) {
 }
 
 async function resolveRequest(pathname) {
+  const fixture = FIXTURES.get(pathname);
+  if (fixture) return { file: await existingFile(fixture), status: 200 };
+  if (pathname === "/canopy" || pathname.startsWith("/canopy/")) pathname = `/grove${pathname.slice("/canopy".length) || "/"}`;
   const rewritten = REWRITES.get(pathname);
   if (rewritten) return { file: await existingFile(safePath(rewritten)), status: 200 };
 
