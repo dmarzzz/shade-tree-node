@@ -87,51 +87,49 @@ fn pf_to_dec<F: PrimeField>(field: &F) -> String {
     BigUint::from_bytes_be(&field.into_bigint().to_bytes_be()).to_str_radix(10)
 }
 
-fn dec_to_fq(value: &serde_json::Value, label: &str) -> Result<Fq, String> {
+pub(crate) fn dec_to_fq(value: &serde_json::Value, label: &str) -> Result<Fq, String> {
     let value = value
         .as_str()
-        .ok_or_else(|| format!("withdraw verification key {label} is not a decimal string"))?;
+        .ok_or_else(|| format!("verification key {label} is not a decimal string"))?;
     let integer = BigUint::parse_bytes(value.as_bytes(), 10)
-        .ok_or_else(|| format!("withdraw verification key {label} is not decimal"))?;
+        .ok_or_else(|| format!("verification key {label} is not decimal"))?;
     let modulus = BigUint::from_bytes_be(&Fq::MODULUS.to_bytes_be());
     if integer >= modulus {
         return Err(format!(
-            "withdraw verification key {label} is outside the BN254 base field"
+            "verification key {label} is outside the BN254 base field"
         ));
     }
     Ok(Fq::from(integer))
 }
 
-fn g1(value: &serde_json::Value, label: &str) -> Result<G1Affine, String> {
+pub(crate) fn g1(value: &serde_json::Value, label: &str) -> Result<G1Affine, String> {
     let values = value
         .as_array()
         .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("withdraw verification key {label} is not a G1 point"))?;
+        .ok_or_else(|| format!("verification key {label} is not a G1 point"))?;
     let point = G1Affine::new_unchecked(
         dec_to_fq(&values[0], &format!("{label}.x"))?,
         dec_to_fq(&values[1], &format!("{label}.y"))?,
     );
     if !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve() {
-        return Err(format!(
-            "withdraw verification key {label} is not a valid G1 point"
-        ));
+        return Err(format!("verification key {label} is not a valid G1 point"));
     }
     Ok(point)
 }
 
-fn g2(value: &serde_json::Value, label: &str) -> Result<G2Affine, String> {
+pub(crate) fn g2(value: &serde_json::Value, label: &str) -> Result<G2Affine, String> {
     let values = value
         .as_array()
         .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("withdraw verification key {label} is not a G2 point"))?;
+        .ok_or_else(|| format!("verification key {label} is not a G2 point"))?;
     let x = values[0]
         .as_array()
         .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("withdraw verification key {label}.x is not Fq2"))?;
+        .ok_or_else(|| format!("verification key {label}.x is not Fq2"))?;
     let y = values[1]
         .as_array()
         .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("withdraw verification key {label}.y is not Fq2"))?;
+        .ok_or_else(|| format!("verification key {label}.y is not Fq2"))?;
     let point = G2Affine::new_unchecked(
         Fq2::new(
             dec_to_fq(&x[0], &format!("{label}.x.c0"))?,
@@ -143,17 +141,16 @@ fn g2(value: &serde_json::Value, label: &str) -> Result<G2Affine, String> {
         ),
     );
     if !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve() {
-        return Err(format!(
-            "withdraw verification key {label} is not a valid G2 point"
-        ));
+        return Err(format!("verification key {label} is not a valid G2 point"));
     }
     Ok(point)
 }
 
-fn parse_vk(value: &serde_json::Value) -> Result<VerifyingKey<Bn254>, String> {
+/// Parse a snarkjs verification key, checking every point is on the curve and in the subgroup.
+pub(crate) fn parse_vk(value: &serde_json::Value) -> Result<VerifyingKey<Bn254>, String> {
     let gamma_abc_g1 = value["IC"]
         .as_array()
-        .ok_or_else(|| "withdraw verification key IC is not an array".to_string())?
+        .ok_or_else(|| "verification key IC is not an array".to_string())?
         .iter()
         .enumerate()
         .map(|(index, value)| g1(value, &format!("IC[{index}]")))

@@ -20,12 +20,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ethers } from "ethers";
+import { poseidon1 } from "poseidon-lite";
 import { deriveCommitment, identitySecretOf, identityFor, currentEpoch, requestSignal, proveForSlot, loadGroup } from "../lib/semaphore.mjs";
 import { makeSlotPool, buildEnvelope } from "../client/shim.mjs";
 
 // A member's identitySecret + rateCommitment leaf from the app seed (single-leaf model).
 const idsecOf = (seed) => identitySecretOf(identityFor(seed));
 const leafOf = (seed) => deriveCommitment(idsecOf(seed)); // == on-chain hasher.commitmentOf(identitySecret)
+const idcOf = (seed) => poseidon1([idsecOf(seed)]); // what registerIdentity takes
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SC = process.env.SHADE_TREE_SCRATCH;
@@ -44,7 +46,7 @@ const provider = new ethers.JsonRpcProvider(RPC);
 const ABI = [
   "function BOND() view returns (uint256)",
   "function members(uint256) view returns (uint256 bond, uint64 index, uint64 exitInitiatedAt)", // rln-v3 shape (this script targets the rln-v3 run; rln-v4 tiers: scripts/integration-tiers.mjs)
-  "function register(uint256 commitment) payable",
+  "function registerIdentity(uint256 identityCommitment, uint256 limit) payable returns (uint256)",
   "function activeCount() view returns (uint256)",
 ];
 
@@ -120,11 +122,11 @@ async function main() {
   const wA = new ethers.Wallet(memberAW.private_key, provider);
   const wB = new ethers.Wallet(memberBW.private_key, provider);
   log("stake", "ALICE register+bond ...");
-  let tx = await new ethers.Contract(SET, ABI, wA).register(commA, { value: BOND });
+  let tx = await new ethers.Contract(SET, ABI, wA).registerIdentity(idcOf(alice.secret), 8n, { value: BOND });
   let r = await tx.wait();
   log("stake", `ALICE staked: tx ${tx.hash} block ${r.blockNumber}`);
   log("stake", "BOB register+bond ...");
-  tx = await new ethers.Contract(SET, ABI, wB).register(commB, { value: BOND });
+  tx = await new ethers.Contract(SET, ABI, wB).registerIdentity(idcOf(bob.secret), 8n, { value: BOND });
   r = await tx.wait();
   log("stake", `BOB staked: tx ${tx.hash} block ${r.blockNumber}`);
   log("stake", `on-chain activeCount=${await set.activeCount()}  (both bonds held)`);

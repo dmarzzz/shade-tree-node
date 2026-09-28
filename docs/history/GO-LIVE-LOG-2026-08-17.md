@@ -1,6 +1,6 @@
 # Go-live log — 2026-08-17 (T-DEPLOY-1 / T-DEPLOY-2)
 
-Execution record of [`docs/GO-LIVE.md`](GO-LIVE.md). One row per runbook step: what was run,
+Execution record of [`docs/history/GO-LIVE.md`](GO-LIVE.md). One row per runbook step: what was run,
 pass/fail, the observed value. Onions and pubkeys of the NEW fleet are published here on
 purpose (they are the discovery handles); no droplet or laptop IP appears — boxes are cited by
 name/region.

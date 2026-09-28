@@ -18,7 +18,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { identityFor, rateCommitmentOf, FIELD } from "../lib/rln.mjs";
+import { identityFor, identityCommitmentOf, rateCommitmentOf, FIELD } from "../lib/rln.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
@@ -80,7 +80,9 @@ async function main() {
   ok(/read -r SHADE_TREE_DIR_SIGNER/.test(m.stdout), "the guide loads the operator-supplied Canopy signer");
   ok(/read -r SHADE_TREE_MEMBERS_FILE/.test(m.stdout), "the invited branch requires the operator-supplied member list");
   ok(/read -r SHADE_TREE_RPC_URL/.test(m.stdout) && /read -r SHADE_TREE_GROUP_CONTRACT/.test(m.stdout), "the staked branch requires the operator-supplied chain profile");
-  ok(new RegExp(`shade-tree register-member ${commitment}`).test(m.stdout), "prints the optional `shade-tree register-member <commitment>` step");
+  let idc = "__underivable__";
+  try { idc = identityCommitmentOf(identityFor(secret)).toString(); } catch { /* sentinel */ }
+  ok(new RegExp(`shade-tree register-member ${idc}`).test(m.stdout), "prints the optional `shade-tree register-member <identity-commitment>` step");
   ok(/read -s SHADE_TREE_REGISTER_KEY/.test(m.stdout) && /SHADE_TREE_REGISTER_KEY="\$SHADE_TREE_REGISTER_KEY" shade-tree register-member/.test(m.stdout) && /unset SHADE_TREE_REGISTER_KEY/.test(m.stdout), "the registration key is hidden, process-scoped, and cleared");
   ok(!/--register-key\s+/.test(m.stdout), "the generated guide never puts the registration key in argv");
 
@@ -91,7 +93,9 @@ async function main() {
   try { tieredDerived = rateCommitmentOf(identityFor(tieredSecret), 32).toString(); } catch { /* sentinel */ }
   ok(tiered.code === 0 && tieredDerived === tieredCommitment, "`join --limit 32` bakes tier 32 into the enrolled leaf");
   ok(/tier limit:\s+32/.test(tiered.stdout) && /proxy --limit 32 --leaf-source invited/.test(tiered.stdout) && /proxy --limit 32 --leaf-source staked/.test(tiered.stdout), "tiered join prints the matching Proxy limit");
-  ok(new RegExp(`register-member ${tieredCommitment} --limit 32`).test(tiered.stdout), "tiered join prints the matching registration limit");
+  let tieredIdc = "__underivable__";
+  try { tieredIdc = identityCommitmentOf(identityFor(tieredSecret)).toString(); } catch { /* sentinel */ }
+  ok(new RegExp(`register-member ${tieredIdc} --limit 32`).test(tiered.stdout), "tiered join prints the matching registration limit");
   ok(/export SHADE_TREE_LIMIT=32/.test(tiered.stderr), "tiered join tells the member to retain the exact limit");
 
   // default (no role) behaves as member too

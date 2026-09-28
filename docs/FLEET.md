@@ -13,7 +13,7 @@ for reconstruction is not wired). What is
 *not* built is the on-chain-sourced directory (the onion is deliberately never on chain,
 ADR 0002; `GatewayRegistry` stakes an operator address only). The "fleet budget does not
 compose" section below is the original analysis that motivated the tally. This expands
-[ROADMAP v1](ROADMAP-v1.md) item 3 into a spec; read that first for the framing.
+[ROADMAP v1](history/ROADMAP-v1.md) item 3 into a spec; read that first for the framing.
 
 The PoC has one gateway and the client pins it (`SHADE_TREE_ONION` or `tor/hs/hostname`).
 Two costs, from the roadmap, restated so this doc stands alone:
@@ -154,14 +154,14 @@ State this precisely, because rotation on its own is a weaker guarantee than it 
 The load-bearing line: **rotation alone does not defeat colluding gateways.** A
 member's per-epoch nullifier is constant, so a colluding set matches it across their
 logs and rebuilds the whole profile regardless of how the requests were spread. You
-need [item 1](ROADMAP-v1.md#1-unlinkable-rate-limiting-decouple-linkability-from-the-rate-window)
+need [item 1](history/ROADMAP-v1.md#1-unlinkable-rate-limiting-decouple-linkability-from-the-rate-window)
 (a distinct nullifier per tunnel) for rotation to actually buy anything against
 collusion. **Rotation + per-tunnel unlinkable nullifiers** is the combination that
 delivers "no operator, even a colluding set, can profile a member." Neither piece is
 sufficient alone. Against a purely *non*-colluding fleet, rotation alone already cuts
 each operator's view to ~1/N, which is the honest win it does deliver.
 
-With [item 2](ROADMAP-v1.md#2-on-chain-reputation-set-ethereum), the fleet and the
+With [item 2](history/ROADMAP-v1.md#2-on-chain-reputation-set-ethereum), the fleet and the
 membership read one root, and rotation stays free because the proof is still
 root-and-epoch scoped, not gateway-scoped.
 
@@ -319,7 +319,7 @@ gateway is an *endpoint* of the tunnel, not a relay, so it sees the exact
 application-layer payload sizes and timing (it forwards your real bytes to the clearnet
 destination). That makes a rogue gateway an ideal "one end" for the classic Tor both-ends
 correlation attack (adversarial-review
-[#11](adversarial-review.md#11-tor-layer--network-adversaries-relay-positions-correlation-self-deanon)):
+[#11](history/adversarial-review.md#11-tor-layer--network-adversaries-relay-positions-correlation-self-deanon)):
 an adversary who runs the gateway *and* also owns the client's entry guard (or an AS on
 the client's uplink) can match volume+timing between the two ends and link **client IP ↔
 nullifier ↔ destination**, fully deanonymizing that request.
@@ -354,7 +354,7 @@ cosmetic.
 
 The fleet is the right place to fix the single-datacenter-AS both-ends exposure, and
 it is a real requirement, not a nicety.
-[Adversarial-review finding 11](adversarial-review.md#11-tor-layer--network-adversaries-relay-positions-correlation-self-deanon)
+[Adversarial-review finding 11](history/adversarial-review.md#11-tor-layer--network-adversaries-relay-positions-correlation-self-deanon)
 flags that the PoC gateway lives in one datacenter AS (DigitalOcean), so the
 gateway-side leg is disproportionately observable to an AS/IXP that already sits on a
 large share of Tor path probability, and a datacenter egress IP is itself a weak

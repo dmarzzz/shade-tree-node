@@ -26,7 +26,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { generateOnionIdentity } from "../bootnode/keygen.mjs";
-import { K_SLOTS, normLimit } from "../lib/rln.mjs";
+import { K_SLOTS, normLimit, identityFor, identityCommitmentOf } from "../lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENROLL = join(HERE, "enroll.mjs");
@@ -99,7 +99,7 @@ function joinMember() {
   out("       read -r SHADE_TREE_RPC_URL && export SHADE_TREE_RPC_URL");
   out("       read -r SHADE_TREE_GROUP_CONTRACT && export SHADE_TREE_GROUP_CONTRACT");
   out("       read -s SHADE_TREE_REGISTER_KEY");
-  out("       SHADE_TREE_REGISTER_KEY=\"$SHADE_TREE_REGISTER_KEY\" shade-tree register-member " + commitment + " --limit " + memberLimit);
+  out("       SHADE_TREE_REGISTER_KEY=\"$SHADE_TREE_REGISTER_KEY\" shade-tree register-member " + identityCommitmentOf(identityFor(secret)).toString() + " --limit " + memberLimit);
   out("       unset SHADE_TREE_REGISTER_KEY");
   out("       shade-tree proxy --limit " + memberLimit + " --leaf-source staked");
   out("");

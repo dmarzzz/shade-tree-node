@@ -403,6 +403,15 @@ pub fn main() -> ExitCode {
             return ExitCode::from(code);
         }
     };
+    // Everything ShadeNet writes (identity, token, slot state, Arti state, caches) is private to
+    // this user; Arti also refuses group-writable state, which a umask of 002 would create. `run`
+    // is exempt: the agent it starts inherits the umask and should keep the user's own.
+    #[cfg(unix)]
+    if !matches!(cli.command, Command::Run(_)) {
+        unsafe {
+            libc::umask(0o077);
+        }
+    }
     init_logging(cli.log_level, cli.log_format);
     let file = match config_file::load(cli.config.as_deref()) {
         Ok(file) => file,

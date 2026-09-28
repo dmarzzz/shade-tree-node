@@ -6,7 +6,7 @@
 //   1. reads a single newline-terminated v4 JSON envelope
 //      { v:4, target, nonce, artifact?, proof /*RLNFullProof*/, nullifier, externalNullifier, share },
 //   2. rejects malformed or operator-disallowed targets with a pure policy check,
-//   3. verifies it CHEAP-FIRST (docs/NEXT-VERSION.md, adversarial-review #4):
+//   3. verifies it CHEAP-FIRST (docs/history/NEXT-VERSION.md, adversarial-review #4):
 //        externalNullifier is current/previous epoch's               (cheap)
 //        share.x == proof's committed public x                        (cheap)
 //        proof's public root ∈ recent-roots                           (cheap)
@@ -411,7 +411,7 @@ export function describeRootSources({ static: st, contracts = [] } = {}) {
 // recentRoots and keep it refreshed. Injectable (contracts / want / loadStatic / makeProvider /
 // watchFile) so gateway/root-sources.selftest.mjs can drive the STARTUP posture without a chain:
 //
-//   FAIL-SOFT vs FAIL-CLOSED at startup (fleet crash-loop 2026-08-17, docs/GO-LIVE-LOG-2026-08-17.md):
+//   FAIL-SOFT vs FAIL-CLOSED at startup (fleet crash-loop 2026-08-17, docs/history/GO-LIVE-LOG-2026-08-17.md):
 //   an on-chain source that cannot be read at startup (RPC down, log-range cap, bad contract) is
 //   logged LOUDLY (`root source UNAVAILABLE at startup`), gauged shade_tree_gateway_root_source_degraded=1,
 //   and retried by the provider's own poll (onChange fires the moment it reads roots) -- PROVIDED

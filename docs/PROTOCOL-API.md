@@ -21,7 +21,7 @@ older section links; new links should point to the canonical document.
 
 ## 2. v3 onion <-> ed25519 identity key
 
-[Read this section](WIRE-SPEC.md#2-v3-onion-ed25519-identity-key).
+[Read this section](WIRE-SPEC.md#2-v3-onion---ed25519-identity-key).
 
 ## 3. Announce record
 
@@ -41,7 +41,7 @@ older section links; new links should point to the canonical document.
 
 ### 3.3 Freshness + nonce replay
 
-[Read this section](WIRE-SPEC.md#33-freshness-nonce-replay).
+[Read this section](WIRE-SPEC.md#33-freshness--nonce-replay).
 
 ### 3.4 `verifyAnnounce` reason codes: `bootnode/announce.mjs:80`
 
@@ -81,7 +81,7 @@ older section links; new links should point to the canonical document.
 
 ### 5.3 Admission modes + DoS caps
 
-[Read this section](WIRE-SPEC.md#53-admission-modes-dos-caps).
+[Read this section](WIRE-SPEC.md#53-admission-modes--dos-caps).
 
 ### 5.4 Registrar HTTP API (402 rails, T-FEAT-7): `payments/registrar.mjs` `makeServer`
 
@@ -97,7 +97,7 @@ older section links; new links should point to the canonical document.
 
 ### 6.2 Tunnel signal + target binding
 
-[Read this section](WIRE-SPEC.md#62-tunnel-signal-target-binding).
+[Read this section](WIRE-SPEC.md#62-tunnel-signal--target-binding).
 
 ### 6.3 `signalFieldSafe` bounds: `lib/rln.mjs:132`
 
@@ -117,7 +117,7 @@ older section links; new links should point to the canonical document.
 
 ## 8. Ambiguities / notes
 
-[Read this section](WIRE-SPEC.md#8-ambiguities-notes).
+[Read this section](WIRE-SPEC.md#8-ambiguities--notes).
 
 ## 9. Conformance
 

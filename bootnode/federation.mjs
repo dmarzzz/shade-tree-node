@@ -71,10 +71,13 @@ export function parsePeers(raw, { self = null } = {}) {
 export function makeFederation({
   registry,
   peers = [],
+  // Tor SOCKS for the default fetchers. Before OPS-9 these ignored SHADE_TREE_TOR_HOST/PORT and
+  // always dialed 127.0.0.1:9250, so an Elder on a box whose tor listens elsewhere never merged.
+  tor = { torHost: process.env.SHADE_TREE_TOR_HOST || "127.0.0.1", torPort: Number(process.env.SHADE_TREE_TOR_PORT || 9250) },
   // async (peerOnion) => the peer's /directory object (untrusted hint list)
-  fetchDir = (peer) => fetchOverTor(peer, "/directory"),
+  fetchDir = (peer) => fetchOverTor(peer, "/directory", tor),
   // async (peerOnion, onion) => the peer's stored signed announce rec for that gateway
-  fetchGateway = (peer, onion) => fetchOverTor(peer, "/gateway/" + encodeURIComponent(onion)),
+  fetchGateway = (peer, onion) => fetchOverTor(peer, "/gateway/" + encodeURIComponent(onion), tor),
   intervalMs = Number(process.env.SHADE_TREE_BOOTNODE_FED_INTERVAL || 60) * 1000,
   // Bound per-peer gateway fetches. Default to the registry's own cap (can't hold more anyway).
   maxPullPerPeer = Number(process.env.SHADE_TREE_BOOTNODE_FED_MAX_PULL || (registry.maxEntries?.() ?? 10000)),
@@ -138,6 +141,12 @@ export function makeFederation({
     );
     if (agg.merged || agg.rejected) {
       try { log.info?.("federation pull", { ...agg, peers: peers.length }); } catch { /* logging is best-effort */ }
+    }
+    // A peer that cannot be reached at all is worth a warning: silence here hid a wrong Tor port.
+    for (const r of results) {
+      if (r.errors && !r.listed) {
+        try { log.warn?.("federation peer unreachable", { error: String(r.error || "").replace(/[a-z2-7]{56}\.onion/g, "<onion>").slice(0, 200) }); } catch { /* best-effort */ }
+      }
     }
     return { results, ...agg };
   }

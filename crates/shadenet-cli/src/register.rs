@@ -25,23 +25,25 @@ use std::str::FromStr;
 use std::thread;
 use std::time::{Duration, Instant};
 
-const DEFAULT_LIMIT: u64 = 8;
 const DEFAULT_RPC_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_RECEIPT_TIMEOUT_MS: u64 = 180_000;
 const BN254_FIELD: &str =
     "21888242871839275222246405745257275088548364400416034343698204186575808495617";
 const ANVIL_KEY_0: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
-const HELP: &str = r#"shade-tree register-member — stake a public member leaf
+const HELP: &str = r#"shade-tree register-member — stake a member identity
 
-usage: shade-tree register-member <commitment> [--limit N]
-       shade-tree register-member --identity identity.json
+usage: shade-tree register-member --identity identity.json
+       shade-tree register-member <identity-commitment> [--limit N]
        [--contract 0xaddress] [--rpc-url https://...]
        [--key-file <owner-only-file>]
 
---identity reads the public leaf and exact tier from a Rust-compatible identity
-file, verifies that they match its private identitySecret, and never logs the
-secret. It cannot be combined with a positional commitment. The funding key is
+The staking contract takes the identity commitment Poseidon1(identitySecret)
+and derives the member leaf Poseidon2(identityCommitment, limit) itself, so the
+bond always pays for the leaf's real tier. --identity reads the identitySecret,
+leaf and tier from a Rust-compatible identity file, checks that they match,
+computes the identity commitment locally, and never logs the secret. It cannot
+be combined with a positional identity commitment. The funding key is
 read from --key-file or SHADE_TREE_REGISTER_KEY and signs
 locally; it is never accepted as an argument or sent to the RPC. Without an
 explicit contract/RPC, the bundled live Sepolia Grove staking profile is used.
@@ -72,6 +74,7 @@ struct IdentityInput {
 
 #[derive(Debug, Clone)]
 struct Registration {
+    identity_commitment: U256,
     commitment: U256,
     limit: u64,
     contract: Address,
@@ -288,6 +291,7 @@ fn read_identity(path: &Path) -> Result<IdentityInput, String> {
 
 pub(crate) struct VerifiedIdentity {
     pub(crate) identity_secret: String,
+    pub(crate) identity_commitment: U256,
     pub(crate) commitment: U256,
     pub(crate) limit: u64,
 }
@@ -329,8 +333,16 @@ pub(crate) fn verified_identity(
                 .into(),
         );
     }
+    let identity_commitment = parse_u256(
+        &shadenet_rln::identity::identity_commitment_from_identity_secret(
+            &identity.identity_secret,
+        )
+        .map_err(|error| format!("identity file is invalid ({error}; value not shown)"))?,
+        "identity commitment",
+    )?;
     Ok(VerifiedIdentity {
         identity_secret: identity.identity_secret,
+        identity_commitment,
         commitment,
         limit,
     })
@@ -355,21 +367,29 @@ fn resolve_registration(cli: &CliOptions) -> Result<Registration, String> {
         .as_deref()
         .map(|path| verified_identity(path, requested_limit))
         .transpose()?;
-    let commitment_raw = verified
+    let identity_raw = verified
         .as_ref()
-        .map(|identity| identity.commitment.to_string())
+        .map(|identity| identity.identity_commitment.to_string())
         .map(Ok)
         .unwrap_or_else(|| read_commitment(cli))?;
-    let commitment = parse_u256(&commitment_raw, "commitment")?;
+    let identity_commitment = parse_u256(&identity_raw, "identity commitment")?;
     let field = U256::from_dec_str(BN254_FIELD).expect("BN254 field constant");
-    if commitment.is_zero() || commitment >= field {
-        return Err("commitment must be a non-zero BN254 field element".into());
+    if identity_commitment.is_zero() || identity_commitment >= field {
+        return Err("identity commitment must be a non-zero BN254 field element".into());
     }
     let limit = verified
         .as_ref()
         .map(|identity| identity.limit)
         .or(requested_limit)
         .unwrap_or(bundled_limit);
+    // The leaf the contract will derive; used for the already-staked checks and the output.
+    let commitment = parse_u256(
+        &shadenet_rln::identity::rate_commitment_from_identity_commitment(
+            &identity_commitment.to_string(),
+            limit,
+        )?,
+        "leaf",
+    )?;
     let bundled_address = Address::from_str(first_contract(&bundled_contract)).ok();
     let contract_raw = cli
         .contract
@@ -406,6 +426,7 @@ fn resolve_registration(cli: &CliOptions) -> Result<Registration, String> {
         _ => None,
     };
     Ok(Registration {
+        identity_commitment,
         commitment,
         limit,
         contract,
@@ -613,17 +634,9 @@ fn tier_bond<R: RpcCall>(rpc: &mut R, registration: &Registration) -> Result<(U2
             registration.limit, registration.contract
         )),
         Ok(bond) => Ok((bond, true)),
-        Err(tier_error) if registration.limit == DEFAULT_LIMIT => {
-            let legacy = calldata("BOND()", vec![]);
-            eth_call(rpc, registration.contract, &legacy)
-                .map(|bond| (bond, false))
-                .map_err(|legacy_error| {
-                    format!("could not read tier bond ({tier_error}); legacy BOND() also failed ({legacy_error})")
-                })
-        }
         Err(error) => Err(format!(
-            "contract does not expose bondFor({}); only tier {} is compatible with a legacy set ({error})",
-            registration.limit, DEFAULT_LIMIT
+            "contract does not expose bondFor({}); it is not a ShadeNet staking set ({error})",
+            registration.limit
         )),
     }
 }
@@ -693,20 +706,13 @@ where
                 .into(),
         );
     }
-    let data = if tiered {
-        calldata(
-            "register(uint256,uint256)",
-            vec![
-                Token::Uint(registration.commitment),
-                Token::Uint(registration.limit.into()),
-            ],
-        )
-    } else {
-        calldata(
-            "register(uint256)",
-            vec![Token::Uint(registration.commitment)],
-        )
-    };
+    let data = calldata(
+        "registerIdentity(uint256,uint256)",
+        vec![
+            Token::Uint(registration.identity_commitment),
+            Token::Uint(registration.limit.into()),
+        ],
+    );
     before_send(bond, tiered);
 
     let from = wallet.address;
@@ -880,9 +886,10 @@ pub fn cmd_register_member(args: &[String]) -> ExitCode {
         }
     };
     println!(
-        "register({}, {})",
-        registration.commitment, registration.limit
+        "registerIdentity({}, {})",
+        registration.identity_commitment, registration.limit
     );
+    println!("  leaf:     {}", registration.commitment);
     println!("  contract: {:#x}", registration.contract);
     println!("  rpc:      {}", rpc_label(&registration.rpc_url));
     println!("  from:     {:#x}", wallet.address);
@@ -977,7 +984,12 @@ mod tests {
 
     fn registration() -> Registration {
         Registration {
-            commitment: U256::from(123),
+            identity_commitment: U256::from(123),
+            commitment: U256::from_dec_str(
+                &shadenet_rln::identity::rate_commitment_from_identity_commitment("123", 8)
+                    .unwrap(),
+            )
+            .unwrap(),
             limit: 8,
             contract: Address::from_str("0x1111111111111111111111111111111111111111").unwrap(),
             rpc_url: "https://rpc.example/secret-api-key".into(),
@@ -1111,6 +1123,13 @@ mod tests {
         let registration = resolve_registration(&cli).unwrap();
         assert_eq!(registration.limit, 1);
         assert_eq!(registration.commitment.to_string(), material.leaf);
+        assert_eq!(
+            registration.identity_commitment.to_string(),
+            shadenet_rln::identity::identity_commitment_from_identity_secret(
+                &material.identity_secret
+            )
+            .unwrap()
+        );
 
         let mut wrong: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         wrong["leaf"] = json!("1");
@@ -1161,7 +1180,7 @@ mod tests {
             .iter()
             .find(|(method, _)| method == "eth_estimateGas")
             .unwrap();
-        assert_eq!(&estimate.1[0]["data"].as_str().unwrap()[..10], "0xd66d6c10");
+        assert_eq!(&estimate.1[0]["data"].as_str().unwrap()[..10], "0x9b7b5b80");
         assert_eq!(
             estimate.1[0]["value"],
             Value::String("0x16345785d8a0000".into())

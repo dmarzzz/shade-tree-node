@@ -19,7 +19,7 @@ name: release
 #     `live` binary is self-contained — no external circuit files are needed to egress.
 #
 # TESTNET-ONLY artifacts: the embedded ZK artifacts are from an UNTRUSTED testnet ceremony
-# (docs/SHIP-PLAN.md T-HARD-1). A production release must re-embed audited artifacts.
+# (docs/history/SHIP-PLAN.md T-HARD-1). A production release must re-embed audited artifacts.
 #
 # ARTIFACT LOCK GATE (T-HARD-8): `lock-check` runs test/zk-artifacts.selftest.mjs on the tagged
 # commit and BOTH build jobs depend on it, so a tag can never package a `live` binary whose

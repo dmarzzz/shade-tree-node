@@ -73,6 +73,18 @@ contract RateCommitmentHasher is ICommitmentHasher {
         return _commitmentOf(identitySecret, limit);
     }
 
+    /// @return identityCommitment = Poseidon(1)([ identitySecret ]), what a member registers.
+    function identityCommitmentOf(uint256 identitySecret) external pure override returns (uint256) {
+        return PoseidonT2.hash([identitySecret]);
+    }
+
+    /// @return rateCommitment = Poseidon(2)([ identityCommitment, limit ]), the leaf
+    ///         `StakedReputationSet.registerIdentity` derives. Reverts BadLimit outside [1, MAX_LIMIT].
+    function rateCommitmentOf(uint256 identityCommitment, uint256 limit) external pure override returns (uint256) {
+        if (limit == 0 || limit > MAX_LIMIT) revert BadLimit();
+        return PoseidonT3.hash([identityCommitment, limit]);
+    }
+
     function _commitmentOf(uint256 identitySecret, uint256 limit) internal pure returns (uint256) {
         uint256 identityCommitment = PoseidonT2.hash([identitySecret]);
         return PoseidonT3.hash([identityCommitment, limit]);

@@ -1,5 +1,6 @@
 /* global document */
 
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -153,7 +154,15 @@ test("Get access creates a compatible identity, stakes the pinned transaction, a
   const sent = await page.evaluate(() => window.__walletCalls.find((call) => call.method === "eth_sendTransaction"));
   expect(sent.params[0].to.toLowerCase()).toBe("0xeb67abf066c11d78856bccc63476ed14d51e4275");
   expect(sent.params[0].value).toBe("0x16345785d8a0000");
-  expect(sent.params[0].data).toMatch(/^0xd66d6c10/);
+  // The bundled record decides the ABI: ShadeNet sets (registerInput "identityCommitment") take
+  // registerIdentity(idc, limit) and derive the leaf (launch audit 2.1.4); the v4 set takes
+  // register(leaf, limit). Either way the page sends the value it shows.
+  const record = JSON.parse(readFileSync(new URL("../../network/sepolia/deployment.json", import.meta.url), "utf8"));
+  const shadenet = record.admission.roots.staked.registerInput === "identityCommitment";
+  expect(sent.params[0].data).toMatch(shadenet ? /^0x9b7b5b80/ : /^0xd66d6c10/);
+  const shown = BigInt((await page.locator("[data-leaf]").textContent()).trim());
+  expect(BigInt(`0x${sent.params[0].data.slice(10, 74)}`)).toBe(shown);
+  expect(BigInt(`0x${sent.params[0].data.slice(74, 138)}`)).toBe(1n);
 
   const accessibility = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

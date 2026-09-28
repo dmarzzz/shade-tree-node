@@ -135,7 +135,7 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
   [issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6).
 - **No audit.** Trust boundaries, per-party threat model and review order:
   [`AUDIT.md`](AUDIT.md), [`CONTRACTS-AUDIT.md`](CONTRACTS-AUDIT.md),
-  [`adversarial-review.md`](adversarial-review.md). `npm test` runs every
+  [`adversarial-review.md`](history/adversarial-review.md). `npm test` runs every
   `*selftest.mjs` plus the Foundry suite.
 - **One operator, one provider.** Two regions, same AS14061; every asset is Sepolia testnet;
   onion PoW is off (`SHADE_TREE_ENABLE_POW=0`, most client tors lack the module), so rendezvous DoS

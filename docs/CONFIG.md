@@ -8,6 +8,19 @@ Read by `bootnode/server.mjs` (discovery service) and `bootnode/heartbeat.mjs` (
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
+| `SHADE_TREE_BOOTNODE_PEERS` | (unset → federation off) | Comma-separated peer Elder onions. Every `SHADE_TREE_BOOTNODE_FED_INTERVAL` seconds the Elder pulls each peer's directory as a hint list and re-verifies every listed gateway's own signed announce (onion control, operator, stake on this Elder's chain view) before merging it. The peer's signature carries no authority. | bootnode server (`bootnode/federation.mjs`) | (none) |
+| `SHADE_TREE_BOOTNODE_FED_INTERVAL` | `60` | Seconds between federation pull cycles. | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_FED_MAX_PULL` | registry cap (`10000`) | Max gateways fetched from one peer per cycle, so a hostile peer cannot force unbounded fetches. | bootnode server | (none) |
+| `SHADE_TREE_TOR_HOST` / `SHADE_TREE_TOR_PORT` (Elder) | `127.0.0.1` / `9250` | Tor SOCKS the Elder dials peers and probed gateways through. The bootstrap sets `9050` (the system tor) when peers are configured. | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_PROBE` | `0` | `1` = actively probe each live gateway over Tor and demote ones that fail (needs Tor). | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_PROBE_INTERVAL` | `120` | Seconds between probe cycles. | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_PROBE_FAILS` | `3` | Consecutive failed probes before a gateway is demoted. | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_PROBE_TIMEOUT_MS` | `20000` | Per-probe timeout. | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_DELTA_HISTORY` | `64` | How many directory versions the Elder keeps to answer `GET /directory/delta`; older bases get a full directory. | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_MAX_RESP` | `2097152` | Max response bytes read from an Elder over Tor (client, heartbeat, federation), so a hostile Elder gets a bounded read. | `bootnode/fetch.mjs` | (none) |
+| `SHADE_TREE_EGRESS_CHECK` | `1` | `0` disables the heartbeat's pre-announce egress self-check and announces unconditionally. | heartbeat | (none) |
+| `SHADE_TREE_EGRESS_CHECK_TARGET` | `1.1.1.1:443` | `host:port` the egress self-check dials. | heartbeat (via `gateway/gateway.mjs`) | (none) |
+| `SHADE_TREE_EGRESS_CHECK_TIMEOUT_MS` | `5000` | Egress self-check timeout, so a beat is never blocked for long. | heartbeat | (none) |
 | `SHADE_TREE_BOOTNODE_PORT` | `8877` | Loopback port Tor maps the bootnode onion to (listens on `127.0.0.1`). | bootnode server | `--port` |
 | `SHADE_TREE_BOOTNODE_ADMISSION` | `open` | Admission policy: `open` (onion-control only) or `stake` (require live operator stake). | bootnode server | `--admission` |
 | `SHADE_TREE_BOOTNODE_TTL` | `900` | Seconds a gateway stays live without re-announcing before it ages out. | bootnode server | `--ttl` |
@@ -42,6 +55,13 @@ Read by `gateway/gateway.mjs` (egress proxy). See also On-chain and Common group
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
+| `SHADE_TREE_EGRESS_ALLOW` | `*:443` | Comma-separated `host:port` patterns a tunnel may reach (`*`, `*.suffix` for subdomains, or exact host; port `*` or a number). Default-deny. Anything beyond `:443` lets the node read plaintext. | gateway | (none) |
+| `SHADE_TREE_EGRESS_DENY` | (empty) | Patterns refused even if allowed; deny wins. | gateway | (none) |
+| `SHADE_TREE_RECEIPTS` | `0` | `1` = sign an egress success receipt into the reply (clients use them for reputation). Off, the reply is exactly `{ ok: true }`. | gateway | (none) |
+| `SHADE_TREE_SPENT_STATE_FILE` | `deploy-state/spent-set.json` when that directory exists | Where the spent-nullifier snapshot is kept across restarts (0600, rewritten every 2 s when it changes); `off` disables it, and a restart then reopens budgets for up to two epochs. | gateway | (none) |
+| `SHADE_TREE_FLEET_TALLY` | (unset) | Legacy switch. Setting it without `SHADE_TREE_FLEET_TALLY_PEERS` only logs a warning; the tally turns on from the peers and token. | gateway | (none) |
+| `SHADE_TREE_ZK_ARTIFACTS` | built-in `circuits/rln/verification_key.json` | Accepted proof artifacts as `<id>=<verification-key-path>[,...]`; an envelope names the id it was proved with. A missing or mismatched key refuses startup. | gateway | (none) |
+| `SHADE_TREE_ZK_ARTIFACT_LEGACY` | (unset) | Which accepted id an envelope without an `artifact` field means; requires `SHADE_TREE_ZK_ARTIFACTS`. | gateway | (none) |
 | `SHADE_TREE_GATEWAY_PORT` | `8443` | Loopback port Tor maps the node onion to. | gateway | `--gateway-port` |
 | `SHADE_TREE_ADMIT` | `invited` | Admission paths this gateway trusts: `invited[,staked][,paid]`, normalized to that order. Only named paths become proof roots or routed slash targets. `staked` requires `SHADE_TREE_GROUP_CONTRACT`; `paid` requires `SHADE_TREE_PAID_ACCESS_CONTRACT`; a missing required contract is a startup error. Configuring a contract does not admit it by itself. | gateway root source + slasher | `--admit` |
 | `SHADE_TREE_GROUP_CONTRACT` | (unset; or `network/<SHADE_TREE_NETWORK>/contracts.json`) | Comma-separated `StakedReputationSet` addresses available to the `staked` admission path. Each admitted set is read through its own RootProvider (`node` or `light`) and their roots are unioned by `CompositeRootProvider`. The gateway does not read or route slashing to these contracts unless `SHADE_TREE_ADMIT` includes `staked`. | gateway root source, root-provider | `--group-contract` |
@@ -80,6 +100,7 @@ Read by `client/shim.mjs` / `client/shade-tree-client.mjs` (proxy + library) and
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
+| `SHADE_TREE_ZK_PROVER_ARTIFACTS` | built-in prover set | Prover artifact sets as JSON `[{id, wasm, zkey}]`, newest first; the client proves with the first set a node accepts. | JS client | (none) |
 | `SHADE_TREE_SECRET` | (required) | Member secret (bearer credential from `enroll`); used to mint per-tunnel RLN proofs. | client | `--secret` |
 | `SHADE_TREE_ONION` | (unset) | Pin a single gateway onion (skips directory selection). `.onion` suffix optional. | client | `--onion` |
 | `SHADE_TREE_DIRECTORY` | (unset) | Path to a static signed directory JSON (offline discovery). | client selection | `--directory` |
@@ -102,6 +123,7 @@ Read by `lib/gateway-registry.mjs` (StakeVerifier), `lib/root-provider.mjs` (Roo
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
+| `SHADE_TREE_LIGHT_MODE` | `proof` | Light root provider: `proof` checks `eth_getProof` against the Helios-anchored state root; `storageat` reads `eth_getStorageAt` at the anchored block without the proof (fallback for RPCs without `eth_getProof`). | root-provider | (none) |
 | `SHADE_TREE_STAKE_MODE` | auto: `onchain` if `SHADE_TREE_GATEWAY_REGISTRY` set, else `mock` | StakeVerifier source: `onchain` (eth_call `isStaked`) or `mock` (chainless dev). | gateway-registry | `--stake-mode` |
 | `SHADE_TREE_GATEWAY_REGISTRY` | (unset; falls back to `network/<SHADE_TREE_NETWORK>/contracts.json` `contracts.gatewayRegistry`, then `deployed.local.json`) | `GatewayRegistry` contract address (required for `onchain` stake mode and `register-gateway`). | gateway-registry, register-gateway | `--gateway-registry` |
 | `SHADE_TREE_STAKE_ALLOWLIST` | (unset → everyone staked) | Comma-separated operator addresses treated as staked in `mock` mode; empty means open dev (all staked). | gateway-registry (mock) | `--stake-allowlist` |
@@ -124,6 +146,10 @@ Read by `payments/registrar.mjs` (the operator's HTTP-402 service that sells mem
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
+| `SHADE_TREE_REGISTRAR_REQUEST_TIMEOUT_MS` | `30000` | HTTP: whole-request deadline. | registrar | (none) |
+| `SHADE_TREE_REGISTRAR_KEEPALIVE_TIMEOUT_MS` | `5000` | HTTP: idle keep-alive close. | registrar | (none) |
+| `SHADE_TREE_REGISTRAR_MAX_HEADER_BYTES` | `8192` | HTTP: max request-header bytes. | registrar | (none) |
+| `SHADE_TREE_REGISTRAR_CONN_CHECK_MS` | `1000` | HTTP: how often the timeouts above are enforced. | registrar | (none) |
 | `SHADE_TREE_REGISTRAR_KEY` | (required) | Operator hot key: submits `transferWithAuthorization` (the buyer's signed EIP-3009 authorization) and `PaidAccessSet.insert`; pays all gas. Secret: unit drop-in / env only, never argv. | registrar | (none) |
 | `SHADE_TREE_PAID_ACCESS_CONTRACT` | `network/<SHADE_TREE_NETWORK>/contracts.json` `contracts.paidAccessSet` | The `PaidAccessSet` the registrar inserts into (must list every sold tier in `allowedLimits()`; checked at boot). | registrar, gateway | (none) |
 | `SHADE_TREE_PAY_ASSET` | `network/<SHADE_TREE_NETWORK>/contracts.json` `payAsset.address` | The EIP-3009 stablecoin buyers pay in (Sepolia USDC `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`, or the test tUSD). Probed at boot: `name()`/`version()`/`decimals()`, and the computed EIP-712 domain MUST equal on-chain `DOMAIN_SEPARATOR()` (fail-closed). | registrar | (none) |
@@ -151,6 +177,9 @@ Read by `payments/registrar.mjs` (the operator's HTTP-402 service that sells mem
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
+| `SHADE_TREE_ROLE` | (unset) | Component name written into every JSON log line when a process does not set its own. | `lib/log.mjs` | (none) |
+| `SHADE_TREE_BUILD_COMMIT` | read from the checkout's `.git` | 40-hex commit reported in `shade_tree_build_info{commit}` and the Elder `/health`, for installs without a `.git` directory. | every long-running role | (none) |
+| `CREDENTIALS_DIRECTORY` | set by systemd | Secrets `SHADE_TREE_SLASH_KEY`, `SHADE_TREE_GW_OPERATOR_KEY`, `SHADE_TREE_REGISTRAR_KEY` and `SHADE_TREE_FLEET_TALLY_TOKEN` are read from files here (`ImportCredential=SHADE_TREE_*`) when not set in the environment. | gateway, heartbeat, registrar | (none) |
 | `SHADE_TREE_NETWORK` | (unset) | Name of a committed network record under `network/<name>/`. Fills any UNSET discovery / contract var from `bootnode.json` (`SHADE_TREE_BOOTNODE_ONION`, `SHADE_TREE_DIR_SIGNER`, `SHADE_TREE_BOOTNODE_ADMISSION`, or the static `SHADE_TREE_DIRECTORY` fallback) and `contracts.json` (`SHADE_TREE_GATEWAY_REGISTRY`, `SHADE_TREE_GROUP_CONTRACT`, `SHADE_TREE_PAID_ACCESS_CONTRACT` from `contracts.paidAccessSet`, `SHADE_TREE_PAY_ASSET` from `payAsset.address`, `SHADE_TREE_REGISTRAR_PORT` from `registrar.port`, `SHADE_TREE_RPC_URL`). Explicit env/flags always win. See `network/README.md`. | `shade-tree` (all commands), client selection, heartbeat, gateway-registry, register-gateway, uptime probe | `--network` |
 | `SHADE_TREE_RPC_URL` | `http://127.0.0.1:8545` (register scripts try `deployed.rpcUrl` first) | JSON-RPC endpoint for all on-chain reads/writes. | gateway-registry, root-provider, gateway slasher, register-* | `--rpc-url` |
 | `SHADE_TREE_RPC_TIMEOUT_MS` | `15000` | Deadline for each execution JSON-RPC request, including root refreshes, stake checks, slashing, registration, and registrar settlement. Invalid or zero values fall back to the default rather than disabling the guard. | root-provider, gateway-registry, gateway slasher, register-*, registrar | (none) |

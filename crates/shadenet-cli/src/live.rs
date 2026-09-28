@@ -1064,7 +1064,6 @@ fn service_unit(kind: ServiceKind, config: &Path) -> String {
              Restart=on-failure\n\
              RestartSec=5\n\
              NoNewPrivileges=yes\n\
-             PrivateTmp=yes\n\
              Environment=SHADENET_LOG_FORMAT=json\n\n\
              [Install]\n\
              WantedBy=default.target\n",

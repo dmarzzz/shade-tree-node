@@ -315,19 +315,61 @@ fn member_state<R: RpcCall>(
     })
 }
 
-fn action_context(action: Action, commitment: U256, recipient: Option<Address>) -> [u8; 32] {
+/// The proof context `StakedReputationSet.exitContext` / `withdrawContext` compute: the tag,
+/// chain id, set address, leaf and leaf index, plus the recipient for a withdrawal (audit
+/// 2.2.1), all `abi.encodePacked`.
+fn action_context(
+    action: Action,
+    chain_id: u64,
+    contract: Address,
+    commitment: U256,
+    index: U256,
+    recipient: Option<Address>,
+) -> [u8; 32] {
     let mut packed = match action {
-        Action::Exit => b"SHADE_TREE_EXIT".to_vec(),
-        Action::Withdraw => b"SHADE_TREE_WITHDRAW".to_vec(),
+        Action::Exit => b"SHADENET_EXIT".to_vec(),
+        Action::Withdraw => b"SHADENET_WITHDRAW".to_vec(),
         Action::Status => unreachable!("status has no proof context"),
     };
     let mut word = [0_u8; 32];
+    U256::from(chain_id).to_big_endian(&mut word);
+    packed.extend(word);
+    packed.extend(contract.as_bytes());
     commitment.to_big_endian(&mut word);
+    packed.extend(word);
+    index.to_big_endian(&mut word);
     packed.extend(word);
     if let Some(recipient) = recipient {
         packed.extend(recipient.as_bytes());
     }
     keccak256(packed)
+}
+
+/// Ask the set for the context it will check, and refuse to prove if it differs from the
+/// local one: a set without these views predates the ShadeNet contracts.
+fn onchain_context<R: RpcCall>(
+    rpc: &mut R,
+    network: &Network,
+    action: Action,
+    commitment: U256,
+    recipient: Option<Address>,
+) -> Result<[u8; 32], String> {
+    let data = match action {
+        Action::Exit => calldata("exitContext(uint256)", vec![Token::Uint(commitment)]),
+        Action::Withdraw => calldata(
+            "withdrawContext(uint256,address)",
+            vec![
+                Token::Uint(commitment),
+                Token::Address(recipient.unwrap_or_default()),
+            ],
+        ),
+        Action::Status => unreachable!("status has no proof context"),
+    };
+    let raw = eth_call(rpc, network, &data).map_err(|error| {
+        format!("the staking set has no proof-context view; it predates the ShadeNet contracts ({error})")
+    })?;
+    <[u8; 32]>::try_from(raw.as_slice())
+        .map_err(|_| "proof-context view returned malformed data".to_string())
 }
 
 fn gas_wallet(cli: &CliOptions) -> Result<FundingWallet, String> {
@@ -630,7 +672,27 @@ pub fn cmd_member(action: Action, args: &[String]) -> ExitCode {
         },
         None => None,
     };
-    let context = action_context(action, identity.commitment, recipient);
+    let context = action_context(
+        action,
+        chain_id,
+        network.contract,
+        identity.commitment,
+        state.index,
+        recipient,
+    );
+    match onchain_context(&mut rpc, &network, action, identity.commitment, recipient) {
+        Ok(expected) if expected == context => {}
+        Ok(_) => {
+            eprintln!(
+                "member: the set's proof context differs from the local one; refusing to prove"
+            );
+            return ExitCode::from(1);
+        }
+        Err(error) => {
+            eprintln!("member: {error}");
+            return ExitCode::from(1);
+        }
+    }
     if cli.circuits.is_none() {
         if let Err(error) = shadenet_rln::artifacts::verify_withdraw_embedded() {
             eprintln!("member: {error}");
@@ -810,22 +872,61 @@ mod tests {
 
     #[test]
     fn action_context_matches_solidity_packed_layout() {
-        let commitment = U256::from(123_u64);
-        let recipient = Address::from_str("0x1111111111111111111111111111111111111111").unwrap();
-        let mut exit = b"SHADE_TREE_EXIT".to_vec();
-        let mut word = [0_u8; 32];
-        commitment.to_big_endian(&mut word);
-        exit.extend(word);
+        // Golden values from testdata/withdraw-proof.json, which the Foundry tests replay
+        // against StakedReputationSet.exitContext / withdrawContext at the same address.
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../testdata/withdraw-proof.json")).unwrap();
+        let chain_id = fixture["chainId"].as_u64().unwrap();
+        let contract = Address::from_str(fixture["set"].as_str().unwrap()).unwrap();
+        let commitment = U256::from_dec_str(fixture["commitment"].as_str().unwrap()).unwrap();
+        let index = U256::from(fixture["index"].as_u64().unwrap());
+        let recipient = Address::from_str(fixture["recipient"].as_str().unwrap()).unwrap();
+        let hex32 = |value: &Value| {
+            let bytes = hex::decode(value.as_str().unwrap().trim_start_matches("0x")).unwrap();
+            <[u8; 32]>::try_from(bytes.as_slice()).unwrap()
+        };
         assert_eq!(
-            action_context(Action::Exit, commitment, None),
-            keccak256(exit)
+            action_context(Action::Exit, chain_id, contract, commitment, index, None),
+            hex32(&fixture["exit"]["context"])
         );
-        let mut withdrawal = b"SHADE_TREE_WITHDRAW".to_vec();
-        withdrawal.extend(word);
-        withdrawal.extend(recipient.as_bytes());
         assert_eq!(
-            action_context(Action::Withdraw, commitment, Some(recipient)),
-            keccak256(withdrawal)
+            action_context(
+                Action::Withdraw,
+                chain_id,
+                contract,
+                commitment,
+                index,
+                Some(recipient)
+            ),
+            hex32(&fixture["withdraw"]["context"])
+        );
+        // Every bound field changes the context.
+        let base = action_context(Action::Exit, chain_id, contract, commitment, index, None);
+        assert_ne!(
+            base,
+            action_context(Action::Exit, 1, contract, commitment, index, None)
+        );
+        assert_ne!(
+            base,
+            action_context(
+                Action::Exit,
+                chain_id,
+                Address::zero(),
+                commitment,
+                index,
+                None
+            )
+        );
+        assert_ne!(
+            base,
+            action_context(
+                Action::Exit,
+                chain_id,
+                contract,
+                commitment,
+                U256::one(),
+                None
+            )
         );
     }
 

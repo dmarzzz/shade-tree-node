@@ -9,40 +9,74 @@
   "contracts": {
     "staking": {
       "artifact": "StakedReputationSet.sol/StakedReputationSet.json",
-      "runtimeBytes": 5478,
-      "normalizedSha256": "4bb7821ef11596d88d86e766be38e71701dc74c63c05bacc7768a4e3a8ab8623",
+      "runtimeBytes": 6513,
+      "normalizedSha256": "1c97b90422991440e73ac157688e394dc3a20a2dfd11c113b0ec4598c29fc2de",
       "zeroRanges": [
-        { "start": 426, "length": 32 }, { "start": 873, "length": 32 },
-        { "start": 1059, "length": 32 }, { "start": 1234, "length": 32 },
-        { "start": 1616, "length": 32 }, { "start": 1814, "length": 32 },
-        { "start": 2377, "length": 32 }, { "start": 2676, "length": 32 },
-        { "start": 2965, "length": 32 }, { "start": 4183, "length": 32 },
-        { "start": 4385, "length": 20 }, { "start": 5425, "length": 53 }
+        { "start": 485, "length": 32 },
+        { "start": 1087, "length": 32 },
+        { "start": 1379, "length": 32 },
+        { "start": 1535, "length": 32 },
+        { "start": 2029, "length": 32 },
+        { "start": 2148, "length": 32 },
+        { "start": 2660, "length": 32 },
+        { "start": 2959, "length": 32 },
+        { "start": 3410, "length": 32 },
+        { "start": 3662, "length": 32 },
+        { "start": 4438, "length": 32 },
+        { "start": 4626, "length": 20 },
+        { "start": 6460, "length": 53 }
       ],
-      "links": { "PoseidonT3": [{ "start": 4385, "length": 20 }] }
+      "links": {
+        "PoseidonT3": [
+          { "start": 4626, "length": 20 }
+        ]
+      }
     },
     "hasher": {
       "artifact": "RateCommitmentHasher.sol/RateCommitmentHasher.json",
-      "runtimeBytes": 788,
-      "normalizedSha256": "3e994187b1fd8ab1bda6c492d90676d11a5b72027854a58bb43e14d5b99beda0",
-      "zeroRanges": [{ "start": 312, "length": 20 }, { "start": 450, "length": 20 }, { "start": 735, "length": 53 }],
+      "runtimeBytes": 1169,
+      "normalizedSha256": "f58bf916eea7f8e518934ef2c74abc79966820a256b3a31d82d2178da28ec27e",
+      "zeroRanges": [
+        { "start": 305, "length": 20 },
+        { "start": 490, "length": 20 },
+        { "start": 693, "length": 20 },
+        { "start": 831, "length": 20 },
+        { "start": 1116, "length": 53 }
+      ],
       "links": {
-        "PoseidonT2": [{ "start": 312, "length": 20 }],
-        "PoseidonT3": [{ "start": 450, "length": 20 }]
+        "PoseidonT2": [
+          { "start": 305, "length": 20 },
+          { "start": 693, "length": 20 }
+        ],
+        "PoseidonT3": [
+          { "start": 490, "length": 20 },
+          { "start": 831, "length": 20 }
+        ]
       }
     },
     "withdrawVerifier": {
       "artifact": "WithdrawVerifier.sol/WithdrawVerifier.json",
       "runtimeBytes": 1458,
       "normalizedSha256": "9567136060539b3677f6fc5f565839fc459b6bd183ada91bad5b20254f7e650f",
-      "zeroRanges": [{ "start": 141, "length": 32 }, { "start": 373, "length": 32 }, { "start": 548, "length": 20 }, { "start": 1405, "length": 53 }],
-      "links": { "PoseidonT3": [{ "start": 548, "length": 20 }] }
+      "zeroRanges": [
+        { "start": 141, "length": 32 },
+        { "start": 373, "length": 32 },
+        { "start": 548, "length": 20 },
+        { "start": 1405, "length": 53 }
+      ],
+      "links": {
+        "PoseidonT3": [
+          { "start": 548, "length": 20 }
+        ]
+      }
     },
     "groth16": {
       "artifact": "WithdrawGroth16Verifier.sol/WithdrawGroth16Verifier.json",
       "runtimeBytes": 1439,
       "normalizedSha256": "bbd87c35664965b741d426b1b9728bbdc6606bd7f374dc3e7f383b22597f58b6",
-      "zeroRanges": [{ "start": 1386, "length": 53 }]
+      "zeroRanges": [
+        { "start": 1386, "length": 53 }
+      ]
     }
   },
   "libraries": {
@@ -50,13 +84,19 @@
       "artifact": "PoseidonT2.sol/PoseidonT2.json",
       "runtimeBytes": 10495,
       "normalizedSha256": "a811d3fd822a61f1a854c681b46eb36d4eecff146524562aacf3e0c849c05d88",
-      "zeroRanges": [{ "start": 1, "length": 20 }, { "start": 10442, "length": 53 }]
+      "zeroRanges": [
+        { "start": 1, "length": 20 },
+        { "start": 10442, "length": 53 }
+      ]
     },
     "PoseidonT3": {
       "artifact": "PoseidonT3.sol/PoseidonT3.json",
       "runtimeBytes": 16458,
       "normalizedSha256": "ef0cc3c04591e5eb3463a384dbe2126bed60cb20b04fcb36ee751bc931759993",
-      "zeroRanges": [{ "start": 1, "length": 20 }, { "start": 16405, "length": 53 }]
+      "zeroRanges": [
+        { "start": 1, "length": 20 },
+        { "start": 16405, "length": 53 }
+      ]
     }
   }
 }

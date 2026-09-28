@@ -19,7 +19,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { identityFor, rateCommitmentOf, FIELD } from "../lib/rln.mjs";
+import { identityFor, identityCommitmentOf, rateCommitmentOf, FIELD } from "../lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -81,7 +81,10 @@ function main() {
   let derived = "__underivable__";
   try { derived = rateCommitmentOf(identityFor(secret)).toString(); } catch { /* left as sentinel */ }
   ok(derived === commitment, "stdout commitment == rateCommitmentOf(identityFor(secret)) (leaf matches the secret)");
-  ok(new RegExp(`shade-tree register-member ${commitment} --limit 8`).test(c1.stderr), "default enrollment prints a registration command with the exact tier");
+  let idc = "__underivable__";
+  try { idc = identityCommitmentOf(identityFor(secret)).toString(); } catch { /* sentinel */ }
+  ok(new RegExp(`shade-tree register-member ${idc} --limit 8`).test(c1.stderr), "default enrollment prints a registration command for the identity commitment at the exact tier");
+  ok(!new RegExp(`register-member ${commitment}`).test(c1.stderr), "the registration command never stakes the leaf itself");
   ok(/read -s SHADE_TREE_REGISTER_KEY/.test(c1.stderr) && /SHADE_TREE_REGISTER_KEY="\$SHADE_TREE_REGISTER_KEY" shade-tree register-member/.test(c1.stderr) && /unset SHADE_TREE_REGISTER_KEY/.test(c1.stderr), "remote registration guidance keeps the funded key hidden, process-scoped, and cleared");
   ok(!/--register-key\s+/.test(c1.stderr), "registration guidance never puts the funded key in argv");
 
@@ -91,7 +94,9 @@ function main() {
   let tieredDerived = "__underivable__";
   try { tieredDerived = rateCommitmentOf(identityFor(tieredSecret), 32).toString(); } catch { /* sentinel */ }
   ok(tiered.status === 0 && tieredDerived === tieredCommitment, "tier-32 enrollment derives a tier-32 leaf");
-  ok(new RegExp(`shade-tree register-member ${tieredCommitment} --limit 32`).test(tiered.stderr), "tier-32 enrollment prints a matching tier-32 registration command");
+  let tieredIdc = "__underivable__";
+  try { tieredIdc = identityCommitmentOf(identityFor(tieredSecret)).toString(); } catch { /* sentinel */ }
+  ok(new RegExp(`shade-tree register-member ${tieredIdc} --limit 32`).test(tiered.stderr), "tier-32 enrollment prints a matching tier-32 registration command");
 
   // === 2. two commitment-only runs generate a FRESH identity each time ===
   console.log("\nfreshness (identity generated locally, per run):");
@@ -123,7 +128,9 @@ function main() {
   ok(/read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET/.test(d.stdout) && !/export SHADE_TREE_SECRET=0x/.test(d.stdout), "default guidance uses a hidden read rather than an inline secret export");
   const dCommit = (d.stdout.match(/commitment:\s+([0-9]+)/) || [])[1];
   ok(dCommit != null && isFieldElement(dCommit), "default mode also prints a well-formed commitment");
-  ok(new RegExp(`shade-tree register-member ${dCommit} --limit 8`).test(d.stdout), "default local-demo output retains the exact registration tier");
+  const dIdc = (d.stdout.match(/identity commitment:\s+([0-9]+)/) || [])[1];
+  ok(dIdc != null && dm && dIdc === identityCommitmentOf(identityFor(dm[1])).toString(), "default mode prints the identity commitment of the printed secret");
+  ok(new RegExp(`shade-tree register-member ${dIdc} --limit 8`).test(d.stdout), "default local-demo output retains the exact registration tier");
   ok(dm && dCommit && dm[1] !== dCommit, "secret and commitment are distinct values");
   ok(readFileSync(MEMBERS, "utf8") === snapshot, "members.json restored to its pre-test contents");
 

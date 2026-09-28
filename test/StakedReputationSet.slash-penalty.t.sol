@@ -60,9 +60,10 @@ contract StakedReputationSetSlashPenaltyTest is Cheats {
             new uint256[](0),
             new uint256[](0)
         );
+        uint256 idc = hasher.identityCommitmentOf(SECRET);
         vm.deal(MEMBER, amount);
         vm.prank(MEMBER);
-        set.register{value: amount}(leaf);
+        set.registerIdentity{value: amount}(idc, 8);
     }
 
     // Full uint256 bond range; covers active/exiting, both ABIs, and either ordering of
