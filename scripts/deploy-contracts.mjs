@@ -259,7 +259,7 @@ async function main() {
     writeFileSync(join(netDir, "deployment.json"), JSON.stringify(record, null, 2) + "\n");
     writeFileSync(join(netDir, "contracts-deploy.json"), JSON.stringify(audit, null, 2) + "\n");
     console.log(`  wrote network/${opts.network}/deployment.json and contracts-deploy.json`);
-    if (opts.verify) verifySources(audit, staked, econ, manifest);
+    if (opts.verify) await verifySources(audit, staked, econ, manifest);
   } finally {
     fork?.stop();
   }
@@ -291,11 +291,12 @@ export function buildRecord(network, netDir, liveRecord, staked, gatewayRegistry
   return { ...base, admission: { ...base.admission, roots: { ...base.admission.roots, staked } } };
 }
 
-function verifySources(audit, staked, econ, manifest) {
+async function verifySources(audit, staked, econ, manifest) {
   const libs = Object.entries(manifest.libraryAddresses).flatMap(([name, address]) => ["--libraries", `contracts/${name}.sol:${name}:${address}`]);
   const tier8 = econ.tiers.find((tier) => tier.limit === 8);
   const extra = econ.tiers.filter((tier) => tier.limit !== 8);
   const byName = Object.fromEntries(audit.transactions.map((tx) => [tx.contract, tx.address]));
+  const txByAddress = Object.fromEntries(audit.transactions.map((tx) => [tx.address.toLowerCase(), tx.hash]));
   const encode = (types, values) => spawnSync("cast", ["abi-encode", `f(${types})`, ...values], { encoding: "utf8" }).stdout.trim();
   const targets = [
     ["RateCommitmentHasher", byName.RateCommitmentHasher, null],
@@ -311,10 +312,46 @@ function verifySources(audit, staked, econ, manifest) {
   else console.log("  ETHERSCAN_API_KEY unset: Etherscan verification skipped (Sourcify only)");
   for (const [verifier, extraArgs] of verifiers) {
     for (const [name, address, args] of targets) {
+      if (verifier === "sourcify") {
+        const result = await verifyOnSourcify(name, address, txByAddress[address.toLowerCase()], libs).catch((error) => `FAILED\n${error.message}`);
+        console.log(`  sourcify ${name} ${address}: ${result}`);
+        continue;
+      }
       const r = spawnSync("forge", ["verify-contract", address, `contracts/${name}.sol:${name}`, "--chain", "sepolia", "--verifier", verifier, "--watch", ...libs, ...(args ? ["--constructor-args", args] : []), ...extraArgs], { cwd: ROOT, encoding: "utf8", timeout: 600_000 });
       console.log(`  ${verifier} ${name} ${address}: ${r.status === 0 ? "verified" : "FAILED\n" + (r.stdout || "") + (r.stderr || "")}`);
     }
   }
+}
+
+// Sourcify retired the v1 /verify endpoint that `forge verify-contract --verifier sourcify` (1.3.x)
+// posts to, so submit forge's standard JSON input to the v2 API and poll the job. Sourcify reads the
+// constructor arguments from the creation transaction.
+const SOURCIFY = "https://sourcify.dev/server";
+export async function verifyOnSourcify(name, address, creationTransactionHash, libs) {
+  const input = spawnSync("forge", ["verify-contract", address, `contracts/${name}.sol:${name}`, "--chain", "sepolia", ...libs, "--show-standard-json-input"], { cwd: ROOT, encoding: "utf8", maxBuffer: 64 << 20 });
+  if (input.status !== 0) throw new Error(input.stderr || "forge --show-standard-json-input failed");
+  const artifact = JSON.parse(readFileSync(join(ROOT, "out", `${name}.sol`, `${name}.json`), "utf8"));
+  const response = await fetch(`${SOURCIFY}/v2/verify/${SEPOLIA}/${address}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      stdJsonInput: JSON.parse(input.stdout),
+      compilerVersion: artifact.metadata.compiler.version,
+      contractIdentifier: `contracts/${name}.sol:${name}`,
+      ...(creationTransactionHash ? { creationTransactionHash } : {}),
+    }),
+  });
+  const submitted = await response.json();
+  if (response.status === 409) return "verified (already on Sourcify)";
+  if (!response.ok) throw new Error(`${response.status} ${submitted.message || JSON.stringify(submitted)}`);
+  for (let attempt = 0; attempt < 60; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const job = await (await fetch(`${SOURCIFY}/v2/verify/${submitted.verificationId}`)).json();
+    if (!job.isJobCompleted) continue;
+    if (job.error) throw new Error(job.error.message || JSON.stringify(job.error));
+    return `verified (${job.contract.creationMatch || job.contract.runtimeMatch})`;
+  }
+  throw new Error(`Sourcify job ${submitted.verificationId} did not finish in 5 minutes`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

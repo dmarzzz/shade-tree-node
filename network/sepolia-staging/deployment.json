@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "network": "sepolia-staging",
+  "status": "pending",
+  "protocol": {
+    "min": 4,
+    "max": 4
+  },
+  "ratePolicy": {
+    "scope": "grove-v4",
+    "window": "fixed",
+    "epochSeconds": 60,
+    "previousEpochsAccepted": 1,
+    "rootFreshnessSeconds": 60,
+    "payloadBytesPerSlot": 41943040,
+    "slashConfirmationSeconds": 3600,
+    "crossGateway": "best-effort-fleet-tally"
+  },
+  "security": {
+    "proofArtifacts": "untrusted-testnet",
+    "scope": "disposable-research",
+    "decisionRef": "sepolia-staging: ShadeNet staging rehearsal contracts (M1)"
+  },
+  "services": {
+    "elder": {
+      "repository": "https://github.com/dmarzzz/shade-tree-node.git",
+      "commit": "d6324a30ecf17e174d0fb33cb72cf4856c5b2a90"
+    },
+    "node": {
+      "repository": "https://github.com/dmarzzz/shade-tree-node.git",
+      "commit": "d6324a30ecf17e174d0fb33cb72cf4856c5b2a90"
+    },
+    "heartbeat": {
+      "repository": "https://github.com/dmarzzz/shade-tree-node.git",
+      "commit": "d6324a30ecf17e174d0fb33cb72cf4856c5b2a90"
+    }
+  },
+  "elder": {
+    "onion": null,
+    "canopySigner": null,
+    "admission": "stake",
+    "gatewayRegistry": "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868"
+  },
+  "admission": {
+    "defaultPath": "staked",
+    "paths": [
+      "staked"
+    ],
+    "roots": {
+      "invited": null,
+      "staked": {
+        "profile": "public-stake-v1",
+        "registerInput": "identityCommitment",
+        "chainId": 11155111,
+        "contract": "0xf117FDEA83ac57d15D9394A2B56873C32d227B7E",
+        "deployTx": "0x8025d1d0b07e0276fc7fbeaf88e7ff084b057e98713c3fc866acdbc22e1cae58",
+        "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+        "deployBlock": 11803707,
+        "hasher": "0x7335C0b25d36Bc20fcF414c1C64dd3Da6dd455f9",
+        "withdrawVerifier": "0x3E2bC08f106a76D2FF5F5a9fDE8607051aA36196",
+        "defaultLimit": 1,
+        "tiers": [
+          {
+            "limit": 1,
+            "bondWei": "1000000000000000"
+          },
+          {
+            "limit": 8,
+            "bondWei": "8000000000000000"
+          }
+        ],
+        "unbondingSeconds": 86400,
+        "minUnbondingSeconds": 3720,
+        "slashRewardDivisor": 10
+      },
+      "paid": null
+    },
+    "operatorAuthorization": {
+      "approved": true,
+      "decisionRef": "sepolia-staging: Dan authorized the ShadeNet staging rehearsal deploy, 2026-09-28"
+    }
+  },
+  "artifacts": {
+    "accepted": [
+      {
+        "id": "rln-0b25f824a04da3a8",
+        "verificationKeyPath": "circuits/rln/verification_key.json",
+        "sha256": "0b25f824a04da3a85f128baa6fdaa33d10baa7dd18c5e6f5935089661c68622c"
+      }
+    ],
+    "legacy": null
+  },
+  "created": "2026-09-28",
+  "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. No canopy is recorded yet."
+}
