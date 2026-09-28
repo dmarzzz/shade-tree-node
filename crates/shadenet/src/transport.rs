@@ -1,4 +1,4 @@
-//! Reusable, in-process proof-gated egress for Shade Tree clients.
+//! Proof-gated transport: prove once, dial candidates in order, exchange the envelope and ack.
 //!
 //! [`Client`] owns the service-lifetime transport and proving state. Its Arti
 //! dialer stores exactly one successfully bootstrapped `Arc<TorClient>` in an
@@ -13,13 +13,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use arti_client::config::TorClientConfigBuilder;
 use arti_client::{TorClient, TorClientConfig};
 use shadenet_rln::prover::{BuiltEnvelope, EnvelopeInput};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{OnceCell, Semaphore};
 use tor_rtcompat::PreferredRuntime;
 
-pub mod slot;
+use crate::slot;
 
 /// A bidirectional stream returned after a gateway accepts the RLN envelope.
 pub trait AsyncStream: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -199,17 +200,33 @@ struct ArtiShared {
     tor: OnceCell<Arc<TorClient<PreferredRuntime>>>,
     timeout: Duration,
     successful_bootstraps: AtomicUsize,
+    directories: Option<(std::path::PathBuf, std::path::PathBuf)>,
 }
 
 impl ArtiDialer {
-    fn new(timeout: Duration) -> Self {
+    fn new(
+        timeout: Duration,
+        directories: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    ) -> Self {
         Self {
             shared: Arc::new(ArtiShared {
                 tor: OnceCell::new(),
                 timeout,
                 successful_bootstraps: AtomicUsize::new(0),
+                directories,
             }),
             isolated: None,
+        }
+    }
+
+    fn config(&self) -> Result<TorClientConfig, String> {
+        match &self.shared.directories {
+            // Our own state and cache directories, so ShadeNet never shares guard or directory
+            // state with another Arti on the same host.
+            Some((state, cache)) => TorClientConfigBuilder::from_directories(state, cache)
+                .build()
+                .map_err(|e| format!("arti config: {e}")),
+            None => Ok(TorClientConfig::default()),
         }
     }
 
@@ -218,9 +235,10 @@ impl ArtiDialer {
             .shared
             .tor
             .get_or_try_init(|| async {
+                let config = self.config()?;
                 let client = tokio::time::timeout(
                     self.shared.timeout,
-                    TorClient::create_bootstrapped(TorClientConfig::default()),
+                    TorClient::create_bootstrapped(config),
                 )
                 .await
                 .map_err(|_| format!("arti bootstrap timed out after {:?}", self.shared.timeout))?
@@ -228,7 +246,7 @@ impl ArtiDialer {
                 self.shared
                     .successful_bootstraps
                     .fetch_add(1, Ordering::SeqCst);
-                eprintln!("shade-tree egress: embedded Arti bootstrap complete");
+                tracing::info!("embedded Arti bootstrap complete");
                 Ok::<Arc<TorClient<PreferredRuntime>>, String>(client)
             })
             .await?;
@@ -357,8 +375,18 @@ pub struct Client {
 
 impl Client {
     pub fn new(tor_timeout: Duration, ack_timeout: Duration, max_parallel_proofs: usize) -> Self {
+        Self::with_tor_directories(tor_timeout, ack_timeout, max_parallel_proofs, None)
+    }
+
+    /// Like [`Client::new`], with Arti state and cache directories owned by ShadeNet.
+    pub fn with_tor_directories(
+        tor_timeout: Duration,
+        ack_timeout: Duration,
+        max_parallel_proofs: usize,
+        directories: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    ) -> Self {
         Self {
-            dialer: Arc::new(ArtiDialer::new(tor_timeout)),
+            dialer: Arc::new(ArtiDialer::new(tor_timeout, directories)),
             prover: Arc::new(BlockingProver::new(max_parallel_proofs)),
             ack_timeout,
         }

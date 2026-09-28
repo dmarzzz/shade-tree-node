@@ -217,6 +217,64 @@ pub fn describe_fleet_admits(gateways: &[GatewayEntry]) -> String {
         .join(" ")
 }
 
+/// The ports the fleet egresses to, for the port-not-allowed message: `443` or `80,443,8443`.
+pub fn describe_fleet_ports(gateways: &[GatewayEntry]) -> String {
+    let mut ports = std::collections::BTreeSet::new();
+    for gateway in gateways {
+        match gateway.caps.as_ref().and_then(|c| canonical_caps(c).ports) {
+            Some(list) => ports.extend(list),
+            None => {
+                ports.insert(DEFAULT_EGRESS_PORT);
+            }
+        }
+    }
+    if ports.is_empty() {
+        return DEFAULT_EGRESS_PORT.to_string();
+    }
+    ports
+        .iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Why no gateway passed the admission filter.
+pub fn admission_refusal(adm: &Admission, before: &[GatewayEntry]) -> String {
+    if adm.max_anon {
+        if adm.leaf_source.as_deref() == Some("demo") {
+            return "max-anon: your leaf is in the demo set; demo admission is linked to the one-shot access request. Max-anon requires an invited (members.json) leaf.".to_string();
+        }
+        return format!(
+            "max-anon: no invited-only node in the canopy (a node qualifies only when its signed caps say admits=[invited]); fleet: {}",
+            describe_fleet_admits(before)
+        );
+    }
+    format!(
+        "no node admits a {} leaf (your leaf source); fleet: {} -- obtain a leaf in a set the canopy admits (docs/CLIENTS.md \"Leaf source\")",
+        adm.leaf_source.as_deref().unwrap_or("?"),
+        describe_fleet_admits(before)
+    )
+}
+
+/// Validate admission inputs before any dial: a bad name, or max-anon over a staked/paid leaf, is
+/// a precise refusal, never a wasted proof.
+pub fn check_admission(adm: &Admission) -> Result<(), String> {
+    if let Some(src) = &adm.leaf_source {
+        if src != "demo" && !shadenet_proto::ADMIT_PATHS.contains(&src.as_str()) {
+            return Err(format!(
+                "--leaf-source: expected invited, staked, paid or demo (got {src})"
+            ));
+        }
+        if adm.max_anon && src == "demo" {
+            return Err("--max-anon: your leaf is in the demo set; demo admission is linked to the one-shot access request. Max-anon requires an invited (members.json) leaf -- drop --max-anon to use a demo gateway.".to_string());
+        }
+        if adm.max_anon && src != "invited" {
+            return Err(format!("--max-anon: your leaf is in the {src} set; an invited-only gateway would reject it (wrong-group-root). Max-anon requires an invited (members.json) leaf -- drop --max-anon to use gateways that admit {src}."));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
