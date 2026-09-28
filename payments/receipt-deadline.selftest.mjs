@@ -35,6 +35,7 @@ const fakeProvider = { getTransactionReceipt: async () => null };
 const baseSet = (insert) => ({
   insert,
   limitOf: async () => 0n,
+  burned: async () => false,
   currentRoot: async () => 0n,
   leafCount: async () => 0n,
   interface: { parseLog: () => null },
