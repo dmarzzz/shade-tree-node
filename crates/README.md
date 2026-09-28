@@ -130,6 +130,11 @@ variable under either prefix from the child's environment.
 - `--plain-tcp` (no Tor) exists only in debug builds, for test harnesses.
 - Identity secrets are never accepted on the command line and are zeroized in
   memory after use.
+- `shadenet init --passphrase` (or `shadenet identity-lock` later) encrypts the
+  identity secret with a scrypt-derived key and XChaCha20-Poly1305. The public
+  leaf and tier stay readable, so `status` and staking need no passphrase;
+  tunnels, exit and withdraw do. Services read it from
+  `SHADENET_PASSPHRASE_FILE`; interactive use prompts without echo.
 
 ## Protocol changes
 

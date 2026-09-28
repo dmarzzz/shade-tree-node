@@ -39,6 +39,7 @@ pub mod dircache;
 pub mod env;
 pub mod error;
 pub mod health;
+pub mod identity;
 pub mod profile;
 pub mod slot;
 
