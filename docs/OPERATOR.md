@@ -14,7 +14,7 @@ For running a Shade Tree node or Elder Tree. Every command here exists in
 Two ways to invoke the CLI:
 
 - Workstation with the repo: run `npm ci && npm link` once, then `shade-tree <cmd>`. Use this
-  path for the full local Grove, tests, code changes, and any future deployment work.
+  path for the full local canopy, tests, code changes, and any future deployment work.
 - On a bootstrapped droplet (repo at `/opt/shade-tree`, not linked): run it explicitly,
   e.g. `sudo -u shade-tree node /opt/shade-tree/bin/shade-tree.mjs <cmd>`.
 
@@ -95,9 +95,9 @@ shade-tree-heartbeat`). Do not put the key in the unit command or shell history;
 
 ### Add the next node on a second provider / ASN
 
-The current disposable v4 research Grove spans three regions but one provider and ASN. Before
+The current disposable v4 research canopy spans three regions but one provider and ASN. Before
 adding another long-lived node, place it on a different provider network so one DigitalOcean or
-AS14061 incident cannot remove the whole Grove. This changes failure independence; it does not by
+AS14061 incident cannot remove the whole canopy. This changes failure independence; it does not by
 itself make the anonymity set larger or the untrusted testnet artifacts production-safe.
 
 Use a fresh Ubuntu 24.04 host with a dedicated public address, root or passwordless `sudo`, outbound
@@ -141,7 +141,7 @@ and register a provider-specific operator key with `shade-tree register-gateway`
 heartbeat signing key from a root-only environment file as described above. Do not reuse a slash or
 operator hot key merely because two nodes share an owner.
 
-Finish by checking `shade-tree-heartbeat` reports `accepted`, the signed Canopy adds exactly the new
+Finish by checking `shade-tree-heartbeat` reports `accepted`, the signed canopy directory adds exactly the new
 Protocol v4 onion, the node's `/readyz` is healthy on loopback, all non-SSH clearnet ports remain
 closed, and a real invited CONNECT returns the new provider address. Give the provider abuse contact
 a concise description: the public IP is an access-gated HTTPS CONNECT egress; complaints identify
@@ -306,7 +306,7 @@ separate from the onion-mapped protocol port. Never publish or Tor-map it.
 The metrics expose process health, bounded outcomes, and latency without
 destination, onion, nullifier, operator, contract-address, or request-ID
 labels. They stay on the operator machine and are never sent to the Elder Tree
-or public Grove. See [monitoring/README.md](../monitoring/README.md) for the full
+or public canopy. See [monitoring/README.md](../monitoring/README.md) for the full
 series list, scrape config, dashboard, alerts, and retention guidance.
 
 ---

@@ -157,7 +157,7 @@ async function loadGrove() {
   } catch (error) {
     stage.classList.remove("is-live");
     stage.classList.add("use-fallback");
-    console.warn("Shade Tree Grove fell back to its still image.", error);
+    console.warn("ShadeNet fell back to its still image.", error);
   }
 }
 

@@ -183,7 +183,7 @@ function renderBars(bucket, title, subtitle) {
 
 // Build the full self-contained HTML page. No external URLs of any kind: inline CSS + inline SVG,
 // no <script>, no <img>, no <link>, no fonts. Renders from file:// offline.
-export function renderFleetMapHTML(dir, { k = DEFAULT_K, now = new Date(), title = "Shade Tree Fleet Map" } = {}) {
+export function renderFleetMapHTML(dir, { k = DEFAULT_K, now = new Date(), title = "ShadeNet Canopy Map" } = {}) {
   const agg = bucketFleet(dir, { k, now });
   const regionSection = renderBars(
     agg.regions,

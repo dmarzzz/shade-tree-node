@@ -112,9 +112,9 @@ Params: bond **0.001 ETH**, unbonding **300 s** (≥ F+E+C), epoch **120 s**, K 
 
 | Gateway | DO droplet | IPv4 | Onion |
 |---|---|---|---|
-| gateway-1 | egress-01 | 165.227.118.154 | `kjeyt2gtzcvnbshedns5wvtahtqbqwlmw4e56ku3iuqiykf5mwwdqdad.onion` |
-| gateway-2 | egress-02 | 167.172.224.177 | `oi73kttiriqhfmoxo42pstfobrhbjxko3gzzs54bovwhs2ayuw64imad.onion` |
-| gateway-3 | shade-tree-03 | 167.172.237.22 | `spoe2hmwp62w5bg74by7plx54rn4rzjro4bq6qzv5q6ewi4lqlovlbqd.onion` |
+| gateway-1 | egress-01 | <retired IP> | `kjeyt2gtzcvnbshedns5wvtahtqbqwlmw4e56ku3iuqiykf5mwwdqdad.onion` |
+| gateway-2 | egress-02 | <retired IP> | `oi73kttiriqhfmoxo42pstfobrhbjxko3gzzs54bovwhs2ayuw64imad.onion` |
+| gateway-3 | shade-tree-03 | <retired IP> | `spoe2hmwp62w5bg74by7plx54rn4rzjro4bq6qzv5q6ewi4lqlovlbqd.onion` |
 
 Directory signer (pinned in client as `SHADE_TREE_DIR_SIGNER`):
 `189f4511bad18f7d9e1fa1339b8b7ac27a7920ddf27b9a9c286b599bc0b21321`.
@@ -238,12 +238,12 @@ Full path, laptop → clearnet, with both rotations visible:
 
 | req | egress IP (gateway) | onion | slot |
 |---|---|---|---|
-| 1 | 167.172.224.177 (egress-02) | oi73ktti… | 0 |
-| 2 | 167.172.224.177 (egress-02) | oi73ktti… | 1 |
-| 3 | 167.172.237.22 (shade-tree-03) | spoe2hmw… | 2 |
+| 1 | <retired IP> (egress-02) | oi73ktti… | 0 |
+| 2 | <retired IP> (egress-02) | oi73ktti… | 1 |
+| 3 | <retired IP> (shade-tree-03) | spoe2hmw… | 2 |
 
 - The destination sees the **gateway's** clean IP, not the laptop's.
-- **Privacy check:** the laptop's public IP (`67.245.238.193`) appears **0 times** in the
+- **Privacy check:** the laptop's public IP (`<laptop IP, redacted>`) appears **0 times** in the
   gateways' logs — Tor rendezvous never reveals the client.
 - Both rotations are live: gateway changed (egress-02 → shade-tree-03) and slot advanced per
   tunnel (distinct per-tunnel nullifiers).

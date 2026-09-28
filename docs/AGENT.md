@@ -38,7 +38,7 @@ limitation.
 
 ## 2. Create an identity and obtain admission
 
-For the bundled public Sepolia Grove, tier 1 costs exactly 0.1 Sepolia ETH and
+For the bundled public Sepolia canopy, tier 1 costs exactly 0.1 Sepolia ETH and
 permits one CONNECT tunnel per fixed 60-second epoch, capped at 40 MiB combined
 payload. Create the identity locally and register its public leaf with a separately
 funded testnet wallet:
@@ -62,7 +62,7 @@ the 24-hour deadline has passed, then run `shade-tree withdraw-member --identity
 identity.json --recipient 0xFRESH_ADDRESS --key-file gas.key`. Both proofs are generated
 locally; the gas wallet may be unrelated to the original funder or recipient.
 
-For an invited, paid, or alternate Grove, ask its operator for:
+For an invited, paid, or alternate canopy, ask its operator for:
 
 - the exact rate tier (`limit`) your new leaf should use;
 - an invited, staked, or paid admission process;
@@ -81,7 +81,7 @@ shade-tree enroll --limit "$SHADE_TREE_LIMIT" --out identity.json > public-leaf.
 `public-leaf.txt` through the operator's admission process.
 
 Identity generation and admission are separate operations. `enroll` does not
-change a remote Grove or submit an on-chain transaction. Its optional
+change a remote canopy or submit an on-chain transaction. Its optional
 `--members <file>` updates only an explicit local version-2 demo set. Wait for
 the operator to confirm that the public leaf is present in the exact root its
 nodes use. For invited access, save the corresponding operator-supplied
@@ -124,13 +124,13 @@ shade-tree proxy \
 
 The Proxy requires an unpredictable URL-safe token of at least 32 characters,
 even on loopback: loopback is host-local, not user-local, and another OS account
-must not be able to spend this member's slots. It verifies the signed Canopy and
+must not be able to spend this member's slots. It verifies the signed canopy directory and
 reuses one successfully bootstrapped base Arti client. Each logical CONNECT gets
 an isolated Arti view that is reused only for that tunnel's gateway failover, so
 separate tunnels do not share circuits. Successive tunnels rotate across healthy
 gateways with smooth weighted round-robin by default; `--no-rotation-spread`
 restores independent weighted-random first choices. Use
-`--directory directory.json --signer <hex>` for a static signed Canopy, or
+`--directory directory.json --signer <hex>` for a static signed canopy directory, or
 `--bootnode-onion <elder.onion> --signer <hex>` to override the bundled Elder,
 or `--onion <node.onion>:80` for one pinned node. Alternate staked or paid profiles
 use the operator's `--contract` and `--rpc-url` values instead of `--members`.
@@ -206,7 +206,7 @@ the binary agent quickstart.
 
 ## Contributor integration test
 
-Repository contributors can exercise a disposable local Grove, the
+Repository contributors can exercise a disposable local canopy, the
 embedded-Arti Rust Proxy, and a real Hermes one-shot. This gated live test needs
 a configured model, server-side Tor for the temporary onion, Rust, Node.js for
 the operator/test harness, and one public HTTPS request:
@@ -216,7 +216,7 @@ npm run test:hermes
 ```
 
 The test requires both the agent's success marker and an accepted-tunnel metric
-from the ephemeral node. It can also keep the Grove local while running an
+from the ephemeral node. It can also keep the canopy local while running an
 existing Hermes installation over a loopback-only SSH reverse tunnel; see
 [`test/HERMES-E2E.md`](../test/HERMES-E2E.md).
 

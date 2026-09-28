@@ -330,7 +330,7 @@ Canopy for the directory and Grove for the nodes). Those are presentation names 
   `roundedBytes` below five reporters or when unavailable. See `docs/RELAY-TELEMETRY.md`.
 
 The API has no pulse route and publishes no client-query sequence. Local Proxy progress
-events and the public Grove animation are interface behavior, not additional wire state.
+events and the public canopy animation are interface behavior, not additional wire state.
 
 ### 5.2 Error responses
 

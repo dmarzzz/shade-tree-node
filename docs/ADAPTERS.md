@@ -1,4 +1,4 @@
-# Adapters: routing a tool or an agent through the Grove
+# Adapters: routing a tool or an agent through the canopy
 
 This closes the loop back to the project's origin use case. A SearXNG instance run over a
 raw Tor exit was blocked by many destinations (the README ["Not done, and why it
@@ -19,10 +19,10 @@ npm install --global git+https://github.com/dmarzzz/shade-tree-node.git
 ```
 
 This is not an npm registry release. You still need Tor and a current access
-profile from a v4 Grove operator. Start with the short [agent guide](AGENT.md).
+profile from a v4 canopy operator. Start with the short [agent guide](AGENT.md).
 Use a repository checkout for SDK development or the bundled Tor helper.
 
-Stand up a Grove first ([`QUICKSTART.md`](QUICKSTART.md)): an Elder Tree, at least one Shade
+Stand up a canopy first ([`QUICKSTART.md`](QUICKSTART.md)): an Elder Tree, at least one Shade
 Tree node, and a local Tor SOCKS port. Then pick a style.
 
 | You have | Use | Why |
@@ -49,7 +49,7 @@ Both styles read the same environment (each maps 1:1 to a `shade-tree proxy` fla
 | Env | Flag | What |
 |---|---|---|
 | `SHADE_TREE_SECRET` | `--secret` | An enrolled member secret (`shade-tree enroll`). Required. |
-| `SHADE_TREE_BOOTNODE_ONION` | `--bootnode` | The Elder Tree's Tor v3 onion. The Proxy pulls its signed Canopy over Tor and selects a node per tunnel. |
+| `SHADE_TREE_BOOTNODE_ONION` | `--bootnode` | The Elder Tree's Tor v3 onion. The Proxy pulls its signed canopy directory over Tor and selects a node per tunnel. |
 | `SHADE_TREE_DIR_SIGNER` | `--dir-signer` | The Elder Tree's pinned signer pubkey. The Canopy is rejected unless it verifies against this. |
 | `SHADE_TREE_TOR_PORT` | `--tor-port` | Local Tor SOCKS port. Optional; default `9250` (the bundled `scripts/start-tor-client.sh` runs `9260`). |
 
@@ -139,7 +139,7 @@ cleanUp();                                           // stop snarkjs workers on 
 your own TLS/protocol. `shadeTree.fetch()` is HTTPS-only for the same `:443` reason as above.
 
 The integration example is [`examples/agent-egress.mjs`](../examples/agent-egress.mjs). It
-parses without a Grove, but a fetch requires current v4 admission and discovery values from
+parses without a canopy, but a fetch requires current v4 admission and discovery values from
 an operator. The retired Sepolia records are not a connection profile.
 
 ## Privacy note

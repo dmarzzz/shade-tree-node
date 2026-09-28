@@ -4,7 +4,7 @@ Task: **T-DEPLOY-7** — a persistent on-chain deployment of the stake contracts
 an operator's v4 fleet (Sepolia or a chosen L2). The checked-in Sepolia `contracts.json` is a
 retired pre-v4 deployment bundle, so do not enable it as a runtime preset. Since 2026-09-03, the
 adjacent `deployment.json` explicitly reuses its compatible staking set, gateway registry, RPC,
-and deploy-block metadata for the live invited-and-staked v4 research Grove. Create a new current
+and deploy-block metadata for the live invited-and-staked v4 research canopy. Create a new current
 contract/runtime record for other fleets rather than silently reviving the historical bundle.
 
 Script: [`contracts/script/DeployRegistry.s.sol`](../contracts/script/DeployRegistry.s.sol)

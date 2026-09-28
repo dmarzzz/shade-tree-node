@@ -5,17 +5,17 @@ Shade Tree has a local **Proxy** (protocol client), an access-gated **Shade Tree
 variables, flags, and service units retain `client`, `gateway`, and `bootnode` where
 compatibility matters.
 
-Connect to an operator's v4 Grove, or stand up your own. Three paths follow: connect with
+Connect to an operator's v4 canopy, or stand up your own. Three paths follow: connect with
 configuration from an operator, run a local loop to understand the pieces, or run your own
-node or Grove on a host.
+node or canopy on a host.
 
 > **Current network status.** This checkout speaks envelope v4 only. The committed
 > [`network/sepolia/`](../network/sepolia/README.md) legacy contract and directory files describe
 > the earlier incompatible pre-v4 deployment; they are not runnable defaults for this Proxy or
-> payments. The directory's separate `deployment.json` records the disposable v4 research Grove,
-> supplies its Elder+Canopy-signer discovery default and the public Sepolia staking path. The
+> payments. The directory's separate `deployment.json` records the disposable v4 research canopy,
+> supplies its Elder and canopy-signer discovery default and the public Sepolia staking path. The
 > bundled client defaults are tier 1 (0.1 Sepolia ETH), a fixed 60-second epoch, and a 40 MiB
-> combined tunnel ceiling. Invited credentials remain private; alternate Groves require explicit
+> combined tunnel ceiling. Invited credentials remain private; alternate canopies require explicit
 > membership and discovery inputs.
 
 Everything is one CLI: `shade-tree <command> [--flags]`. Install it:
@@ -31,11 +31,11 @@ underlying module (see [CONFIG.md](CONFIG.md)).
 Agent developers who do not need the repository can use the shorter
 [agent install](AGENT.md#1-install-the-agent-cli).
 
-## Path A: connect to an operator's v4 Grove
+## Path A: connect to an operator's v4 canopy
 
 The bundled public Sepolia path needs a locally generated member secret plus 0.1 Sepolia ETH and
-gas in a separate registration wallet. An alternate Grove must supply its exact tier, membership
-input, Elder Tree onion, and matching Canopy signer. You need a Tor SOCKS port:
+gas in a separate registration wallet. An alternate canopy must supply its exact tier, membership
+input, Elder Tree onion, and matching canopy signer. You need a Tor SOCKS port:
 `bash scripts/start-tor-client.sh` starts one on 9260 (or use `--tor-port 9050` with a system Tor).
 
 For the public path, the contract, RPC, deployment block, tier, and rate policy need no flags:
@@ -66,14 +66,14 @@ shade-tree proxy --limit "$SHADE_TREE_LIMIT" --leaf-source invited \
 curl -x http://127.0.0.1:8888 https://api.ipify.org?format=json     # the node's IP
 ```
 
-For signed discovery and rotation through the current Sepolia Grove, omit discovery flags:
+For signed discovery and rotation through the current Sepolia canopy, omit discovery flags:
 
 ```bash
 SHADE_TREE_MEMBERS_FILE=/path/from-operator/members.json \
 shade-tree proxy --limit "$SHADE_TREE_LIMIT" --leaf-source invited --tor-port 9260
 ```
 
-For an alternate Grove, add `--bootnode <v4-elder.onion> --dir-signer
+For an alternate canopy, add `--bootnode <v4-elder.onion> --dir-signer
 <matching-v4-canopy-signer-hex>` from the same operator.
 
 If another operator enables paid or staked admission, they must also supply the v4 registrar,
@@ -100,7 +100,7 @@ Paste the funded registration key at the hidden prompt. It is passed only to the
 process and cleared before the Proxy starts. A non-loopback RPC refuses the public Anvil key and
 requires this explicit key.
 
-The Proxy fetches the signed Canopy over Tor, verifies it against the pinned signer, and
+The Proxy fetches the signed canopy directory over Tor, verifies it against the pinned signer, and
 selects a node per tunnel. Member page: [JOIN.md](JOIN.md); buying: [PAYMENTS.md](PAYMENTS.md).
 Research preview and untrusted ZK artifacts: see the README warning and Boundaries.
 
@@ -192,7 +192,7 @@ shade-tree proxy --limit 8 --leaf-source invited --tor-port 9250 \
   --dir-signer <elder-signer-pubkey>
 ```
 
-The Proxy fetches the signed Canopy over Tor, verifies it, and listens on
+The Proxy fetches the signed canopy directory over Tor, verifies it, and listens on
 `127.0.0.1:8888`. It selects a node for each CONNECT tunnel. Use it:
 
 ```bash
@@ -203,7 +203,7 @@ The returned IP belongs to the node. The node application receives a Tor onion c
 not the Proxy's source IP. It still sees the target, timing, lifetime, and traffic volume.
 One RLN proof admits one CONNECT tunnel, not each HTTP request carried inside it.
 
-## Path C: your own Grove on a droplet (one command)
+## Path C: your own canopy on a droplet (one command)
 
 > **Deployment blocked.** The private-target guard is now closed by default, but the
 > development ZK setup and the other [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md) gates remain.

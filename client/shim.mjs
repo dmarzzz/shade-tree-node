@@ -96,7 +96,7 @@ export function makeProxyServer(client, { reg = metrics, logger = log, now = () 
   // instead of silently taking a direct route.
   server.on("request", (_req, res) => {
     res.writeHead(403, { "content-type": "text/plain; charset=utf-8", connection: "close" });
-    res.end("Shade Tree accepts HTTPS CONNECT tunnels only.\n");
+    res.end("ShadeNet accepts HTTPS CONNECT tunnels only.\n");
   });
 
   server.on("connect", async (req, clientSocket, head) => {
