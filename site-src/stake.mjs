@@ -23,6 +23,7 @@ const SLOT_SECONDS = 12;
 
 const ABI = [
   "function register(uint256 commitment, uint256 limit) payable",
+  "function registerIdentity(uint256 identityCommitment, uint256 limit) payable returns (uint256)",
   "function bondFor(uint256 limit) view returns (uint256)",
   "function isActive(uint256 commitment) view returns (bool)",
   "function limitOf(uint256 commitment) view returns (uint256)",
@@ -105,6 +106,13 @@ export function parseIdentityFile(text) {
 export function registerCommitment(identity) {
   if (REGISTER_INPUT === "identityCommitment") return poseidon1([BigInt(identity.identitySecret)]).toString();
   return identity.leaf;
+}
+
+// The member leaf the contract stores for a registration value at `limit`. The ShadeNet sets take
+// the identity commitment and derive Poseidon2(idc, limit) themselves (launch audit 2.1.4).
+export function memberLeaf(commitment, limit) {
+  if (REGISTER_INPUT !== "identityCommitment") return String(commitment);
+  return poseidon2([BigInt(commitment), BigInt(limit)]).toString();
 }
 
 export function parseCommitment(text) {
@@ -390,10 +398,11 @@ function mount() {
     update();
     try {
       await selectChain();
+      const leaf = memberLeaf(commitment, (tierFor(stakeTier()) ?? tierFor(DEFAULT_LIMIT)).limit);
       const [active, limit, withdrawableAt] = await Promise.all([
-        readContract("isActive", [commitment]),
-        readContract("limitOf", [commitment]),
-        readContract("withdrawableAt", [commitment]).catch(() => 0n),
+        readContract("isActive", [leaf]),
+        readContract("limitOf", [leaf]),
+        readContract("withdrawableAt", [leaf]).catch(() => 0n),
       ]);
       const view = describeMember({ active, limit, withdrawableAt, now: Math.floor(Date.now() / 1000) });
       el.memberState.textContent = view.message;
@@ -428,8 +437,8 @@ function mount() {
       await selectChain();
       const [bond, active, existingLimit] = await Promise.all([
         readContract("bondFor", [tier.limit]),
-        readContract("isActive", [commitment]),
-        readContract("limitOf", [commitment]),
+        readContract("isActive", [memberLeaf(commitment, tier.limit)]),
+        readContract("limitOf", [memberLeaf(commitment, tier.limit)]),
       ]);
       if (bond !== tier.bondWei) {
         throw new Error(`The contract's tier-${tier.limit} bond differs from the published ${formatEth(tier.bondWei)} ETH; refusing to send.`);
@@ -441,7 +450,9 @@ function mount() {
       if (existingLimit !== 0n) {
         throw new Error("This commitment is exiting and cannot be registered again. Create a new identity instead.");
       }
-      const data = iface.encodeFunctionData("register", [commitment, tier.limit]);
+      const data = REGISTER_INPUT === "identityCommitment"
+        ? iface.encodeFunctionData("registerIdentity", [commitment, tier.limit])
+        : iface.encodeFunctionData("register", [commitment, tier.limit]);
       const transaction = { from: state.account, to: CONTRACT, value: hexQuantity(bond), data };
       const balance = BigInt(await request("eth_getBalance", [state.account, "latest"]));
       const gas = BigInt(await request("eth_estimateGas", [transaction]));

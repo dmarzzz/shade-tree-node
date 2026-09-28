@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Cheats} from "./Cheats.sol";
 import {StakedReputationSet, IWithdrawVerifier, ICommitmentHasher} from "../contracts/StakedReputationSet.sol";
+import {StakedReputationSetHarness} from "./StakedReputationSetHarness.sol";
 import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 import {WithdrawGroth16Verifier} from "../contracts/WithdrawGroth16Verifier.sol";
@@ -25,7 +26,7 @@ contract StakedReputationSetTiersTest is Cheats {
     uint256 constant UNBONDING = 300;
     uint256 constant MIN_UNBONDING = 270;
 
-    StakedReputationSet set;
+    StakedReputationSetHarness set;
     RateCommitmentHasher hasher;
     MockWithdrawVerifier verifier;
 
@@ -60,9 +61,9 @@ contract StakedReputationSetTiersTest is Cheats {
 
     function _newSet(uint256[] memory limits, uint256[] memory bonds, IWithdrawVerifier v)
         internal
-        returns (StakedReputationSet)
+        returns (StakedReputationSetHarness)
     {
-        return new StakedReputationSet(
+        return new StakedReputationSetHarness(
             BOND, UNBONDING, MIN_UNBONDING, v, ICommitmentHasher(address(hasher)), limits, bonds
         );
     }
@@ -121,7 +122,7 @@ contract StakedReputationSetTiersTest is Cheats {
     }
 
     function test_TierTable_SingleTierWhenNoExtras() public {
-        StakedReputationSet s = _newSet(new uint256[](0), new uint256[](0), IWithdrawVerifier(address(verifier)));
+        StakedReputationSetHarness s = _newSet(new uint256[](0), new uint256[](0), IWithdrawVerifier(address(verifier)));
         uint256[] memory lim = s.allowedLimits();
         assertEq(lim.length, 1);
         assertEq(lim[0], 8);
@@ -133,7 +134,7 @@ contract StakedReputationSetTiersTest is Cheats {
         uint256[] memory bonds = new uint256[](1);
         limits[0] = 1;
         bonds[0] = PUBLIC_BOND;
-        StakedReputationSet s = _newSet(limits, bonds, IWithdrawVerifier(address(verifier)));
+        StakedReputationSetHarness s = _newSet(limits, bonds, IWithdrawVerifier(address(verifier)));
 
         uint256[] memory admitted = s.allowedLimits();
         assertEq(admitted.length, 2);
@@ -186,7 +187,7 @@ contract StakedReputationSetTiersTest is Cheats {
         _newSet(two, twoB, IWithdrawVerifier(address(verifier)));
         // a valid two-extra table works and is ascending
         two[1] = 64;
-        StakedReputationSet s = _newSet(two, twoB, IWithdrawVerifier(address(verifier)));
+        StakedReputationSetHarness s = _newSet(two, twoB, IWithdrawVerifier(address(verifier)));
         assertEq(s.allowedLimits().length, 3);
         assertEq(s.bondFor(64), BOND32);
     }
@@ -330,14 +331,25 @@ contract StakedReputationSetTiersTest is Cheats {
         WithdrawGroth16Verifier groth16 = new WithdrawGroth16Verifier();
         WithdrawVerifier real = new WithdrawVerifier(groth16);
         (uint256[] memory limits, uint256[] memory bonds) = _tiers32();
-        StakedReputationSet s = _newSet(limits, bonds, IWithdrawVerifier(address(real)));
+        // The fixture's contexts bind forge's chain id, this address and leaf index 0 (2.2.1).
+        address fixtureSet = 0x00000000000000000000000000000000005E7F17;
+        deployAt(
+            fixtureSet,
+            abi.encodePacked(
+                type(StakedReputationSet).creationCode,
+                abi.encode(
+                    BOND, UNBONDING, MIN_UNBONDING, IWithdrawVerifier(address(real)), ICommitmentHasher(address(hasher)), limits, bonds
+                )
+            )
+        );
+        StakedReputationSet s = StakedReputationSet(fixtureSet);
 
         string memory json = vm.readFile("testdata/withdraw-proof.json");
         bytes memory exitProof32 = vm.parseJsonBytes(json, ".tier32.exit.proof");
         bytes memory exitProof8 = vm.parseJsonBytes(json, ".exit.proof");
         uint256 leaf32 = hasher.commitmentOf(SECRET_A, 32);
         assertEq(leaf32, LEAF_A_32);
-        bytes32 ctx = keccak256(abi.encodePacked("SHADE_TREE_EXIT", leaf32));
+        bytes32 ctx = keccak256(abi.encodePacked(bytes("SHADENET_EXIT"), uint256(31337), fixtureSet, leaf32, uint256(0)));
         // direct verifier checks
         assertTrue(real.verify(leaf32, 32, ctx, exitProof32), "fixture proof authorizes the tier-32 leaf at 32");
         assertFalse(real.verify(leaf32, 8, ctx, exitProof32), "...but not at limit 8 (leaf mismatch)");
@@ -346,7 +358,8 @@ contract StakedReputationSetTiersTest is Cheats {
             real.verify(leaf32, 32, ctx, exitProof8), "the tier-8 exit proof is bound to another leaf's context"
         );
         // through the set: it passes the recorded limit
-        s.register{value: BOND32}(leaf32, 32);
+        assertEq(s.registerIdentity{value: BOND32}(hasher.identityCommitmentOf(SECRET_A), 32), leaf32);
+        assertTrue(s.exitContext(leaf32) == ctx, "the set's exit context is the fixture's");
         vm.expectRevert(StakedReputationSet.BadProof.selector);
         s.initiateExit(leaf32, exitProof8);
         s.initiateExit(leaf32, exitProof32);

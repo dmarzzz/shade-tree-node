@@ -26,6 +26,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ethers } from "ethers";
+import { poseidon1 } from "poseidon-lite";
 import {
   identityFor, identitySecretOf, deriveCommitment, groupFromIdentities, newGroup,
   rateCommitmentOf, currentEpoch, requestSignal, proveForSlot, verifyEnvelope,
@@ -42,7 +43,7 @@ const ABI = [
   "function UNBONDING() view returns (uint256)",
   "function activeCount() view returns (uint256)",
   "function members(uint256) view returns (uint256 bond, uint64 index, uint64 exitInitiatedAt, uint32 limit)",
-  "function register(uint256 commitment) payable", // == register(commitment, 8): the default tier (T-FEAT-8b)
+  "function registerIdentity(uint256 identityCommitment, uint256 limit) payable returns (uint256)",
   "function initiateExit(uint256 commitment, bytes proof)",
   "function withdraw(uint256 commitment, address recipient, bytes proof)",
   "function slash(uint256 commitment, uint256 secret, address receiver)",
@@ -64,6 +65,8 @@ const enc = (identitySecret) => ethers.AbiCoder.defaultAbiCoder().encode(["uint2
 // A member's identitySecret + rateCommitment leaf from the app seed.
 const idsecOf = (seed) => identitySecretOf(identityFor(seed));
 const leafOf = (seed) => deriveCommitment(idsecOf(seed)); // string; == rateCommitmentOf(identityFor(seed))
+// What registerIdentity takes; the set derives leafOf(seed) from it at the default tier.
+const idcOf = (seed) => poseidon1([idsecOf(seed)]);
 
 let PASS = 0, FAIL = 0;
 const ok = (c, m) => { if (c) { PASS++; console.log(`  ✓ ${m}`); } else { FAIL++; console.log(`  ✗ ${m}`); } };
@@ -100,8 +103,8 @@ async function main() {
   ok(group.indexOf(BigInt(commA)) !== -1, "member A's rateCommitment IS the group leaf (one tree, one leaf)");
 
   h("1. stake two members on-chain (register + bond)");
-  await (await set.register(commA, { value: BOND })).wait();
-  await (await set.register(commB, { value: BOND })).wait();
+  await (await set.registerIdentity(idcOf(secretA), 8n, { value: BOND })).wait();
+  await (await set.registerIdentity(idcOf(secretB), 8n, { value: BOND })).wait();
   ok((await set.activeCount()) === 2n, "activeCount == 2 after two registrations");
   ok((await set.members(commA)).bond === BOND, "member A bond staked");
 

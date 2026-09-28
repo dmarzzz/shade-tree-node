@@ -133,7 +133,7 @@ shade-tree enroll --commitment-only --limit "$SHADE_TREE_LIMIT"
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
 read -s SHADE_TREE_REGISTER_KEY
 SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" \
-shade-tree register-member <commitment> --limit "$SHADE_TREE_LIMIT" \
+shade-tree register-member <identity-commitment> --limit "$SHADE_TREE_LIMIT" \
   --rpc-url <operator-rpc-url> --group-contract <v4-staked-set-address>
 unset SHADE_TREE_REGISTER_KEY
 shade-tree proxy --limit "$SHADE_TREE_LIMIT" --leaf-source staked \
