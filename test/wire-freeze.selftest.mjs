@@ -60,7 +60,7 @@ const FROZEN = [
   // Rate-policy scope inside onion-signed caps and the bundled network record.
   ['"grove-v4"', [
     "lib/directory.mjs", "lib/network-record.mjs", "bootnode/heartbeat.mjs", "client/shade-tree-client.mjs",
-    "deploy/v4/preflight.mjs", "crates/shadenet-cli/src/dircache.rs",
+    "deploy/v4/preflight.mjs", "crates/shadenet/src/dircache.rs",
   ]],
   ['"scope": "grove-v4"', ["network/sepolia/deployment.json"]],
   // Signed caps `admits` values, in anonymity order.

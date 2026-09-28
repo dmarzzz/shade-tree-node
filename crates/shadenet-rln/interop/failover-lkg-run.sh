@@ -28,7 +28,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 CIRCUITS="$REPO/circuits/rln"
-TESTDATA="$REPO/crates/shadenet-cli/src/testdata"
+TESTDATA="$REPO/crates/shadenet/src/testdata"
 WORK="$(mktemp -d)"
 
 # Ports: the real gateway is HARDCODED to 127.0.0.1:8443 (gateway.mjs LISTEN_PORT).
@@ -126,17 +126,17 @@ set +e
   --circuits "$CIRCUITS" > "$WORK/shade-tree.out" 2> "$WORK/shade-tree.err"
 A_SHADE_TREE_RC=$?
 set -e
-node "$HERE/wait-log.mjs" "$WORK/gw.log" "egress target=${TARGET} " 5000 >/dev/null 2>&1 || true
 echo "--- shade-tree stderr (failover trace) ---"; cat "$WORK/shade-tree.err"
 echo "--- shade-tree stdout ---"; cat "$WORK/shade-tree.out"
 echo "--- gateway log ---"; cat "$WORK/gw.log"
 
 # Assert: (1) the client ROTATED past the dead first candidate, (2) it printed ok (rc 0),
-# and (3) the gateway logged its end-to-end egress PASS for our target.
+# and (3) the accepting gateway is the live second candidate. The gateway sends `ok:true` only after
+# proof verification, target policy and the destination connect; it does not log per-egress lines.
 grep -q "candidate 127.0.0.1:${DEAD_PORT} failed" "$WORK/shade-tree.err" || { echo "LAYER A FAILED: no rotation off the dead candidate"; exit 1; }
 grep -q "^ok" "$WORK/shade-tree.out" || { echo "LAYER A FAILED: client did not report ok"; exit 1; }
 [ "$A_SHADE_TREE_RC" -eq 0 ] || { echo "LAYER A FAILED: shade-tree rc=$A_SHADE_TREE_RC"; exit 1; }
-grep -q "egress target=${TARGET} " "$WORK/gw.log" || { echo "LAYER A FAILED: gateway did not accept the rotated envelope"; exit 1; }
+grep -q "^gateway: 127.0.0.1:${GW_PORT}$" "$WORK/shade-tree.out" || { echo "LAYER A FAILED: the live gateway did not accept the rotated envelope"; exit 1; }
 echo "LAYER A OK (dead first candidate -> rotated -> second gateway ACCEPTED the same envelope)"
 
 echo

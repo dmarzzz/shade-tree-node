@@ -185,10 +185,11 @@ a replacement.
 
 ## Library integration
 
-Rust applications that own their networking can use the `shadenet-egress`
-workspace crate directly through a Git or path dependency; it is not currently
-published on crates.io. Its long-lived async client shares the same proving,
-failover, transport, and slot-state paths as the CLI Proxy. Generic
+Rust applications that own their networking can use the `shadenet` SDK crate
+directly through a Git or path dependency; it is not currently published on
+crates.io. Its long-lived `Client` is the same code the CLI proxy runs: the same
+proving, failover, transport, caching, and slot-state paths, with typed errors.
+See [`crates/README.md`](../crates/README.md). Generic
 applications should prefer the loopback Proxy unless they need an in-process
 Rust stream API.
 
