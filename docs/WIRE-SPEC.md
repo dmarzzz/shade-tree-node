@@ -294,8 +294,9 @@ Server: `bootnode/server.mjs:151` `makeServer`. All responses
 `content-type: application/json`. Listens on loopback (`127.0.0.1:SHADE_TREE_BOOTNODE_PORT`, default
 `8877`) behind its own onion service.
 
-Public copy may call the bootnode the **Elder Tree** and its signed directory the
-**Canopy**. Those are presentation names only. The normative route remains
+Public copy may call the bootnode the **Elder Tree**, and the group of nodes it lists,
+together with the signed directory that lists them, the **canopy** (earlier copy used
+Canopy for the directory and Grove for the nodes). Those are presentation names only. The normative route remains
 `GET /directory`, and the signed shape remains the directory schema in section 4.
 `GET /health` carries the informational header `x-shade-tree-role: elder-tree`.
 `GET /directory` and `GET /directory/delta` carry that header plus

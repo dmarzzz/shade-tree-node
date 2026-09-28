@@ -140,9 +140,8 @@ enforce its view of the member's tunnel limit.
 | --- | --- |
 | Proxy | Runs beside the agent, reads the signed Canopy, and opens each tunnel through Tor |
 | Shade Tree node | Verifies the proof and makes the destination-facing connection |
-| Elder Tree | The bootnode that caches signed announcements and serves the Canopy |
-| Canopy | The signed directory of announced nodes |
-| Grove | The network of Shade Tree nodes |
+| Elder Tree | The bootnode that caches signed announcements and serves the canopy |
+| canopy | A group of Shade Tree nodes and the signed directory that lists them (formerly Grove and Canopy) |
 
 The Elder Tree is outside the traffic path. Its pinned signer controls discovery
 and can omit, reorder, or add candidates. See the [threat
