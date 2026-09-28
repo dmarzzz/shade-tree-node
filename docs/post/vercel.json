@@ -20,11 +20,11 @@
   "rewrites": [
     {
       "source": "/canopy",
-      "destination": "/grove/index.html"
+      "destination": "/grove/"
     },
     {
       "source": "/canopy/",
-      "destination": "/grove/index.html"
+      "destination": "/grove/"
     },
     {
       "source": "/canopy/network.json",
