@@ -1,0 +1,35 @@
+{
+  "name": "@shadenet/sdk",
+  "version": "0.6.0",
+  "description": "ShadeNet JavaScript SDK: identities, staking, canopy verification and egress, for browsers and Node.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dmarzzz/shade-tree-node.git",
+    "directory": "packages/sdk"
+  },
+  "//exports": "In the repository these point at src/, which imports the shared wire code in ../../lib. `npm run pack` bundles dist/ into packages/sdk/.pack for publishing (scripts/pack.mjs).",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./node": "./src/node.mjs",
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "test": "node test/sdk.selftest.mjs && node test/vectors.selftest.mjs && node test/browser-bundle.selftest.mjs && node test/pack.selftest.mjs",
+    "pack:dry-run": "node scripts/pack.mjs --dry-run"
+  },
+  "dependencies": {
+    "@noble/curves": "1.2.0",
+    "@noble/hashes": "1.3.2",
+    "ethers": "^6.17.0",
+    "poseidon-lite": "^0.3.0",
+    "rlnjs": "^3.3.0",
+    "snarkjs": "0.7.5",
+    "socks": "^2.8.10"
+  }
+}

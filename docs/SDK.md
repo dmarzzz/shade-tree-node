@@ -1,5 +1,10 @@
 # JavaScript client
 
+For JavaScript programs, start with [`@shadenet/sdk`](../packages/sdk/README.md). It covers
+identities, staking, canopy verification and daemon status in browsers and Node, and egress in
+Node, with the same error codes as the Rust SDK. `createClient` in `@shadenet/sdk/node` wraps the
+`ShadeTreeClient` documented below, and this page stays as the reference for that lower-level class.
+
 `ShadeTreeClient` is the programmatic form of the Shade Tree client. It creates
 access proofs, chooses a node, and opens a raw HTTPS tunnel without starting
 the local proxy. The proxy in `client/shim.mjs` uses the same class.

@@ -26,6 +26,7 @@ export default [
       "contracts/**",
       "testdata/**",
       "docs/post/stake/stake.js",
+      "packages/sdk/.pack/**",
       "**/*.min.*",
     ],
   },

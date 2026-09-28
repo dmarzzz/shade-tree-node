@@ -129,9 +129,14 @@ jobs:
             wait "$tor_pid" >/dev/null 2>&1 || true
             echo "tor bootstrap attempt $attempt/2 did not complete in 90s"
           done
+          # Runner-side Tor failure says nothing about the canopy (OPS-7): report UNKNOWN, skip
+          # the probe and the snapshot, and keep the run green so it never pages as an outage.
           echo "tor did not bootstrap after two clean attempts"
           tail -n 20 "$RUNNER_TEMP/tor-2.log"
-          exit 1
+          echo "::warning title=uptime-probe UNKNOWN::runner Tor did not bootstrap; canopy state not measured this run"
+          echo "UNKNOWN: runner Tor did not bootstrap" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHADE_TREE_PROBE_SKIP=1" >> "$GITHUB_ENV"
+          exit 0
 
       - name: probe (over Tor, signer-pinned)
         if: steps.cfg.outputs.configured == 'true' && env.SHADE_TREE_PROBE_SKIP != '1'
@@ -142,10 +147,16 @@ jobs:
           set -e
           echo "$line"
           echo "$line" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -eq 3 ]; then
+            echo "::warning title=uptime-probe UNKNOWN::$line"
+            echo "SHADE_TREE_PROBE_SKIP=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
           if [ "$rc" -ne 0 ]; then
             echo "::error title=uptime-probe CRITICAL::$line"
             exit "$rc"
           fi
+          case "$line" in *"differs from the record pin"*) echo "::warning title=canopy pin drift::$line" ;; esac
 
       - name: load previous public Grove snapshot
         if: steps.cfg.outputs.configured == 'true' && env.SHADE_TREE_PROBE_SKIP != '1'
