@@ -1,12 +1,72 @@
-<!doctype html>
+// Renders docs/post/stake/index.html ("Get access") from the network record via profile.mjs.
+// No price, tier, rate or address is written by hand here; `npm run build:stake` regenerates the
+// page and test/stake-site.selftest.mjs fails if the committed HTML drifts from this template.
+import {
+  CHAIN_NAME,
+  CONTRACT,
+  DEFAULT_LIMIT,
+  EXPLORER_URL,
+  RATE,
+  REGISTER_INPUT,
+  SECURITY,
+  SLASH_REWARD_DIVISOR,
+  TIERS,
+  UNBONDING_SECONDS,
+  formatDuration,
+  formatEth,
+  shortAddress,
+} from "./profile.mjs";
+import { siteNav } from "./site-nav.mjs";
+
+const esc = (value) => String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+const epoch = formatDuration(RATE.epochSeconds);
+const perEpoch = RATE.epochSeconds === 60 ? "per minute" : `per ${epoch}`;
+const mib = Number.isInteger(RATE.payloadMiB) ? `${RATE.payloadMiB} MiB` : `${RATE.payloadMiB.toFixed(1)} MiB`;
+const unbonding = formatDuration(UNBONDING_SECONDS);
+const baseTier = TIERS.find((tier) => tier.limit === DEFAULT_LIMIT) || TIERS[0];
+const baseBond = `${formatEth(baseTier.bondWei)} ${CHAIN_NAME} ETH`;
+const contractLink = EXPLORER_URL ? `${EXPLORER_URL}/address/${CONTRACT}` : null;
+const commitmentNoun = REGISTER_INPUT === "identityCommitment" ? "identity commitment" : "public commitment";
+const slashLine = SLASH_REWARD_DIVISOR
+  ? `A valid slash pays 1/${SLASH_REWARD_DIVISOR} of the bond to whoever reports it and burns the rest.`
+  : "A valid slash forfeits the bond.";
+const artifactsLine = SECURITY.proofArtifacts === "untrusted-testnet"
+  ? "The proof setup is untrusted testnet material until the trusted-setup ceremony runs."
+  : "The proof keys come from the published trusted-setup ceremony.";
+
+function tierRows() {
+  return TIERS.map((tier) => {
+    const n = Number(tier.limit);
+    return `          <tr>
+            <th scope="row">${n}</th>
+            <td>${formatEth(tier.bondWei)} ETH</td>
+            <td>${n} ${n === 1 ? "tunnel" : "tunnels"} ${perEpoch}</td>
+            <td>${mib} each</td>
+            <td>${unbonding}</td>
+          </tr>`;
+  }).join("\n");
+}
+
+function tierRadios(name, attr) {
+  return TIERS.map((tier) => {
+    const n = Number(tier.limit);
+    const checked = tier.limit === DEFAULT_LIMIT ? " checked" : "";
+    return `<label><input type="radio" name="${name}" value="${n}" ${attr}${checked}> tier ${n} · ${formatEth(tier.bondWei)} ETH</label>`;
+  }).join("\n            ");
+}
+
+export function renderStakePage() {
+  const description = `Get anonymous Tor egress for an AI agent: create a ShadeNet identity locally and stake ${baseBond}, or sponsor someone else's.`;
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Get anonymous Tor egress for an AI agent: create a ShadeNet identity locally and stake 0.1 Sepolia ETH, or sponsor someone else's.">
+  <meta name="description" content="${esc(description)}">
   <meta name="theme-color" content="#07100c">
   <meta property="og:title" content="Get Access · ShadeNet">
-  <meta property="og:description" content="Create the member secret locally, save its recovery file, and send only the public commitment to Sepolia.">
+  <meta property="og:description" content="Create the member secret locally, save its recovery file, and send only the public commitment to ${CHAIN_NAME}.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://shade-tree-node.vercel.app/stake/">
   <meta property="og:site_name" content="ShadeNet">
@@ -27,29 +87,15 @@
 </head>
 <body class="stake-page">
   <a class="skip-link" href="#staking">Skip to staking</a>
-  <nav class="site-nav" aria-label="Primary navigation">
-    <a class="wordmark" href="/" aria-label="ShadeNet home">
-      <span class="tree-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span>ShadeNet</span>
-    </a>
-    <div class="nav-links">
-      <a href="/agent/">Agents</a>
-      <a href="/operator/">Operators</a>
-      <a href="/stake/" aria-current="page">Get access</a>
-      <a href="/lab/">Lab</a>
-      <a href="/canopy/">Canopy</a>
-      <a href="/research/">Research</a>
-      <a href="https://github.com/dmarzzz/shade-tree-node">Source</a>
-    </div>
-  </nav>
+${siteNav("stake", { indent: "  " })}
 
   <main id="staking" class="stake-main">
     <header class="stake-intro">
-      <p class="stake-eyebrow">Get access · Sepolia research preview</p>
+      <p class="stake-eyebrow">Get access · ${CHAIN_NAME} research preview</p>
       <h1>Stake without giving us an identity.</h1>
       <p>Create a bearer credential in this tab, keep its recovery file, and put only its public commitment on chain. The canopy never receives the secret.</p>
       <dl class="live-chips" aria-label="Live network">
-        <div><dt>Network</dt><dd>Sepolia testnet</dd></div>
+        <div><dt>Network</dt><dd>${CHAIN_NAME} testnet</dd></div>
         <div><dt>Nodes announced</dt><dd data-live-nodes>…</dd></div>
         <div><dt>Staked members</dt><dd data-live-members>…</dd></div>
       </dl>
@@ -72,35 +118,22 @@
 
     <section class="tier-table" aria-labelledby="tiers-title">
       <h2 id="tiers-title">What a stake buys</h2>
-      <p>A tunnel is one HTTPS connection to one site. Each tier gets that many new tunnels per minute, canopy-wide, and each tunnel carries up to 40 MiB in both directions combined. A search plus five result pages is about six tunnels.</p>
+      <p>A tunnel is one HTTPS connection to one site. Each tier gets that many new tunnels ${perEpoch}, canopy-wide, and each tunnel carries up to ${mib} in both directions combined. A search plus five result pages is about six tunnels.</p>
       <div class="table-wrap" tabindex="0" role="region" aria-labelledby="tiers-title">
         <table>
           <thead>
             <tr><th scope="col">Tier</th><th scope="col">Bond</th><th scope="col">New tunnels</th><th scope="col">Per tunnel</th><th scope="col">Unbonding</th></tr>
           </thead>
           <tbody>
-          <tr>
-            <th scope="row">1</th>
-            <td>0.1 ETH</td>
-            <td>1 tunnel per minute</td>
-            <td>40 MiB each</td>
-            <td>24 hours</td>
-          </tr>
-          <tr>
-            <th scope="row">8</th>
-            <td>0.8 ETH</td>
-            <td>8 tunnels per minute</td>
-            <td>40 MiB each</td>
-            <td>24 hours</td>
-          </tr>
+${tierRows()}
           </tbody>
         </table>
       </div>
-      <p>The bond is refundable collateral, not a fee. Sending two different requests from the same slot in one minute reveals your secret and lets anyone slash the bond. A valid slash forfeits the bond. A tier is fixed to the identity: to change tier, stake a new identity and exit the old one.</p>
+      <p>The bond is refundable collateral, not a fee. Sending two different requests from the same slot in one ${epoch === "1 minute" ? "minute" : "epoch"} reveals your secret and lets anyone slash the bond. ${slashLine} A tier is fixed to the identity: to change tier, stake a new identity and exit the old one.</p>
     </section>
 
     <section class="funding" aria-labelledby="funding-title">
-      <h2 id="funding-title">Get Sepolia ETH</h2>
+      <h2 id="funding-title">Get ${CHAIN_NAME} ETH</h2>
       <p>You need the bond plus a little gas, from a wallet you don't mind linking to your commitment forever. Faucet drips are usually smaller than a bond, so it can take a few days, or a sponsor can stake for you.</p>
       <ul>
         <li><a href="https://sepolia-faucet.pk910.de/">pk910 proof-of-work faucet</a>: mine in the browser, no account.</li>
@@ -117,8 +150,7 @@
         <p>Pick a tier, then generate an identity from fresh operating-system randomness. The tier is part of the identity.</p>
         <fieldset class="tier-pick">
           <legend>Tier</legend>
-            <label><input type="radio" name="tier" value="1" data-tier checked> tier 1 · 0.1 ETH</label>
-            <label><input type="radio" name="tier" value="8" data-tier> tier 8 · 0.8 ETH</label>
+            ${tierRadios("tier", "data-tier")}
         </fieldset>
         <div class="button-row">
           <button class="solid-action" type="button" data-create-identity>create identity</button>
@@ -145,12 +177,12 @@
 
       <article class="stake-step transaction-step">
         <span class="trail-number" aria-hidden="true">3</span>
-        <h2>Stake on Sepolia</h2>
+        <h2>Stake on ${CHAIN_NAME}</h2>
         <p>The wallet sends exactly the tier's bond to the pinned contract. Gas is additional. Each stake needs a new identity created here.</p>
-        <p class="contract-line"><span>Contract</span><a href="https://sepolia.etherscan.io/address/0xEB67Abf066c11D78856BccC63476ed14d51e4275">0xEB67…4275</a></p>
+        <p class="contract-line"><span>Contract</span>${contractLink ? `<a href="${contractLink}">${shortAddress(CONTRACT)}</a>` : shortAddress(CONTRACT)}</p>
         <div class="button-row">
           <button class="line-action" type="button" data-connect-wallet>connect wallet</button>
-          <button class="solid-action" type="button" data-stake disabled>stake 0.1 Sepolia ETH</button>
+          <button class="solid-action" type="button" data-stake disabled>stake ${baseBond}</button>
         </div>
         <p class="wallet-state" data-wallet>No wallet connected</p>
       </article>
@@ -160,13 +192,12 @@
       <div>
         <p class="stake-eyebrow">Secret-free handoff</p>
         <h2 id="sponsor-title">Stake someone else’s public commitment.</h2>
-        <p>Ask the member or agent for its decimal public commitment and tier only. The contract permits any wallet to fund it, while only the secret holder can prove as that member or authorize withdrawal.</p>
+        <p>Ask the member or agent for its decimal ${commitmentNoun} and tier only. The contract permits any wallet to fund it, while only the secret holder can prove as that member or authorize withdrawal.</p>
         <label for="sponsor-leaf">Public commitment</label>
         <textarea id="sponsor-leaf" data-sponsor-leaf rows="3" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="Decimal field element"></textarea>
         <fieldset class="tier-pick">
           <legend>Their tier</legend>
-            <label><input type="radio" name="sponsor-tier" value="1" data-sponsor-tier checked> tier 1 · 0.1 ETH</label>
-            <label><input type="radio" name="sponsor-tier" value="8" data-sponsor-tier> tier 8 · 0.8 ETH</label>
+            ${tierRadios("sponsor-tier", "data-sponsor-tier")}
         </fieldset>
       </div>
       <div class="sponsor-action">
@@ -181,7 +212,7 @@
     <div class="stake-feedback">
       <p data-status role="status" aria-live="polite">Member mode: the identity stays in this tab until you download it.</p>
       <p data-alert role="alert"></p>
-      <p data-receipt hidden>Transaction: <a data-receipt-link href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">view</a></p>
+      <p data-receipt hidden>Transaction: <a data-receipt-link href="${EXPLORER_URL || "#"}" target="_blank" rel="noreferrer">view</a></p>
       <p data-finality role="status" aria-live="polite" hidden></p>
       <p data-member-state hidden></p>
       <div class="button-row">
@@ -208,10 +239,10 @@ shade-tree run -- your-agent</code></pre>
       <div>
         <p class="stake-eyebrow">For agents and terminals</p>
         <h2 id="terminal-title">The same boundary, without a browser.</h2>
-        <p>The CLI creates an owner-only identity file, prints only the public leaf, and signs locally from an owner-only key file. Contract, RPC, tier, and bond come from the same bundled Sepolia record.</p>
+        <p>The CLI creates an owner-only identity file, prints only the public leaf, and signs locally from an owner-only key file. Contract, RPC, tier, and bond come from the same bundled ${CHAIN_NAME} record.</p>
       </div>
       <pre tabindex="0" aria-label="Agent staking commands"><code>shade-tree enroll --out identity.json
-shade-tree register-member --identity identity.json \
+shade-tree register-member --identity identity.json \\
   --key-file funded-sepolia.key
 shade-tree member-status --identity identity.json --json
 shade-tree proxy --identity identity.json</code></pre>
@@ -227,12 +258,12 @@ shade-tree run -- curl -s https://api.ipify.org</code></pre>
       </div>
       <div>
         <h2 id="leave-title">Change tier or leave</h2>
-        <p>Exit and withdraw are zero-knowledge proofs made on your machine. After exit the bond unlocks in 24 hours; withdraw it to a fresh address so it doesn't link back to the funder. A gas wallet for these calls can be unrelated to both.</p>
+        <p>Exit and withdraw are zero-knowledge proofs made on your machine. After exit the bond unlocks in ${unbonding}; withdraw it to a fresh address so it doesn't link back to the funder. A gas wallet for these calls can be unrelated to both.</p>
         <pre tabindex="0" aria-label="Exit and withdraw commands"><code>shade-tree exit-member --identity identity.json --key-file gas.key
 shade-tree member-status --identity identity.json --json
-shade-tree withdraw-member --identity identity.json \
+shade-tree withdraw-member --identity identity.json \\
   --recipient 0xFRESH_ADDRESS --key-file gas.key</code></pre>
-        <p>To change tier, create a new identity at the new tier here, stake it, then exit the old one. For 24 hours both bonds are locked.</p>
+        <p>To change tier, create a new identity at the new tier here, stake it, then exit the old one. For ${unbonding} both bonds are locked.</p>
       </div>
     </section>
 
@@ -244,7 +275,7 @@ shade-tree withdraw-member --identity identity.json \
       </details>
       <details>
         <summary>Why wait for finality?</summary>
-        <p>Nodes and the Proxy both read the finalized member set, so a reorg can't admit or drop a member. On Sepolia that is usually 13 to 16 minutes after the stake confirms.</p>
+        <p>Nodes and the Proxy both read the finalized member set, so a reorg can't admit or drop a member. On ${CHAIN_NAME} that is usually 13 to 16 minutes after the stake confirms.</p>
       </details>
       <details>
         <summary>What if I lose identity.json?</summary>
@@ -252,7 +283,7 @@ shade-tree withdraw-member --identity identity.json \
       </details>
       <details>
         <summary>Can nodes limit me across the whole canopy?</summary>
-        <p>The per-minute budget is canopy-wide, but nodes share spent proofs on a best-effort basis today. Double use across two nodes at the same moment may not be caught immediately; it is still slashable once seen.</p>
+        <p>The per-${epoch === "1 minute" ? "minute" : "epoch"} budget is canopy-wide, but nodes share spent proofs on a best-effort basis today. Double use across two nodes at the same moment may not be caught immediately; it is still slashable once seen.</p>
       </details>
       <details>
         <summary>Is there a free or paid path?</summary>
@@ -266,7 +297,7 @@ shade-tree withdraw-member --identity identity.json \
 
     <section class="stake-boundary" aria-labelledby="boundary-title">
       <h2 id="boundary-title">Honest boundary</h2>
-      <p>Tier 1 buys one new HTTPS tunnel per fixed 60-second epoch, capped at 40 MiB combined traffic each. Registration becomes usable after Sepolia finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. The CLI can later initiate a private, proof-authorized exit and return the testnet bond to a fresh recipient after 24 hours. The proof setup is untrusted testnet material until the trusted-setup ceremony runs. Never use mainnet ETH or sensitive traffic.</p>
+      <p>Tier ${Number(baseTier.limit)} buys ${Number(baseTier.limit) === 1 ? "one new HTTPS tunnel" : `${Number(baseTier.limit)} new HTTPS tunnels`} per fixed ${RATE.epochSeconds}-second epoch, capped at ${mib} combined traffic each. Registration becomes usable after ${CHAIN_NAME} finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. The CLI can later initiate a private, proof-authorized exit and return the testnet bond to a fresh recipient after ${unbonding}. ${artifactsLine} Never use mainnet ETH or sensitive traffic.</p>
     </section>
   </main>
 
@@ -281,3 +312,5 @@ shade-tree withdraw-member --identity identity.json \
   </footer>
 </body>
 </html>
+`;
+}
