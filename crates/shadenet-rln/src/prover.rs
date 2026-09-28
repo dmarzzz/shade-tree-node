@@ -25,15 +25,15 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
-use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
+use ark_bn254::{Bn254, Fr, G1Affine, G2Affine};
 use ark_circom::{read_zkey, CircomReduction, WitnessCalculator};
 use ark_ff::{BigInteger, PrimeField};
-use ark_groth16::{prepare_verifying_key, Groth16, Proof, VerifyingKey};
+use ark_groth16::{prepare_verifying_key, Groth16, Proof};
 use ark_std::UniformRand;
 use num_bigint::{BigInt, BigUint, Sign};
 use wasmer::{Module, Store};
 
-use crate::tree::{dec_to_fr, external_nullifier, fr_to_dec, MerkleTree, TREE_DEPTH};
+use crate::tree::{external_nullifier, fr_to_dec, parse_fr, MerkleTree, TREE_DEPTH};
 
 // T-RUST-4: the repo's circom-rln artifacts, `include_bytes!`'d into the binary so a
 // released `live` client is fully self-contained (no external circuit files). Gated by
@@ -123,50 +123,21 @@ pub struct BuiltEnvelope {
 
 // ---- field / json helpers (kept local so src/main.rs stays untouched) ----------
 
-fn dec_to_fq(s: &str) -> Fq {
-    Fq::from(BigUint::parse_bytes(s.as_bytes(), 10).expect("decimal Fq"))
-}
-
 fn pf_to_dec<F: PrimeField>(f: &F) -> String {
     BigUint::from_bytes_be(&f.into_bigint().to_bytes_be()).to_str_radix(10)
 }
 
-fn dec_to_bigint(s: &str) -> BigInt {
-    s.parse::<BigInt>().expect("decimal BigInt")
+fn dec_to_bigint(s: &str, label: &str) -> Result<BigInt, String> {
+    let s = s.trim();
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(format!("{label} must be a decimal integer"));
+    }
+    s.parse::<BigInt>()
+        .map_err(|_| format!("{label} must be a decimal integer"))
 }
 
 fn fr_to_bigint(f: &Fr) -> BigInt {
     BigInt::from_bytes_be(Sign::Plus, &f.into_bigint().to_bytes_be())
-}
-
-fn g1(v: &serde_json::Value) -> G1Affine {
-    G1Affine::new(
-        dec_to_fq(v[0].as_str().unwrap()),
-        dec_to_fq(v[1].as_str().unwrap()),
-    )
-}
-
-fn g2(v: &serde_json::Value) -> G2Affine {
-    let x = Fq2::new(
-        dec_to_fq(v[0][0].as_str().unwrap()),
-        dec_to_fq(v[0][1].as_str().unwrap()),
-    );
-    let y = Fq2::new(
-        dec_to_fq(v[1][0].as_str().unwrap()),
-        dec_to_fq(v[1][1].as_str().unwrap()),
-    );
-    G2Affine::new(x, y)
-}
-
-fn parse_vk(vk: &serde_json::Value) -> VerifyingKey<Bn254> {
-    let gamma_abc_g1 = vk["IC"].as_array().unwrap().iter().map(g1).collect();
-    VerifyingKey {
-        alpha_g1: g1(&vk["vk_alpha_1"]),
-        beta_g2: g2(&vk["vk_beta_2"]),
-        gamma_g2: g2(&vk["vk_gamma_2"]),
-        delta_g2: g2(&vk["vk_delta_2"]),
-        gamma_abc_g1,
-    }
 }
 
 fn g1_json(p: &G1Affine) -> serde_json::Value {
@@ -199,9 +170,14 @@ pub fn build_envelope(input: &EnvelopeInput) -> Result<BuiltEnvelope, String> {
     if input.members.is_empty() {
         return Err("members is empty".into());
     }
-    let leaves: Vec<Fr> = input.members.iter().map(|s| dec_to_fr(s)).collect();
+    let leaves: Vec<Fr> = input
+        .members
+        .iter()
+        .enumerate()
+        .map(|(index, s)| parse_fr(s).map_err(|e| format!("members[{index}]: {e}")))
+        .collect::<Result<_, _>>()?;
     let tree = MerkleTree::new(&rid_big, TREE_DEPTH, &leaves);
-    let leaf_fr = dec_to_fr(&input.member_leaf);
+    let leaf_fr = parse_fr(&input.member_leaf).map_err(|e| format!("member_leaf: {e}"))?;
     let index = tree
         .index_of(&leaf_fr)
         .ok_or("member_leaf not present in members (identity is not in the group)")?;
@@ -219,7 +195,7 @@ pub fn build_envelope(input: &EnvelopeInput) -> Result<BuiltEnvelope, String> {
     let mut inputs: HashMap<String, Vec<BigInt>> = HashMap::new();
     inputs.insert(
         "identitySecret".into(),
-        vec![dec_to_bigint(&input.identity_secret)],
+        vec![dec_to_bigint(&input.identity_secret, "identity_secret")?],
     );
     inputs.insert(
         "userMessageLimit".into(),
@@ -234,8 +210,11 @@ pub fn build_envelope(input: &EnvelopeInput) -> Result<BuiltEnvelope, String> {
         "identityPathIndex".into(),
         path_indices.iter().map(|&i| BigInt::from(i)).collect(),
     );
-    inputs.insert("x".into(), vec![dec_to_bigint(&x)]);
-    inputs.insert("externalNullifier".into(), vec![dec_to_bigint(&ext_null)]);
+    inputs.insert("x".into(), vec![dec_to_bigint(&x, "signal hash")?]);
+    inputs.insert(
+        "externalNullifier".into(),
+        vec![dec_to_bigint(&ext_null, "external nullifier")?],
+    );
 
     // wasmer-wasix's virtual-fs needs a Tokio reactor in context to open the wasm.
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio runtime: {e}"))?;
@@ -354,7 +333,7 @@ pub fn build_envelope(input: &EnvelopeInput) -> Result<BuiltEnvelope, String> {
             }
         }
     };
-    let vk = parse_vk(&vk_json);
+    let vk = crate::withdraw::parse_vk(&vk_json)?;
     let pvk = prepare_verifying_key(&vk);
     let ok = Groth16::<Bn254, CircomReduction>::verify_proof(&pvk, &proof, public_inputs)
         .map_err(|e| format!("verify: {e}"))?;

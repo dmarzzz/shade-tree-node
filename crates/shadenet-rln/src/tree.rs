@@ -90,13 +90,34 @@ pub fn fr_to_dec(f: &Fr) -> String {
 
 /// Parse a decimal (or `0x`-prefixed) big-integer string into `Fr` (mod field).
 pub fn dec_to_fr(s: &str) -> Fr {
+    parse_fr(s).expect("dec_to_fr is for trusted constants; use parse_fr for input")
+}
+
+/// Parse a canonical BN254 scalar field element from decimal or `0x` hex. Values at or above the
+/// field modulus are rejected rather than reduced, so a leaf can never alias another one.
+pub fn parse_fr(s: &str) -> Result<Fr, String> {
     let s = s.trim();
-    let big = if let Some(hex) = s.strip_prefix("0x") {
-        BigUint::parse_bytes(hex.as_bytes(), 16).expect("hex field element")
-    } else {
-        BigUint::parse_bytes(s.as_bytes(), 10).expect("decimal field element")
-    };
-    Fr::from(big)
+    let big = match s.strip_prefix("0x") {
+        Some(hex) if !hex.is_empty() => BigUint::parse_bytes(hex.as_bytes(), 16),
+        Some(_) => None,
+        None if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => {
+            BigUint::parse_bytes(s.as_bytes(), 10)
+        }
+        None => None,
+    }
+    .ok_or_else(|| format!("{:?} is not a decimal or 0x-hex field element", truncate(s)))?;
+    let modulus = BigUint::from_bytes_be(&Fr::MODULUS.to_bytes_be());
+    if big >= modulus {
+        return Err(format!(
+            "{:?} is not below the BN254 scalar field modulus",
+            truncate(s)
+        ));
+    }
+    Ok(Fr::from(big))
+}
+
+fn truncate(s: &str) -> String {
+    s.chars().take(24).collect()
 }
 
 /// A fixed-depth, arity-2 incremental Merkle tree matching
