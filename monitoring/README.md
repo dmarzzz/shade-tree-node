@@ -50,7 +50,7 @@ Files:
 | `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `payments/registrar.mjs` |
 | `shade_tree_registrar_txs_total` | counter | `kind` (settle\|insert), `result` (ok\|failed) | `payments/registrar.mjs` |
 | `shade_tree_registrar_orders` / `shade_tree_registrar_inflight` | gauge | none | `payments/registrar.mjs` |
-| `shade_tree_build_info` | gauge | `role`, `version` | every long-running role |
+| `shade_tree_build_info` | gauge | `role`, `version`, `commit` (running checkout, or `unknown`) | every long-running role |
 | `shade_tree_process_start_time_seconds` | gauge | none | every long-running role |
 | `shade_tree_process_uptime_seconds` | gauge | none | every long-running role |
 | `shade_tree_process_resident_memory_bytes` | gauge | none | every long-running role |
