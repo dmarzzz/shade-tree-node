@@ -54,10 +54,16 @@ import {WithdrawVerifier} from "../WithdrawVerifier.sol";
 ///   SHADE_TREE_TIER_BONDS_WEI    bond of each extra tier, comma-separated, same length as
 ///                          SHADE_TREE_TIER_LIMITS; each nonzero            (required with SHADE_TREE_TIER_LIMITS)
 ///                          The default tier 8 always costs SHADE_TREE_BOND_WEI.
-///   SHADE_TREE_PUBLIC_STAKE_PROFILE 1 = pin the public Sepolia table:
-///                          tier 1 => 0.1 ether, tier 8 => 0.8 ether, with the real
-///                          Groth16 exit verifier. Every Proxy/node must separately use
-///                          SHADE_TREE_EPOCH_SECONDS=60; epoch length is off chain.
+///   SHADE_TREE_SLASH_REWARD_DIVISOR bounty = floor(bond / this), the rest burns (10 => 90/10);
+///                          bounded on chain to [2, 1000]
+///   SHADE_TREE_PUBLIC_STAKE_PROFILE 1 = the public Sepolia profile: Sepolia only, the live
+///                          GatewayRegistry reused, the in-repo hasher and REAL Groth16 exit
+///                          verifier, the 3720-second F+E+C floor (60 s freshness + 60 s epoch +
+///                          3600 s slash confirmation). Tier bonds, unbonding and the slash split
+///                          are NOT pinned here: they come from network/<net>/economics.json via
+///                          scripts/deploy-contracts.mjs, which also reads every value back.
+///   SHADE_TREE_DEPLOYER_KEY      broadcast key (hex), read from env so it never sits in argv;
+///                          unset => forge's own --sender / keystore handling
 ///   SHADE_TREE_RPC_URL           endpoint, recorded into the JSON      ("http://127.0.0.1:8545")
 ///   SHADE_TREE_DEPLOY_OUT        JSON output path                      ("contracts/deployed.local.json")
 contract DeployRegistry is Cheats {
@@ -72,7 +78,7 @@ contract DeployRegistry is Cheats {
     {
         // ---- parameters (env-overridable) ------------------------------------
         bool publicStakeProfile = vm.envOr("SHADE_TREE_PUBLIC_STAKE_PROFILE", uint256(0)) != 0;
-        uint256 bond = vm.envOr("SHADE_TREE_BOND_WEI", publicStakeProfile ? uint256(0.8 ether) : uint256(0.01 ether));
+        uint256 bond = vm.envOr("SHADE_TREE_BOND_WEI", uint256(0.01 ether));
         uint256 unbonding = vm.envOr("SHADE_TREE_UNBONDING", publicStakeProfile ? uint256(1 days) : uint256(300));
         uint256 minUnbonding = vm.envOr("SHADE_TREE_MIN_UNBONDING", publicStakeProfile ? uint256(3720) : uint256(270)); // root freshness + epoch + slash confirmation
         address gwOwner = vm.envOr("SHADE_TREE_GATEWAY_OWNER", address(0)); // 0 => deployer
@@ -82,9 +88,8 @@ contract DeployRegistry is Cheats {
             require(block.chainid == 11155111, "public stake profile is Sepolia-only");
             require(deployStaked, "public stake profile requires SHADE_TREE_DEPLOY_STAKED=1");
             require(!deployRegistry, "public stake profile reuses the live GatewayRegistry");
-            require(bond == 0.8 ether, "public stake profile pins tier 8 to 0.8 ether");
-            require(unbonding == 1 days, "public stake profile pins unbonding to 24 hours");
             require(minUnbonding == 3720, "public stake profile pins F+E+C minimum to 3720 seconds");
+            require(unbonding >= minUnbonding, "public stake profile needs unbonding >= 3720 seconds");
         }
 
         console.log("== DeployRegistry ==");
@@ -92,9 +97,11 @@ contract DeployRegistry is Cheats {
         console.log("bond (wei) ", bond);
         console.log("unbonding  ", unbonding);
         console.log("minUnbond  ", minUnbonding);
-        if (publicStakeProfile) console.log("profile      public-stake-v1 (tier 1 = 0.1 ether)");
+        if (publicStakeProfile) console.log("profile      public-stake-v1");
 
-        vm.startBroadcast();
+        uint256 deployerKey = vm.envOr("SHADE_TREE_DEPLOYER_KEY", uint256(0));
+        if (deployerKey != 0) vm.startBroadcast(deployerKey);
+        else vm.startBroadcast();
 
         // ---- GatewayRegistry: the gateway-operator stake ---------------------
         // owner (slasher/governance) defaults to the deployer when 0 (ctor enforces it).
@@ -152,21 +159,12 @@ contract DeployRegistry is Cheats {
             require(realVerifier, "public stake profile requires SHADE_TREE_DEPLOY_REAL_VERIFIER=1");
         }
         // T-FEAT-8b tier table (extra tiers beyond the default limit 8 => SHADE_TREE_BOND_WEI).
-        uint256[] memory extraLimits =
-            _parseUintList(vm.envOr("SHADE_TREE_TIER_LIMITS", publicStakeProfile ? string("1") : string("")));
-        uint256[] memory extraBonds = _parseUintList(
-            vm.envOr("SHADE_TREE_TIER_BONDS_WEI", publicStakeProfile ? string("100000000000000000") : string(""))
-        );
+        uint256[] memory extraLimits = _parseUintList(vm.envOr("SHADE_TREE_TIER_LIMITS", string("")));
+        uint256[] memory extraBonds = _parseUintList(vm.envOr("SHADE_TREE_TIER_BONDS_WEI", string("")));
         require(
             extraLimits.length == extraBonds.length,
             "SHADE_TREE_TIER_LIMITS / SHADE_TREE_TIER_BONDS_WEI length mismatch"
         );
-        if (publicStakeProfile) {
-            require(
-                extraLimits.length == 1 && extraLimits[0] == 1 && extraBonds[0] == 0.1 ether,
-                "public stake profile pins tier 1 to 0.1 ether"
-            );
-        }
         console.log("tier 8 bond", bond);
         for (uint256 i = 0; i < extraLimits.length; i++) {
             console.log("tier       ", extraLimits[i]);
@@ -204,7 +202,8 @@ contract DeployRegistry is Cheats {
             IWithdrawVerifier(verifierAddr),
             ICommitmentHasher(hasherAddr),
             extraLimits,
-            extraBonds
+            extraBonds,
+            vm.envOr("SHADE_TREE_SLASH_REWARD_DIVISOR", uint256(10))
         );
         set = address(s);
         console.log("slash reward divisor", s.SLASH_REWARD_DIVISOR());
@@ -248,7 +247,7 @@ contract DeployRegistry is Cheats {
     {
         string memory outPath = vm.envOr("SHADE_TREE_DEPLOY_OUT", string("contracts/deployed.local.json"));
         string memory rpcUrl = vm.envOr("SHADE_TREE_RPC_URL", string("http://127.0.0.1:8545"));
-        uint256 bond = vm.envOr("SHADE_TREE_BOND_WEI", publicStakeProfile ? uint256(0.8 ether) : uint256(0.01 ether));
+        uint256 bond = vm.envOr("SHADE_TREE_BOND_WEI", uint256(0.01 ether));
         uint256 unbonding = vm.envOr("SHADE_TREE_UNBONDING", publicStakeProfile ? uint256(1 days) : uint256(300));
         uint256 minUnbonding = vm.envOr("SHADE_TREE_MIN_UNBONDING", publicStakeProfile ? uint256(3720) : uint256(270));
 
@@ -302,7 +301,7 @@ contract DeployRegistry is Cheats {
             return "null";
         } else {
             return string.concat(
-                '{"policy":"burn-90-reward-10-v1","rewardDivisor":',
+                '{"policy":"burn-rest-reward-divisor-v1","rewardDivisor":',
                 vm.toString(StakedReputationSet(set).SLASH_REWARD_DIVISOR()),
                 ',"burnAddress":"',
                 vm.toString(StakedReputationSet(set).SLASH_BURN_ADDRESS()),

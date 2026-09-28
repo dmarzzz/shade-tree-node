@@ -89,7 +89,7 @@ async function main() {
     if (dep.status !== 0) { console.log((dep.stdout || "").split("\n").slice(-15).join("\n"), dep.stderr); return; }
     ok(/tier\s+32/.test(dep.stdout) && /REAL Groth16 exit-auth/.test(dep.stdout), "deploy log names tier 32 + the real exit-auth verifier");
     const deployed = JSON.parse(readFileSync(outJson, "utf8"));
-    ok(deployed.slashPayout?.policy === "burn-90-reward-10-v1" && deployed.slashPayout.rewardDivisor === 10 && /^0x0{40}$/.test(deployed.slashPayout.burnAddress), "deployment records the immutable slash penalty policy");
+    ok(deployed.slashPayout?.policy === "burn-rest-reward-divisor-v1" && deployed.slashPayout.rewardDivisor === 10 && /^0x0{40}$/.test(deployed.slashPayout.burnAddress), "deployment records the immutable slash penalty policy");
     const set = deployed.stakedReputationSet;
     ok(/^0x[0-9a-fA-F]{40}$/.test(set), `StakedReputationSet deployed at ${set}`);
     rmSync(outJson, { force: true });

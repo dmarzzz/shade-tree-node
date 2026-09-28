@@ -33,7 +33,8 @@ contract StakedReputationSetIdentityTest is FuzzBase {
         limits[0] = 1;
         bonds[0] = BOND1;
         set = new StakedReputationSet(
-            BOND8, 86_400, 3_720, IWithdrawVerifier(address(verifier)), ICommitmentHasher(address(hasher)), limits, bonds
+            BOND8, 86_400, 3_720, IWithdrawVerifier(address(verifier)), ICommitmentHasher(address(hasher)), limits, bonds,
+            10
         );
         uint256[] memory paidLimits = new uint256[](1);
         paidLimits[0] = 8;

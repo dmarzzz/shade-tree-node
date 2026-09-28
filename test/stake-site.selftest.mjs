@@ -25,6 +25,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const deployment = JSON.parse(readFileSync(join(ROOT, "network/sepolia/deployment.json"), "utf8"));
 const html = readFileSync(join(ROOT, "docs/post/stake/index.html"), "utf8");
 const source = readFileSync(join(ROOT, "site-src/stake.mjs"), "utf8");
+const sdkStaking = readFileSync(join(ROOT, "packages/sdk/src/staking.mjs"), "utf8");
 const liveSource = readFileSync(join(ROOT, "site-src/stake-live.mjs"), "utf8");
 const pageSource = readFileSync(join(ROOT, "site-src/stake-page.mjs"), "utf8");
 const bundle = readFileSync(join(ROOT, "docs/post/stake/stake.js"));
@@ -69,10 +70,11 @@ assert.throws(() => parseCommitment("01"));
 assert.throws(() => parseCommitment("not-a-field"));
 check("sponsor commitments are canonical non-zero field elements", parseCommitment(vector.leaf) === vector.leaf);
 
-check("member status covers active, exiting, withdrawable and unregistered", describeMember({ active: true, limit: 1n, withdrawableAt: 0n, now: 0 }).state === "active"
-  && describeMember({ active: false, limit: 1n, withdrawableAt: 7200n, now: 0 }).state === "exiting"
-  && describeMember({ active: false, limit: 1n, withdrawableAt: 10n, now: 20 }).state === "withdrawable"
-  && describeMember({ active: false, limit: 0n, withdrawableAt: 0n, now: 0 }).state === "unregistered");
+check("member status covers pending, active, exiting, withdrawable and unregistered (SDK states)", describeMember({ state: "active", limit: 1, finalized: false, now: 0 }).state === "pending"
+  && describeMember({ state: "active", limit: 1, finalized: true, now: 0 }).state === "active"
+  && describeMember({ state: "exiting", limit: 1, withdrawableAt: "1970-01-01T02:00:00Z", now: 0 }).state === "exiting"
+  && describeMember({ state: "withdrawable", limit: 1, withdrawableAt: "1970-01-01T00:00:10Z", now: 20 }).state === "withdrawable"
+  && describeMember({ state: "none", limit: 0, withdrawableAt: null, now: 0 }).state === "unregistered");
 check("finality countdown counts remaining slots", finalityEstimate(110, 100).seconds === 120 && finalityEstimate(100, 105).final);
 check("anonymity-set disclosure is honest at zero and small sizes", /0 staked members today/.test(describeSetSize(0)) && /among 3/.test(describeSetSize(3)) && describeSetSize(-1) === null);
 
@@ -109,7 +111,7 @@ check("the live module fetches only fixed aggregate URLs and never touches ident
   && /"\/api\/v1\/data\/stake\/sepolia\/head"/.test(liveSource)
   && /"\/api\/v1\/data\/grove\/sepolia\/head"/.test(liveSource)
   && /credentials: "omit"/.test(liveSource));
-check("wallet preflight pins chain, code, bond, active state, simulation, gas, and balance", [
+check("wallet preflight (SDK) pins chain, code, bond, active state, simulation, gas, and balance", [
   "wallet_switchEthereumChain",
   "eth_chainId",
   "eth_getCode",
@@ -120,12 +122,25 @@ check("wallet preflight pins chain, code, bond, active state, simulation, gas, a
   "eth_getBalance",
   "eth_call",
   "eth_sendTransaction",
-].every((needle) => source.includes(needle)) && /bond !== tier\.bondWei/.test(source));
-check("the stake bundle stays small (poseidon by subpath)", bundle.length < 150_000 && /poseidon-lite\/poseidon1/.test(source));
+].every((needle) => sdkStaking.includes(needle)) && /bond !== tier\.bondWei/.test(sdkStaking) && /createStaking\(/.test(source));
+check("the stake entry stays small", bundle.length < 150_000);
 check("rendering is deterministic", renderStakePage() === renderStakePage());
 
 const build = spawnSync(process.execPath, [join(ROOT, "scripts/build-stake-site.mjs"), "--check"], { encoding: "utf8" });
 check("committed page, bundle, API profile and shared nav are reproducible from reviewed source", build.status === 0);
+
+const vercel = JSON.parse(readFileSync(join(ROOT, "docs/post/vercel.json"), "utf8"));
+const cspFor = (source) => vercel.headers.find((h) => h.source === source)?.headers.find((x) => x.key === "Content-Security-Policy")?.value || "";
+check("only /stake/ may compile WASM for the prover; the rest of the site keeps the strict CSP",
+  /'wasm-unsafe-eval'/.test(cspFor("/stake/(.*)")) && /'wasm-unsafe-eval'/.test(cspFor("/stake"))
+  && !/wasm-unsafe-eval|unsafe-eval'/.test(cspFor("/(.*)")) && !/'unsafe-eval'/.test(cspFor("/stake/(.*)")) && /connect-src 'self'/.test(cspFor("/stake/(.*)")));
+const lock = JSON.parse(readFileSync(join(ROOT, "testdata/zk-artifacts.lock.json"), "utf8"));
+const { createHash } = await import("node:crypto");
+check("the served withdraw circuit is byte-identical to the locked artifacts", [
+  ["docs/post/stake/zk/withdraw.wasm", "circuits/rln/withdraw.wasm"],
+  ["docs/post/stake/zk/withdraw_final.zkey", "circuits/rln/withdraw_final.zkey"],
+].every(([served, locked]) => createHash("sha256").update(readFileSync(join(ROOT, served))).digest("hex") === lock.artifacts[locked].sha256));
+check("snarkjs stays out of the entry bundle; it loads only for exit or withdraw", /await import\("\.\/chunks\/browser\.esm-[A-Z0-9]+\.js"\)/.test(bundle.toString()) && !/Groth16 verification|bn128/.test(bundle.toString()) && bundle.length < 150_000);
 
 // Same-origin status API: no parameters accepted, aggregate reads only, fails closed.
 const calls = [];
