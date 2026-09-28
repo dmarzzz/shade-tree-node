@@ -2,6 +2,7 @@
 name = "shadenet-rln"
 version = "0.6.0"
 edition = "2021"
+rust-version = "1.98"
 license = "MIT"
 description = "Shade Tree RLN interop probe (T-RUST-2b RLN-INTEROP): generate an RLN Groth16 envelope proof in Rust against the repo's circom-rln artifacts, cross-verified by the rlnjs reference (lib/rln.mjs verifyEnvelope)."
 publish = false

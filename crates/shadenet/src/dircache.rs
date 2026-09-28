@@ -328,7 +328,7 @@ pub struct LoadOutcome {
 }
 
 /// Optional absolute-freshness bound (T-FEAT-21). Both in milliseconds.
-#[derive(Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MaxAge {
     pub max_age_ms: Option<u64>,
     pub skew_ms: u64,

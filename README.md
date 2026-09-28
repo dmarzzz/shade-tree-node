@@ -105,7 +105,7 @@ child's proxy URLs; the raw `SHADE_TREE_PROXY_TOKEN` and other operator settings
 are removed from the child environment. Software that ignores proxy variables
 must be configured with the authenticated URL
 `http://shade-tree:$SHADE_TREE_PROXY_TOKEN@127.0.0.1:8118`. Rust applications
-can use the `shadenet-egress` crate; JavaScript applications can import
+can use the [`shadenet` SDK crate](crates/README.md); JavaScript applications can import
 [`ShadeTreeClient`](docs/SDK.md). The exact public semantics and their non-atomic
 cross-gateway caveat are recorded in
 [`docs/PUBLIC-STAKING.md`](docs/PUBLIC-STAKING.md).

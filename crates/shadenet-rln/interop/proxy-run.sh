@@ -74,7 +74,7 @@ SHADE_TREE_PROXY_TOKEN="$PROXY_TOKEN" \
     --epoch "$TEST_EPOCH" \
     > "$WORK/proxy.log" 2>&1 &
 PROXY_PID=$!
-node "$HERE/wait-log.mjs" "$WORK/proxy.log" "shade-tree proxy listening" 15000
+node "$HERE/wait-log.mjs" "$WORK/proxy.log" "proxy listening on" 15000
 
 echo "== send two CONNECT tunnels plus early application bytes =="
 if ! node "$HERE/proxy-client.mjs" "$PROXY_PORT" "$TARGET" "interop-ping-one" "$PROXY_TOKEN" || \
