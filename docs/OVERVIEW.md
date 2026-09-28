@@ -164,4 +164,4 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
 | `network/` | Committed deployment records per network; `SHADE_TREE_NETWORK` reads them |
 | `crates/` | The distributable client: `shadenet-proto` (wire), `shadenet-rln` (prover + tree), `shadenet-cli` (embedded arti, `-live`) |
 | `test/`, `testdata/`, `scripts/test-all.mjs` | Foundry suite + cross-module selftests; golden vectors + artifact lock; the audit entrypoint |
-| `docker/`, `monitoring/`, `examples/`, `web/`, `smithers/` | Local container fleet; Prometheus/Grafana; agent examples; fleet map page; the roadmap as a Smithers workflow |
+| `docker/`, `monitoring/`, `examples/`, `web/` | Local container fleet; Prometheus/Grafana; agent examples; fleet map page |

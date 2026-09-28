@@ -24,6 +24,20 @@ drop a `*selftest.mjs` anywhere in the tree and the runner picks it up (it skips
 contract suite is skipped, not failed; run `npm run test:node` to skip it
 deliberately.
 
+### What CI runs
+
+Required on every pull request: Rust workspace check, test and interop; `cargo fmt` and
+strict Clippy; the full Node suite on Node 24 under c8 coverage (lines 90, functions 90,
+branches 80); Foundry; ESLint; the supply-chain gate (`npm audit`, `cargo deny`,
+`cargo audit`); the site browser checks; and the Rust embedded-Tor client against the JS
+gateway over real Tor. The last two skip themselves when a PR touches none of their inputs
+(`scripts/ci-changes.sh`), and a skipped job still satisfies the check.
+
+On main and nightly: the Node suite on 20, 22 and 24, Rust line coverage, the
+bootstrap and real-Tor fleet end-to-end runs. Monthly: Stryker mutation testing. Run
+`cargo deny check` and `cargo audit` locally before touching `Cargo.lock`; advisory
+ignores live in `deny.toml` with their reasons, mirrored in `.cargo/audit.toml`.
+
 ## Definitions of done
 
 Every change is expected to meet these before it lands (from

@@ -17,6 +17,19 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # The arkworks crates, ark-circom and num-bigint must move together: ark-circom 0.5 ==
+    # ark 0.5 (crates/shadenet-rln/Cargo.toml), and a lone major bump can't compile. Group
+    # them into one PR and leave majors to a deliberate upgrade.
+    groups:
+      arkworks:
+        patterns:
+          - "ark-*"
+          - "num-bigint"
+    ignore:
+      - dependency-name: "ark-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "num-bigint"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     labels:
       - "dependencies"
       - "rust"
