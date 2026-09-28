@@ -141,3 +141,19 @@ RLN.cleanUp();                           // terminate snarkjs worker threads
   `ffjavascript@0.2.55`; the app's top-level `@semaphore-protocol/*` **v4.14.2**
   deps are untouched and still resolve. `npm ls ffjavascript` shows
   `rlnjs → ffjavascript@0.2.55` as required.
+
+## Circuit freeze (ShadeNet launch, 2026-09-28)
+
+The launch circuit set is frozen at **{`rln` = RLN(20,16), `withdraw`}** from
+`Rate-Limiting-Nullifier/circom-rln` at `17f0fed7d8d19e8b127fd0b3e5295a4831193a0d`. The M1 contract
+fixes (proven tier, canonical leaves, bound proof contexts) needed no circuit change: the tier is
+derived on chain and the proof context is an opaque public input. No circuit, circuit parameter
+or public-signal order changes before the trusted-setup adoption (H3).
+
+- Adoption path (D3): PSE's finalized ceremony over this exact source, compiled with circom 2.1.5
+  `--O2`; the WASM and zkeys are swapped together (`docs/ceremony/PSE-ADOPTION.md`).
+- Fallback path: a community phase 2 over the current circom 2.2.2 `--O1` build, whose R1CS/WASM
+  hashes are pinned in `scripts/ceremony/toolchain.json` and were reproduced on 2026-09-28.
+
+A change to either circuit after this point voids both paths and needs a new setup.
+

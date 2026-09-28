@@ -20,6 +20,7 @@ live = [
     "dep:arti-client",
     "dep:tor-rtcompat",
     "dep:tokio",
+    "dep:futures",
     "dep:reqwest",
     "dep:base64",
     "dep:url",
@@ -44,14 +45,14 @@ sha2 = "0.11"
 thiserror = "2"
 tracing = "0.1"
 zeroize = { version = "1", features = ["derive"] }
-# shadenet::eth (replaces ethers-core): both already in the tree through shadenet-proto.
-k256 = { version = "0.14", features = ["ecdsa"] }
-sha3 = "0.12"
-num-bigint = "0.4"
 # Passphrase-protected identity files (RUST-10).
 scrypt = { version = "0.11", default-features = false }
 chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
 getrandom = "0.4"
+# shadenet::eth (replaces ethers-core): both already in the tree through shadenet-proto.
+k256 = { version = "0.14", features = ["ecdsa"] }
+sha3 = "0.12"
+num-bigint = "0.4"
 
 shadenet-rln = { path = "../shadenet-rln", optional = true }
 # Embedded Tor. `compression` stays off (one onion, one JSON line) and `static-sqlite` bundles
@@ -59,6 +60,7 @@ shadenet-rln = { path = "../shadenet-rln", optional = true }
 arti-client = { version = "0.46", default-features = false, features = ["tokio", "rustls", "onion-service-client", "static-sqlite", "hs-pow-full"], optional = true }
 tor-rtcompat = { version = "0.46", default-features = false, features = ["tokio", "rustls"], optional = true }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time"], optional = true }
+futures = { version = "0.3", default-features = false, features = ["std"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
 base64 = { version = "0.23", optional = true }
 # `Client::fetch`: HTTPS over a tunnel (HTTP/1.1, rustls with the ring provider already in the tree).

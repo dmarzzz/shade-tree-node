@@ -1,0 +1,33 @@
+# ShadeNet
+
+> ShadeNet gives AI agents anonymous, unlinkable web egress. A local `shadenet` proxy proves in zero knowledge (an RLN membership proof) that the agent's member has staked for access, and a Shade Tree node reached as a Tor onion service opens the HTTPS connection to the destination. The destination sees the node's IP; the node cannot tell which member is asking. Research preview on Sepolia: untrusted testnet ZK artifacts, not for real funds.
+
+Setup for an agent, end to end (the `shadenet` binary embeds Tor; no Node.js or system Tor needed):
+
+1. Install: `curl -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | sh`
+2. `shadenet init` creates `~/.config/shadenet/{identity.json,proxy-token,config.toml}` and prints the stake amount for the current network. Keep `identity.json` private; it is never needed on a command line.
+3. Stake the printed leaf: `shadenet register-member --identity ~/.config/shadenet/identity.json --key-file <owner-only file holding a funded Sepolia key>`. Anyone may stake an agent's leaf for it (a sponsor): `shadenet register-member <leaf> --key-file <their key>`.
+4. `shadenet status --wait` returns when the stake is final (about 13 minutes). `shadenet status --json` reports `state`, `slotsLeft` and `epochResetsInSeconds`.
+5. Run `shadenet proxy` (loopback 127.0.0.1:8118, token required), then either `shadenet run --no-proxy <your model API host> -- <agent>` or register the MCP server: `shadenet mcp` (tools `shadenet_fetch`, `shadenet_status`, `shadenet_search`).
+
+Rules an agent should follow: HTTPS on port 443 only; every new tunnel spends one slot of a per-epoch budget, so reuse connections and keep model API calls off ShadeNet; on `429 budget_exhausted` wait `Retry-After` seconds; `403 not_admitted` or `not_finalized` means stop and ask the operator. `shadenet doctor` diagnoses local setup problems.
+
+## Docs
+
+- [Agent guide](https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md): install, stake, run the proxy, connect an agent, handle errors
+- [Adapters](https://github.com/dmarzzz/shade-tree-node/blob/main/docs/ADAPTERS.md): curl, Python, Hermes, Claude Code, Codex, MCP clients, SearXNG, Rust
+- [Error codes](https://github.com/dmarzzz/shade-tree-node/blob/main/docs/ERRORS.md): every `X-ShadeNet-Error` code, HTTP status, exit code and what to do; budget arithmetic
+- [Local proxy API](https://github.com/dmarzzz/shade-tree-node/blob/main/specs/local-api.openapi.yaml): OpenAPI for `/_shadenet/status`, `/_shadenet/health`, `/_shadenet/metrics` and the CONNECT error contract
+
+## Examples
+
+- [SearXNG through ShadeNet](https://github.com/dmarzzz/shade-tree-node/tree/main/examples/searxng): Docker Compose recipe
+- [Hermes skill](https://github.com/dmarzzz/shade-tree-node/blob/main/examples/hermes/SKILL.md): when and how a model should use `shadenet_fetch`
+- [Python httpx](https://github.com/dmarzzz/shade-tree-node/blob/main/examples/python-httpx.py) and [curl](https://github.com/dmarzzz/shade-tree-node/blob/main/examples/curl.sh)
+- [Rust SDK examples](https://github.com/dmarzzz/shade-tree-node/tree/main/crates/shadenet/examples)
+
+## Optional
+
+- [Rust SDK and CLI reference](https://github.com/dmarzzz/shade-tree-node/blob/main/crates/README.md)
+- [Threat model](https://github.com/dmarzzz/shade-tree-node/blob/main/docs/THREAT-MODEL.md): what nodes, Elder Trees and observers can learn
+- [Protocol](https://github.com/dmarzzz/shade-tree-node/blob/main/specs/protocol.md): roles, canopy, admission, RLN rate limits

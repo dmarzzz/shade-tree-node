@@ -173,6 +173,7 @@ impl Default for ConfigBuilder {
                     deployment: crate::profile::Deployment {
                         elder_onion: String::new(),
                         canopy_signer: String::new(),
+                        elders: Vec::new(),
                         default_path: None,
                         rate_policy: None,
                         staked: None,

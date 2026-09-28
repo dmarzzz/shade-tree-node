@@ -1,4 +1,9 @@
-# Shade Tree community ceremony event worksheet
+# ShadeNet community ceremony event worksheet
+
+> **Fallback only.** Launch decision D3 adopts PSE's finalized RLN setup for both circuits
+> (`PSE-ADOPTION.md`); this worksheet is kept ready in case the owner prefers a ShadeNet-specific
+> setup or a later circuit change needs one. The fields an agent can fill without people are
+> filled; roster, date and channels stay **PENDING** for the owner.
 
 **Draft event plan — details below are pending.** This document schedules no
 event, sends no invitations, publishes no artifacts, and starts no ceremony.
@@ -10,7 +15,7 @@ Complete and publish an immutable event agreement before using it. Keep the
 
 | Field | Value |
 | --- | --- |
-| Public ceremony ID | **PENDING** |
+| Public ceremony ID | `shadenet-rln-2026` (proposed) |
 | Livestream date, start, timezone, expected end | **PENDING** |
 | Independent-verification follow-up time | **PENDING** |
 | Stream URL / recording archive | **PENDING** |
@@ -19,8 +24,8 @@ Complete and publish an immutable event agreement before using it. Keep the
 | At least three contributors: ordered public labels, distinct machines, consent | **PENDING** |
 | Independent input builder | **PENDING** |
 | Independent final verifier | **PENDING** |
-| Frozen tooling commit / dependency-install instructions | **PENDING** |
-| Frozen build-input manifest URL / full SHA-256 | **PENDING** |
+| Frozen tooling commit / dependency-install instructions | `86aff71b4dfd` (main at the circuit freeze); `npm ci --prefix scripts/ceremony --ignore-scripts`; Rust 1.98.0 per `BUILD.md` |
+| Frozen build-input manifest URL / full SHA-256 | URL **PENDING**; a local rebuild on 2026-09-28 produced `build-inputs.json` with SHA-256 `a1a6caf8e0c968cd3733c5561be51410df95503a714361083ae9ee648656b739` (both R1CS/WASM and the ptau matched every pin) |
 | Published plan URL / full SHA-256 | **PENDING** |
 | Initial bundle URL / full ceremony-manifest and state hashes | **PENDING** |
 | Independent hash-authentication channel | **PENDING** |

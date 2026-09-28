@@ -84,7 +84,15 @@ export function validateDeploymentRecord(record, { requireLive = true, repoRoot 
   const bad = (field, problem) => errors.push({ field, problem });
   if (!isObject(record)) return { ok: false, errors: [{ field: "$", problem: "record must be a JSON object" }] };
 
-  if (record.schemaVersion !== 1) bad("schemaVersion", "must be 1");
+  if (record.schemaVersion !== 1 && record.schemaVersion !== 2) bad("schemaVersion", "must be 1 or 2");
+  if (record.schemaVersion === 2) {
+    if (!Array.isArray(record.elders) || record.elders.length === 0) bad("elders", "must be a non-empty array in schemaVersion 2");
+    else record.elders.forEach((elder, i) => {
+      if (!isObject(elder) || !isOnion(elder.onion)) bad(`elders[${i}].onion`, "must be a v3 .onion");
+      if (!isObject(elder) || !isEd25519PubHex(elder.canopySigner)) bad(`elders[${i}].canopySigner`, "must be a 64-hex Ed25519 public key");
+    });
+    if (Array.isArray(record.elders) && isObject(record.elder) && record.elders[0]?.onion !== record.elder.onion) bad("elder", "must equal elders[0]");
+  }
   if (!isNetworkName(record.network)) bad("network", "must be a lowercase network name");
   if (!["pending", "live"].includes(record.status)) bad("status", "must be pending or live");
   if (requireLive && record.status !== "live") bad("status", "must be live before any target is changed");
