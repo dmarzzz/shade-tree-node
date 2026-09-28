@@ -12,7 +12,7 @@ ed25519-dalek = "3"   # RFC 8032 ed25519 sign/verify (null-digest, raw 32-byte s
 sha3 = "0.12"         # SHA3-256 onion checksum + Keccak256 signal hash (calculate_signal_hash)
 data-encoding = "2"   # base32 no-pad lowercase (alphabet abcdefghijklmnopqrstuvwxyz234567)
 hex = "0.4"           # lowercase hex for pubkey/signature (de)serialization
-num-bigint = "0.4"    # big-endian keccak digest -> BigUint >> 8 -> decimal (calculate_signal_hash)
+num-bigint = "0.5"    # big-endian keccak digest -> BigUint >> 8 -> decimal (calculate_signal_hash)
 # T-HARD-8 artifact ids: `<circuit>-<sha256(verification_key.json)[0:16]>` (artifact_id_of), the
 # SAME hash testdata/zk-artifacts.lock.json pins. sha2 is already in the tree via ed25519-dalek,
 # so this adds no new transitive dependency.

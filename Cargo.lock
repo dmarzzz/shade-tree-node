@@ -168,7 +168,7 @@ dependencies = [
  "fnv",
  "hex",
  "num",
- "num-bigint",
+ "num-bigint 0.4.8",
  "num-traits",
  "thiserror 1.0.69",
  "wasmer",
@@ -224,7 +224,7 @@ dependencies = [
  "fnv",
  "hashbrown 0.15.5",
  "itertools 0.13.0",
- "num-bigint",
+ "num-bigint 0.4.8",
  "num-integer",
  "num-traits",
  "rayon",
@@ -245,7 +245,7 @@ dependencies = [
  "digest 0.10.7",
  "educe 0.6.0",
  "itertools 0.13.0",
- "num-bigint",
+ "num-bigint 0.4.8",
  "num-traits",
  "paste",
  "rayon",
@@ -268,7 +268,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09be120733ee33f7693ceaa202ca41accd5653b779563608f1234f78ae07c4b3"
 dependencies = [
- "num-bigint",
+ "num-bigint 0.4.8",
  "num-traits",
  "proc-macro2",
  "quote",
@@ -329,7 +329,7 @@ dependencies = [
  "ark-std",
  "arrayvec",
  "digest 0.10.7",
- "num-bigint",
+ "num-bigint 0.4.8",
  "rayon",
 ]
 
@@ -1964,7 +1964,7 @@ version = "3.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bf1fa3f06bbff1ea5b1a9c7b14aa992a39657db60a2759457328d7e058f49ee"
 dependencies = [
- "num-bigint",
+ "num-bigint 0.4.8",
  "num-traits",
  "proc-macro2",
  "quote",
@@ -3395,7 +3395,7 @@ checksum = "47a1ccadd0bb5a32c196da536fd72c59183de24a055f6bf0513bf845fefab862"
 dependencies = [
  "ark-bn254",
  "ark-ff",
- "num-bigint",
+ "num-bigint 0.4.8",
  "thiserror 1.0.69",
 ]
 
@@ -3654,7 +3654,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35bd024e8b2ff75562e5f34e7f4905839deb4b22955ef5e73d2fea1b9813cb23"
 dependencies = [
- "num-bigint",
+ "num-bigint 0.4.8",
  "num-complex",
  "num-integer",
  "num-iter",
@@ -3671,6 +3671,16 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rand 0.8.7",
+]
+
+[[package]]
+name = "num-bigint"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93e7820bc0a80a0238e650327316f929ba18d5be054b647490a3a6a339f3e7c0"
+dependencies = [
+ "num-integer",
+ "num-traits",
 ]
 
 [[package]]
@@ -3729,7 +3739,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f83d14da390562dca69fc84082e73e548e1ad308d24accdedd2720017cb37824"
 dependencies = [
- "num-bigint",
+ "num-bigint 0.4.8",
  "num-integer",
  "num-traits",
 ]
@@ -5512,7 +5522,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "libc",
- "num-bigint",
+ "num-bigint 0.5.1",
  "reqwest",
  "serde",
  "serde_json",
@@ -5543,7 +5553,7 @@ dependencies = [
  "ed25519-dalek 3.0.0",
  "hex",
  "k256 0.14.0",
- "num-bigint",
+ "num-bigint 0.5.1",
  "serde_json",
  "sha2 0.11.0",
  "sha3 0.12.0",
@@ -5563,7 +5573,7 @@ dependencies = [
  "ark-std",
  "hex",
  "light-poseidon",
- "num-bigint",
+ "num-bigint 0.5.1",
  "serde",
  "serde_json",
  "sha2 0.11.0",
