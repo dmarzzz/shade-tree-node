@@ -7,6 +7,49 @@ adjacent `deployment.json` explicitly reuses its compatible staking set, gateway
 and deploy-block metadata for the live invited-and-staked v4 research canopy. Create a new current
 contract/runtime record for other fleets rather than silently reviving the historical bundle.
 
+## ShadeNet: deploy from `economics.json` (current)
+
+The ShadeNet staking contracts are deployed by one wrapper,
+[`scripts/deploy-contracts.mjs`](../scripts/deploy-contracts.mjs), from one input per network:
+`network/<network>/economics.json` (tiers and bonds, default tier, unbonding, slash split,
+sponsor seats, session tickets). The wrapper validates that file, checks that the pinned
+Poseidon libraries exist on the chain, runs `DeployRegistry.s.sol` with the key in the
+environment (never argv), reads every constructor value, getter and runtime bytecode back
+through the preflight on-chain gate, and writes `network/<network>/deployment.json` plus an
+audit trail in `contracts-deploy.json` (commit, economics and artifact-lock hashes, every
+CREATE transaction).
+
+| Network | Economics | Proving keys | Broadcast allowed |
+|---|---|---|---|
+| `sepolia-staging` | placeholder (small bonds) | dev setup | yes |
+| `sepolia` (production) | `status: "final"` only (H2) | ceremony keys only (H3) | yes, after both gates |
+
+```sh
+# Rehearse on an anvil fork of Sepolia: deploy, read back, then register -> exit -> 24 h -> withdraw
+# -> slash with real Groth16 proofs. Writes nothing under network/.
+node scripts/deploy-contracts.mjs --network sepolia-staging --fork
+node scripts/deploy-contracts.mjs --network sepolia --fork
+
+# Deploy for real, then source-verify (Sourcify always; Etherscan when ETHERSCAN_API_KEY is set).
+SOPS_AGE_KEY_FILE=~/agent-devops/keys.txt node scripts/deploy-contracts.mjs --network sepolia-staging \
+  --broadcast --verify --key-from-sops ~/agent-devops/secrets/shadenet/deployer.sops.yml
+
+# Or all of it for staging in one command (scripts/staging-up.sh --fork rehearses it; --resume
+# finishes the withdraw after unbonding):
+scripts/staging-up.sh
+
+# Smoke the real deploy. It stops after the exit; rerun with --resume after unbonding.
+SHADE_TREE_SMOKE_KEY=... node scripts/smoke-staking.mjs --rpc-url <url> --contract <set>
+```
+
+The launch (M8) reruns exactly these commands against `sepolia` after H2 sets
+`network/sepolia/economics.json` to `final` and H3's adoption PR lands the ceremony keys; the
+wrapper refuses production until both are true. The deployer is
+`0x62c448057273fceE5785dd5b57e40d0ff19554b1` (agent-devops `secrets/shadenet/deployer.sops.yml`).
+Contracts own nothing after deployment; the GatewayRegistry is reused.
+
+The rest of this page documents the underlying script and the v4 history.
+
 Script: [`contracts/script/DeployRegistry.s.sol`](../contracts/script/DeployRegistry.s.sol)
 (`DeployRegistry`). It deploys `GatewayRegistry` and, unless disabled, `StakedReputationSet`
 + its verifier/hasher, logs every address, and writes them to a JSON record the gateway/lib

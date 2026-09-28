@@ -53,7 +53,7 @@ num-bigint = "0.4"
 shadenet-rln = { path = "../shadenet-rln", optional = true }
 # Embedded Tor. `compression` stays off (one onion, one JSON line) and `static-sqlite` bundles
 # SQLite so the binary never links the host's libsqlite3.
-arti-client = { version = "0.46", default-features = false, features = ["tokio", "rustls", "onion-service-client", "static-sqlite"], optional = true }
+arti-client = { version = "0.46", default-features = false, features = ["tokio", "rustls", "onion-service-client", "static-sqlite", "hs-pow-full"], optional = true }
 tor-rtcompat = { version = "0.46", default-features = false, features = ["tokio", "rustls"], optional = true }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
