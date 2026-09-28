@@ -6,7 +6,7 @@ This is the current rollout boundary. The older `DEPLOYMENT.md`, `GO-LIVE.md`, a
 Sepolia contract/directory files describe the retired pre-v4 fleet. The current disposable v4
 research deployment is recorded separately in
 [`network/sepolia/deployment.json`](../network/sepolia/deployment.json) and
-[`GO-LIVE-LOG-2026-08-25-v4.md`](GO-LIVE-LOG-2026-08-25-v4.md).
+[`GO-LIVE-LOG-2026-08-25-v4.md`](history/GO-LIVE-LOG-2026-08-25-v4.md).
 
 ## Topology
 
@@ -30,7 +30,8 @@ in source) verifies the v4 proof before it opens destination egress.
 - A dedicated Protocol v4 Elder Tree and three dedicated Shade Tree nodes run on Ubuntu 24.04
   across DigitalOcean New York, San Francisco, and Amsterdam. The provider-visible addresses,
   SSH inventory, OpenTofu state, and private identity backups remain outside this repository.
-- The v4 fleet is invited-only and accepts only the pinned `rln-0b25f824a04da3a8` artifact.
+- The v4 canopy admits invited members and public Sepolia stakers (`admission.paths` in the
+  record) and accepts only the pinned `rln-0b25f824a04da3a8` artifact.
   The artifact is explicitly `untrusted-testnet`; this is disposable research infrastructure,
   not production and not suitable for real funds or sensitive traffic.
 - The Elder's signed canopy directory has three fresh Protocol v4 announcements. Signer-pinned probes over
@@ -65,7 +66,8 @@ in source) verifies the v4 proof before it opens destination egress.
    restored identities, active services, source commit, artifact configuration,
    and listener scope before writing its idempotence marker. Target inventory and
    provider state remain operator-controlled and uncommitted.
-7. **Complete for invited-only research.** The record and role default to invited-only.
+7. **Complete for invited and staked research.** The role defaults to invited-only; the live
+   record adds the public staked path.
    Staked or paid admission cannot run unless the reviewed
    contract roots, non-secret authorization reference, explicit operator approval,
    RPC, and required slashing/operator keys are all present. Missing configuration

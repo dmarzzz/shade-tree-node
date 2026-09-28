@@ -10,7 +10,7 @@ use ark_bn254::Fr;
 use num_bigint::BigUint;
 use sha2::{Digest, Sha512};
 
-use crate::tree::{fr_to_dec, poseidon2, rate_commitment};
+use crate::tree::{fr_to_dec, poseidon1, poseidon2, rate_commitment};
 
 const FIELD: &str = "21888242871839275222246405745257275088548364400416034343698204186575808495617";
 
@@ -85,6 +85,45 @@ pub fn commitment_from_identity_secret(
     Ok(fr_to_dec(&rate_commitment(Fr::from(parsed), limit)))
 }
 
+/// The identity commitment `Poseidon1(identitySecret)` a member registers on chain. The
+/// staking contract derives the leaf `Poseidon2(idc, limit)` from it (launch audit 2.1.4).
+pub fn identity_commitment_from_identity_secret(identity_secret: &str) -> Result<String, String> {
+    let parsed = canonical_field_element(identity_secret, "identitySecret")?;
+    Ok(fr_to_dec(&poseidon1(Fr::from(parsed))))
+}
+
+/// The tiered leaf `Poseidon2(idc, limit)` for a public identity commitment, exactly as
+/// `StakedReputationSet.registerIdentity` derives it.
+pub fn rate_commitment_from_identity_commitment(
+    identity_commitment: &str,
+    limit: u64,
+) -> Result<String, String> {
+    if limit == 0 || limit > u16::MAX as u64 {
+        return Err(format!("limit must be in 1..={}", u16::MAX));
+    }
+    let parsed = canonical_field_element(identity_commitment, "identity commitment")?;
+    Ok(fr_to_dec(&poseidon2(Fr::from(parsed), Fr::from(limit))))
+}
+
+fn canonical_field_element(value: &str, label: &str) -> Result<BigUint, String> {
+    let value = value.trim();
+    if value.is_empty()
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+        || (value.len() > 1 && value.starts_with('0'))
+    {
+        return Err(format!(
+            "{label} must be a canonical unsigned decimal field element"
+        ));
+    }
+    let parsed = BigUint::parse_bytes(value.as_bytes(), 10)
+        .ok_or_else(|| format!("{label} is not a decimal field element"))?;
+    let field = BigUint::parse_bytes(FIELD.as_bytes(), 10).expect("BN254 field constant");
+    if parsed == BigUint::from(0_u8) || parsed >= field {
+        return Err(format!("{label} is outside the non-zero BN254 field"));
+    }
+    Ok(parsed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +158,26 @@ mod tests {
         assert!(commitment_from_identity_secret("0", 1).is_err());
         assert!(commitment_from_identity_secret("01", 1).is_err());
         assert!(commitment_from_identity_secret(FIELD, 1).is_err());
+    }
+
+    #[test]
+    fn identity_commitment_path_matches_the_rate_commitment() {
+        let material = derive_identity("0x5a", 8).unwrap();
+        let idc = identity_commitment_from_identity_secret(&material.identity_secret).unwrap();
+        assert_eq!(
+            rate_commitment_from_identity_commitment(&idc, 8).unwrap(),
+            material.leaf
+        );
+        assert_ne!(
+            rate_commitment_from_identity_commitment(&idc, 1).unwrap(),
+            material.leaf
+        );
+        assert!(rate_commitment_from_identity_commitment("0", 8).is_err());
+        assert!(rate_commitment_from_identity_commitment(FIELD, 8).is_err());
+        // SECRET_A = 111 in the Solidity tests: Poseidon1(111) is the fixture's idc.
+        assert_eq!(
+            identity_commitment_from_identity_secret("111").unwrap(),
+            "13377623690824916797327209540443066247715962236839283896963055328700043345550"
+        );
     }
 }

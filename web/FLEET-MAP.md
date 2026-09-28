@@ -26,7 +26,7 @@ signed directory ([`lib/directory.mjs`](../lib/directory.mjs)) is exactly
 
   A gateway that declares nothing lands in the `undeclared` aggregate. These labels are a
   **self-declared hint**, not a signed guarantee — the map is illustrative, not a trust root.
-- For the demo, [`fleet-map.sample.json`](./fleet-map.sample.json) is a static example dataset.
+- For the demo, [`fleet-map.sample.json`](fleet-map.sample.json) is a static example dataset.
 
 ## Privacy model
 

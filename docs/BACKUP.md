@@ -1,7 +1,7 @@
 # Encrypted key backup / restore
 
 `shade-tree backup` and `shade-tree restore` encrypt and recover the secret key material an operator cannot
-afford to lose. This replaces the manual `tar | gpg` recipe in [OPERATOR.md](./OPERATOR.md#backup):
+afford to lose. This replaces the manual `tar | gpg` recipe in [OPERATOR.md](OPERATOR.md#backup):
 it uses only Node's built-in crypto (`node:crypto`), so it works with no `gpg` installed.
 
 ## What it backs up

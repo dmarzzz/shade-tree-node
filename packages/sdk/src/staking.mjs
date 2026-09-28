@@ -3,7 +3,7 @@
 // and bond comes from the network record; the client refuses to send if the chain disagrees.
 
 import { Interface, getAddress, id as topicOf } from "ethers";
-import { parseCommitment, tierLimit } from "../../../lib/identity-core.mjs";
+import { identityCommitmentOf, leafFromIdentityCommitment, parseCommitment, rateCommitment, tierLimit } from "../../../lib/identity-core.mjs";
 import { resolveNetwork, tierFor } from "./network.mjs";
 import { exitContext, withdrawContext } from "./contexts.mjs";
 import { proveAction } from "./exit-proof.mjs";
@@ -11,6 +11,10 @@ import { ShadeNetError } from "./errors.mjs";
 
 const ABI = [
   "function register(uint256 commitment, uint256 limit) payable",
+  "function registerIdentity(uint256 identityCommitment, uint256 limit) payable returns (uint256)",
+  "function members(uint256 commitment) view returns (uint256 bond, uint64 index, uint64 exitInitiatedAt, uint32 limit)",
+  "function exitContext(uint256 commitment) view returns (bytes32)",
+  "function withdrawContext(uint256 commitment, address recipient) view returns (bytes32)",
   "function initiateExit(uint256 commitment, bytes proof)",
   "function withdraw(uint256 commitment, address recipient, bytes proof)",
   "function bondFor(uint256 limit) view returns (uint256)",
@@ -54,6 +58,7 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
   if (!profile) throw new ShadeNetError("InvalidInput", `${net.name} has no staked admission profile`);
   const contract = getAddress(profile.contract);
   const reader = readProvider ?? provider ?? jsonRpcProvider(profile.rpcUrl);
+  const shadenet = profile.registerInput === "identityCommitment";
 
   async function rpc(p, method, params) {
     if (!p?.request) throw new ShadeNetError("Wallet", "no EIP-1193 provider (wallet) was given");
@@ -127,9 +132,28 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
     return null; // still pending; the caller shows the hash and must not resend blindly
   }
 
+  // ShadeNet sets: compute the bound context locally and require the set's own view to agree, so a
+  // proof is never built for a context the contract will not check.
+  async function boundContext(kind, leaf, recipient) {
+    const raw = await rpc(reader, "eth_call", [{ to: contract, data: stakingInterface.encodeFunctionData("members", [leaf]) }, "latest"]);
+    const [, index] = stakingInterface.decodeFunctionResult("members", raw);
+    const binding = { chainId: profile.chainId, contract, index };
+    const local = kind === "exit" ? exitContext(leaf, binding) : withdrawContext(leaf, recipient, binding);
+    const onchain = kind === "exit" ? await call("exitContext", [leaf]) : await call("withdrawContext", [leaf, recipient]);
+    if (onchain !== local) throw new ShadeNetError("Rpc", "the staking set's proof context differs from the local one; refusing to prove");
+    return local;
+  }
+
+  // What `stake` sends for an identity: its identity commitment on a ShadeNet set, its leaf on v4.
+  function registrationValue(identity, limit) {
+    return shadenet ? identityCommitmentOf(identity.identitySecret).toString() : rateCommitment(identity.identitySecret, limit).toString();
+  }
+
   return {
     network: net,
     contract,
+    registerInput: profile.registerInput,
+    registrationValue,
 
     async bondFor(limit) {
       return call("bondFor", [tierLimit(limit)]);
@@ -164,18 +188,22 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
       };
     },
 
-    // Stake the tier's bond for a commitment. Works for the member's own leaf or, as a sponsor,
-    // for someone else's public commitment: the secret is never needed.
+    // Stake the tier's bond for a commitment: on a ShadeNet set the identity commitment (the set
+    // derives the leaf at the tier), on the v4 set the leaf. Works for a member or, as a sponsor, for
+    // someone else's public value: the secret is never needed.
     async stake({ commitment, limit = profile.defaultLimit, from, onSent } = {}) {
       const c = BigInt(parseCommitment(commitment));
       const tier = tierFor(net, limit);
-      const [bond, active, existing] = await Promise.all([call("bondFor", [tier.limit]), call("isActive", [c]), call("limitOf", [c])]);
+      const leaf = shadenet ? leafFromIdentityCommitment(c, tier.limit) : c;
+      const [bond, active, existing] = await Promise.all([call("bondFor", [tier.limit]), call("isActive", [leaf]), call("limitOf", [leaf])]);
       if (bond !== tier.bondWei) {
         throw new ShadeNetError("Rpc", `contract bond for tier ${tier.limit} is ${bond} wei, the record says ${tier.bondWei}; refusing to send`);
       }
       if (active) return { alreadyActive: true };
       if (existing !== 0n) throw new ShadeNetError("InvalidInput", "this commitment is exiting and cannot be registered again yet");
-      const data = stakingInterface.encodeFunctionData("register", [c, tier.limit]);
+      const data = shadenet
+        ? stakingInterface.encodeFunctionData("registerIdentity", [c, tier.limit])
+        : stakingInterface.encodeFunctionData("register", [c, tier.limit]);
       return sendAndWait(from, data, bond, { onSent });
     },
 
@@ -187,7 +215,8 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
     // Start unbonding. Proves knowledge of the identity secret (in-browser Groth16 if in a tab).
     async exit({ identity, from, artifacts, onSent } = {}) {
       const c = BigInt(parseCommitment(identity?.leaf));
-      const proof = await proveAction({ identitySecret: identity.identitySecret, context: exitContext(c), artifacts });
+      const context = shadenet ? await boundContext("exit", c) : exitContext(c);
+      const proof = await proveAction({ identitySecret: identity.identitySecret, context, artifacts });
       return sendAndWait(from, stakingInterface.encodeFunctionData("initiateExit", [c, proof]), 0n, { onSent });
     },
 
@@ -195,7 +224,8 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
     async withdraw({ identity, recipient, from, artifacts, onSent } = {}) {
       const c = BigInt(parseCommitment(identity?.leaf));
       const to = getAddress(recipient);
-      const proof = await proveAction({ identitySecret: identity.identitySecret, context: withdrawContext(c, to), artifacts });
+      const context = shadenet ? await boundContext("withdraw", c, to) : withdrawContext(c, to);
+      const proof = await proveAction({ identitySecret: identity.identitySecret, context, artifacts });
       return sendAndWait(from, stakingInterface.encodeFunctionData("withdraw", [c, to, proof]), 0n, { onSent });
     },
 

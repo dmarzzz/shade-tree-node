@@ -1,7 +1,7 @@
 // Mocked control-flow self-test for Track 3 (gateway + shim).
 //
 // The real crypto lib (lib/semaphore.mjs extended + lib/rln.mjs new) lands at combine
-// time, so here we MOCK the lib API from docs/NEXT-VERSION.md and prove Track 3's
+// time, so here we MOCK the lib API from docs/history/NEXT-VERSION.md and prove Track 3's
 // control flow against it:
 //
 //   Gateway spent-set (makeSpentSet):

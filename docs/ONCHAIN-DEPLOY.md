@@ -17,7 +17,7 @@ as **addresses** so a real pre-deployed RLN/Groth16 verifier can be wired in.
 > **Broadcasting is out of scope for this repo.** This repo ships and *simulates* the deploy
 > tooling only. Sending the real transactions — `--broadcast` against a live RPC with a
 > funded key — is a gated **operator action**. Nothing in CI or the test suite broadcasts,
-> spends funds, or touches a live chain. The commands in [§3](#3-live-deploy-operator-only)
+> spends funds, or touches a live chain. The commands in [§3](#5-live-deploy-operator-only)
 > are the operator's to run, deliberately, on a funded key.
 
 ---
@@ -251,12 +251,12 @@ against `SHADE_TREE_SLASH_CONTRACT` (rln-v3 `0xdAE242AE…20FC` at the time of w
 `group/members.json`; the rln-v4 set `0xFe48De8b…9d25` is live and recorded but the units were
 deliberately NOT flipped in the same change (that is a live-fleet config change: agent-devops
 group vars `SHADE_TREE_SLASH_CONTRACT` (+ `SHADE_TREE_GROUP_CONTRACT` for on-chain root mode) → re-render
-→ restart, per `docs/DEPLOYMENT.md`; never a hand-ssh edit). Until then a member staked on
+→ restart, per `docs/history/DEPLOYMENT.md`; never a hand-ssh edit). Until then a member staked on
 rln-v4 is admitted by an rln-v4-rooted gateway and slashable there, while the fleet's
 members.json gateways keep slashing tier-8 leaves on rln-v3. The gateway auto-detects which
 contract generation it talks to (`slash: on-chain … abi=…` at startup), so the flip needs no
 code change.
-See `docs/DEPLOYMENT.md` for the full topology and the fleet SAFETY notes (targeted
+See `docs/history/DEPLOYMENT.md` for the full topology and the fleet SAFETY notes (targeted
 `tofu apply` only).
 
 ## 9. PaidAccessSet (T-FEAT-7 Layer 1, `contracts/script/DeployPaidAccess.s.sol`)

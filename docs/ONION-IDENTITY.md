@@ -2,7 +2,7 @@
 
 `scripts/onion-identity.mjs` is the safety rail for the single most unrecoverable operation in a
 rebuild: **bringing a gateway or bootnode back on the SAME `.onion`.** It is a focused complement to
-the encrypted backup in [`scripts/backup.mjs`](./BACKUP.md) — backup *moves the key off the box*;
+the encrypted backup in [`scripts/backup.mjs`](BACKUP.md) — backup *moves the key off the box*;
 this tool *proves the key is the right one and lays it down correctly on the new box*.
 
 ## Why onion continuity is operationally critical
@@ -25,7 +25,7 @@ truncated key that Tor happily accepts just publishes a different onion.
 ## What the tool does
 
 Both subcommands work from a **bare `hs_ed25519_secret_key`** — the only HS file
-[`scripts/backup.mjs`](./BACKUP.md) stores (it deliberately skips `hs_ed25519_public_key` and
+[`scripts/backup.mjs`](BACKUP.md) stores (it deliberately skips `hs_ed25519_public_key` and
 `hostname`). That is sufficient because the public key, and therefore the onion, is fully determined
 by the secret key.
 
@@ -54,7 +54,7 @@ printed or logged** by any path.
 
 Tor refuses a group/other-accessible HS dir, so the dir is forced to `0700` and the secret to `0600`
 (matching what [`bootnode/keygen.mjs`](../bootnode/keygen.mjs) mints and what
-[`scripts/backup.mjs`](./BACKUP.md) restores). `restore` refuses to clobber an existing populated HS
+[`scripts/backup.mjs`](BACKUP.md) restores). `restore` refuses to clobber an existing populated HS
 dir unless you pass `--force`.
 
 ## The verify-before-cutover procedure
@@ -62,7 +62,7 @@ dir unless you pass `--force`.
 Run this on the **new** box before pointing Tor at the restored dir and starting it:
 
 1. **Recover the secret.** `shade-tree restore <backup>.shade-tree-backup <deploy-state>` (see
-   [BACKUP.md](./BACKUP.md)) decrypts `hs_ed25519_secret_key` back out of the encrypted envelope.
+   [BACKUP.md](BACKUP.md)) decrypts `hs_ed25519_secret_key` back out of the encrypted envelope.
 2. **Derive and compare.** `node scripts/onion-identity.mjs derive <path>/hs_ed25519_secret_key`.
    Confirm the printed onion **exactly equals** the onion the fleet directory advertises for this
    box (`shade-tree directory` / the signed directory JSON). If it does not match, **stop** — you have the

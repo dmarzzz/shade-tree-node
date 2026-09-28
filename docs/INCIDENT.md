@@ -3,7 +3,7 @@
 Operational playbook for the seven failure modes that matter. Each entry: symptoms, immediate
 containment, root-cause investigation, recovery, prevention. Read `docs/AUDIT.md` first for the
 trust model these procedures rely on. Where a step is still manual it says so and points at the
-`docs/SHIP-PLAN.md` task (the "Honest gaps" list at the end is the current one).
+`docs/history/SHIP-PLAN.md` task (the "Honest gaps" list at the end is the current one).
 
 The single fact that shapes every response: **the pinned directory signer is a discovery trust
 boundary.** Clients trust it to choose the candidate list. A compromised signer can omit, reorder,
@@ -277,7 +277,7 @@ unreadable chain source at boot no longer kills a gateway that has a static root
 degraded (`shade_tree_gateway_root_source_degraded{source="staked"} 1` or
 `shade_tree_gateway_root_source_degraded{source="paid"} 1`, log
 `root source UNAVAILABLE at startup`) and heals on the next read.
-Full write-up: `docs/GO-LIVE-LOG-2026-08-17.md`
+Full write-up: `docs/history/GO-LIVE-LOG-2026-08-17.md`
 "(payments, later)"; knobs: `docs/OPERATOR.md` "Public RPC log-range caps".
 
 ---

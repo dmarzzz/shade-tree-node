@@ -1,5 +1,7 @@
 # Adversarial design review
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 What is the worst each party can do? This walks every actor in the system, states
 what it is trusted for, the worst it can achieve, what it provably cannot, and the
 remediation. It is written against the PoC as it stands (`gateway/gateway.mjs`,

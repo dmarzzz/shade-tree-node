@@ -87,7 +87,7 @@ instead.
   (and the README "What it does not protect against") that is called out as deliberately
   out of scope or an operator responsibility (sourcing clean egress IPs, rendezvous DoS with PoW off, one operator, and so on).
 
-`docs/SHIP-PLAN.md` is the historical residual list; open work is tracked in the
+`docs/history/SHIP-PLAN.md` is the historical residual list; open work is tracked in the
 issues.
 
 ## Reporting

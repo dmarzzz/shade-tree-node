@@ -4,11 +4,11 @@
 > Semaphore proof, `members.json`). Everything under "What is not built" here has since
 > shipped or been redesigned: real RLN per-tunnel proofs, on-chain stake + slashing, the
 > bootnode fleet, and encrypted key backup. For the current picture read `README.md`,
-> the status map at the top of [`ROADMAP.md`](ROADMAP.md), and [`SHIP-PLAN.md`](SHIP-PLAN.md).
+> the status map at the top of [`ROADMAP.md`](../ROADMAP.md), and [`SHIP-PLAN.md`](SHIP-PLAN.md).
 
 Where the Shade Tree stands: live and verified. This is the
 short version of what works, what is missing, and how to actually use it from your
-own machine. For the full writeup see the [README](../README.md) and
+own machine. For the full writeup see the [README](../../README.md) and
 [DEPLOY.md](DEPLOY.md); for the request lifecycle open
 [walkthrough.html](walkthrough.html).
 
@@ -147,4 +147,4 @@ Your traffic goes through Tor to the gateway, which checks your proof and forwar
 from its own clean IP. The gateway never sees your IP; the destination sees the
 gateway's IP, never yours or a Tor exit. Stop everything with
 `bash scripts/stop.sh && pkill -f torrc.client`. The standalone handout for a new
-user is [JOIN.md](JOIN.md).
+user is [JOIN.md](../JOIN.md).
