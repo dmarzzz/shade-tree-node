@@ -121,7 +121,7 @@ test("private staking creates a compatible identity and preflights the pinned tr
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "download identity.json" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^shade-tree-identity-[0-9]{8}\.json$/);
+  expect(download.suggestedFilename()).toMatch(/^shadenet-identity-[0-9]{8}\.json$/);
   await expect(page.locator("[data-recovery-check]" )).toBeChecked();
 
   await page.getByRole("button", { name: "connect wallet" }).first().click();
