@@ -66,7 +66,8 @@ contract WithdrawVerifierTest is Cheats {
                     IWithdrawVerifier(address(verifier)),
                     ICommitmentHasher(address(hasher)),
                     new uint256[](0),
-                    new uint256[](0)
+                    new uint256[](0),
+                    10
                 )
             )
         );
@@ -217,7 +218,8 @@ contract WithdrawVerifierTest is Cheats {
             IWithdrawVerifier(address(verifier)),
             ICommitmentHasher(address(hasher)),
             new uint256[](0),
-            new uint256[](0)
+            new uint256[](0),
+            10
         );
         other.registerIdentity{value: BOND}(idcA, 8);
         vm.expectRevert(StakedReputationSet.BadProof.selector);

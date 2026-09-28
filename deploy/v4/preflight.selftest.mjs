@@ -119,11 +119,11 @@ const publicIface = new Interface([
   "function BOND() view returns (uint256)", "function UNBONDING() view returns (uint256)",
   "function bondFor(uint256) view returns (uint256)", "function allowedLimits() view returns (uint256[])",
   "function hasher() view returns (address)", "function withdrawVerifier() view returns (address)",
-  "function groth16() view returns (address)",
+  "function groth16() view returns (address)", "function SLASH_REWARD_DIVISOR() view returns (uint256)",
 ]);
 const publicConstructor = AbiCoder.defaultAbiCoder().encode(
-  ["uint256", "uint256", "uint256", "address", "address", "uint256[]", "uint256[]"],
-  [800_000_000_000_000_000n, 86_400n, 3_720n, CONTRACT, CONTRACT, [1n], [100_000_000_000_000_000n]],
+  ["uint256", "uint256", "uint256", "address", "address", "uint256[]", "uint256[]", "uint256"],
+  [800_000_000_000_000_000n, 86_400n, 3_720n, CONTRACT, CONTRACT, [1n], [100_000_000_000_000_000n], 10n],
 );
 const syntheticRuntime = "0x73" + CONTRACT.slice(2) + "00";
 const syntheticRuntimeSpec = {
@@ -152,8 +152,9 @@ const publicRpc = async (_url, method, params) => {
   if (method === "eth_getTransactionByHash") return { to: null, input: "0x6000" + publicConstructor.slice(2) };
   if (method === "eth_call") {
     const selector = params[0].data.slice(0, 10);
-    for (const name of ["BOND", "UNBONDING", "bondFor", "allowedLimits", "hasher", "withdrawVerifier", "groth16"]) {
+    for (const name of ["BOND", "UNBONDING", "bondFor", "allowedLimits", "hasher", "withdrawVerifier", "groth16", "SLASH_REWARD_DIVISOR"]) {
       if (publicIface.getFunction(name).selector !== selector) continue;
+      if (name === "SLASH_REWARD_DIVISOR") return publicIface.encodeFunctionResult(name, [10n]);
       if (name === "BOND") return publicIface.encodeFunctionResult(name, [800_000_000_000_000_000n]);
       if (name === "UNBONDING") return publicIface.encodeFunctionResult(name, [86_400n]);
       if (name === "allowedLimits") return publicIface.encodeFunctionResult(name, [[1n, 8n]]);
@@ -179,10 +180,16 @@ const wrongCodeRpc = async (url, method, params) => method === "eth_getCode" && 
   ? "0x6001"
   : publicRpc(url, method, params);
 ok((await validatePublicStakeOnchain(publicStake, { rpcCall: wrongCodeRpc, bytecodeManifest: publicBytecodeManifest })).errors.some((error) => error.field === "onchain.bytecode.staking"), "public on-chain gate rejects look-alike staking runtime bytecode");
-const cheapPublic = copy(publicStake); cheapPublic.admission.roots.staked.tiers[0].bondWei = "1";
-ok(fields(validateDeploymentRecord(cheapPublic, { repoRoot: ROOT })).includes("admission.roots.staked.tiers"), "public profile cannot silently drift from the 0.1/0.8 ETH table");
+// Economics are config (economics.json); the record must keep their shape, and the on-chain gate
+// above checks every recorded bond against bondFor() on the deployed set.
+const noTier8 = copy(publicStake); noTier8.admission.roots.staked.tiers = noTier8.admission.roots.staked.tiers.filter((tier) => tier.limit !== 8);
+ok(fields(validateDeploymentRecord(noTier8, { repoRoot: ROOT })).includes("admission.roots.staked.tiers"), "public profile must list the always-admitted tier 8");
+const badDefault = copy(publicStake); badDefault.admission.roots.staked.defaultLimit = 2;
+ok(fields(validateDeploymentRecord(badDefault, { repoRoot: ROOT })).includes("admission.roots.staked.defaultLimit"), "public profile default tier must be an admitted tier");
 const shortExit = copy(publicStake); shortExit.admission.roots.staked.unbondingSeconds = 300;
-ok(fields(validateDeploymentRecord(shortExit, { repoRoot: ROOT })).includes("admission.roots.staked.unbondingSeconds"), "public profile cannot shorten the 24-hour exit window");
+ok(fields(validateDeploymentRecord(shortExit, { repoRoot: ROOT })).includes("admission.roots.staked.minUnbondingSeconds"), "public profile cannot shorten unbonding below root freshness + epoch + slash confirmation");
+const badSplit = copy(publicStake); badSplit.admission.roots.staked.slashRewardDivisor = 1;
+ok(fields(validateDeploymentRecord(badSplit, { repoRoot: ROOT })).includes("admission.roots.staked.slashRewardDivisor"), "public profile slash split stays inside the contract's bound");
 const wrongPublicDefault = copy(publicStake); wrongPublicDefault.admission.defaultPath = "invited";
 ok(fields(validateDeploymentRecord(wrongPublicDefault, { repoRoot: ROOT })).includes("admission.defaultPath"), "public profile must be the deployed client default");
 const zeroPublicBlock = copy(publicStake); zeroPublicBlock.admission.roots.staked.deployBlock = 0;
