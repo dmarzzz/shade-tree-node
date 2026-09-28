@@ -3,7 +3,7 @@
 - Status: Amended
 - Date: 2026-08-13
 - Amended: 2026-08-23
-- Task: milestone 4 (docs/ROADMAP-v1.md #4)
+- Task: milestone 4 (docs/history/ROADMAP-v1.md #4)
 
 ## Context
 
@@ -64,4 +64,4 @@ uses that record, but it is off by default and does not cover onion-only entries
 - bootnode/server.mjs (`GET /gateway/<onion>` zero-trust re-verification; `MAX_WEIGHT`)
 - bootnode/announce.mjs, bootnode/selftest.mjs (adversarial cases rejected)
 - docs/AUDIT.md (discovery trust boundary)
-- docs/ROADMAP-v1.md #4
+- docs/history/ROADMAP-v1.md #4

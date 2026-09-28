@@ -433,7 +433,7 @@ never a leaf or a payer.
 
 ## 5. Known residual risks and out-of-scope
 
-These are documented limitations, not new findings. Cross-referenced to `docs/SHIP-PLAN.md`,
+These are documented limitations, not new findings. Cross-referenced to `docs/history/SHIP-PLAN.md`,
 `docs/ROADMAP.md`, and `SECURITY.md`.
 
 **Residual (tracked, will change the security surface when built):**

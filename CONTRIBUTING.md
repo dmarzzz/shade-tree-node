@@ -1,8 +1,8 @@
 # Contributing
 
-A research-preview reference implementation of Shade Tree. The bundled v4 Sepolia
-profile is a disposable test network; the older `network/sepolia/contracts.json`
-record is retired pre-v4 history. The code is unaudited (see [`SECURITY.md`](SECURITY.md)).
+A research-preview reference implementation of ShadeNet. The bundled v4 Sepolia
+profile ([`network/sepolia/deployment.json`](network/sepolia/deployment.json)) is the live
+research canopy; the older `network/sepolia/contracts.json` record is retired pre-v4 history. The code is unaudited (see [`SECURITY.md`](SECURITY.md)).
 Contributions are welcome; this page is how to run the tests and the house rules a change must hold to.
 
 ## Run the tests
@@ -41,7 +41,7 @@ ignores live in `deny.toml` with their reasons, mirrored in `.cargo/audit.toml`.
 ## Definitions of done
 
 Every change is expected to meet these before it lands (from
-`docs/SHIP-PLAN.md`):
+`docs/history/SHIP-PLAN.md`):
 
 - **Every new module ships a `*selftest.mjs`.** No module without one.
 - **Every wire or parse surface gets an adversarial test.** Anything that takes
@@ -103,7 +103,7 @@ need to, that is a design discussion, not a quiet edit. All are grounded in
 ## Roadmap and gates
 
 The shipping backlog and priorities live in
-[`docs/SHIP-PLAN.md`](docs/SHIP-PLAN.md); the protocol-design milestones are in
+[`docs/history/SHIP-PLAN.md`](docs/history/SHIP-PLAN.md); the protocol-design milestones are in
 `docs/ROADMAP.md`. The 2026-08-17 go-live log records the retired pre-v4
 research deployment; `network/sepolia/deployment.json` records the current disposable
 v4 research profile. Keep wire

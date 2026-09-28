@@ -1,11 +1,11 @@
 # Deployment runbook: testnet contracts + DO gateway fleet
 
 Status: **historical record (July 2026), kept for the decisions and the live-Tor evidence.**
-This was the plan + runbook for deploying the next version (docs/NEXT-VERSION.md) to an
+This was the plan + runbook for deploying the next version (docs/history/NEXT-VERSION.md) to an
 Ethereum testnet and a DigitalOcean gateway fleet, using the `~/agent-devops` OpenTofu +
 Ansible repo. Grounded in live recon, not aspiration. The current bring-up path is the
 one-command `bootnode/deploy/bootstrap.sh` (see `docs/OPERATOR.md`, `docs/QUICKSTART.md`)
-and the human-gated first deployment record is `docs/GO-LIVE.md`; the retired historical contract
+and the human-gated first deployment record is `docs/history/GO-LIVE.md`; the retired historical contract
 addresses are in `network/sepolia/contracts.json` (release `rln-v4-tiers`, 2026-08-17; rln-v3 under `superseded`), which supersedes the
 addresses this file's checklist was written against.
 
@@ -182,7 +182,7 @@ now reports the Tor error cleanly instead of hanging.
 
 ## Membership: does staking on-chain make you a recognized member? (resolved by the RLN release)
 
-**Update:** the RLN circuit described below has since shipped (`docs/RLN-MIGRATION.md`,
+**Update:** the RLN circuit described below has since shipped (`docs/history/RLN-MIGRATION.md`,
 `lib/rln.mjs`, `circuits/rln/`) and is what the live `rln-v3` contracts use: the on-chain leaf
 is the real circom-rln `rateCommitment = Poseidon(Poseidon(secret), limit)` and a gateway
 in on-chain root mode (`SHADE_TREE_GROUP_CONTRACT`, `lib/root-provider.mjs`) reads the admission

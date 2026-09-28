@@ -29,7 +29,7 @@
 #                    (HiddenServicePoWDefensesEnabled) on every HS block this box publishes.
 #                    Default OFF: a client tor built without the pow module (e.g. the Homebrew
 #                    bottle, `tor --list-modules` -> `pow: no`) could NOT reach a PoW-enabled
-#                    onion (docs/DEPLOYMENT.md "PoW capability mismatch"); the agent-devops
+#                    onion (docs/history/DEPLOYMENT.md "PoW capability mismatch"); the agent-devops
 #                    fleet role defaults `shade_tree_enable_pow: false` for the same reason. Turn it
 #                    on (=1) once every client you serve runs a pow-capable tor. Toggling
 #                    later = edit /etc/tor/torrc.d-shade-tree + `systemctl reload tor` (keys/onions
@@ -919,7 +919,7 @@ log "node 24"
 # startup, which that allowlist does not include -> every unit dies with SIGSYS
 # (status=31/SYS) in a restart loop. Observed on the 2026-08-17 go-live box (pre-installed
 # NodeSource 20.20.2); Node 24 starts clean under the same filter. See
-# docs/GO-LIVE-LOG-2026-08-17.md (Phase 1.3).
+# docs/history/GO-LIVE-LOG-2026-08-17.md (Phase 1.3).
 # The runtime is a pinned, checksum-verified nodejs.org release (OPS-11), not an unpinned
 # `curl | bash` of a third-party apt setup script. Another version must bring its own sha256.
 case "$(uname -m)" in x86_64) NODE_ARCH=x64 ;; aarch64|arm64) NODE_ARCH=arm64 ;; *) die "unsupported CPU $(uname -m)" ;; esac

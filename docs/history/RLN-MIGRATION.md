@@ -2,7 +2,7 @@
 
 > Historical record. This plan produced the legacy v3 envelope and was later
 > superseded by the v4 tiers deployment. Shade Tree now uses wire v4; see
-> [`protocol.md`](../specs/protocol.md) and
+> [`protocol.md`](../../specs/protocol.md) and
 > [`MIGRATING-TO-SHADE-TREE.md`](MIGRATING-TO-SHADE-TREE.md).
 
 **Status: P0–P4 BUILT + VERIFIED (2026-07-15; P4 fleet + live Tor confirmed, see progress list below). Historical migration plan; the result was the `rln-v3` release, superseded 2026-08-17 by **`rln-v4-tiers`** (P5 below) in `network/sepolia/contracts.json`.**
