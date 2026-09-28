@@ -26,10 +26,18 @@ TARGET="127.0.0.1:${SINK_PORT}"
 SECRET="${SHADENET_CONCURRENCY_SECRET:-34567890123456789012}"
 PROXY_TOKEN="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 TUNNELS=8
-TEST_EPOCH="$(node -e 'process.stdout.write(String(Math.floor(Date.now() / 1000 / 120)))')"
+# One-hour epochs on both sides: eight proofs on a small CI runner can take minutes, and a
+# 120-second epoch would roll past the node's accepted window before the last proof arrives.
+EPOCH_SECONDS=3600
+TEST_EPOCH="$(node -e 'process.stdout.write(String(Math.floor(Date.now() / 1000 / '"$EPOCH_SECONDS"')))')"
 
 PIDS=()
 cleanup() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "--- gateway log (tail) ---" >&2; tail -n 40 "$WORK/gateway.log" >&2 2>/dev/null || true
+    echo "--- proxy log (tail) ---" >&2; tail -n 40 "$WORK/proxy.log" >&2 2>/dev/null || true
+  fi
   for pid in "${PIDS[@]}"; do kill "$pid" 2>/dev/null || true; done
   rm -rf "$WORK"
 }
@@ -63,6 +71,7 @@ SHADE_TREE_GATEWAY_PORT="$GW_PORT" \
 SHADE_TREE_EGRESS_ALLOW="$TARGET" \
 SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
 SHADE_TREE_BANNER=never \
+SHADE_TREE_EPOCH_SECONDS="$EPOCH_SECONDS" \
   node "$REPO/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
 PIDS+=($!)
 node "$HERE/wait-log.mjs" "$WORK/gateway.log" "gateway up on" 30000
@@ -108,7 +117,7 @@ function one(i) {
     s.on("close", () => {
       if (accepted) open -= 1;
       const text = Buffer.concat(chunks).toString();
-      text.includes(`held-ok:ping-${i}`) ? resolve() : reject(new Error(`tunnel ${i}: ${text.slice(0, 200)}`));
+      text.includes(`held-ok:ping-${i}`) ? resolve() : reject(new Error(`tunnel ${i}: ${text.slice(0, 600)}`));
     });
   });
 }
