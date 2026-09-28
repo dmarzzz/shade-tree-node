@@ -679,7 +679,7 @@ Wants=network-online.target
 User=${RUN_USER}
 WorkingDirectory=${SHADE_TREE_DIR}
 Environment=RUST_LOG=info
-Environment=EXECUTION_RPC=${SHADE_TREE_RPC_URL}
+Environment=EXECUTION_RPC=${SHADE_TREE_RPC_URL%%,*}
 Environment=CONSENSUS_RPC=${SHADE_TREE_HELIOS_CONSENSUS_RPC}
 EOF
     if [ -n "$SHADE_TREE_HELIOS_CHECKPOINT" ]; then

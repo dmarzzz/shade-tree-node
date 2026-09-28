@@ -136,6 +136,16 @@ groups:
       # A slash is the RLN rate limit WORKING (over-spend caught), NEVER an error budget line
       # (SLO.md section 3 + 4). But a sudden rate spike is worth a human look: a broken client
       # double-spending, or an attacker probing the nullifier logic. Warning only.
+      - alert: RpcEndpointFailing
+        expr: sum by (instance, endpoint) (increase(shade_tree_rpc_failovers_total[15m])) > 3
+        for: 15m
+        labels:
+          severity: warn
+        annotations:
+          summary: "RPC endpoint {{ $labels.endpoint }} keeps failing on {{ $labels.instance }}"
+          description: >-
+            Requests are moving past endpoint index {{ $labels.endpoint }} of SHADE_TREE_RPC_URL.
+            Roots stay fresh while another endpoint answers; replace or remove the failing one.
       - alert: SlashSpike
         expr: sum by (instance) (rate(shade_tree_gateway_slashes_total{job="shade-tree-gateway"}[15m])) > 0.1
         for: 10m
