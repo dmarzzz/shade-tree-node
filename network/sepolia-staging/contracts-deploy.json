@@ -1,0 +1,33 @@
+{
+  "network": "sepolia-staging",
+  "deployedAt": "2026-09-28T23:07:50.669Z",
+  "commit": "d6324a30ecf17e174d0fb33cb72cf4856c5b2a90",
+  "economicsSha256": "43cb3376bdc7100e0ac8278d88f9d34ea5c9b8a2308747c630d9bc08a839f241",
+  "economicsStatus": "placeholder",
+  "artifactsLockSha256": "048d4256655c1090171ee5b60c13c93c73a522793f830d7fdca425e40f444f9c",
+  "artifactsTrust": "UNTRUSTED-TESTNET",
+  "ceremonyStatus": "not-run",
+  "deployer": "0x62c448057273fcee5785dd5b57e40d0ff19554b1",
+  "transactions": [
+    {
+      "contract": "RateCommitmentHasher",
+      "address": "0x7335c0b25d36bc20fcf414c1c64dd3da6dd455f9",
+      "hash": "0x945db31b47a8cb87fbeaa6bc8b8506a90564c2f88ddd2f9eddd1a200fa32ee72"
+    },
+    {
+      "contract": "WithdrawGroth16Verifier",
+      "address": "0xd72e9834efd182f60b088a5747ee3f26aeeea312",
+      "hash": "0x578286a6c8827167ec43557eeb96511a45505e764e67ebea8cab35fa4fc4cf64"
+    },
+    {
+      "contract": "WithdrawVerifier",
+      "address": "0x3e2bc08f106a76d2ff5f5a9fde8607051aa36196",
+      "hash": "0x8f0daecf10203aa7821ea4f5301c5b5303f7b8ff341024a1eb42a672d48a7218"
+    },
+    {
+      "contract": "StakedReputationSet",
+      "address": "0xf117fdea83ac57d15d9394a2b56873c32d227b7e",
+      "hash": "0x8025d1d0b07e0276fc7fbeaf88e7ff084b057e98713c3fc866acdbc22e1cae58"
+    }
+  ]
+}
