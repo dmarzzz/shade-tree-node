@@ -152,3 +152,17 @@ up too, rather than evidence only that the Tor observer and Git publisher worked
 Tests: `node scripts/uptime-probe.selftest.mjs` (probe) and
 `node monitoring/uptime/uptime-scheduler.selftest.mjs` (units / cron / workflow well-formed and
 wired to the probe), both auto-discovered by `scripts/test-all.mjs`.
+
+## Outcomes and second vantage point (OPS-7)
+
+- **OK / CRITICAL / UNKNOWN.** The probe exits 3 (`UNKNOWN`) when its own Tor SOCKS port is
+  down, and the hosted workflow reports a runner Tor bootstrap failure the same way. Neither
+  counts against the canopy. Each attempt waits up to 60 s (`SHADE_TREE_PROBE_TIMEOUT_MS`), because a
+  cold onion descriptor fetch plus rendezvous often exceeds the old 20 s.
+- **Pin check.** With `SHADE_TREE_NETWORK` set, the probe compares the Elder's `/health` commit with
+  the record's `services.elder.commit` and reports `pinMatch`; drift is a warning, not downtime.
+- **Second vantage point.** `--prom-file <path>` writes `shade_tree_probe_*` gauges for the
+  node_exporter textfile collector. The operator deployment runs it every 5 minutes on the Lab
+  runner, and the canopy monitor alerts when the Elder is unreachable from there for 15 minutes.
+- **Cadence.** GitHub throttles scheduled workflows (about every 2.5 h in practice), so the
+  operator deployment also dispatches the hosted probe every 15 minutes.

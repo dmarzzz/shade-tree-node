@@ -77,21 +77,33 @@ Wait ~30s for descriptor propagation, then verify (see day-2 below).
 `shade-tree-heartbeat` — no bootnode unit, no bootnode onion — and points the heartbeat at the
 existing bootnode:
 
+### Join the Sepolia canopy with one command
+
 ```bash
-ssh root@<new-droplet-ip>
-SHADE_TREE_BOOTNODE_ONION=<bootnode-onion> SHADE_TREE_BOOTNODE_SIGNER=<pinned-signer> SHADE_TREE_MEMBERS_FILE=/root/operator-members.json \
-  bash <(curl -fsSL https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/bootnode/deploy/bootstrap.sh)
+ssh root@<new-ubuntu-24.04-host>
+install -d -m 0700 /root/shadenet-creds
+# your staked operator key (see "Stake the operator" below); a file, never argv or shell history
+install -m 0600 /dev/stdin /root/shadenet-creds/SHADE_TREE_GW_OPERATOR_KEY < /path/to/operator.key
+curl -fsSL --proto '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/bootnode/deploy/bootstrap.sh \
+  | SHADENET_NETWORK=sepolia SHADE_TREE_CREDENTIALS_FROM=/root/shadenet-creds bash
 journalctl -u shade-tree-heartbeat -f -o cat  # msg="heartbeat accepted" once Tor is ready
 ```
 
-`SHADE_TREE_BOOTNODE_SIGNER` is only echoed into the printed client command (the heartbeat does
-not need it). Optional: `SHADE_TREE_GATEWAY_REGION=<na|sa|eu|af|as|oc|aq|unknown>` to advertise a
-coarse region, `SHADE_TREE_ENABLE_POW=1` to enable onion PoW. For a `stake` bootnode, stake the
-operator (b. below), place `SHADE_TREE_GW_OPERATOR_KEY=<operator-key>` in a root-readable mode-0600
-environment file, and reference it with `EnvironmentFile=` from
-`/etc/systemd/system/shade-tree-heartbeat.service` (`systemctl daemon-reload && systemctl restart
-shade-tree-heartbeat`). Do not put the key in the unit command or shell history; it is not a
-`bootstrap.sh` tunable.
+`SHADENET_NETWORK=sepolia` reads `network/sepolia/deployment.json` and fills everything a node
+needs to join: the Elder onion and signer, the staked-root contract, RPC endpoints, deploy block,
+tiers, epoch, root freshness, payload budget, accepted proof artifacts, and `SHADE_TREE_REF` set
+to the record's immutable node commit. Anything you set explicitly wins. The node admits staked
+members; add `SHADE_TREE_MEMBERS_FILE=<file>` to also admit an invited set.
+
+Secrets are systemd credentials: every unit carries `ImportCredential=SHADE_TREE_*`, and
+`SHADE_TREE_CREDENTIALS_FROM` copies `SHADE_TREE_*` files into `/etc/credstore` (root, 0600).
+The process reads them from `$CREDENTIALS_DIRECTORY`; they never appear in `Environment=`,
+`systemctl show` or `/proc/<pid>/environ`. To rotate a key, replace the file in `/etc/credstore`
+and restart the unit.
+
+The bootstrap also installs a pinned, checksum-verified Node.js (`SHADE_TREE_NODE_VERSION`,
+default 24.20.0) and caps journald (`SHADE_TREE_JOURNAL_MAX_USE=500M`,
+`SHADE_TREE_JOURNAL_RETENTION=14day`). Optional: `SHADE_TREE_GATEWAY_REGION=<na|sa|eu|af|as|oc|aq|unknown>`.
 
 ### Add the next node on a second provider / ASN
 

@@ -80,6 +80,7 @@ import { createLogger } from "../lib/log.mjs";
 import { printOperatorBanner } from "../lib/operator-ui.mjs";
 import { makeFederation, parsePeers } from "./federation.mjs";
 import { makeRelayAggregator } from "../lib/relay-telemetry.mjs";
+import { buildCommit } from "../lib/build-info.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const log = createLogger("elder");
@@ -700,7 +701,7 @@ export function makeServer(registry, { signerPub, limits = {}, pay = null, relay
       const url = new URL(req.url, "http://bootnode");
       if (req.method === "GET" && url.pathname === "/health") {
         // `pay` (T-FEAT-7): present only when the operator advertises a registrar (see payAdvertFromEnv).
-        return send(res, 200, { ok: true, count: registry.size(), admission: registry.admission, signer: signerPub, ...(pay ? { pay } : {}) }, ELDER_ROLE_HEADERS);
+        return send(res, 200, { ok: true, count: registry.size(), admission: registry.admission, signer: signerPub, commit: buildCommit(), ...(pay ? { pay } : {}) }, ELDER_ROLE_HEADERS);
       }
       // Separate private telemetry ingestion. Reports never ride in /announce or /directory.
       // The aggregator re-verifies onion control and requires this identity to be live in the

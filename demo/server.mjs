@@ -5,7 +5,7 @@
 //   GET /api/run     -> SSE stream of the REAL flow (prove -> Tor -> gateway -> egress),
 //                       ending with the gateway egress IP vs. your own IP.
 //
-// The proving + Tor routing are real (ShadeTreeClient); only staking is assumed done. Config via
+// The proving + Tor routing are real (@shadenet/sdk createClient); only staking is assumed done. Config via
 // env, with local fallbacks:
 //   SHADE_TREE_SECRET            member secret (default keys.local.json[SHADE_TREE_DEMO_INDEX|0])
 //   SHADE_TREE_DEMO_WALLET       address to show as the funder (optional, display only)
@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ethers } from "ethers";
 import { SocksClient } from "socks";
-import { ShadeTreeClient } from "../client/shade-tree-client.mjs";
+import { createClient } from "@shadenet/sdk/node";
 import { deriveCommitment, identitySecretOf, identityFor, currentEpoch, K_SLOTS, EPOCH_SECONDS } from "../lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -68,7 +68,7 @@ function chooseGateway() {
   return { pool, chosen: pool[Math.floor(Math.random() * pool.length)] };
 }
 
-const client = new ShadeTreeClient({ secret, directory: dirPath, dirSigner, torPort: TOR_PORT });
+const client = createClient({ secret, directory: dirPath, dirSigner, torPort: TOR_PORT });
 
 // Static cryptographic facts, attached to the prove:done event for the UI's crypto panel.
 const CRYPTO = {

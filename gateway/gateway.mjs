@@ -37,7 +37,7 @@ import net from "node:net";
 import { Transform } from "node:stream";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
-import { watch } from "node:fs";
+import { watch, existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { verifyEnvelope, loadGroupOnchain, loadGroup, currentEpoch, EPOCH_SECONDS, MEMBERS_PATH, getArtifactSet } from "../lib/semaphore.mjs";
@@ -51,6 +51,7 @@ import { createLogger } from "../lib/log.mjs";
 import { printOperatorBanner } from "../lib/operator-ui.mjs";
 import { jsonRpcCall, makeBoundedJsonRpcProvider, waitForTransactionReceipt } from "../lib/rpc-safety.mjs";
 import { makeRelayByteCounter } from "../lib/relay-telemetry.mjs";
+import { loadCredentials } from "../lib/credentials.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LISTEN_HOST = "127.0.0.1";
@@ -712,7 +713,84 @@ export function makeSpentSet({
     for (const [ek, at] of seenEnv) if (at < cutoff) seenEnv.delete(ek);
   }
 
-  return { admit, commit, sweep, size: () => seen.size };
+  // Restart persistence (OPS-17). Without it a restart forgets every nullifier and reopens each
+  // member's budget for the rest of the live window (up to two epochs). Only live entries are
+  // exported; an imported entry keeps its original first-seen time so it still expires on time.
+  function exportState() {
+    const cutoff = now() - ttlMs;
+    const entries = [];
+    for (const [k, e] of seen) {
+      if (e.at < cutoff) continue;
+      entries.push({ n: k, xs: [...e.xs], first: { x: String(e.first.x), y: String(e.first.y) }, slashed: e.slashed, at: e.at });
+    }
+    const envs = [];
+    for (const [ek, at] of seenEnv) if (at >= cutoff) envs.push([ek, at]);
+    return { version: 1, savedAt: now(), entries, envs };
+  }
+
+  function importState(state) {
+    if (!state || state.version !== 1 || !Array.isArray(state.entries)) return 0;
+    const cutoff = now() - ttlMs;
+    let restored = 0;
+    for (const e of state.entries.slice(0, 1_000_000)) {
+      if (!e || typeof e.n !== "string" || !Array.isArray(e.xs) || !e.first || !Number.isFinite(e.at) || e.at < cutoff) continue;
+      if (seen.has(e.n)) continue; // live state wins over the snapshot
+      seen.set(e.n, { xs: new Set(e.xs.map(String)), first: { x: String(e.first.x), y: String(e.first.y) }, slashed: e.slashed === true, at: e.at });
+      restored += 1;
+    }
+    for (const pair of Array.isArray(state.envs) ? state.envs.slice(0, 1_000_000) : []) {
+      if (Array.isArray(pair) && typeof pair[0] === "string" && Number.isFinite(pair[1]) && pair[1] >= cutoff && !seenEnv.has(pair[0])) seenEnv.set(pair[0], pair[1]);
+    }
+    return restored;
+  }
+
+  return { admit, commit, sweep, size: () => seen.size, exportState, importState };
+}
+
+// ---- spent-set restart persistence (OPS-17) ---------------------------------
+// The file holds live nullifiers, first shares (x, y) and envelope fingerprints for at most two
+// epochs. One share alone does not reveal a member secret; the file is still written 0600 inside
+// the unit's only writable directory. SHADE_TREE_SPENT_STATE_FILE overrides the path; "off"
+// disables persistence (the pre-OPS-17 behaviour: a restart reopens budgets for <= 2 epochs).
+const SPENT_STATE_FLUSH_MS = 2_000;
+
+export function spentStatePath(env = process.env) {
+  const raw = String(env.SHADE_TREE_SPENT_STATE_FILE ?? "").trim();
+  if (raw.toLowerCase() === "off") return null;
+  if (raw) return raw;
+  const dir = join(HERE, "..", "deploy-state");
+  return existsSync(dir) ? join(dir, "spent-set.json") : null;
+}
+
+export function makeSpentStatePersister(spentSet, { path, fs = { readFileSync, writeFileSync, renameSync } } = {}) {
+  let lastWritten = "";
+  function load() {
+    if (!path) return 0;
+    try {
+      const restored = spentSet.importState(JSON.parse(fs.readFileSync(path, "utf8")));
+      log.info("spent set restored", { restored });
+      return restored;
+    } catch (error) {
+      if (error?.code !== "ENOENT") log.warn("spent set snapshot unreadable; starting empty", { errorType: error?.name || "Error" });
+      return 0;
+    }
+  }
+  function flush() {
+    if (!path) return false;
+    const body = JSON.stringify(spentSet.exportState(), (key, value) => (key === "savedAt" ? undefined : value));
+    if (body === lastWritten) return false;
+    try {
+      const tmp = `${path}.tmp`;
+      fs.writeFileSync(tmp, body, { mode: 0o600 });
+      fs.renameSync(tmp, path);
+      lastWritten = body;
+      return true;
+    } catch (error) {
+      log.warn("spent set snapshot write failed", { errorType: error?.name || "Error" });
+      return false;
+    }
+  }
+  return { load, flush, path };
 }
 
 // ---- on-chain slash submitter (ethers, hot key) -----------------------------
@@ -1754,6 +1832,7 @@ function initArtifacts() {
 }
 
 async function main() {
+  loadCredentials();
   const pkg = JSON.parse(await readFile(join(HERE, "..", "package.json"), "utf8"));
   installRuntimeMetrics(metrics, { role: "node", version: pkg.version });
   initArtifacts();
@@ -1764,12 +1843,16 @@ async function main() {
   // byte-identical to T-FEAT-12. The bundled transport is best-effort and fail-open.
   const sharedTally = makeConfiguredFleetTally();
   const spentSet = makeSpentSet({ slash, sharedTally });
+  const spentState = makeSpentStatePersister(spentSet, { path: spentStatePath() });
+  spentState.load();
   const payloadBudget = makePayloadBudget();
   const sweepTimer = setInterval(() => {
     spentSet.sweep();
     payloadBudget.sweep();
   }, EPOCH_SECONDS * 1000);
   sweepTimer.unref();
+  const spentFlushTimer = setInterval(() => spentState.flush(), SPENT_STATE_FLUSH_MS);
+  spentFlushTimer.unref();
 
   // Optional signed success receipts (T-FEAT-13); null unless SHADE_TREE_RECEIPTS=1.
   const makeReceipt = await makeReceiptSigner();
@@ -1853,6 +1936,7 @@ async function main() {
     onStart: () => {
       const cleanup = [
         ["spent sweep", () => clearInterval(sweepTimer)],
+        ["spent state", () => { clearInterval(spentFlushTimer); spentState.flush(); }],
         ["root polling", () => roots.close?.()],
         ["fleet tally", () => sharedTally?.close?.()],
         ["relay telemetry", () => relayCounter.close()],

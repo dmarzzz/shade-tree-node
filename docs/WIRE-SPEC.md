@@ -306,7 +306,7 @@ Canopy for the directory and Grove for the nodes). Those are presentation names 
 
 | Method | Path | Success | Source |
 | --- | --- | --- | --- |
-| GET | `/health` | `200 { ok:true, count, admission, signer[, pay] }` | `:155` |
+| GET | `/health` | `200 { ok:true, count, admission, signer, commit[, pay] }` | `:155` |
 | GET | `/directory` | `200 <signed directory>` (section 4.1) | `:158` |
 | GET | `/gateway/<onion>` | `200 <stored announce rec>` (section 3) | `:162` |
 | POST | `/announce` | `200 { ok:true, onion, staked, ttl }` | `:167` |

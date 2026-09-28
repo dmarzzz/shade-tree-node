@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
   <title id="title">Shade Tree reputation gate and network path</title>
-  <desc id="desc">An admitted member proves a hidden rate-commitment leaf to a Shade Tree node. An agent reaches that node through a local Proxy and Tor, while the Elder Tree only serves the signed Canopy.</desc>
+  <desc id="desc">An admitted member proves a hidden rate-commitment leaf to a Shade Tree node. An agent reaches that node through a local Proxy and Tor, while the Elder Tree only serves the signed canopy directory.</desc>
   <defs>
     <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
       <stop stop-color="#07100c"/>
@@ -77,7 +77,7 @@
   <g transform="translate(500 670)">
     <path d="M0 0C110-55 240-55 342 0" fill="none" stroke="#65765d" stroke-width="2" stroke-dasharray="6 8"/>
     <circle cx="170" cy="-26" r="20" fill="#788564"/><path d="M170-7v21" stroke="#d1b66e" stroke-width="3"/>
-    <text class="small" x="202" y="-21">Elder Tree serves signed Canopy</text>
+    <text class="small" x="202" y="-21">Elder Tree serves the signed directory</text>
     <text class="small" x="202" y="8">discovery only · no agent traffic</text>
   </g>
 </svg>

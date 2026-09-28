@@ -45,7 +45,7 @@
       <div class="nav-links">
         <a href="#proxy">Agent</a>
         <a href="#node">Node</a>
-        <a href="./stake/">Stake</a>
+        <a href="./stake/">Get access</a>
         <a class="nav-lab" href="./lab/index.html">Lab</a>
         <a href="./canopy/">Canopy</a>
         <a href="./research/">Research</a>
@@ -152,9 +152,9 @@
     <section class="how-panel" aria-labelledby="how-title">
       <canvas class="shade-canvas" aria-hidden="true"></canvas>
       <h2 id="how-title">How it works</h2>
-      <p class="how-lede">Shade Tree is a Tor-based egress layer. The node sees <a href="https://www.torproject.org/">Tor</a>, not the Proxy host&rsquo;s source IP. Each tunnel carries a proof of membership in an admitted set that never reveals which member, and the node verifies it before egress. Read the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/specs/protocol.md">full protocol specification</a>.</p>
+      <p class="how-lede">ShadeNet is a Tor-based egress layer. The node sees <a href="https://www.torproject.org/">Tor</a>, not the Proxy host&rsquo;s source IP. Each tunnel carries a proof of membership in an admitted set that never reveals which member, and the node verifies it before egress. Read the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/specs/protocol.md">full protocol specification</a>.</p>
       <figure class="how-figure" role="region" aria-label="Shade Tree protocol diagram" tabindex="0">
-        <img src="./fig/shade-tree-readme.svg" width="1200" height="700" loading="lazy" decoding="async" alt="Top row, the reputation gate: an admitted set leads to a hidden leaf and proof, which a Shade Tree node verifies. Bottom row, the network path: an agent's local Proxy tunnels through Tor to a Shade Tree node and out to the destination. The Elder Tree only serves the signed Canopy for discovery and carries no agent traffic.">
+        <img src="./fig/shade-tree-readme.svg" width="1200" height="700" loading="lazy" decoding="async" alt="Top row, the reputation gate: an admitted set leads to a hidden leaf and proof, which a Shade Tree node verifies. Bottom row, the network path: an agent's local Proxy tunnels through Tor to a Shade Tree node and out to the destination. The Elder Tree only serves the signed canopy directory for discovery and carries no agent traffic.">
       </figure>
     </section>
   </main>
