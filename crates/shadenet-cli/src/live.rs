@@ -119,6 +119,20 @@ pub fn dispatch(command: Command, ctx: &Context) -> ExitCode {
         Command::ProxyToken => crate::enroll::cmd_proxy_token(&[]),
         Command::Enroll(pass) => crate::enroll::cmd_enroll(&pass.args),
         Command::Identity(args) => identity(args),
+        Command::IdentityLock(args) => match lock_or_unlock(args, true, ctx) {
+            Ok(message) => {
+                eprintln!("{message}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => usage("identity-lock", e),
+        },
+        Command::IdentityUnlock(args) => match lock_or_unlock(args, false, ctx) {
+            Ok(message) => {
+                eprintln!("{message}");
+                ExitCode::SUCCESS
+            }
+            Err(e) => usage("identity-unlock", e),
+        },
         Command::RegisterMember(pass) => crate::register::cmd_register_member(&pass.args),
         Command::MemberStatus(pass) => {
             crate::member::cmd_member(crate::member::Action::Status, &pass.args)
@@ -720,6 +734,61 @@ fn create_private_dir(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// ---------------------------------------------------------- identity lock
+
+fn lock_identity(path: &Path) -> Result<(), String> {
+    let material = shadenet::identity::load(path, || {
+        Err(shadenet::Error::Config(format!(
+            "{} is already passphrase-protected",
+            path.display()
+        )))
+    })
+    .map_err(|e| e.to_string())?;
+    let passphrase = crate::passphrase::choose()?;
+    let body = shadenet::identity::serialize(
+        &material,
+        Some(&passphrase),
+        shadenet::identity::DEFAULT_LOG_N,
+    )
+    .map_err(|e| e.to_string())?;
+    shadenet::identity::replace_file(path, &body).map_err(|e| e.to_string())
+}
+
+fn lock_or_unlock(
+    args: crate::IdentityFileArgs,
+    lock: bool,
+    ctx: &Context,
+) -> Result<String, String> {
+    let path = ctx
+        .identity_path(args.identity.as_ref())?
+        .ok_or("no identity: pass --identity or set SHADENET_IDENTITY")?;
+    let public = shadenet::identity::read_public(&path).map_err(|e| e.to_string())?;
+    if lock {
+        if public.encrypted {
+            return Ok(format!(
+                "{} is already passphrase-protected",
+                path.display()
+            ));
+        }
+        lock_identity(&path)?;
+        Ok(format!(
+            "{} is now passphrase-protected. Services read it with SHADENET_PASSPHRASE_FILE.",
+            path.display()
+        ))
+    } else {
+        if !public.encrypted {
+            return Ok(format!("{} has no passphrase", path.display()));
+        }
+        let material = shadenet::identity::load(&path, || {
+            crate::passphrase::unlock(&path).map_err(shadenet::Error::Config)
+        })
+        .map_err(|e| e.to_string())?;
+        let body = shadenet::identity::serialize(&material, None, 0).map_err(|e| e.to_string())?;
+        shadenet::identity::replace_file(&path, &body).map_err(|e| e.to_string())?;
+        Ok(format!("{} no longer has a passphrase", path.display()))
+    }
+}
+
 // ------------------------------------------------------------------ leaves
 
 fn leaves(args: LeavesArgs) -> ExitCode {
@@ -842,6 +911,11 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
         match crate::enroll::create_identity(&identity_path, limit) {
             Ok(leaf) => {
                 created.push(identity_path.display().to_string());
+                if args.passphrase {
+                    if let Err(e) = lock_identity(&identity_path) {
+                        return usage("init", e);
+                    }
+                }
                 leaf
             }
             Err(e) => return usage("init", e),
@@ -1148,12 +1222,21 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
                     leaf = value["leaf"].as_str().map(str::to_string);
                     checks.push(check(
                         "identity",
-                        match (&leaf, value["identitySecret"].is_string()) {
-                            (Some(l), true) => Ok(format!(
-                                "{} (leaf {}.., tier {})",
+                        match (
+                            &leaf,
+                            value["identitySecret"].is_string(),
+                            value["encrypted"].is_object(),
+                        ) {
+                            (Some(l), secret, encrypted) if secret || encrypted => Ok(format!(
+                                "{} (leaf {}.., tier {}, {})",
                                 path.display(),
                                 &l[..l.len().min(12)],
-                                value["limit"]
+                                value["limit"],
+                                if encrypted {
+                                    "passphrase-protected"
+                                } else {
+                                    "no passphrase; `shadenet identity-lock` adds one"
+                                }
                             )),
                             _ => Err(format!(
                                 "{} is missing identitySecret or leaf",

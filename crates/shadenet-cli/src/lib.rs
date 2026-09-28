@@ -24,6 +24,8 @@ mod member;
 mod net;
 mod offline;
 #[cfg(feature = "live")]
+mod passphrase;
+#[cfg(feature = "live")]
 mod register;
 mod run;
 
@@ -114,6 +116,10 @@ pub enum Command {
     Enroll(Passthrough),
     /// Derive an identity file from an existing member secret
     Identity(IdentityArgs),
+    /// Protect the identity file with a passphrase
+    IdentityLock(IdentityFileArgs),
+    /// Remove the identity file's passphrase
+    IdentityUnlock(IdentityFileArgs),
     /// Stake a member leaf on chain
     #[command(disable_help_flag = true)]
     RegisterMember(Passthrough),
@@ -151,6 +157,9 @@ pub struct InitArgs {
     /// Skip the network status check
     #[arg(long)]
     pub offline: bool,
+    /// Protect the new identity with a passphrase (asked on the terminal, or SHADENET_PASSPHRASE_FILE)
+    #[arg(long)]
+    pub passphrase: bool,
     /// After setup, wait until the identity is admitted (poll every 30 s)
     #[arg(long)]
     pub wait: bool,
@@ -288,6 +297,13 @@ pub struct IdentityArgs {
     /// Write the identity owner-only here instead of stdout
     #[arg(long)]
     pub out: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct IdentityFileArgs {
+    /// Identity file [env: SHADENET_IDENTITY] [default: from config.toml]
+    #[arg(long, value_name = "PATH")]
+    pub identity: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -456,6 +472,8 @@ fn command_name(command: &Command) -> &'static str {
         Command::ProxyToken => "proxy-token",
         Command::Enroll(_) => "enroll",
         Command::Identity(_) => "identity",
+        Command::IdentityLock(_) => "identity-lock",
+        Command::IdentityUnlock(_) => "identity-unlock",
         Command::RegisterMember(_) => "register-member",
         Command::MemberStatus(_) => "member-status",
         Command::ExitMember(_) => "exit-member",
