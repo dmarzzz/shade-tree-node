@@ -27,6 +27,8 @@ function stakedProfile(record) {
     defaultLimit: Number(staked.defaultLimit),
     tiers: Object.freeze((staked.tiers || []).map((t) => Object.freeze({ limit: Number(t.limit), bondWei: BigInt(t.bondWei) }))),
     unbondingSeconds: Number(staked.unbondingSeconds),
+    // "identityCommitment": a ShadeNet set (registerIdentity, bound proof contexts). Absent: the v4 set.
+    registerInput: staked.registerInput === "identityCommitment" ? "identityCommitment" : "leaf",
   });
 }
 
