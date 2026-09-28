@@ -19,6 +19,9 @@ SyslogIdentifier=shade-tree-node
 ExecStart=/usr/bin/node /opt/shade-tree/gateway/gateway.mjs
 Restart=always
 RestartSec=3
+# --- secrets: systemd credentials (OPS-12). Files named SHADE_TREE_<SECRET> in /etc/credstore
+# (root, 0600) reach the service via $CREDENTIALS_DIRECTORY, never Environment= or systemctl show.
+ImportCredential=SHADE_TREE_*
 # --- sandbox (see rationale in bootstrap.sh) ---
 NoNewPrivileges=true
 UMask=0077

@@ -62,6 +62,7 @@
 //   _MAX_HEADER_BYTES / _CONN_CHECK_MS   HTTP slow-client limits (same defaults as the bootnode)
 
 import http from "node:http";
+import { loadCredentials } from "../lib/credentials.mjs";
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -697,6 +698,7 @@ function publicOrder(o) {
 
 // ---- main ---------------------------------------------------------------------------------
 async function main() {
+  loadCredentials();
   const pkg = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8"));
   installRuntimeMetrics(metrics, { role: "registrar", version: pkg.version });
   const key = process.env.SHADE_TREE_REGISTRAR_KEY;

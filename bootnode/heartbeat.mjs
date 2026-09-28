@@ -43,6 +43,7 @@
 // testdata/vectors.json, failure paths, log hygiene) + bootnode/heartbeat-caps.selftest.mjs.
 
 import { readFile } from "node:fs/promises";
+import { loadCredentials } from "../lib/credentials.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { buildAnnounce, operatorAuthMessage, verifyOperatorSig } from "./announce.mjs";
@@ -429,6 +430,7 @@ export async function runHeartbeat({
 }
 
 async function main() {
+  loadCredentials();
   const pkg = JSON.parse(await readFile(join(HERE, "..", "package.json"), "utf8"));
   installRuntimeMetrics(metrics, { role: "heartbeat", version: pkg.version });
   let config;

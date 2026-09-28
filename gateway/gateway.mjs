@@ -51,6 +51,7 @@ import { createLogger } from "../lib/log.mjs";
 import { printOperatorBanner } from "../lib/operator-ui.mjs";
 import { jsonRpcCall, makeBoundedJsonRpcProvider, waitForTransactionReceipt } from "../lib/rpc-safety.mjs";
 import { makeRelayByteCounter } from "../lib/relay-telemetry.mjs";
+import { loadCredentials } from "../lib/credentials.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LISTEN_HOST = "127.0.0.1";
@@ -1831,6 +1832,7 @@ function initArtifacts() {
 }
 
 async function main() {
+  loadCredentials();
   const pkg = JSON.parse(await readFile(join(HERE, "..", "package.json"), "utf8"));
   installRuntimeMetrics(metrics, { role: "node", version: pkg.version });
   initArtifacts();
