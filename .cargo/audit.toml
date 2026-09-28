@@ -1,0 +1,8 @@
+# cargo-audit ignores. Keep in sync with [advisories].ignore in deny.toml, which carries
+# the reasoning for each one.
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0235", # rkyv via ark-circom -> wasmer; only hash-pinned embedded circuits load
+  "RUSTSEC-2023-0071", # rsa (Marvin) inside arti; verification only, no fix upstream
+  "RUSTSEC-2025-0055", # tracing-subscriber 0.2 via ark-relations; subscriber never installed
+]

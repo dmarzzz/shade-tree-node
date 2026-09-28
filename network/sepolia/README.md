@@ -27,7 +27,8 @@ contract/proof iteration, not envelope v4.
 ## Staking contracts
 
 Status at deployment: **live** — release `rln-v4-tiers`, deployed 2026-08-17 (blocks 11510538–11510541) by
-the fleet operator hot key `0xc8606C75E003EDA7C0a377B4708AbEC6EB7a7f02`. Params: tiers
+the fleet operator hot key `0xc8606C75E003EDA7C0a377B4708AbEC6EB7a7f02` (retired 2026-09-28; see
+[`docs/KEY-ROTATIONS.md`](../../docs/KEY-ROTATIONS.md)). Params: tiers
 {8: 0.001 ETH, 32: 0.004 ETH} (`bondFor(limit)`), unbonding 300s (min 270), `DEFAULT_LIMIT` 8,
 on-chain root at storage slot 3. [`contracts.json`](contracts.json) is the source of truth.
 Live integration (two tiers, on-chain root mode, tier-32 slash):
