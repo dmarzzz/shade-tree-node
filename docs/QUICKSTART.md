@@ -248,3 +248,20 @@ npm run test:fast        # quick first check; slow proof/onchain suites + Foundr
 npm test                 # full pre-PR check: all selftests + Foundry
 npm run test:contracts   # forge test (StakedReputationSet + GatewayRegistry)
 ```
+
+## Offline loop (no Tor)
+
+To learn the pieces on a plane, in CI or on bad Wi-Fi:
+
+```sh
+npm ci
+npm run dev:offline
+# in another shell, copy the curl line it prints, e.g.
+curl -x http://shade-tree:<token>@127.0.0.1:18118 https://example.com -sI
+```
+
+This runs a real node and the real Rust Proxy on loopback. Every tunnel still carries a real RLN
+proof that the node verifies and rate-limits; only the Tor rendezvous between Proxy and node is
+replaced by a loopback TCP dial (`--plain-tcp`, which only debug builds have). It is for
+development only: without Tor the node sees your IP. Set `SHADENET_DEV_KEEP_LOGS=1` to keep
+`node.log` and `proxy.log` afterwards.
