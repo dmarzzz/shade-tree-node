@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // docs-site/build.mjs
-// Zero-dependency static docs site generator for Shade Tree Grove.
+// Zero-dependency static docs site generator for ShadeNet.
 //
 // Reads the repo's markdown (README + SECURITY + CONTRIBUTING + docs/**/*.md
 // + specs/**/*.md),
@@ -77,7 +77,7 @@ const NAV_EXCLUDED = new Set(['docs/PROTOCOL.md', 'docs/PUBLIC-GROVE.md', 'docs/
 const CATEGORIES = [
   ['Getting Started', [
     'README.md', 'docs/README.md', 'docs/OVERVIEW.md', 'docs/QUICKSTART.md', 'docs/CLI.md', 'docs/CONFIG.md',
-    'docs/JOIN.md', 'docs/post/JOIN.md', 'docs/post/RUN-A-GATEWAY.md',
+    'docs/JOIN.md',
     'CONTRIBUTING.md',
   ]],
   ['Operate', [
@@ -437,7 +437,7 @@ img{max-width:100%;height:auto}
 `;
 
 function navHtml(activeRel) {
-  let s = `<a class="brand" href="index.html">Shade Tree Grove<small>documentation</small></a>`;
+  let s = `<a class="brand" href="index.html">ShadeNet<small>documentation</small></a>`;
   for (const [cat] of CATEGORIES) {
     const inCat = [...docs.values()]
       .filter((d) => catOf.get(d.rel) === cat && !NAV_EXCLUDED.has(d.rel))
@@ -513,7 +513,7 @@ for (const d of docs.values()) {
 // Index page.
 let indexBody = `<div class="index-hero">
 <h1>Documentation</h1>
-<p>Browsable index of the <strong>Shade Tree Grove</strong> docs.
+<p>Browsable index of the <strong>ShadeNet</strong> docs.
 Rendered from the repository's markdown by a dependency-free generator.</p>
 </div>
 <div class="cat-grid">`;

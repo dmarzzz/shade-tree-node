@@ -1,9 +1,9 @@
 # Proxy modes: local process or library
 
-A proxy runs beside the agent. A node accepts the proof and provides egress. The Elder Tree serves the signed Canopy. The implementation and environment variables still use `client`, `gateway`, and `bootnode` in places. Those names remain compatible.
+A proxy runs beside the agent. A node accepts the proof and provides egress. The Elder Tree serves the signed canopy directory. The implementation and environment variables still use `client`, `gateway`, and `bootnode` in places. Those names remain compatible.
 
 > **v4 status.** The current client speaks envelope v4 only. The current disposable v4 Sepolia
-> Grove's Elder+signer pair is bundled as the discovery default. The legacy Sepolia contract and
+> Canopy's Elder+signer pair is bundled as the discovery default. The legacy Sepolia contract and
 > directory files remain incompatible pre-v4 history. Discovery is not admission: the public
 > profile does not publish the invited membership inputs required to connect.
 
@@ -33,7 +33,7 @@ import { ShadeTreeClient, cleanUp } from "./client/shade-tree-client.mjs";
 const shadeTree = new ShadeTreeClient({
   secret,        // enrolled member secret (or SHADE_TREE_SECRET)
   torPort: 9260, // client Tor SOCKS; discovery uses the bundled current-v4 Elder+signer
-  // or: bootnode: "…", dirSigner: "…"  to select an alternate signed Canopy
+  // or: bootnode: "…", dirSigner: "…"  to select an alternate signed canopy directory
   // or: onion: "…"  to pin a single gateway instead of fleet rotation
 });
 
@@ -53,14 +53,14 @@ cleanUp();  // terminate snarkjs workers so the process can exit
 With no explicit discovery source, `new ShadeTreeClient({ secret, torPort })` uses the bundled
 current-v4 Sepolia Elder+signer pair. Pass `{ bootnode, dirSigner }` (or set the corresponding
 environment variables) to override them. For a single node, set `SHADE_TREE_ONION` or pass
-`{ onion }`. The live Canopy is refreshed in the background about every five minutes with jitter.
+`{ onion }`. The live canopy directory is refreshed in the background about every five minutes with jitter.
 
 Runnable example: `examples/agent-fetch.mjs`. Point it at your local fleet or an operator's
 v4 configuration before running it.
 
 ## Egress selection and switching
 
-For each new CONNECT tunnel, the client filters the verified Canopy by admission policy and
+For each new CONNECT tunnel, the client filters the verified canopy directory by admission policy and
 capabilities, then uses smooth weighted round-robin for the first healthy node. Equal-weight nodes
 alternate evenly; unequal weights retain their long-run share. The remaining nodes form a weighted-
 random failover order for that tunnel. Set `--no-rotation-spread` or
@@ -72,7 +72,7 @@ are terminal and are not routed around. The Rust client treats every gateway ref
 only transport/framing failures rotate. Two local dial failures mark a node down; future selections
 skip it while healthy choices exist, and a later success recovers it. The JavaScript Proxy's
 periodic Canopy refresh adds and removes onions without a restart while carrying forward health for
-unchanged nodes. The Rust Proxy fetches a current signed Canopy at each new CONNECT instead, so its
+unchanged nodes. The Rust Proxy fetches a current signed canopy directory at each new CONNECT instead, so its
 next tunnel sees a new list even though it does not poll while idle.
 
 ## Leaf source + admission filtering + `--max-anon` (T-FEAT-9, both options)
