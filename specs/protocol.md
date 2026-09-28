@@ -13,11 +13,12 @@ announce, and error formats.
 | --- | --- | --- |
 | Proxy | client | Loopback CONNECT proxy that discovers nodes and creates membership proofs |
 | Shade Tree node | gateway | Onion service that verifies a proof and opens the destination connection |
-| Elder Tree | bootnode | Cache of signed node announcements |
-| Canopy | directory | Signed, current view of announced nodes |
-| Grove | fleet | The set of Shade Tree nodes visible through a Canopy |
+| Elder Tree | bootnode | Cache of signed node announcements; serves the canopy |
+| canopy | fleet + directory | A group of Shade Tree nodes and the signed, current directory that lists them |
 
-The public names do not change the wire format. Source code and low-level documents
+Earlier documents split the canopy in two: Canopy for the signed directory and Grove
+for the nodes it lists. Both are now one term, canopy. The public names do not change
+the wire format. Source code and low-level documents
 keep `client`, `gateway`, `bootnode`, and `directory` where compatibility matters.
 The Elder Tree is outside the traffic path, but its pinned signer is a discovery
 authority. Clients trust that signer to choose the candidate list. A compromised
