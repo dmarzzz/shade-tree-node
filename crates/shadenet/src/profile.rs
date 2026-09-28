@@ -44,12 +44,24 @@ pub struct StakedRoot {
     pub min_unbonding_seconds: Option<u64>,
 }
 
+/// One Elder Tree and the signer(s) its canopy directory must verify against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Elder {
+    pub onion: String,
+    /// Comma-separated pinned canopy signer(s), hex ed25519 public keys.
+    pub canopy_signer: String,
+}
+
 /// A parsed deployment record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Deployment {
+    /// The first (primary) Elder Tree, kept for callers that use only one.
     pub elder_onion: String,
-    /// Comma-separated pinned canopy signer(s), hex ed25519 public keys.
+    /// Comma-separated pinned canopy signer(s) of the primary Elder Tree.
     pub canopy_signer: String,
+    /// Every Elder Tree of the network (schemaVersion 2 `elders[]`; a v1 record has one). Each
+    /// signs its own canopy directory; clients take the union of the verified directories.
+    pub elders: Vec<Elder>,
     pub default_path: Option<String>,
     pub rate_policy: Option<shadenet_proto::CanonicalRate>,
     pub staked: Option<StakedRoot>,
@@ -236,34 +248,37 @@ pub fn parse_deployment(name: &str, raw: &str) -> Result<Deployment, String> {
             shadenet_proto::PROTO_MAX
         ));
     }
-    let elder = deployment
-        .get("elder")
-        .ok_or_else(|| format!("{name} deployment has no Elder Tree"))?;
-    let onion = elder
-        .get("onion")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| format!("{name} deployment has no Elder Tree onion"))?;
-    // Parse the onion now, before Tor is involved. Canopy verification validates the signer.
-    shadenet_proto::onion_to_pubkey(onion)
-        .map_err(|e| format!("{name} deployment has an invalid Elder Tree onion: {e}"))?;
-    let pins: Vec<&str> = match elder.get("canopySigner") {
-        Some(serde_json::Value::String(pin)) => vec![pin.as_str()],
-        Some(serde_json::Value::Array(pins)) => pins
-            .iter()
-            .map(|pin| {
-                pin.as_str()
-                    .ok_or_else(|| format!("{name} deployment has a non-string canopy signer"))
-            })
-            .collect::<Result<_, _>>()?,
-        _ => return Err(format!("{name} deployment has no canopy signer")),
-    };
-    if pins.is_empty()
-        || pins
-            .iter()
-            .any(|pin| pin.len() != 64 || hex::decode(pin).map_or(true, |bytes| bytes.len() != 32))
-    {
-        return Err(format!("{name} deployment has an invalid canopy signer"));
+    let schema = deployment
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(1);
+    if !(1..=2).contains(&schema) {
+        return Err(format!(
+            "{name} deployment has unsupported schemaVersion {schema}"
+        ));
     }
+    let mut elders = Vec::new();
+    if let Some(elder) = deployment.get("elder").filter(|v| !v.is_null()) {
+        elders.push(parse_elder(name, elder)?);
+    }
+    if let Some(list) = deployment.get("elders") {
+        let list = list
+            .as_array()
+            .ok_or_else(|| format!("{name} deployment elders must be an array"))?;
+        for entry in list {
+            let elder = parse_elder(name, entry)?;
+            if !elders
+                .iter()
+                .any(|known: &Elder| known.onion == elder.onion)
+            {
+                elders.push(elder);
+            }
+        }
+    }
+    let primary = elders
+        .first()
+        .cloned()
+        .ok_or_else(|| format!("{name} deployment has no Elder Tree"))?;
     let admission = deployment.get("admission");
     let default_path = admission
         .and_then(|value| value.get("defaultPath"))
@@ -286,11 +301,48 @@ pub fn parse_deployment(name: &str, raw: &str) -> Result<Deployment, String> {
         .map(parse_staked)
         .transpose()?;
     Ok(Deployment {
-        elder_onion: onion.to_string(),
-        canopy_signer: pins.join(","),
+        elder_onion: primary.onion,
+        canopy_signer: primary.canopy_signer,
+        elders,
         default_path,
         rate_policy,
         staked,
+    })
+}
+
+fn parse_elder(name: &str, elder: &serde_json::Value) -> Result<Elder, String> {
+    let onion = elder
+        .get("onion")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("{name} deployment has an Elder Tree without an onion"))?;
+    // Parse the onion now, before Tor is involved. Canopy verification validates the signer.
+    shadenet_proto::onion_to_pubkey(onion)
+        .map_err(|e| format!("{name} deployment has an invalid Elder Tree onion: {e}"))?;
+    let pins: Vec<&str> = match elder.get("canopySigner") {
+        Some(serde_json::Value::String(pin)) => vec![pin.as_str()],
+        Some(serde_json::Value::Array(pins)) => pins
+            .iter()
+            .map(|pin| {
+                pin.as_str()
+                    .ok_or_else(|| format!("{name} deployment has a non-string canopy signer"))
+            })
+            .collect::<Result<_, _>>()?,
+        _ => {
+            return Err(format!(
+                "{name} deployment has an Elder Tree without a canopy signer"
+            ))
+        }
+    };
+    if pins.is_empty()
+        || pins
+            .iter()
+            .any(|pin| pin.len() != 64 || hex::decode(pin).map_or(true, |bytes| bytes.len() != 32))
+    {
+        return Err(format!("{name} deployment has an invalid canopy signer"));
+    }
+    Ok(Elder {
+        onion: onion.to_string(),
+        canopy_signer: pins.join(","),
     })
 }
 
@@ -558,6 +610,32 @@ mod tests {
             .unwrap()
             .remove("chainId");
         assert!(profile_of(&no_chain).unwrap_err().contains("chainId"));
+    }
+
+    #[test]
+    fn schema_two_lists_every_elder_and_keeps_the_first_as_primary() {
+        let mut record = public_fixture();
+        let second = json!({
+            "onion": "k54vz4zu7l76qcqjclbfsd276j7uvtggpoyfxelusmpof2qizngxgrid.onion",
+            "canopySigner": "3d5bfa23dbf75d78b0f8ce54320c5dd52dccc7d2dcdd61c6ed8ba6501e67faa1"
+        });
+        record["schemaVersion"] = json!(2);
+        record["elders"] = json!([record["elder"].clone(), second]);
+        let parsed = parse_deployment("test", &record.to_string()).unwrap();
+        assert_eq!(parsed.elders.len(), 2);
+        assert_eq!(parsed.elder_onion, parsed.elders[0].onion);
+        assert!(parsed.elders[1].onion.starts_with("k54vz4zu"));
+        // v1 records still parse to one Elder; unknown versions and bad entries are refused.
+        let mut v1_record = public_fixture();
+        v1_record["schemaVersion"] = json!(1);
+        v1_record.as_object_mut().unwrap().remove("elders");
+        let v1 = parse_deployment("test", &v1_record.to_string()).unwrap();
+        assert_eq!(v1.elders.len(), 1);
+        record["schemaVersion"] = json!(3);
+        assert!(parse_deployment("test", &record.to_string()).is_err());
+        record["schemaVersion"] = json!(2);
+        record["elders"][1]["canopySigner"] = json!("nothex");
+        assert!(parse_deployment("test", &record.to_string()).is_err());
     }
 
     #[test]

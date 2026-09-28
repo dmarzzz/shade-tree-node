@@ -27,6 +27,29 @@ ok(net1.staked.contract === "0xEB67Abf066c11D78856BccC63476ed14d51e4275", "stake
 ok(net1.staked.tiers.map((t) => t.limit).join(",") === "1,8" && net1.staked.tiers[0].bondWei === 100000000000000000n, "tiers and bonds from the record");
 ok(net1.elder.canopySigner.length === 64, "canopy signer pinned from the record");
 ok(await code(() => sdk.resolveNetwork("nope")) === "InvalidInput", "unknown network -> InvalidInput");
+ok(net1.elders.length === 2 && net1.elders[0].onion === net1.elder.onion && net1.elders[1].onion.startsWith("k54vz4zu"), "every Elder Tree from elders[] (primary first)");
+
+console.log("=== several Elder Trees ===");
+{
+  const { ed25519PubFromSeed, ed25519Sign, canonicalDirectoryBytes, pubkeyToOnion } = await import("../../../lib/directory.mjs");
+  const seedA = "11".repeat(32), seedB = "22".repeat(32);
+  const [pubA, pubB] = [ed25519PubFromSeed(seedA), ed25519PubFromSeed(seedB)];
+  const node = (b) => { const pk = b.repeat(32); return { onion: pubkeyToOnion(pk), pubkey: pk, weight: 100, health: "up" }; };
+  const sign = (dir, seed, pub) => ({ ...dir, signer: pub, signature: ed25519Sign(canonicalDirectoryBytes(dir), seed) });
+  const elderA = pubkeyToOnion("aa".repeat(32)), elderB = pubkeyToOnion("bb".repeat(32));
+  const record = JSON.parse(JSON.stringify(net1.record));
+  record.elders = [{ onion: elderA, canopySigner: pubA }, { onion: elderB, canopySigner: pubB }];
+  record.elder = record.elders[0];
+  const multi = sdk.resolveNetwork(record);
+  const dirA = sign({ version: 1, issued: 1000, gateways: [node("01"), node("02")] }, seedA, pubA);
+  const dirB = sign({ version: 1, issued: 2000, gateways: [node("02"), node("03")] }, seedB, pubB);
+  const viewA = sdk.verifyCanopy(dirA, { network: multi });
+  const viewB = sdk.verifyCanopy(dirB, { network: multi });
+  ok(viewA.elder === elderA && viewB.elder === elderB, "each canopy verifies against its own Elder's signer");
+  ok(await code(() => sdk.verifyCanopy(dirB, { network: multi, elder: elderA })) === "Canopy", "a canopy is refused when pinned to the other Elder");
+  const merged = sdk.mergeCanopies([viewA, viewB]);
+  ok(merged.nodes.length === 3 && merged.issued === 2000 && merged.elders.join() === [elderB, elderA].join(), "mergeCanopies: union of nodes, newest issued, both Elders");
+}
 
 console.log("=== identity ===");
 const id = await sdk.createIdentity();
