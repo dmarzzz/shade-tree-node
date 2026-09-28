@@ -89,7 +89,7 @@ logging channel), which a coarse bucket is not.
 
 ### Deliberate divergence from the backlog sketch
 
-The backlog note (`docs/SHIP-PLAN.md`, T-FEAT-13) sketched `{nullifier-prefix, ts, ok}`. We drop
+The backlog note (`docs/history/SHIP-PLAN.md`, T-FEAT-13) sketched `{nullifier-prefix, ts, ok}`. We drop
 the **nullifier prefix** (a partial member handle) and replace the fine **ts** with the coarse
 **epoch**, trading a small amount of verifiability for airtight unlinkability. The consequence,
 stated honestly: two receipts from the same gateway in the same epoch are byte-identical, so a

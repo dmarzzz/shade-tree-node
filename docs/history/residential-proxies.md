@@ -1,5 +1,7 @@
 # Anonymized scraping, residential proxies, and what they do to your privacy
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 This report answers four questions raised in conversation:
 
 1. A friend ran SearXNG with Tor enabled, but nearly every site and engine blocked him, so it effectively did not work. Why?

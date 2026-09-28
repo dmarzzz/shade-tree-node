@@ -394,7 +394,7 @@ deployment and migration/re-enrollment plan accounting for bonds, exits, roots,
 and old contracts. A ceremony does not upgrade or protect an existing registry
 using old keys. No deployment is part of this preparation. See
 [the contract](../contracts/StakedReputationSet.sol) and
-[migration discussion](RLN-MIGRATION.md).
+[migration discussion](history/RLN-MIGRATION.md).
 
 ## 7. Provenance lock and evidence
 

@@ -10,7 +10,7 @@ leaf was inserted at tier 8 from the operator key; the on-chain `currentRoot()` 
 `newGroup([leaf]).root` and storage slot 3; the negative paths (non-operator insert, unlisted
 tier, live duplicate, wrong-limit / wrong-secret slash) all revert with the named errors; the
 contract's balance is 0 before, during and after (it has no payable surface). Date: 2026-08-17.
-Task: T-FEAT-7 (`docs/SHIP-PLAN.md`), design `docs/PAYMENTS.md`, contract notes
+Task: T-FEAT-7 (`docs/history/SHIP-PLAN.md`), design `docs/PAYMENTS.md`, contract notes
 `docs/ONCHAIN.md` "Paid access set", audit `docs/CONTRACTS-AUDIT.md` I12–I15.
 
 ## What this contract is (and is not)

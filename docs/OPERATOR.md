@@ -341,7 +341,7 @@ Locally (non-bootstrapped) the same files live under `tor/hs*/identity.local.jso
 ### Backup
 
 `shade-tree-node backup` / `shade-tree-node restore` (`scripts/backup.mjs`, full guide in
-[BACKUP.md](./BACKUP.md)) encrypt the onion seeds (`identity.local.json`,
+[BACKUP.md](BACKUP.md)) encrypt the onion seeds (`identity.local.json`,
 `hs_ed25519_secret_key`) and the bootnode signer key into one tamper-evident file
 (scrypt + AES-256-GCM, Node crypto only, no `gpg` needed). The passphrase is read
 **only** from `SHADE_TREE_BACKUP_PASSPHRASE`, never from argv, never logged.
@@ -358,7 +358,7 @@ sudo -E node /opt/shade-tree/bin/shade-tree.mjs restore shade-tree-keys-<date>.s
 Restore lays the files back with `0600`/`0700` perms; the onion address and pinned
 signer are preserved, so clients keep working. To prove the restored key really is the
 same onion before cutting over, use `scripts/onion-identity.mjs`
-([ONION-IDENTITY.md](./ONION-IDENTITY.md)). The operator EOA key is backed up with your
+([ONION-IDENTITY.md](ONION-IDENTITY.md)). The operator EOA key is backed up with your
 normal wallet backups, not here.
 
 ---
@@ -620,7 +620,7 @@ range and/or result count — and answers with an error, not a partial result: p
 10k-block range), QuickNode `limited to a 10,000 blocks range`, Alchemy `Log response size
 exceeded` (2k blocks on the free tier). Scanning "from block 0" against one of them fails on
 the very first call — which is how both fleet gateways crash-looped at startup on 2026-08-17
-after `SHADE_TREE_PAID_ACCESS_CONTRACT` was enabled (`docs/GO-LIVE-LOG-2026-08-17.md`,
+after `SHADE_TREE_PAID_ACCESS_CONTRACT` was enabled (`docs/history/GO-LIVE-LOG-2026-08-17.md`,
 `docs/INCIDENT.md` §5).
 
 Since that night the gateway does three things on its own (`lib/root-provider.mjs`):

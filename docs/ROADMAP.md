@@ -19,12 +19,12 @@ that abstraction explicit prevents the roadmap from accidentally baking properti
 of one egress implementation into the protocol definition.
 
 For detailed component designs, see [FLEET.md](FLEET.md), [ONCHAIN.md](ONCHAIN.md),
-[PAYMENTS.md](PAYMENTS.md), [SESSION-TICKETS.md](SESSION-TICKETS.md),
-[LIGHT-CLIENT.md](LIGHT-CLIENT.md), and [adversarial-review.md](adversarial-review.md).
+[PAYMENTS.md](PAYMENTS.md), [SESSION-TICKETS.md](design/SESSION-TICKETS.md),
+[LIGHT-CLIENT.md](LIGHT-CLIENT.md), and [adversarial-review.md](history/adversarial-review.md).
 
 The original milestone design notes (1–5: unlinkable rate limiting, on-chain set, fleet,
-bootnode, productionization) live in [ROADMAP-v1.md](ROADMAP-v1.md); the checkable shipping
-backlog with acceptance criteria is [SHIP-PLAN.md](SHIP-PLAN.md).
+bootnode, productionization) live in [ROADMAP-v1.md](history/ROADMAP-v1.md); the checkable shipping
+backlog with acceptance criteria is [SHIP-PLAN.md](history/SHIP-PLAN.md).
 
 ## Implementation status against this roadmap (2026-08-14)
 
@@ -44,7 +44,7 @@ mapped onto the sections below, so the roadmap reads as *remaining* work rather 
 | 3.5 bootstrap v2 (on-chain registry + mirrors) | **built (registry)** — `GatewayRegistry` live on Sepolia; client can rebuild the *member* root from chain via EIP-1186 light-client proof; rebuilding the *gateway* set purely from chain is not yet a client path | `contracts/GatewayRegistry.sol`, `docs/LIGHT-CLIENT.md` |
 | 3.5 bootstrap v3 (DHT) | not planned | — |
 | 4–8 payments / x402 / MPP / zkAPI | **partial + design** — paid-access 402 issuance is built; downstream payment adapters and zkAPI credits remain design-only | `docs/PAYMENTS.md`, sections below |
-| 7.5 gateway-bound session tickets | **detailed design** — one RLN proof authorizes a fixed book of cheap single-use CONNECT-stream tickets over one bounded HTTP/2/Tor session; no implementation yet | `docs/SESSION-TICKETS.md` |
+| 7.5 gateway-bound session tickets | **detailed design** — one RLN proof authorizes a fixed book of cheap single-use CONNECT-stream tickets over one bounded HTTP/2/Tor session; no implementation yet | `docs/design/SESSION-TICKETS.md` |
 | Distributable client | **built for v0.4.0** — the checksummed Rust `-live` binary creates identities, wraps one agent process, serves a loopback CONNECT Proxy over embedded Arti, and exposes the reusable §2.6 client; npm remains an operator/contributor dependency, not an agent dependency | `rust/`, `docs/CLIENTS.md` |
 
 Not built and human-gated: the production trusted-setup ceremony and the first live
@@ -74,8 +74,8 @@ SHIP-PLAN T-DOC-8): done for the operator-facing set** — `OPERATOR.md`, `INCID
 `TOR-HARDENING.md`, `DEPLOYMENT.md`, `network/sepolia/README.md`, the bootstrap URLs and
 the member-facing `JOIN.md` were reconciled against the code (superseded contract address,
 bootnode persistence, replay defense, backup tooling, signer rotation, IP/onion hygiene).
-Docs that describe the pre-RLN single-gateway PoC (`docs/JOIN.md`, `docs/STATUS.md`,
-`docs/REPORT.md`, `docs/DEPLOY.md`, `docs/DEPLOYMENT.md`) are kept as history and now say
+Docs that describe the pre-RLN single-gateway PoC (`docs/JOIN.md`, `docs/history/STATUS.md`,
+`docs/history/REPORT.md`, `docs/history/DEPLOY.md`, `docs/history/DEPLOYMENT.md`) are kept as history and now say
 so at the top and point at the current path. `docs/THREAT-MODEL.md` and `docs/AUDIT.md`
 are the current statements of the trust model; the design docs (`ONCHAIN.md`,
 `LIGHT-CLIENT.md`, `FLEET.md`, `PAYMENTS.md`) carry a status line saying what of them is
@@ -700,7 +700,7 @@ transport and a future transferable zkAPI credit. A client can exchange one exis
 proof for a fixed, short-lived book of random single-use tickets at one selected gateway,
 then spend one ticket for each logical HTTP/2 CONNECT stream over the same Tor connection.
 
-The complete design is [SESSION-TICKETS.md](SESSION-TICKETS.md). Its first policy class
+The complete design is [SESSION-TICKETS.md](design/SESSION-TICKETS.md). Its first policy class
 implements the provisional research envelope from ADR 0009: at most six target streams,
 40 MiB combined payload, a 90-second hard lifetime, bounded concurrency, and shared
 directional shaping. The proof binds the gateway onion, class, session nonce, and ticket-book

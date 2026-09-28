@@ -14,7 +14,7 @@ const PUBLIC_GUIDES = [
   "docs/CLI.md",
   "docs/CLIENTS.md",
   "docs/CONFIG.md",
-  "docs/DEPLOY.md",
+  "docs/history/DEPLOY.md",
   "docs/JOIN.md",
   "docs/OPERATOR.md",
   "docs/OVERVIEW.md",
