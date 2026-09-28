@@ -1,5 +1,7 @@
 # Residential proxy providers: a classification taxonomy
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 A field map of the residential proxy market, built to answer five questions about every provider I could find: how they get the IPs, how you route traffic through them, what they accept for payment (crypto especially), whether they make you identify yourself, and whether they can read what you send.
 
 This sits alongside [`residential-proxies.md`](residential-proxies.md) in this repo. That report argued the thesis. This one enumerates the market and classifies it.

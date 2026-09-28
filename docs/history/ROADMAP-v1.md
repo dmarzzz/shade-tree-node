@@ -1,8 +1,10 @@
 # Roadmap v1: milestone design notes (1–5)
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 The original milestone-by-milestone design for the pieces beyond the proof of concept,
 kept for the reasoning (including the tiers not taken). Every milestone here is now built;
-the forward-looking roadmap is [`ROADMAP.md`](ROADMAP.md) and the shipping backlog is
+the forward-looking roadmap is [`ROADMAP.md`](../ROADMAP.md) and the shipping backlog is
 [`SHIP-PLAN.md`](SHIP-PLAN.md). ADRs and other docs cite these milestones as
 `ROADMAP-v1.md #1` … `#5`.
 

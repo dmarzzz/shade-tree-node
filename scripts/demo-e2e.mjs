@@ -1,6 +1,6 @@
 // End-to-end demo of the RLN loop, against a real anvil + real crypto.
 //
-// Exercises increments A+B+C from docs/NEXT-VERSION.md WITHOUT Tor (the tunnel is the
+// Exercises increments A+B+C from docs/history/NEXT-VERSION.md WITHOUT Tor (the tunnel is the
 // existing PoC path; this script proves the staking/slashing/rotation protocol):
 //   1. stake two members on-chain (register + bond),
 //   2. anonymous egress-gate: real RLN membership proof per slot, rotating slots

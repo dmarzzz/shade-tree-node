@@ -7,7 +7,7 @@ import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
 contract StakedReputationSetTest is Cheats {
-    // Demo params (docs/NEXT-VERSION.md), matching script/Deploy.s.sol.
+    // Demo params (docs/history/NEXT-VERSION.md), matching script/Deploy.s.sol.
     uint256 constant BOND = 0.01 ether;
     uint256 constant UNBONDING = 300;
     uint256 constant MIN_UNBONDING = 270;

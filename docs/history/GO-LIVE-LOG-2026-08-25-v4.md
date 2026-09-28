@@ -1,5 +1,7 @@
 # Protocol v4 research Grove go-live — 2026-08-25
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 ## Scope and security boundary
 
 - One dedicated Elder Tree and three dedicated Shade Tree nodes on DigitalOcean.
@@ -10,7 +12,7 @@
 - Sepolia, invited-only admission, Protocol 4 envelopes, and the explicitly
   untrusted `rln-0b25f824a04da3a8` testnet artifact. This is disposable research
   infrastructure, not production.
-- Public deployment record: [`network/sepolia/deployment.json`](../network/sepolia/deployment.json).
+- Public deployment record: [`network/sepolia/deployment.json`](../../network/sepolia/deployment.json).
   Service pin: `4b141797cd4d4fd961190c0f9774f6f181e81181`.
 - The provider addresses, SSH inventory, identity backups, member secret, and
   OpenTofu state are not committed to this repository.
@@ -67,7 +69,7 @@ node cohort and relay telemetry is not configured.
   observation; the API continues serving the last valid signed head and the UI
   labels it stale.
 - Reconciliation is the v4 Ansible playbook documented in
-  [`deploy/v4/README.md`](../deploy/v4/README.md).
+  [`deploy/v4/README.md`](../../deploy/v4/README.md).
 - Provider lifecycle and the ignored local state live in the isolated
   `agent-devops/tofu/environments/shade-tree-v4` environment. Run an OpenTofu
   plan there before either changing or destroying this fleet; do not target the

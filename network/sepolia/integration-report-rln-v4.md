@@ -9,7 +9,7 @@ MODE against the new contract; the tier-8 member uses the gateway within its bud
 tier-32 member proves a slot only its tier can prove and then over-spends and is reconstructed
 + slashed on-chain **at its tier** (`slash(leaf, secret, 32, receiver)`, burning the tier-32
 bond) — all with real circom-rln Groth16 proofs. Date: 2026-08-17. Tasks: T-DEV-9c + T-FEAT-8b
-(`docs/SHIP-PLAN.md`), ADR `docs/adr/0006-reputation-tiers.md`, `docs/ONCHAIN.md` "Tiers on chain".
+(`docs/history/SHIP-PLAN.md`), ADR `docs/adr/0006-reputation-tiers.md`, `docs/ONCHAIN.md` "Tiers on chain".
 
 ## What changed vs. rln-v3 (`integration-report-rln.md`)
 

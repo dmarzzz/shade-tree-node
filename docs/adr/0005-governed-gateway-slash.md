@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-13
-- Task: milestone 4 (docs/ROADMAP-v1.md #4), invariant I4 (docs/CONTRACTS-AUDIT.md)
+- Task: milestone 4 (docs/history/ROADMAP-v1.md #4), invariant I4 (docs/CONTRACTS-AUDIT.md)
 
 ## Context
 
@@ -69,4 +69,4 @@ delete-before-payout CEI ordering) is parallel.
 - docs/CONTRACTS-AUDIT.md section 1 ("the honest asymmetry"), invariant I4, section 3
   ("`owner` is a single key")
 - docs/AUDIT.md ("Governed, not permissionless (by design)")
-- docs/BOOTNODE.md ("Admission policy"), docs/ROADMAP-v1.md #4
+- docs/BOOTNODE.md ("Admission policy"), docs/history/ROADMAP-v1.md #4

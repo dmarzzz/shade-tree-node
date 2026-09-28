@@ -1,4 +1,4 @@
-// CHAOS / FAILURE-INJECTION selftest (T-TEST-14, docs/SHIP-PLAN.md).
+// CHAOS / FAILURE-INJECTION selftest (T-TEST-14, docs/history/SHIP-PLAN.md).
 //
 // The adversarial suite proves the trust surface defeats a *malicious* directory. This file
 // proves the client survives a *broken* one: it drives the REAL client selection + directory-load
