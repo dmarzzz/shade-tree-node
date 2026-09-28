@@ -1,10 +1,10 @@
 ![A low-poly grove crossed by an amber network path](assets/shade-tree-readme-banner.webp)
 
-# Shade Tree Grove
+# ShadeNet
 
 Cover for local agents.
 
-The grove of Shade Trees gives agents anonymous egress when the clearnet [won’t let them
+The canopy of Shade Trees gives agents anonymous egress when the clearnet [won’t let them
 through][research-note].
 
 [![CI][ci-badge]][ci-url]
@@ -18,14 +18,14 @@ at a time.
 
 *The best shade asks for proof, not a name.*
 
-[Site][site] · [Grove][grove] · [Research][research-note] · [Docs](docs/README.md) ·
+[Site][site] · [Canopy][canopy] · [Research][research-note] · [Docs](docs/README.md) ·
 [Protocol](specs/protocol.md) · [Security](SECURITY.md)
 
 > [!WARNING]
 > Research preview. The code is unaudited and the included ZK artifacts are for
 > development. The legacy Sepolia contract and directory records are retired
 > pre-v4 history. [`network/sepolia/deployment.json`](network/sepolia/deployment.json)
-> separately records the live, disposable v4 research Grove behind the public
+> separately records the live, disposable v4 research canopy behind the public
 > aggregate map; it admits invited and explicitly self-staked Sepolia testnet
 > members through a stake-gated Elder. Do not rely on this preview for real
 > funds or sensitive use.
@@ -42,7 +42,7 @@ Both implementations are research previews under the warning above.
 
 Use the checksummed Rust [`-live` release](crates/INSTALL.md) for agents. It needs
 neither Node.js nor a client-side Tor daemon. Use the Node.js implementation for
-Grove operation, the JavaScript SDK, and repository development.
+canopy operation, the JavaScript SDK, and repository development.
 
 ## Agent developers
 
@@ -65,7 +65,7 @@ live build. Intel macOS has only the verifier binary. Pin v0.6.0 with
 provide transfer integrity; GitHub attestations provide the stronger build
 provenance check.
 
-The bundled Sepolia Grove defaults to public staked tier 1: 0.1 Sepolia ETH buys
+The bundled Sepolia canopy defaults to public staked tier 1: 0.1 Sepolia ETH buys
 one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload
 ceiling. Create an owner-only identity locally, then let the client verify and
 register its public leaf with a separately funded testnet wallet:
@@ -77,9 +77,9 @@ shade-tree register-member --identity identity.json --key-file funded-sepolia.ke
 shade-tree member-status --identity identity.json --json
 ```
 
-`enroll` generates identity material; it does not add the leaf to a Grove.
+`enroll` generates identity material; it does not add the leaf to a canopy.
 The current contract, RPC, deployment block, tier, Elder, signer, and rate policy
-are bundled defaults; explicit settings still select another Grove. After the
+are bundled defaults; explicit settings still select another canopy. After the
 registration block reaches Sepolia finality, start the self-contained Proxy:
 
 ```bash
@@ -138,7 +138,7 @@ enforce its view of the member's tunnel limit.
 
 | Name | What it does |
 | --- | --- |
-| Proxy | Runs beside the agent, reads the signed Canopy, and opens each tunnel through Tor |
+| Proxy | Runs beside the agent, reads the signed canopy directory, and opens each tunnel through Tor |
 | Shade Tree node | Verifies the proof and makes the destination-facing connection |
 | Elder Tree | The bootnode that caches signed announcements and serves the canopy |
 | canopy | A group of Shade Tree nodes and the signed directory that lists them (formerly Grove and Canopy) |
@@ -237,7 +237,7 @@ Tree is open source under the [MIT license](LICENSE).
 [license-badge]: https://img.shields.io/badge/license-MIT-59624f.svg
 [license-url]: LICENSE
 [site]: https://shade-tree-node.vercel.app
-[grove]: https://shade-tree-node.vercel.app/grove/
+[canopy]: https://shade-tree-node.vercel.app/canopy/
 [research-note]: https://shade-tree-node.vercel.app/research/
 [tor-exit-list]: https://support.torproject.org/abuse/ban-tor/
 [tor-captchas]: https://support.torproject.org/tor-browser/encountering-issues/captchas/

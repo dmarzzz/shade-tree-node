@@ -19,6 +19,22 @@
   },
   "rewrites": [
     {
+      "source": "/canopy",
+      "destination": "/grove/index.html"
+    },
+    {
+      "source": "/canopy/",
+      "destination": "/grove/index.html"
+    },
+    {
+      "source": "/canopy/network.json",
+      "destination": "/api/grove"
+    },
+    {
+      "source": "/canopy/:path*",
+      "destination": "/grove/:path*"
+    },
+    {
       "source": "/lab.css",
       "destination": "/lab/lab.css"
     },
@@ -86,6 +102,13 @@
           "value": "public, max-age=3600, must-revalidate"
         }
       ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/pricing",
+      "destination": "/stake/",
+      "permanent": false
     }
   ]
 }
