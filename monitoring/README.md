@@ -50,6 +50,7 @@ Files:
 | `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `payments/registrar.mjs` |
 | `shade_tree_registrar_txs_total` | counter | `kind` (settle\|insert), `result` (ok\|failed) | `payments/registrar.mjs` |
 | `shade_tree_registrar_orders` / `shade_tree_registrar_inflight` | gauge | none | `payments/registrar.mjs` |
+| `shade_tree_rpc_failovers_total` | counter | `endpoint` (list index that failed; never the URL) | `lib/rpc-safety.mjs` (any role with `SHADE_TREE_RPC_URL`) |
 | `shade_tree_build_info` | gauge | `role`, `version`, `commit` (running checkout, or `unknown`) | every long-running role |
 | `shade_tree_process_start_time_seconds` | gauge | none | every long-running role |
 | `shade_tree_process_uptime_seconds` | gauge | none | every long-running role |
