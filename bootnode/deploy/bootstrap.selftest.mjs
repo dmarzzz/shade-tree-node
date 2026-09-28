@@ -149,8 +149,8 @@ async function main() {
     const blocks = hsBlocks(torrc);
     ok(blocks.length === 2 && blocks[0].dir === "/var/lib/tor/shade-tree-bootnode" && blocks[1].dir === "/var/lib/tor/shade-tree-gateway", "default torrc: bootnode + gateway HS blocks, in that order");
     for (const b of blocks) {
-      ok(b.lines[0]?.startsWith("HiddenServicePort 80 127.0.0.1:") && b.lines[1] === "HiddenServicePoWDefensesEnabled 0" && b.lines.length === 2,
-        `${b.dir}: HiddenServicePort then HiddenServicePoWDefensesEnabled 0 (PoW default OFF), nothing else`);
+      ok(b.lines[0]?.startsWith("HiddenServicePort 80 127.0.0.1:") && b.lines[1] === "HiddenServicePoWDefensesEnabled 0" && b.lines[2] === "HiddenServiceMaxStreams 32" && b.lines[3] === "HiddenServiceMaxStreamsCloseCircuit 1" && b.lines.length === 4,
+        `${b.dir}: HiddenServicePort, PoW 0 (default OFF), MaxStreams 32 + close-circuit, nothing else`);
     }
     ok(blocks[0].lines[0].endsWith(":8877") && blocks[1].lines[0].endsWith(":8443"), "default ports 8877 (bootnode) / 8443 (gateway)");
     const hbDef = got.get("etc/systemd/system/shade-tree-heartbeat.service");
@@ -195,7 +195,7 @@ async function main() {
     ok(powOn.status === 0, "SHADE_TREE_ENABLE_POW=1 renders");
     const onT = await readFile(join(powOn.out, "etc/tor/torrc.d-shade-tree"), "utf8");
     const onBlocks = hsBlocks(onT);
-    ok(onBlocks.length === 2 && onBlocks.every((b) => b.lines[0].startsWith("HiddenServicePort ") && b.lines[1] === "HiddenServicePoWDefensesEnabled 1" && b.lines.length === 2),
+    ok(onBlocks.length === 2 && onBlocks.every((b) => b.lines[0].startsWith("HiddenServicePort ") && b.lines[1] === "HiddenServicePoWDefensesEnabled 1" && b.lines.length === 4),
       "pow=1: each HS block = HiddenServicePort then HiddenServicePoWDefensesEnabled 1 (per-service option placement)");
     const strip = (s) => s.split("\n").filter((l) => !l.startsWith("#") && !l.startsWith("HiddenServicePoWDefensesEnabled")).join("\n");
     ok(strip(onT) === strip(torrc), "pow=1 vs default: only the PoW lines (and the comment) differ");
@@ -225,7 +225,7 @@ async function main() {
     const gwBlocks = hsBlocks(gwFiles.get("etc/tor/torrc.d-shade-tree"));
     ok(gwBlocks.length === 1 && gwBlocks[0].dir === "/var/lib/tor/shade-tree-gateway", "torrc: gateway HS block only (no bootnode HS)");
     ok(!/shade-tree-bootnode/.test(gwFiles.get("etc/tor/torrc.d-shade-tree").split("\n").filter((l) => !l.startsWith("#")).join("\n")), "torrc: no bootnode dir anywhere");
-    ok(gwBlocks[0].lines[0] === "HiddenServicePort 80 127.0.0.1:8443" && gwBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 0", "gateway block: port then PoW (default off)");
+    ok(gwBlocks[0].lines[0] === "HiddenServicePort 80 127.0.0.1:8443" && gwBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 0" && gwBlocks[0].lines[2] === "HiddenServiceMaxStreams 32" && gwBlocks[0].lines[3] === "HiddenServiceMaxStreamsCloseCircuit 1", "gateway block: port then PoW (default off)");
     ok(gwFiles.get("etc/systemd/system/shade-tree-gateway.service") === got.get("etc/systemd/system/shade-tree-gateway.service"), "gateway unit byte-identical to the default one");
     const hb = gwFiles.get("etc/systemd/system/shade-tree-heartbeat.service");
     ok(unitEnv(hb, "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "heartbeat announces to the REMOTE bootnode onion");
@@ -242,7 +242,15 @@ async function main() {
     // PoW toggle composes with gateway-only.
     const gwPow = render(work, "gw-only-pow", { SHADE_TREE_BOOTNODE_ONION: ONION, SHADE_TREE_ENABLE_POW: "1" });
     const gwPowBlocks = hsBlocks(await readFile(join(gwPow.out, "etc/tor/torrc.d-shade-tree"), "utf8"));
-    ok(gwPow.status === 0 && gwPowBlocks.length === 1 && gwPowBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 1", "gateway-only + SHADE_TREE_ENABLE_POW=1: single block, PoW on");
+    ok(gwPow.status === 0 && gwPowBlocks.length === 1 && gwPowBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 1" && gwPowBlocks[0].lines[2] === "HiddenServiceMaxStreams 32" && gwPowBlocks[0].lines[3] === "HiddenServiceMaxStreamsCloseCircuit 1", "gateway-only + SHADE_TREE_ENABLE_POW=1: single block, PoW on");
+    // OPS-10: the per-circuit stream cap is tunable and validated.
+    const ms = render(work, "gw-only-maxstreams", { SHADE_TREE_BOOTNODE_ONION: ONION, SHADE_TREE_HS_MAX_STREAMS: "64" });
+    const msBlocks = hsBlocks(await readFile(join(ms.out, "etc/tor/torrc.d-shade-tree"), "utf8"));
+    ok(ms.status === 0 && msBlocks[0].lines[2] === "HiddenServiceMaxStreams 64", "SHADE_TREE_HS_MAX_STREAMS=64 renders into the HS block");
+    for (const bad of ["0", "-1", "70000", "32;rm", "abc"]) {
+      const r = render(work, "gw-bad-maxstreams", { SHADE_TREE_BOOTNODE_ONION: ONION, SHADE_TREE_HS_MAX_STREAMS: bad });
+      ok(r.status !== 0 && /SHADE_TREE_HS_MAX_STREAMS must be an integer/.test(r.stderr), `bad SHADE_TREE_HS_MAX_STREAMS rejected: ${JSON.stringify(bad)}`);
+    }
     // --render <dir> CLI form == env form.
     const cli = render(work, "cli", { SHADE_TREE_BOOTNODE_ONION: ONION }, ["--render", join(work, "cli")]);
     ok(cli.status === 0 && (await readAll(join(work, "cli"))).get("etc/systemd/system/shade-tree-heartbeat.service") === hb, "`--render <dir>` == SHADE_TREE_RENDER_ONLY=<dir>");
@@ -256,7 +264,7 @@ async function main() {
       `emits torrc + Elder unit ONLY (${[...elderFiles.keys()].join(", ")})`);
     const elderBlocks = hsBlocks(elderFiles.get("etc/tor/torrc.d-shade-tree"));
     ok(elderBlocks.length === 1 && elderBlocks[0].dir === "/var/lib/tor/shade-tree-bootnode", "Elder-only torrc contains exactly the Elder hidden service");
-    ok(elderBlocks[0].lines[0] === "HiddenServicePort 80 127.0.0.1:8877" && elderBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 0", "Elder-only backend remains loopback-only with PoW off by default");
+    ok(elderBlocks[0].lines[0] === "HiddenServicePort 80 127.0.0.1:8877" && elderBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 0" && elderBlocks[0].lines[2] === "HiddenServiceMaxStreams 32" && elderBlocks[0].lines[3] === "HiddenServiceMaxStreamsCloseCircuit 1", "Elder-only backend remains loopback-only with PoW off by default");
     ok(elderFiles.get("etc/systemd/system/shade-tree-bootnode.service") === elderDef, "Elder-only unit is byte-identical to the default Elder unit");
     for (const alias of ["true", "yes", "on"]) {
       const r = render(work, `elder-only-${alias}`, { SHADE_TREE_ELDER_ONLY: alias });
@@ -352,8 +360,8 @@ async function main() {
     ok([...regFiles.keys()].join(",") === "etc/systemd/system/shade-tree-bootnode.service,etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/systemd/system/shade-tree-registrar.service,etc/tor/torrc.d-shade-tree",
       `emits torrc + 3 units + shade-tree-registrar.service (${[...regFiles.keys()].join(", ")})`);
     const rgT = hsBlocks(regFiles.get("etc/tor/torrc.d-shade-tree"));
-    ok(rgT.length === 2 && rgT[0].dir === "/var/lib/tor/shade-tree-bootnode" && rgT[0].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8877|HiddenServicePort 8878 127.0.0.1:8878|HiddenServicePoWDefensesEnabled 0", "bootnode HS block: port 80 + EXTRA port 8878 -> 127.0.0.1:8878, then the PoW line (registrar rides the bootnode onion)");
-    ok(rgT[1].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePoWDefensesEnabled 0", "gateway HS block unchanged");
+    ok(rgT.length === 2 && rgT[0].dir === "/var/lib/tor/shade-tree-bootnode" && rgT[0].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8877|HiddenServicePort 8878 127.0.0.1:8878|HiddenServicePoWDefensesEnabled 0|HiddenServiceMaxStreams 32|HiddenServiceMaxStreamsCloseCircuit 1", "bootnode HS block: port 80 + EXTRA port 8878 -> 127.0.0.1:8878, then the PoW line (registrar rides the bootnode onion)");
+    ok(rgT[1].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePoWDefensesEnabled 0|HiddenServiceMaxStreams 32|HiddenServiceMaxStreamsCloseCircuit 1", "gateway HS block unchanged");
     const ru = regFiles.get("etc/systemd/system/shade-tree-registrar.service");
     ok(/^ExecStart=\/usr\/bin\/node \/opt\/shade-tree\/payments\/registrar\.mjs$/m.test(ru) && unitEnv(ru, "SHADE_TREE_REGISTRAR_PORT") === "8878" && unitEnv(ru, "SHADE_TREE_PAID_ACCESS_CONTRACT") === REG.SHADE_TREE_PAID_ACCESS_CONTRACT && unitEnv(ru, "SHADE_TREE_PAY_ASSET") === REG.SHADE_TREE_PAY_ASSET && unitEnv(ru, "SHADE_TREE_PAY_PRICES") === REG.SHADE_TREE_PAY_PRICES && unitEnv(ru, "SHADE_TREE_RPC_URL") === REG.SHADE_TREE_RPC_URL && unitEnv(ru, "SHADE_TREE_REGISTRAR_STORE") === "/opt/shade-tree/deploy-state/registrar-state.json" && unitEnv(ru, "SHADE_TREE_REGISTRAR_ONION")?.endsWith(".onion"), "registrar unit: ExecStart payments/registrar.mjs + port/contract/asset/prices/rpc/store/onion env");
     ok(unitEnv(ru, "SHADE_TREE_REGISTRAR_KEY") === null && !/SHADE_TREE_REGISTRAR_KEY/.test(ru) && unitEnv(ru, "SHADE_TREE_PAY_TO") === null, "operator key NOT rendered (drop-in only); no SHADE_TREE_PAY_TO unless given");
@@ -484,7 +492,7 @@ async function main() {
     const gwRegFiles = await readAll(gwReg.out);
     ok(gwReg.status === 0 && [...gwRegFiles.keys()].join(",") === "etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/systemd/system/shade-tree-registrar.service,etc/tor/torrc.d-shade-tree", `gateway-only + registrar renders gateway + heartbeat + registrar units, no bootnode (${[...gwRegFiles.keys()].join(", ")})`);
     const gwRegT = hsBlocks(gwRegFiles.get("etc/tor/torrc.d-shade-tree"));
-    ok(gwRegT.length === 1 && gwRegT[0].dir === "/var/lib/tor/shade-tree-gateway" && gwRegT[0].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePort 8878 127.0.0.1:8878|HiddenServicePoWDefensesEnabled 0", "torrc: ONE HS block (gateway) with port 80 + EXTRA port 8878 (the registrar rides the GATEWAY onion), then the PoW line");
+    ok(gwRegT.length === 1 && gwRegT[0].dir === "/var/lib/tor/shade-tree-gateway" && gwRegT[0].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePort 8878 127.0.0.1:8878|HiddenServicePoWDefensesEnabled 0|HiddenServiceMaxStreams 32|HiddenServiceMaxStreamsCloseCircuit 1", "torrc: ONE HS block (gateway) with port 80 + EXTRA port 8878 (the registrar rides the GATEWAY onion), then the PoW line");
     const ruG = gwRegFiles.get("etc/systemd/system/shade-tree-registrar.service"), hbG = gwRegFiles.get("etc/systemd/system/shade-tree-heartbeat.service");
     ok(unitEnv(ruG, "SHADE_TREE_REGISTRAR_ONION") === "gatewayplaceholderplaceholderplaceholderplaceholderplace.onion" && unitEnv(hbG, "SHADE_TREE_REGISTRAR_ONION") === "gatewayplaceholderplaceholderplaceholderplaceholderplace.onion" && unitEnv(hbG, "SHADE_TREE_REGISTRAR_ADVERTISE") === "1" && unitEnv(hbG, "SHADE_TREE_BOOTNODE_ONION") === ONION + ".onion", "registrar + heartbeat name the GATEWAY onion as the registrar onion; heartbeat still announces to the remote bootnode");
     ok(unitEnv(gwRegFiles.get("etc/systemd/system/shade-tree-gateway.service"), "SHADE_TREE_ADMIT") === "invited,paid", "gateway-only gateway unit admits invited,paid");
@@ -526,7 +534,7 @@ async function main() {
     const tallyFiles = await readAll(tally.out);
     const tallyBlocks = hsBlocks(tallyFiles.get("etc/tor/torrc.d-shade-tree"));
     const tallyUnit = tallyFiles.get("etc/systemd/system/shade-tree-gateway.service");
-    ok(tally.status === 0 && tallyBlocks[1].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePort 8879 127.0.0.1:8879|HiddenServicePoWDefensesEnabled 0", "gateway onion maps distinct virtual port 8879 to the HTTP tally listener");
+    ok(tally.status === 0 && tallyBlocks[1].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePort 8879 127.0.0.1:8879|HiddenServicePoWDefensesEnabled 0|HiddenServiceMaxStreams 32|HiddenServiceMaxStreamsCloseCircuit 1", "gateway onion maps distinct virtual port 8879 to the HTTP tally listener");
     ok(unitEnv(tallyUnit, "SHADE_TREE_FLEET_TALLY_PEERS") === tallyPeer && unitEnv(tallyUnit, "SHADE_TREE_FLEET_TALLY_LISTEN") === "127.0.0.1:8879" && unitEnv(tallyUnit, "SHADE_TREE_TOR_PORT") === "9050", "gateway unit sends tally pushes through the local Tor SOCKS port and listens on the mapped backend");
     ok(/^EnvironmentFile=-\/etc\/shade-tree\/fleet-tally\.env$/m.test(tallyUnit) && ![...tallyFiles.values()].some((body) => body.includes(tallyToken)), "rendered artifacts reference a protected token file and never contain the tally token");
     for (const [name, env, re] of [

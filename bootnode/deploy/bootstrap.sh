@@ -27,6 +27,7 @@
 #   SHADE_TREE_BANNER      auto | always | never                 (default: never under systemd)
 #   SHADE_TREE_ENABLE_POW  1 | 0              (default: 0) onion PoW DoS defense
 #                    (HiddenServicePoWDefensesEnabled) on every HS block this box publishes.
+#   SHADE_TREE_HS_MAX_STREAMS  per-circuit stream cap on every HS block (default 32; OPS-10).
 #                    Default OFF: a client tor built without the pow module (e.g. the Homebrew
 #                    bottle, `tor --list-modules` -> `pow: no`) could NOT reach a PoW-enabled
 #                    onion (docs/DEPLOYMENT.md "PoW capability mismatch"); the agent-devops
@@ -159,6 +160,10 @@ RUN_USER="${SHADE_TREE_USER:-shade-tree}"
 SHADE_TREE_HELIOS="${SHADE_TREE_HELIOS:-0}"
 SHADE_TREE_HELIOS_CONSENSUS_RPC="${SHADE_TREE_HELIOS_CONSENSUS_RPC:-}"
 SHADE_TREE_RPC_URL="${SHADE_TREE_RPC_URL:-}"
+# Per-rendezvous-circuit stream cap on every onion this box publishes (OPS-10). A Proxy opens at
+# most one stream per tunnel and the node allows 8 tunnels per nullifier, so 32 leaves headroom;
+# a circuit that exceeds it is closed rather than queued.
+SHADE_TREE_HS_MAX_STREAMS="${SHADE_TREE_HS_MAX_STREAMS:-32}"
 SHADE_TREE_GROUP_CONTRACT="${SHADE_TREE_GROUP_CONTRACT:-}"
 SHADE_TREE_HELIOS_NETWORK="${SHADE_TREE_HELIOS_NETWORK:-sepolia}"
 SHADE_TREE_HELIOS_PORT="${SHADE_TREE_HELIOS_PORT:-8546}"
@@ -430,6 +435,9 @@ fi
 [ -z "$SHADE_TREE_ZK_ARTIFACT_LEGACY" ] || [ -n "$SHADE_TREE_ZK_ARTIFACTS" ] \
   || die "SHADE_TREE_ZK_ARTIFACT_LEGACY requires an explicit SHADE_TREE_ZK_ARTIFACTS set"
 
+[[ "$SHADE_TREE_HS_MAX_STREAMS" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$SHADE_TREE_HS_MAX_STREAMS" -le 65535 ] \
+  || die "SHADE_TREE_HS_MAX_STREAMS must be an integer 1..65535"
+
 # --- renderers: the ONLY places torrc / unit text is produced (live + render mode share them) ---
 # torrc include: one HiddenServiceDir block per onion this box publishes. The PoW line is a
 # per-service option, so it sits INSIDE each block right after its HiddenServicePort.
@@ -446,6 +454,8 @@ render_torrc() {  # $1 = output file
       # The 402 registrar rides the SAME onion on an extra virtual port (SHADE_TREE_REGISTRAR=1).
       [ "$SHADE_TREE_REGISTRAR" = "1" ] && echo "HiddenServicePort ${SHADE_TREE_REGISTRAR_PORT} 127.0.0.1:${SHADE_TREE_REGISTRAR_PORT}"
       echo "HiddenServicePoWDefensesEnabled ${SHADE_TREE_ENABLE_POW}"
+      echo "HiddenServiceMaxStreams ${SHADE_TREE_HS_MAX_STREAMS}"
+      echo "HiddenServiceMaxStreamsCloseCircuit 1"
     else
       echo "# shade-tree: gateway-only box (bootnode is remote: ${SHADE_TREE_BOOTNODE_ONION}). PoW defense: SHADE_TREE_ENABLE_POW=${SHADE_TREE_ENABLE_POW}."
     fi
@@ -456,6 +466,8 @@ render_torrc() {  # $1 = output file
       # Gateway-only box: the 402 registrar rides the GATEWAY onion on an extra virtual port (T-FEAT-9).
       [ "$SHADE_TREE_REGISTRAR" = "1" ] && [ "$WITH_BOOTNODE" = "0" ] && echo "HiddenServicePort ${SHADE_TREE_REGISTRAR_PORT} 127.0.0.1:${SHADE_TREE_REGISTRAR_PORT}"
       echo "HiddenServicePoWDefensesEnabled ${SHADE_TREE_ENABLE_POW}"
+      echo "HiddenServiceMaxStreams ${SHADE_TREE_HS_MAX_STREAMS}"
+      echo "HiddenServiceMaxStreamsCloseCircuit 1"
     fi
   } > "$1"
 }
