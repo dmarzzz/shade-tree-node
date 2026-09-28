@@ -2,19 +2,29 @@
 
 ## Status
 
-This is a research-preview reference implementation. The Sepolia fleet deployed
-on 2026-08-17 is retired, incompatible pre-v4 history. The public Grove observes
-that old fleet read-only; this repository does not publish a current v4 client
-profile. The code is **unaudited**, and its ZK artifacts (`circuits/rln/`) came
-from an **untrusted testnet phase-2 setup**. The production trusted-setup ceremony
-has not been run (`circuits/rln/ARTIFACTS.md`,
-[issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6), and
-`docs/CEREMONY.md`). The private-IP SSRF flaw in the default egress policy was
-fixed in [issue #73](https://github.com/dmarzzz/shade-tree-node/issues/73); nodes
-now resolve and reject non-public destinations before dialing the checked numeric
-address. Do not deploy the node, put real funds on the contracts, or depend on
-this code for sensitive use until the production ceremony is complete and the
-system has been independently reviewed.
+This is a research preview on Sepolia. A live canopy (one Elder Tree and three
+Shade Tree nodes) admits invited members and permissionless Sepolia stakers; its
+record is [`network/sepolia/deployment.json`](network/sepolia/deployment.json).
+Everything in it is testnet material:
+
+- The code is **unaudited** by a third party. An internal contract review found
+  issues that need a fresh deployment
+  ([issue #113](https://github.com/dmarzzz/shade-tree-node/issues/113)); the live
+  `StakedReputationSet` (`0xEB67…4275`) predates those fixes and the self-slash
+  change in #115, and is replaced at the ShadeNet launch.
+- The ZK artifacts (`circuits/rln/`) come from an **untrusted testnet phase-2
+  setup**. A holder of that setup's toxic waste could forge proofs. The
+  production trusted-setup ceremony has not been run
+  ([issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6),
+  `docs/CEREMONY.md`).
+- The private-IP SSRF flaw in the default egress policy was fixed in
+  [issue #73](https://github.com/dmarzzz/shade-tree-node/issues/73); nodes resolve
+  and reject non-public destinations before dialing the checked numeric address.
+
+Do not put real funds on the contracts or depend on this code for sensitive use
+until the production ceremony is complete and the system has been independently
+reviewed. Key rotations are recorded in
+[`docs/KEY-ROTATIONS.md`](docs/KEY-ROTATIONS.md).
 
 The full trust model, per-party threat model, and trust boundaries are in
 [`docs/AUDIT.md`](docs/AUDIT.md). Read it before reporting: several sharp edges
@@ -77,7 +87,8 @@ instead.
   (and the README "What it does not protect against") that is called out as deliberately
   out of scope or an operator responsibility (sourcing clean egress IPs, rendezvous DoS with PoW off, one operator, and so on).
 
-See `docs/SHIP-PLAN.md` for the full residual list and its priorities.
+`docs/SHIP-PLAN.md` is the historical residual list; open work is tracked in the
+issues.
 
 ## Reporting
 
@@ -87,7 +98,9 @@ Report privately. Do not open a public issue for a suspected vulnerability.
   `dmarzzz/shade-tree-node`
   (repository → Security → Advisories → "Report a vulnerability").
 
-That is the intended private channel. There is no dedicated security email.
+Private vulnerability reporting is enabled on the repository, so the advisory
+stays private between you and the maintainers until a fix ships. There is no
+dedicated security email.
 
 Please include: the affected file and symbol, the trust boundary crossed, a
 reproduction (a failing `*selftest.mjs` or `forge` test is ideal, since the
