@@ -269,7 +269,7 @@ shareButton.addEventListener("click", async () => {
   if (navigator.share) {
     try {
       await navigator.share({
-        title: "Live Protocol Lab · Shade Tree Grove",
+        title: "Live Protocol Lab · ShadeNet",
         text: "One live Shade Tree request, with every routing and proof step visible.",
         url: labShareUrl,
       });

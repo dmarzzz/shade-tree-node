@@ -47,15 +47,15 @@ Below five reporters the window is `suppressed` with `minimum-cohort`. Missing, 
 windows are `suppressed` with `unavailable`. Suppressed windows omit `roundedBytes` completely—zero
 is never a placeholder for unavailable data. No API exposes the Elder's raw node map.
 
-The Tor-capable Grove collector verifies the Elder aggregate against the same pinned signer as the
+The Tor-capable canopy collector verifies the Elder aggregate against the same pinned signer as the
 directory, strips its transport signature and signer, and places the allowlisted aggregate under the
-single top-level `relay` field in `shade-tree-public-grove-v2`. The dedicated Grove publication
+single top-level `relay` field in `shade-tree-public-grove-v2`. The dedicated canopy publication
 signature covers the whole v2 object. V1 remains unchanged.
 
 The same-origin endpoint is `GET /api/v2/data/grove/sepolia/head`; its exact OpenAPI document is
 served at `/api/v2/openapi.json`. The function validates exact keys, a fresh `observedAt`, a relay
 aggregate generated within the last hour, the publication signature, cohort/window/rounding
 relationships, and a 64-KiB response cap. Failures are
-non-cacheable `503` responses. The browser repeats exact-key and Ed25519 verification. The Grove UI
+non-cacheable `503` responses. The browser repeats exact-key and Ed25519 verification. The canopy UI
 adds `Payload relayed, 24h` only for a verified, non-suppressed 24-hour value; it renders no empty,
 sample, demo, or zero placeholder.

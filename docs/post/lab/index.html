@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, follow">
-  <meta name="description" content="Send one live request through Shade Tree Grove and inspect every protocol step and its Groth16 proof.">
+  <meta name="description" content="Send one live request through ShadeNet and inspect every protocol step and its Groth16 proof.">
   <meta name="theme-color" content="#050b08">
-  <meta property="og:title" content="Live Protocol Lab · Shade Tree Grove">
+  <meta property="og:title" content="Live Protocol Lab · ShadeNet">
   <meta property="og:description" content="One real request. Every private-routing step. The actual ZK proof.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://shade-tree-node.vercel.app/lab/">
@@ -17,19 +17,19 @@
   <link rel="stylesheet" href="./lab.css">
   <script type="module" src="../site.js"></script>
   <script type="module" src="./lab.js"></script>
-  <title>Live Protocol Lab · Shade Tree Grove</title>
+  <title>Live Protocol Lab · ShadeNet</title>
 </head>
 <body class="lab-page">
   <a class="skip-link" href="#lab-main">Skip to the live Lab</a>
 
   <nav class="site-nav lab-nav" aria-label="Primary navigation">
-    <a class="wordmark" href="../index.html" aria-label="Shade Tree Grove home">
+    <a class="wordmark" href="../index.html" aria-label="ShadeNet home">
       <span class="tree-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span>Shade Tree Grove</span>
+      <span>ShadeNet</span>
     </a>
     <div class="nav-links">
       <a aria-current="page" href="./index.html">Lab</a>
-      <a href="../grove/index.html">Grove</a>
+      <a href="../canopy/">Canopy</a>
       <a href="../research/index.html">Research</a>
       <a href="https://github.com/dmarzzz/shade-tree-node">Source</a>
     </div>
@@ -70,7 +70,7 @@
           <ol class="route-stages" aria-label="Live request stages">
             <li data-stage="discover">
               <span class="stage-node">01</span>
-              <div><strong>Discover</strong><span>verify signed Canopy</span></div>
+              <div><strong>Discover</strong><span>verify the signed directory</span></div>
             </li>
             <li data-stage="select">
               <span class="stage-node">02</span>
@@ -148,11 +148,11 @@
       <p data-response-answer>No request sent yet</p>
       <div class="response-time"><span>End to end</span><strong data-response-time>—</strong></div>
       <nav class="lab-next" data-lab-next aria-label="Continue after this Lab run" hidden>
-        <button type="button" data-copy="Set up Shade Tree Grove for this agent by following https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install and verify the checksummed v0.6.0 Rust -live binary with embedded Arti. Create identity.json locally, fund a separate Sepolia key with 0.1 ETH plus gas, and run register-member --identity identity.json. Use the bundled public-stake-v1 profile without members.json. It grants one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined traffic cap. Keep identity.json, the funded key, and proxy-token.txt private. Never use real funds or sensitive traffic with this research preview. Then launch this agent with shade-tree run -- &lt;agent-command&gt;." data-copy-target="lab-agent-brief" data-copy-noun="Agent brief">Give this to my agent</button>
-        <a href="../operator/index.html">Grow the Grove</a>
+        <button type="button" data-copy="Set up ShadeNet for this agent by following https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install and verify the checksummed v0.6.0 Rust -live binary with embedded Arti. Create identity.json locally, fund a separate Sepolia key with 0.1 ETH plus gas, and run register-member --identity identity.json. Use the bundled public-stake-v1 profile without members.json. It grants one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined traffic cap. Keep identity.json, the funded key, and proxy-token.txt private. Never use real funds or sensitive traffic with this research preview. Then launch this agent with shade-tree run -- &lt;agent-command&gt;." data-copy-target="lab-agent-brief" data-copy-noun="Agent brief">Give this to my agent</button>
+        <a href="../operator/index.html">Grow the canopy</a>
         <button type="button" data-share-lab>Share / copy</button>
       </nav>
-      <code id="lab-agent-brief" class="copy-fallback" hidden>Set up Shade Tree Grove for this agent by following https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install and verify the checksummed v0.6.0 Rust -live binary with embedded Arti. Create identity.json locally, fund a separate Sepolia key with 0.1 ETH plus gas, and run register-member --identity identity.json. Use the bundled public-stake-v1 profile without members.json. It grants one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined traffic cap. Keep identity.json, the funded key, and proxy-token.txt private. Never use real funds or sensitive traffic with this research preview. Then launch this agent with shade-tree run -- &lt;agent-command&gt;.</code>
+      <code id="lab-agent-brief" class="copy-fallback" hidden>Set up ShadeNet for this agent by following https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install and verify the checksummed v0.6.0 Rust -live binary with embedded Arti. Create identity.json locally, fund a separate Sepolia key with 0.1 ETH plus gas, and run register-member --identity identity.json. Use the bundled public-stake-v1 profile without members.json. It grants one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined traffic cap. Keep identity.json, the funded key, and proxy-token.txt private. Never use real funds or sensitive traffic with this research preview. Then launch this agent with shade-tree run -- &lt;agent-command&gt;.</code>
       <span class="sr-only" role="status" aria-live="polite" data-share-status></span>
     </footer>
   </main>

@@ -9,11 +9,11 @@ node**, and the discovery bootnode the **Elder Tree**. Source paths, environment
 flags, and historical records retain `client`, `gateway`, and `bootnode` where compatibility
 matters.
 
-> **Current network status.** This checkout is envelope v4 only. Ask a v4 Grove operator for
-> its discovery pins and admission path, or run the local Grove in [QUICKSTART.md](QUICKSTART.md).
+> **Current network status.** This checkout is envelope v4 only. Ask a v4 canopy operator for
+> its discovery pins and admission path, or run the local canopy in [QUICKSTART.md](QUICKSTART.md).
 > The legacy Sepolia contract/directory files and 2026-08-17 log describe the incompatible
 > pre-v4 fleet. A separate `network/sepolia/deployment.json` records the live disposable v4
-> research Grove behind the public aggregate map. Since 2026-09-03 its explicit staked path is a
+> research canopy behind the public aggregate map. Since 2026-09-03 its explicit staked path is a
 > Sepolia testnet access offer; invited members still need private operator-supplied membership
 > material. Never substitute the legacy `bootnode.json` or directory files.
 
@@ -22,7 +22,7 @@ their onions, payment endpoint, or `sepolia` network preset with the current Pro
 `deployment.json` explicitly reuses only the compatible staking set and gateway registry and
 publishes the active archival RPC and deploy block beside them.
 
-## connect to an operator's v4 Grove: what you need
+## connect to an operator's v4 canopy: what you need
 
 - Node.js 20 or newer, then `npm install` in this repo (`npm link` if you want `shade-tree` on PATH,
   otherwise `node bin/shade-tree.mjs` everywhere)
@@ -30,11 +30,11 @@ publishes the active archival RPC and deploy block beside them.
   starts one on SOCKS 9260, or use a system tor with `SHADE_TREE_TOR_PORT=9050`
 - your secret, sent to you privately and loaded through a hidden shell read
 - your exact enrolled tier from the operator
-- either one v4 node onion, or the operator's v4 Elder Tree onion plus pinned Canopy signer
+- either one v4 node onion, or the operator's v4 Elder Tree onion plus pinned canopy signer
 - for invited admission, the operator's current member list
 - for paid or staked admission, the registrar, chain, and contract values supplied by that operator
 
-## connect to an operator's v4 Grove: run it
+## connect to an operator's v4 canopy: run it
 
 ```bash
 npm install && npm link
@@ -59,11 +59,11 @@ curl -x http://127.0.0.1:8888 https://api.ipify.org               # the selected
 ```
 
 The Elder Tree onion and signer are one trust-pinned pair; get both from the same v4 operator.
-The Proxy fetches that operator's signed Canopy over Tor and selects from the nodes it
+The Proxy fetches that operator's signed canopy directory over Tor and selects from the nodes it
 lists. The gate is fail-closed: without a valid membership proof every connection is dropped,
-and the Grove address buys nothing on its own. If the operator gives you one node instead,
+and the canopy address buys nothing on its own. If the operator gives you one node instead,
 replace discovery with `--onion <v4-node.onion>`. Full member guide:
-[`docs/post/JOIN.md`](post/JOIN.md) / [`docs/QUICKSTART.md`](QUICKSTART.md).
+[`docs/QUICKSTART.md`](QUICKSTART.md).
 
 ## use it
 
@@ -81,7 +81,7 @@ or query. It does see the hostname and port plus timing, lifetime, and traffic v
 
 To restrict admission policy, add `--max-anon`. The Proxy then uses only nodes that admit
 **invited** members and no staked or paid population, and refuses to run if your own leaf is
-staked or paid. If no node in the Grove is invited-only, it refuses the connection. This is a
+staked or paid. If no node in the canopy is invited-only, it refuses the connection. This is a
 policy filter, not a defense against timing or application-level correlation. Without
 `--max-anon` the Proxy routes to nodes that admit your leaf source (`docs/CLIENTS.md`
 "Leaf source"; `--leaf-source paid` pins the set if you hold more than one leaf).
@@ -109,7 +109,7 @@ shade-tree proxy --limit "$SHADE_TREE_LIMIT" --leaf-source paid \
 ```
 
 A node operator chooses what it admits (`invited`, `staked`, `paid`) and what it sells (which
-402 rails); the operator's `/health` `pay.protocols` (or the node's `caps.pay` in the Canopy)
+402 rails); the operator's `/health` `pay.protocols` (or the node's `caps.pay` in the canopy directory)
 lists the rails you can pay with. `shade-tree pay --protocol mpp` against an x402-only registrar tells
 you to retry with `--protocol x402`.
 
@@ -175,7 +175,7 @@ Want to see exactly what happens to your bytes? Open `docs/walkthrough.html` in 
 > mapped to the new gateway on the same box; then the "Box-1 tidy" stopped the PoC tor that
 > published that onion, so the PoC onion is dark (the PoC checkout and its HS keys were left in
 > place, not deleted). A PoC secret may identify a leaf in the historical
-> `group/members.json`, but that does not grant access to a current v4 Grove. Ask a current
+> `group/members.json`, but that does not grant access to a current v4 canopy. Ask a current
 > operator for admission. `scripts/join.sh` and `scripts/run-client.sh` (code, unchanged)
 > still default to the PoC onion. Do not replace it with the pre-v4 Sepolia preset; use a v4
 > operator's explicit `--onion`, or `--bootnode` plus `--dir-signer`, instead. The rest of this

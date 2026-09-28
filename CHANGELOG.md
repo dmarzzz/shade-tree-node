@@ -1,5 +1,12 @@
 # Changelog
 
+ShadeNet was formerly Shade Tree Grove; entries below keep the names they shipped with.
+
+## Unreleased
+
+- Public copy, site and current docs renamed to ShadeNet; Grove and Canopy merged into canopy. `/canopy` serves the network page and `/grove`, `/grove/network.json` and the v1/v2 Data API paths keep working. Signed and hashed wire strings are unchanged.
+- `/pricing` redirects to `/stake/`. The stale public `JOIN.md` and `RUN-A-GATEWAY.md` copies under the site are removed.
+
 ## 0.6.0 — Private staking and recovery
 
 **Official Sepolia research preview.** This release still uses unaudited,

@@ -8,7 +8,7 @@ The public Protocol v4 profile is deliberately narrow:
 - recover the stake after the ZK-authorized 24-hour exit window unless the member is slashed.
 
 The deployed proof artifacts are explicitly untrusted testnet material. This is a disposable
-research Grove, not a production anonymity system.
+research canopy, not a production anonymity system.
 
 ## What “one request” means
 
@@ -17,14 +17,14 @@ cannot see or count Google queries, HTTP requests, or HTTP/2 streams inside that
 is `floor(unixSeconds / 60)`, not a rolling window, so uses immediately before and after a minute
 boundary are possible.
 
-The v4 external nullifier is Grove-wide, not egress-specific. Honest JavaScript and Rust clients
+The v4 external nullifier is canopy-wide, not egress-specific. Honest JavaScript and Rust clients
 therefore allocate one tier-1 slot total and reuse the identical proof only for gateway failover.
 Using the same private slot for two different target-bound requests produces slash evidence.
 
 Nodes also exchange spent-nullifier notices. That fleet tally closes ordinary sequential replay,
 but it is asynchronous and fail-open: simultaneous requests, a partition, or a dropped notice can
 still race. The accurate claim is **one honest-client allocation per fixed minute, with best-effort
-Grove-wide replay suppression**. A hard per-egress entitlement would require an egress-scoped
+canopy-wide replay suppression**. A hard per-egress entitlement would require an egress-scoped
 external nullifier and a new protocol version.
 
 ## Protocol parameters

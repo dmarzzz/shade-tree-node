@@ -1,4 +1,4 @@
-# Shade Tree Grove Data API
+# ShadeNet Data API
 
 The [Grove](https://shade-tree-node.vercel.app/grove/) is a deliberately small
 public view of Shade Tree. It shows how many gateway identities appeared in the

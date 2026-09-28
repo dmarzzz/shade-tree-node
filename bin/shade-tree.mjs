@@ -83,7 +83,7 @@ const FLAG_ENV = {
 const COMMANDS = {
   run:               { help: "run an agent with process-scoped Shade Tree routing: shade-tree run [--proxy http://127.0.0.1:8888] -- <command> [args]" },
   keygen:            { script: "bootnode/keygen.mjs",       help: "mint an onion identity (refuses overwrite): shade-tree keygen <hsDir> [--label name] [--force]" },
-  elder:             { script: "bootnode/server.mjs",       help: "run the Elder Tree, which signs the Grove's Canopy", long: true },
+  elder:             { script: "bootnode/server.mjs",       help: "run the Elder Tree, which signs the canopy directory", long: true },
   bootnode:          { script: "bootnode/server.mjs",       help: "legacy alias for `elder`", long: true },
   heartbeat:         { script: "bootnode/heartbeat.mjs",    help: "keep this node announced to the Elder Tree", long: true },
   join:              { script: "group/join.mjs",            help: "guided front door: `shade-tree join [member]` or `shade-tree join node`; make an identity + print the next commands (`gateway` remains an alias)" },
@@ -182,7 +182,7 @@ function proxyHelp(command = "proxy") {
   console.log(`Discovery defaults to the bundled current v4 ${DEFAULT_CLIENT_NETWORK} Elder and refreshes its signed Canopy about every five minutes.`);
   console.log("An explicit --bootnode/--dir-signer, --directory/--dir-signer, or --onion overrides discovery.");
   console.log("New tunnels rotate smoothly across healthy weighted gateways by default; --no-rotation-spread restores weighted-random first picks.");
-  console.log("The bundled staking contract/RPC/tier/rate policy need no flags; alternate Groves do.");
+  console.log("The bundled staking contract/RPC/tier/rate policy need no flags; alternate canopies do.");
   console.log("Guide: https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md");
 }
 
