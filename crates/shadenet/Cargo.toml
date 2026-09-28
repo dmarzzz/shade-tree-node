@@ -21,7 +21,6 @@ live = [
     "dep:tor-rtcompat",
     "dep:tokio",
     "dep:reqwest",
-    "dep:num-bigint",
     "dep:base64",
     "dep:getrandom",
     "dep:url",
@@ -46,6 +45,10 @@ sha2 = "0.11"
 thiserror = "2"
 tracing = "0.1"
 zeroize = { version = "1", features = ["derive"] }
+# shadenet::eth (replaces ethers-core): both already in the tree through shadenet-proto.
+k256 = { version = "0.14", features = ["ecdsa"] }
+sha3 = "0.12"
+num-bigint = "0.4"
 
 shadenet-rln = { path = "../shadenet-rln", optional = true }
 # Embedded Tor. `compression` stays off (one onion, one JSON line) and `static-sqlite` bundles
@@ -54,7 +57,6 @@ arti-client = { version = "0.46", default-features = false, features = ["tokio",
 tor-rtcompat = { version = "0.46", default-features = false, features = ["tokio", "rustls"], optional = true }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
-num-bigint = { version = "0.4", optional = true }
 base64 = { version = "0.23", optional = true }
 getrandom = { version = "0.4", optional = true }
 # `Client::fetch`: HTTPS over a tunnel (HTTP/1.1, rustls with the ring provider already in the tree).
