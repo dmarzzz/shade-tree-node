@@ -56,7 +56,7 @@ hex = "0.4"
 #   - WitnessCalculator(rln.wasm) -> full witness (SAME circom compile as the zkey,
 #     so no witness-graph / wire-order mismatch risk),
 #   - CircomReduction (the snarkjs-compatible QAP reduction).
-ark-circom = "0.5"
+ark-circom = "0.6"
 ark-groth16 = { version = "0.5", default-features = false }
 ark-bn254 = "0.5"
 ark-ff = "0.5"
