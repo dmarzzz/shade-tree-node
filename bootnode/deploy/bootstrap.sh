@@ -897,20 +897,19 @@ log "node 24"
 # `curl | bash` of a third-party apt setup script. Another version must bring its own sha256.
 case "$(uname -m)" in x86_64) NODE_ARCH=x64 ;; aarch64|arm64) NODE_ARCH=arm64 ;; *) die "unsupported CPU $(uname -m)" ;; esac
 NODE_SHA256="${SHADE_TREE_NODE_SHA256:-$(node_pinned_sha256 "$SHADE_TREE_NODE_VERSION" "$NODE_ARCH")}"
-if [ "$(command -v node >/dev/null && node -p process.versions.node)" != "$SHADE_TREE_NODE_VERSION" ]; then
+# Installed privately under /opt/node-v<version>; the units and npm use it by absolute path, so a
+# system node that other software on the host depends on is left alone.
+node_dir="/opt/node-v${SHADE_TREE_NODE_VERSION}"
+if [ -z "${SHADE_TREE_NODE_BIN:-}" ] && [ "$("$node_dir/bin/node" -p process.versions.node 2>/dev/null)" != "$SHADE_TREE_NODE_VERSION" ]; then
   [ -n "$NODE_SHA256" ] || die "no pinned sha256 for node $SHADE_TREE_NODE_VERSION ($NODE_ARCH); set SHADE_TREE_NODE_SHA256"
   node_tar="$(mktemp)"
   curl -fsSL --proto '=https' "https://nodejs.org/dist/v${SHADE_TREE_NODE_VERSION}/node-v${SHADE_TREE_NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o "$node_tar"
   echo "${NODE_SHA256}  ${node_tar}" | sha256sum -c --quiet - || die "node tarball checksum mismatch"
-  node_dir="/opt/node-v${SHADE_TREE_NODE_VERSION}"
   rm -rf "$node_dir" && mkdir -p "$node_dir"
   tar -xJf "$node_tar" -C "$node_dir" --strip-components=1 && rm -f "$node_tar"
-  ln -sfn "$node_dir/bin/node" /usr/local/bin/node
-  ln -sfn "$node_dir/bin/npm" /usr/local/bin/npm
-  hash -r
 fi
-node --version
-NODE_BIN="${SHADE_TREE_NODE_BIN:-$(command -v node)}"
+NODE_BIN="${SHADE_TREE_NODE_BIN:-$node_dir/bin/node}"
+"$NODE_BIN" --version
 
 log "tor (official repo, for pow: yes)"
 if ! command -v tor >/dev/null; then
@@ -944,7 +943,7 @@ else
   git clone --depth 1 --branch "$SHADE_TREE_REF" "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q \
     || { git clone --depth 1 "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q && git -C "$SHADE_TREE_DIR" checkout -q "$SHADE_TREE_REF"; }
 fi
-( cd "$SHADE_TREE_DIR" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 )
+( cd "$SHADE_TREE_DIR" && PATH="$(dirname "$NODE_BIN"):$PATH" npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 )
 
 # A live invited gateway must trust an operator-supplied set, never the repository's demo
 # members. Validate the document with the runtime we just installed, then copy it outside every
@@ -953,7 +952,7 @@ fi
 # the source remains explicit, while the unit always reads the canonical protected copy.
 if [ "$WITH_GATEWAY" = "1" ] && [ "$ADMIT_INVITED" = "1" ]; then
   MEMBERS_SOURCE="$SHADE_TREE_MEMBERS_FILE"
-  node - "$MEMBERS_SOURCE" <<'NODE'
+  "$NODE_BIN" - "$MEMBERS_SOURCE" <<'NODE'
 const { readFileSync } = require("node:fs");
 const path = process.argv[2];
 let doc;
@@ -978,13 +977,13 @@ fi
 
 log "onion identities (reused if present)"
 if [ "$WITH_BOOTNODE" = "1" ]; then
-  [ -f "$BN_HS/hostname" ] || node "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$BN_HS" --label bootnode >/dev/null
+  [ -f "$BN_HS/hostname" ] || "$NODE_BIN" "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$BN_HS" --label bootnode >/dev/null
   BN_ONION="$(cat "$BN_HS/hostname")"
 else
   BN_ONION="$SHADE_TREE_BOOTNODE_ONION"   # remote; nothing minted here
 fi
 if [ "$WITH_GATEWAY" = "1" ]; then
-  [ -f "$GW_HS/hostname" ] || node "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$GW_HS" --label gateway  >/dev/null
+  [ -f "$GW_HS/hostname" ] || "$NODE_BIN" "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$GW_HS" --label gateway  >/dev/null
   GW_ONION="$(cat "$GW_HS/hostname")"
 else
   GW_ONION=""
@@ -1164,7 +1163,7 @@ EOF
 if [ "$WITH_GATEWAY" = "0" ]; then
   log "waiting for the Elder signer + onion descriptor (~15s)…"
   sleep 15
-  SIGNER="$(node -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
+  SIGNER="$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
   cat <<EOF
 
 ========================================================================
@@ -1183,7 +1182,7 @@ EOF
 elif [ "$WITH_BOOTNODE" = "1" ]; then
   log "waiting for the bootnode signer + onion descriptors (~15s)…"
   sleep 15
-  SIGNER="$(node -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
+  SIGNER="$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
   cat <<EOF
 
 ========================================================================
