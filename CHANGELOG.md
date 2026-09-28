@@ -212,5 +212,5 @@ unpublished for this binary-first preview.
 - Exit and withdrawal paths require contracts deployed with the new contexts.
 - The checked-in Sepolia records describe the earlier research deployment.
 
-See [`docs/MIGRATING-TO-SHADE-TREE.md`](docs/MIGRATING-TO-SHADE-TREE.md) for
+See [`docs/history/MIGRATING-TO-SHADE-TREE.md`](docs/history/MIGRATING-TO-SHADE-TREE.md) for
 the rollout sequence.

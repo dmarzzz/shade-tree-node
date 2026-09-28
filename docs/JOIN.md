@@ -133,7 +133,7 @@ shade-tree enroll --commitment-only --limit "$SHADE_TREE_LIMIT"
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
 read -s SHADE_TREE_REGISTER_KEY
 SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" \
-shade-tree register-member <commitment> --limit "$SHADE_TREE_LIMIT" \
+shade-tree register-member <identity-commitment> --limit "$SHADE_TREE_LIMIT" \
   --rpc-url <operator-rpc-url> --group-contract <v4-staked-set-address>
 unset SHADE_TREE_REGISTER_KEY
 shade-tree proxy --limit "$SHADE_TREE_LIMIT" --leaf-source staked \
@@ -162,7 +162,7 @@ a node can detect. One proof admits one CONNECT tunnel, not each HTTP request in
 
 Ctrl-C the Proxy; `pkill -f torrc.client` if you started the laptop Tor with `start-tor-client.sh`.
 
-Want to see exactly what happens to your bytes? Open `docs/walkthrough.html` in a browser and step through it (recorded on the June PoC; the request path is the same).
+Want to see exactly what happens to your bytes? Open `docs/history/walkthrough.html` in a browser and step through it (recorded on the June PoC; the request path is the same).
 
 ---
 
@@ -170,7 +170,7 @@ Want to see exactly what happens to your bytes? Open `docs/walkthrough.html` in 
 
 > **Read first.** This is the original single-gateway PoC path (`scripts/join.sh`, a pinned
 > onion, the committed `group/members.json`). **It does not work since 2026-08-17.** The PoC box
-> was reused for the live fleet's bootnode + gateway-1 (`docs/GO-LIVE-LOG-2026-08-17.md`,
+> was reused for the live fleet's bootnode + gateway-1 (`docs/history/GO-LIVE-LOG-2026-08-17.md`,
 > Phase 1.1): the PoC gateway process was killed at go-live and, for a few hours, the PoC onion
 > mapped to the new gateway on the same box; then the "Box-1 tidy" stopped the PoC tor that
 > published that onion, so the PoC onion is dark (the PoC checkout and its HS keys were left in

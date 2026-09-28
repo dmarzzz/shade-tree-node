@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-13
-- Task: milestone 4 (docs/ROADMAP-v1.md #4), invariant I6 (docs/CONTRACTS-AUDIT.md)
+- Task: milestone 4 (docs/history/ROADMAP-v1.md #4), invariant I6 (docs/CONTRACTS-AUDIT.md)
 
 ## Context
 
@@ -70,4 +70,4 @@ and re-checkable by any client from `GET /gateway/<onion>`.
 - lib/directory.mjs `onionToPubkey` / `pubkeyToOnion` (a v3 onion IS an ed25519 key)
 - bootnode/announce.mjs (the off-chain onion to operator signature)
 - docs/BOOTNODE.md ("The onion is never on chain")
-- docs/ROADMAP-v1.md #4
+- docs/history/ROADMAP-v1.md #4

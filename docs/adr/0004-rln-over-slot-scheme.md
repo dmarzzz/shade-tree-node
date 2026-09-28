@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-13
-- Task: milestone 1 (docs/ROADMAP-v1.md #1)
+- Task: milestone 1 (docs/history/ROADMAP-v1.md #1)
 
 ## Context
 
@@ -74,4 +74,4 @@ membership proof and asserted the binding with a cheap `signal == share.x` check
 - circuits/rln/ARTIFACTS.md (artifact provenance, untrusted ceremony)
 - contracts/StakedReputationSet.sol `slash` (cryptographic, permissionless)
 - docs/CONTRACTS-AUDIT.md invariant I8 (membership leaf == rate commitment)
-- docs/ROADMAP-v1.md #1 (the slot scheme, superseded)
+- docs/history/ROADMAP-v1.md #1 (the slot scheme, superseded)

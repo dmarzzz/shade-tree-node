@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Cheats} from "./Cheats.sol";
 import {PaidAccessSet} from "../contracts/PaidAccessSet.sol";
 import {StakedReputationSet, IWithdrawVerifier, ICommitmentHasher} from "../contracts/StakedReputationSet.sol";
+import {StakedReputationSetHarness} from "./StakedReputationSetHarness.sol";
 import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
@@ -399,7 +400,7 @@ contract PaidAccessSetTest is Cheats {
         uint256[] memory xb = new uint256[](1);
         xl[0] = 32;
         xb[0] = 4 * 0.001 ether;
-        StakedReputationSet staked = new StakedReputationSet(
+        StakedReputationSetHarness staked = new StakedReputationSetHarness(
             0.001 ether, 300, 270, IWithdrawVerifier(address(v)), ICommitmentHasher(address(hasher)), xl, xb
         );
         assertEq(staked.currentRoot(), set.currentRoot(), "empty roots equal");

@@ -6,7 +6,7 @@
   (tiers); does not change any contract, proof, or wire envelope.
 - Date: 2026-08-18
 - Task: T-FEAT-9 — per-gateway admission policy + per-provider payment rails, as assigned by the
-  2026-08-18 ship loop. NOTE: `docs/SHIP-PLAN.md` also uses the id T-FEAT-9 for the loop-3
+  2026-08-18 ship loop. NOTE: `docs/history/SHIP-PLAN.md` also uses the id T-FEAT-9 for the loop-3
   threshold-signed directory (shipped, `docs/WIRE-SPEC.md` §4.4); the two are unrelated. In
   code and docs "T-FEAT-9" next to `SHADE_TREE_ADMIT` / `admits` / `pay` / `--max-anon` means THIS ADR.
 

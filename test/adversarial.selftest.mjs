@@ -219,7 +219,7 @@ async function main() {
     // re-check GET /gateway/<onion> + isStaked itself and not trust the bootnode's label.
     const stale = reg4.directory().gateways.find((g) => g.onion === honest.onion);
     ok(stale && stale.staked === true, "bootnode's cached directory still shows staked=true (stale-positive) until TTL — this is the gap");
-    note("client-side mid-session re-verification is PENDING T-DEV-5 (docs/SHIP-PLAN.md:103): the client must fetch GET /gateway/<onion> and re-check operatorSig + isStaked itself. Today the lapse is enforced on refresh + observable via the live on-chain read (asserted above), but the served label is not yet re-verified by the client mid-session.");
+    note("client-side mid-session re-verification is PENDING T-DEV-5 (docs/history/SHIP-PLAN.md:103): the client must fetch GET /gateway/<onion> and re-check operatorSig + isStaked itself. Today the lapse is enforced on refresh + observable via the live on-chain read (asserted above), but the served label is not yet re-verified by the client mid-session.");
 
     // =====================================================================================
     // SCENARIO 5 — REGISTRY DoS

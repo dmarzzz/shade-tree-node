@@ -82,17 +82,17 @@ const CATEGORIES = [
   ]],
   ['Operate', [
     'docs/OPERATOR.md', 'docs/BOOTNODE.md', 'docs/INCIDENT.md', 'docs/SLO.md',
-    'docs/DEPLOY.md', 'docs/DEPLOYMENT.md', 'docs/FLEET.md',
+    'docs/history/DEPLOY.md', 'docs/history/DEPLOYMENT.md', 'docs/FLEET.md',
     'docs/CLIENTS.md', 'docs/LIGHT-CLIENT.md', 'specs/data-api.md',
   ]],
   ['Security & Audit', [
     'SECURITY.md', 'docs/AUDIT.md', 'docs/CONTRACTS-AUDIT.md',
-    'docs/TOR-HARDENING.md', 'docs/adversarial-review.md',
+    'docs/TOR-HARDENING.md', 'docs/history/adversarial-review.md',
   ]],
   ['Design', [
     'specs/README.md', 'specs/protocol.md', 'docs/WIRE-SPEC.md', 'docs/VERSIONING.md', 'docs/ONCHAIN.md',
-    'docs/PAYMENTS.md', 'docs/ROADMAP.md', 'docs/NEXT-VERSION.md',
-    'docs/RLN-MIGRATION.md', 'docs/ADAPTERS.md', 'docs/SDK.md',
+    'docs/PAYMENTS.md', 'docs/ROADMAP.md', 'docs/history/NEXT-VERSION.md',
+    'docs/history/RLN-MIGRATION.md', 'docs/ADAPTERS.md', 'docs/SDK.md',
     'docs/adr/README.md', 'docs/adr/0001-client-language.md',
     'docs/adr/0002-onion-never-on-chain.md',
     'docs/adr/0003-bootnode-is-a-cache-not-a-trust-root.md',
@@ -100,9 +100,9 @@ const CATEGORIES = [
     'docs/adr/0005-governed-gateway-slash.md',
   ]],
   ['Reference', [
-    'docs/STATUS.md', 'docs/REPORT.md', 'docs/exit-blocking-benchmark.md',
-    'docs/residential-proxies.md', 'docs/residential-proxy-providers.md',
-    'docs/SHIP-PLAN.md',
+    'docs/history/STATUS.md', 'docs/history/REPORT.md', 'docs/exit-blocking-benchmark.md',
+    'docs/history/residential-proxies.md', 'docs/history/residential-proxy-providers.md',
+    'docs/history/SHIP-PLAN.md',
   ]],
 ];
 const FALLBACK_CATEGORY = 'Reference';

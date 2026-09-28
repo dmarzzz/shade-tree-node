@@ -121,15 +121,18 @@ bondFor(limit) / allowedLimits()   // the immutable tier table (T-FEAT-8b): limi
 UNBONDING   // exit time-lock; must satisfy the ordering constraint below
 currentRoot // the on-chain Semaphore/RLN group root (depth-20 Poseidon tree, storage slot 3)
 
-register(uint256 commitment, uint256 limit) payable     // register(commitment) == limit 8
-    // permissionless. msg.value == bondFor(limit). addMember(commitment); record the bond
-    // AND the tier. The commitment binds the bond to a secret only its holder knows. Anyone
-    // may pay to register any commitment; only the secret-holder can ever spend or exit it.
+registerIdentity(uint256 identityCommitment, uint256 limit) payable returns (uint256 leaf)
+    // permissionless. msg.value == bondFor(limit). The contract derives the leaf
+    // Poseidon2(identityCommitment, limit) itself (so the bond pays for the leaf's real
+    // tier), rejects a zero or non-canonical identity commitment, then addMember(leaf) and
+    // records the bond AND the tier. Anyone may pay to register any identity; only the
+    // secret-holder can ever spend or exit it.
 
 initiateExit(bytes withdrawProof)
     // authorized by a ZK proof of knowledge of the secret behind `commitment`,
-    // NOT by msg.sender. Marks the member exiting, starts the UNBONDING clock,
-    // and removes the commitment from the admission root.
+    // NOT by msg.sender, bound to exitContext(commitment) = keccak256("SHADENET_EXIT",
+    // chainid, this, commitment, leaf index). Marks the member exiting, starts the
+    // UNBONDING clock, and removes the commitment from the admission root.
 
 withdraw(bytes withdrawProof, address recipient)
     // after UNBONDING elapses and the bond was not slashed: pay BOND to `recipient`
@@ -473,7 +476,7 @@ redeploy (`network/sepolia/contracts.json`, release `rln-v4-tiers`,
    `commitmentOf(secret)` stays the byte-equivalent `K = 8` leaf. `ICommitmentHasher` declares
    both overloads. Goldens: `test/StakedReputationSet.tiers.t.sol` vs `lib/tiers.selftest.mjs`
    / `crates/shadenet-rln/tests/tree_parity.rs`.
-2. **Stake -> tier at admission.** `register(commitment, limit)` requires
+2. **Stake -> tier at admission.** `registerIdentity(identityCommitment, limit)` requires
    `msg.value == bondFor(limit)` from a **fixed, small tier table set in the constructor**
    (`extraLimits[]` / `extraBonds[]`; the default tier `8 => BOND` is always present; Sepolia:
    `8 => 0.001 ETH, 32 => 0.004 ETH`) — one denomination PER TIER, so stake amounts still never
@@ -483,7 +486,9 @@ redeploy (`network/sepolia/contracts.json`, release `rln-v4-tiers`,
    deployment (the set stays permissionless and un-upgradeable, unlike an owner-governed
    table which would add a key that can reprice or close tiers). `limitOf(commitment)` /
    `allowedLimits()` / `bondFor(limit)` are the views; `Member` gained a `limit` field.
-   `register(commitment)` is `register(commitment, 8)`.
+   The set derives the leaf `Poseidon2(identityCommitment, limit)` itself (launch audit 2.1.4),
+   so the recorded tier is the leaf's real `userMessageLimit`; the v4 leaf-taking
+   `register(commitment[, limit])` overloads are gone.
 3. **Tiered slash.** `slash(commitment, secret, limit, receiver)`: the slasher supplies the
    reconstructed secret AND the tier; the contract requires `limit == m.limit` (`BadLimit`)
    and `hasher.commitmentOf(secret, limit) == commitment` (`BadSecret`), then removes the
@@ -511,10 +516,12 @@ proof: the Sepolia rln-v4 run (`network/sepolia/integration-report-rln-v4.md`) s
 tier-32 leaf at limit 32 from a gateway holding only roots (tx `0xfff760a6…494c`, block
 11510548) and showed limit 32 on a tier-8 leaf reverting `BadLimit`.
 
-**Honest limits.** (a) The tier is DECLARED at registration, not proven: a leaf built at X
-registered as Y != X is unslashable AND unexitable (the bond is locked forever), and the
-gateway still enforces the leaf's real budget X, so the mismatch buys nothing
-(`docs/CONTRACTS-AUDIT.md` §3). (b) During the 2026-08-17 Sepolia experiment, the fleet
+**Honest limits.** (a) Until the ShadeNet contracts, the tier was DECLARED at registration: a
+leaf built at limit X could be registered at a cheaper tier Y, and since the circuit enforces X
+the member got X slots per epoch for Y's bond and could never be slashed (internal audit 2.1.4;
+the earlier claim here that the mismatch "buys nothing" was wrong). `registerIdentity` closes
+this by deriving the leaf on chain. It publishes the identity commitment, which the exit proof
+reveals anyway, so use one identity per stake (audit 2.3.1). (b) During the 2026-08-17 Sepolia experiment, the fleet
 gateways' `SHADE_TREE_SLASH_CONTRACT` still pointed at the superseded rln-v3 set until their
 units were flipped (`docs/ONCHAIN-DEPLOY.md` §8); the later rln-v4 record is retained as
 historical evidence, not as a current staking preset.
@@ -589,9 +596,10 @@ irreducible for a prepaid service, no third party added. What the chain gives is
 light-client-provable record of exactly which leaves were admitted, and payer↔user
 UNLINKABILITY at redemption (a zk membership proof over the tree). The 402 rail sees the payer;
 this contract never does. (b) The tier is DECLARED at insert (the contract cannot see inside a
-leaf), exactly as at `register`; a mismatch buys nothing (the gateway enforces the leaf's real
-budget) and makes the leaf unslashable at the declared tier — the registrar should derive the
-tier from what was paid for. (c) The operator is one key with the sole insert authority; a lost
+leaf). A mismatch is not harmless: the circuit enforces the leaf's real limit, so a high-limit
+leaf inserted at a cheaper tier gets its full budget and is unslashable at the recorded tier
+(internal audit 2.1.4). The operator must insert only leaves it derived itself as
+Poseidon2(idc, limit) from the buyer's identity commitment and the tier that was paid for. (c) The operator is one key with the sole insert authority; a lost
 key means no new members until the pending-transfer path was prepared (rotate to a multisig
 early). (d) `leafCount()` is a floor on anonymity, not a proof: batch and dwell.
 

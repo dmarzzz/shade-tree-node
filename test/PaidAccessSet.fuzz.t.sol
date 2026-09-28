@@ -10,6 +10,7 @@ pragma solidity ^0.8.24;
 import {FuzzBase} from "./FuzzHelpers.sol";
 import {PaidAccessSet} from "../contracts/PaidAccessSet.sol";
 import {StakedReputationSet, IWithdrawVerifier, ICommitmentHasher} from "../contracts/StakedReputationSet.sol";
+import {StakedReputationSetHarness} from "./StakedReputationSetHarness.sol";
 import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
@@ -17,7 +18,7 @@ contract PaidAccessSetFuzzTest is FuzzBase {
     uint256 constant BOND = 0.001 ether; // reference set only
 
     PaidAccessSet set;
-    StakedReputationSet ref; // reference tree (same leaves, same indices, same removals)
+    StakedReputationSetHarness ref; // reference tree (same leaves, same indices, same removals)
     RateCommitmentHasher hasher;
     address constant SINK = address(0x5151);
 
@@ -30,7 +31,7 @@ contract PaidAccessSetFuzzTest is FuzzBase {
         uint256[] memory xl = new uint256[](1);
         uint256[] memory xb = new uint256[](1);
         xl[0] = 32; xb[0] = 4 * BOND;
-        ref = new StakedReputationSet(BOND, 300, 270, IWithdrawVerifier(address(v)), ICommitmentHasher(address(hasher)), xl, xb);
+        ref = new StakedReputationSetHarness(BOND, 300, 270, IWithdrawVerifier(address(v)), ICommitmentHasher(address(hasher)), xl, xb);
         vm.deal(address(this), 1_000 ether);
     }
 

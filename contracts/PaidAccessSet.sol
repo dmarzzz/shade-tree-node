@@ -72,6 +72,12 @@ contract PaidAccessSet {
     /// LessThan(16), which is NOT sound for a limit >= 2^16 (lib/rln.mjs MAX_LIMIT).
     uint256 public constant MAX_LIMIT = 65535;
 
+    /// BN254 scalar field. An inserted commitment must lie in [1, FIELD): a non-canonical
+    /// c+p aliases c inside the circuit but not here, and 0 is the empty-slot sentinel
+    /// (audit 2.1.2 / 2.1.3).
+    uint256 public constant FIELD =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
     // ---- leaf state -----------------------------------------------------------
     //
     // Storage layout is deliberately the staked set's: slots 0..2 are the per-leaf record, the
@@ -140,6 +146,7 @@ contract PaidAccessSet {
     event OperatorTransferred(address indexed from, address indexed to);
 
     error BadLimit();
+    error BadCommitment();
     error BadTierTable();
     error BadHasher();
     error BadBatch();
@@ -260,9 +267,12 @@ contract PaidAccessSet {
 
     /// onlyOperator. Admit the leaf `commitment` at tier `limit` (must be in the immutable
     /// table: BadLimit). Appends the leaf and refreshes currentRoot; nothing payable, no external
-    /// calls. `limit` MUST be the userMessageLimit the buyer derived the leaf with (the contract
-    /// cannot see inside the leaf; a mismatch buys nothing: the gateway enforces the leaf's real
-    /// budget and the leaf can never be slashed at the wrong tier). A commitment that is
+    /// calls. `limit` MUST be the userMessageLimit the leaf was derived with. The contract
+    /// cannot see inside the leaf, so a mismatch is NOT harmless: the circuit enforces the
+    /// leaf's real limit, so a high-limit leaf inserted at a cheaper tier gets its full budget
+    /// and can never be slashed at the recorded tier (audit 2.1.4). The operator must insert
+    /// only leaves it derived itself as Poseidon2(idc, limit) from the buyer's identity
+    /// commitment, which is what the registrar does. A commitment that is
     /// currently live cannot be inserted again (AlreadyInserted): the leaf already buys an
     /// ongoing per-epoch budget; a slashed commitment MAY be re-inserted and gets a fresh index
     /// (the vacated slot is never reused).
@@ -282,6 +292,7 @@ contract PaidAccessSet {
 
     function _insert(uint256 commitment, uint256 limit) internal {
         if (!_allowed[limit]) revert BadLimit();
+        if (commitment == 0 || commitment >= FIELD) revert BadCommitment();
         if (leaves[commitment].limit != 0) revert AlreadyInserted();
 
         uint64 index = nextIndex++;

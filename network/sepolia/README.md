@@ -6,7 +6,7 @@ This directory contains two deliberately separate generations:
   deployed on 2026-08-25 and upgraded to staking on 2026-09-03: one stake-gated Elder Tree and
   three Shade Tree nodes admitting invited and staked members, with explicitly untrusted testnet
   contracts and proof artifacts. Its original execution record is
-  [`docs/GO-LIVE-LOG-2026-08-25-v4.md`](../../docs/GO-LIVE-LOG-2026-08-25-v4.md).
+  [`docs/history/GO-LIVE-LOG-2026-08-25-v4.md`](../../docs/history/GO-LIVE-LOG-2026-08-25-v4.md).
 - [`contracts.json`](contracts.json), [`bootnode.json`](bootnode.json), the signed directory files,
   and the integration reports below record the earlier pre-v4 Sepolia experiment. The bundle is not
   a current client preset; `deployment.json` explicitly reuses only its compatible staking set,
@@ -71,14 +71,14 @@ explicitly reuses it; use the Elder, signer, staking set, archival RPC, and depl
 | what | value |
 |---|---|
 | settle asset (`payAsset`) | **tUSD** "Test USD" (`test/Eip3009Token.sol`, EIP-3009, 6 decimals, version `"1"`) at [`0xCe0C9F8822e4841e735d2eDe3a1Db57CfE55a3A8`](https://sepolia.etherscan.io/address/0xCe0C9F8822e4841e735d2eDe3a1Db57CfE55a3A8) — deployed 2026-08-17 by the fleet operator key, tx `0x9561fa31…b234`, block 11511028. Circle's Sepolia USDC `0x1c7D4B19…7238` was verified EIP-3009-capable (`TRANSFER_WITH_AUTHORIZATION_TYPEHASH`, `authorizationState`, `DOMAIN_SEPARATOR == EIP712{USDC,2}`), but its faucet is captcha-gated; real USDC was the one-env swap `SHADE_TREE_PAY_ASSET`. The retired preset formerly supplied this asset. |
-| registrar (`registrar`) | `http://<bootnode onion>:8878/` (the bootnode onion in `bootnode.json`, virtual port 8878), protocols `x402` (v2: `PAYMENT-REQUIRED` / `PAYMENT-SIGNATURE` / `PAYMENT-RESPONSE`) + `mpp` (`WWW-Authenticate: Payment` / `Authorization: Payment` / `Payment-Receipt`, method `evm`, intent `charge`, `type=authorization`), prices tier 8 = `100000` (0.10 tUSD), tier 32 = `400000` (0.40 tUSD), payTo = the operator `0xc8606C75…7f02`. It was advertised in the bootnode `/health` `pay` block and (from 2026-08-18, T-FEAT-9) in gateway-1's signed `caps.pay` in `/directory`; gateway-2 sold nothing. These are retained deployment facts, not a current payment endpoint. Receipts: `docs/GO-LIVE-LOG-2026-08-17.md` "(payments)". |
+| registrar (`registrar`) | `http://<bootnode onion>:8878/` (the bootnode onion in `bootnode.json`, virtual port 8878), protocols `x402` (v2: `PAYMENT-REQUIRED` / `PAYMENT-SIGNATURE` / `PAYMENT-RESPONSE`) + `mpp` (`WWW-Authenticate: Payment` / `Authorization: Payment` / `Payment-Receipt`, method `evm`, intent `charge`, `type=authorization`), prices tier 8 = `100000` (0.10 tUSD), tier 32 = `400000` (0.40 tUSD), payTo = the operator `0xc8606C75…7f02`. It was advertised in the bootnode `/health` `pay` block and (from 2026-08-18, T-FEAT-9) in gateway-1's signed `caps.pay` in `/directory`; gateway-2 sold nothing. These are retained deployment facts, not a current payment endpoint. Receipts: `docs/history/GO-LIVE-LOG-2026-08-17.md` "(payments)". |
 
 ## Bootnode
 
 [`bootnode.json`](bootnode.json) is the retired discovery record (`{onion, signer,
 admission, staticDirectory}`; schema in `network/README.md`). It was verified **live** from
 2026-08-17 (T-DEPLOY-1 + T-DEPLOY-2 + stake admission,
-[`docs/GO-LIVE-LOG-2026-08-17.md`](../../docs/GO-LIVE-LOG-2026-08-17.md)).
+[`docs/history/GO-LIVE-LOG-2026-08-17.md`](../../docs/history/GO-LIVE-LOG-2026-08-17.md)).
 
 | field | value |
 |---|---|
@@ -89,7 +89,7 @@ admission, staticDirectory}`; schema in `network/README.md`). It was verified **
 | gateway-2 onion (region `na`, SFO) | `av4m256h4wwgwdmg74wnqem7s7l333h6755sroydlbcq62ptkmawtwid.onion` (gateway-only box, `bootstrap.sh` `SHADE_TREE_BOOTNODE_ONION` mode, T-DEPLOY-2) |
 | gateway slashing | on-chain, routed: primary `SHADE_TREE_SLASH_CONTRACT` = rln-v4 `StakedReputationSet` `0xFe48De8b…9d25` (flipped from rln-v3 2026-08-17 21:28 UTC), plus `PaidAccessSet` for paid leaves (`makeRoutingSlasher`) |
 | onion PoW | off (`SHADE_TREE_ENABLE_POW=0`; a `pow: no` client tor could not reach a PoW onion) |
-| membership roots / admission policy (`SHADE_TREE_ADMIT`, T-FEAT-9, `docs/adr/0008`) | **heterogeneous on purpose** since 2026-08-18 06:37 UTC (`docs/GO-LIVE-LOG-2026-08-17.md` "per-gateway admission policy rolled"): **gateway-1** `admits: invited,staked,paid` — committed `group/members.json` (8 invited) ∪ rln-v4 `StakedReputationSet` `0xFe48De8b…9d25` (staked, tiers 8/32) ∪ `PaidAccessSet` `0x4e8C2Bf5…4111` (bought over 402) — and it SELLS (registrar, `SHADE_TREE_PAY_PROTOCOLS=x402,mpp`, advertised as signed `caps.pay`); **gateway-2** `admits: invited,staked` — members.json ∪ the staked set only, no paid leaves, no registrar. Both advertise their policy as signed `caps.admits` in `/directory`. Consequences: a paid buyer's client routes ONLY to gateway-1; an invited member with `--max-anon` is refused by BOTH (neither is invited-only) with a precise error naming each gateway's policy — the intended outcome. (`SHADE_TREE_ROOTS=static,onchain`, the pre-T-FEAT-9 union spelling, is a deprecated alias.) |
+| membership roots / admission policy (`SHADE_TREE_ADMIT`, T-FEAT-9, `docs/adr/0008`) | **heterogeneous on purpose** since 2026-08-18 06:37 UTC (`docs/history/GO-LIVE-LOG-2026-08-17.md` "per-gateway admission policy rolled"): **gateway-1** `admits: invited,staked,paid` — committed `group/members.json` (8 invited) ∪ rln-v4 `StakedReputationSet` `0xFe48De8b…9d25` (staked, tiers 8/32) ∪ `PaidAccessSet` `0x4e8C2Bf5…4111` (bought over 402) — and it SELLS (registrar, `SHADE_TREE_PAY_PROTOCOLS=x402,mpp`, advertised as signed `caps.pay`); **gateway-2** `admits: invited,staked` — members.json ∪ the staked set only, no paid leaves, no registrar. Both advertise their policy as signed `caps.admits` in `/directory`. Consequences: a paid buyer's client routes ONLY to gateway-1; an invited member with `--max-anon` is refused by BOTH (neither is invited-only) with a precise error naming each gateway's policy — the intended outcome. (`SHADE_TREE_ROOTS=static,onchain`, the pre-T-FEAT-9 union spelling, is a deprecated alias.) |
 | ref deployed | both `main` @ `c6be15e` (2026-08-18 06:36 UTC, T-FEAT-9 per-gateway admission; earlier `6c4940c` / `cb237e07` / `d8a6530` / `af225c2`) |
 
 Before retirement, the network preset resolved the bootnode onion and signer above. Current v4
@@ -98,7 +98,7 @@ clients receive their defaults from `deployment.json`, never from this retired r
 `/directory` export and research evidence; its valid signature does not make the listed nodes
 v4-compatible. The box hosting bootnode + gateway-1 was a
 DigitalOcean droplet in NYC and gateway-2 is a DigitalOcean droplet in SFO (same AS14061,
-different regions — `docs/GO-LIVE-LOG-2026-08-17.md` names them); their clearnet IPs are
+different regions — `docs/history/GO-LIVE-LOG-2026-08-17.md` names them); their clearnet IPs are
 operational metadata and are not recorded here. The client rotates across both
 (`SHADE_TREE_ROTATION_SPREAD=1` for strict round-robin).
 

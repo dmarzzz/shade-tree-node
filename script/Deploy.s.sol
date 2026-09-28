@@ -8,7 +8,7 @@ import {MockCommitmentHasher} from "../contracts/MockCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
 /// Deploys the demo stack (hasher + verifier + StakedReputationSet) with the
-/// docs/NEXT-VERSION.md demo params, then writes the addresses to
+/// docs/history/NEXT-VERSION.md demo params, then writes the addresses to
 /// contracts/deployed.local.json for the gateway/lib to read.
 ///
 /// Run against a local anvil:
@@ -19,7 +19,7 @@ import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 ///     --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 /// (anvil's well-known account #0 — a public test key, never real funds.)
 contract Deploy is Cheats {
-    // Demo parameters (docs/NEXT-VERSION.md). Env-overridable so a testnet deploy can
+    // Demo parameters (docs/history/NEXT-VERSION.md). Env-overridable so a testnet deploy can
     // use a smaller bond than the local-anvil default (testnet ETH is faucet-scarce):
     //   SHADE_TREE_BOND_WEI, SHADE_TREE_UNBONDING, SHADE_TREE_MIN_UNBONDING.
     function run() external {
