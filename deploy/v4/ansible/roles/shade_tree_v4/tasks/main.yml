@@ -28,7 +28,25 @@
   become: false
   changed_when: false
 
-- name: Require the rollout's named staking profile
+- name: Load the validated public deployment record
+  ansible.builtin.set_fact:
+    shade_tree_deployment: "{{ lookup('ansible.builtin.file', shade_tree_deployment_record) | from_json }}"
+
+- name: Select the record-owned rate policy and staked root
+  ansible.builtin.set_fact:
+    shade_tree_rate_policy: "{{ shade_tree_deployment.ratePolicy | default({}, true) }}"
+    shade_tree_staked_root: "{{ shade_tree_deployment.admission.roots.staked | default({}, true) }}"
+
+- name: Derive immutable runtime policy from the deployment record
+  ansible.builtin.set_fact:
+    shade_tree_public_stake_profile: "{{ (shade_tree_staked_root.profile | default('')) == 'public-stake-v1' }}"
+    shade_tree_epoch_seconds: "{{ shade_tree_rate_policy.epochSeconds | default(120) | int }}"
+    shade_tree_rate_tiers: "{{ shade_tree_staked_root.tiers | default([]) | map(attribute='limit') | map('string') | join(',') }}"
+    shade_tree_root_freshness_seconds: "{{ shade_tree_rate_policy.rootFreshnessSeconds | default('') }}"
+    shade_tree_policy_payload_bytes: "{{ shade_tree_rate_policy.payloadBytesPerSlot | default(shade_tree_tunnel_max_payload_bytes) | int }}"
+    shade_tree_staked_deploy_block: "{{ shade_tree_staked_root.deployBlock | default('') }}"
+
+- name: Verify public profile and the exact runtime RPC against Sepolia before mutation
   ansible.builtin.command:
     argv:
       - node
@@ -38,7 +56,7 @@
       - --repo-root
       - "{{ shade_tree_controller_repo_root }}"
       - --require-stake-profile
-      - "{{ shade_tree_required_stake_profile }}"
+      - public-stake-v1
       - --rpc-url
       - "{{ shade_tree_rpc_url }}"
       - --quiet
@@ -46,11 +64,7 @@
   become: false
   changed_when: false
   no_log: true
-  when: shade_tree_required_stake_profile | length > 0
-
-- name: Load the validated public deployment record
-  ansible.builtin.set_fact:
-    shade_tree_deployment: "{{ lookup('ansible.builtin.file', shade_tree_deployment_record) | from_json }}"
+  when: shade_tree_public_stake_profile | bool
 
 - name: Derive deployment policy facts
   ansible.builtin.set_fact:
@@ -59,11 +73,6 @@
     shade_tree_onchain_admission: "{{ ('staked' in shade_tree_deployment.admission.paths) or ('paid' in shade_tree_deployment.admission.paths) }}"
     shade_tree_invited_admission: "{{ 'invited' in shade_tree_deployment.admission.paths }}"
     shade_tree_admit: "{{ shade_tree_deployment.admission.paths | join(',') }}"
-    shade_tree_public_stake_profile: "{{ shade_tree_deployment.admission.roots.staked is not none and shade_tree_deployment.admission.roots.staked.profile | default('') == 'public-stake-v1' }}"
-    shade_tree_epoch_seconds: "{{ shade_tree_deployment.ratePolicy.epochSeconds }}"
-    shade_tree_tiers: "{{ shade_tree_deployment.admission.roots.staked.tiers | map(attribute='limit') | join(',') if shade_tree_deployment.admission.roots.staked is not none and shade_tree_deployment.admission.roots.staked.tiers is defined else '8' }}"
-    shade_tree_root_freshness_seconds: "{{ shade_tree_deployment.ratePolicy.rootFreshnessSeconds }}"
-    shade_tree_record_payload_bytes: "{{ shade_tree_deployment.ratePolicy.payloadBytesPerSlot }}"
     shade_tree_service_pin: "{{ shade_tree_deployment.services.node }}"
     shade_tree_artifact_specs: []
 
@@ -108,13 +117,40 @@
       - (shade_tree_deployment.elder.admission != 'stake') or (shade_tree_gateway_operator_key | length > 0)
       - (shade_tree_deployment.elder.admission != 'stake') or (shade_tree_gateway_operator_key is match('^0x[0-9A-Fa-f]{64}$'))
       - (not shade_tree_runs_node | bool) or (not shade_tree_invited_admission | bool) or (shade_tree_members_file | length > 0)
-      - (not shade_tree_public_stake_profile | bool) or (shade_tree_tunnel_max_payload_bytes | int == shade_tree_record_payload_bytes | int)
-      - (not shade_tree_public_stake_profile | bool) or (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers | length > 0)
-      - (not shade_tree_public_stake_profile | bool) or (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_token | length >= 32)
     fail_msg: >-
       Deployment is fail-closed. Supply restored identities and, when this role owns UFW, an exact admin CIDR; invited
       admission needs the operator member set; any on-chain path needs explicit authorization,
       RPC, slashing key, and contracts; a stake-gated Elder also needs its operator key.
+  no_log: true
+
+- name: Require the exact public-stake-v1 policy and fleet tally
+  ansible.builtin.assert:
+    that:
+      - shade_tree_deployment.admission.defaultPath == 'staked'
+      - shade_tree_rate_policy.scope == 'grove-v4'
+      - shade_tree_rate_policy.window == 'fixed'
+      - shade_tree_epoch_seconds | int == 60
+      - shade_tree_rate_policy.previousEpochsAccepted | int == 1
+      - shade_tree_root_freshness_seconds | int == 60
+      - shade_tree_policy_payload_bytes | int == 41943040
+      - shade_tree_rate_policy.slashConfirmationSeconds | int == 3600
+      - shade_tree_rate_policy.crossGateway == 'best-effort-fleet-tally'
+      - shade_tree_staked_root.chainId | int == 11155111
+      - shade_tree_staked_root.defaultLimit | int == 1
+      - "shade_tree_staked_root.tiers == [{'limit': 1, 'bondWei': '100000000000000000'}, {'limit': 8, 'bondWei': '800000000000000000'}]"
+      - shade_tree_staked_root.unbondingSeconds | int == 86400
+      - shade_tree_staked_root.minUnbondingSeconds | int == 3720
+      - shade_tree_staked_deploy_block | int > 0
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | length == 2)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | unique | length == 2)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | select('match', '^[a-z2-7]{56}\\.onion:8879$') | list | length == 2)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_token | length >= 32)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_token | length <= 128)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_token is match('^[-A-Za-z0-9._~]+$'))
+    fail_msg: >-
+      public-stake-v1 is immutable: 0.1/0.8 ETH tiers, a fixed 60-second Grove epoch, 60-second root
+      freshness, 40 MiB per slot, 24-hour unbonding, and authenticated two-peer fleet tally are required.
+  when: shade_tree_public_stake_profile | bool
   no_log: true
 
 - name: Validate the exact admin CIDR on the controller
@@ -181,13 +217,47 @@
   changed_when: false
   no_log: true
 
-- name: Verify restored public identities against the record before cutover
+- name: Record restored gateway public identity before assertion
+  ansible.builtin.debug:
+    msg:
+      derived: "{{ shade_tree_gateway_onion.stdout | trim }}"
+      archived: "{{ lookup('ansible.builtin.file', shade_tree_identity_source ~ '/gateway-hs/hostname') | trim }}"
+  when: shade_tree_runs_node | bool
+
+- name: Diagnose restored Elder public identity before assertion
+  ansible.builtin.debug:
+    msg:
+      derived: "{{ shade_tree_elder_onion.stdout | trim }}"
+      recorded: "{{ shade_tree_deployment.elder.onion }}"
+      signerArchived: "{{ (lookup('ansible.builtin.file', shade_tree_identity_source ~ '/bootnode-signer.key') | from_json).pub }}"
+      signerRecorded: "{{ shade_tree_deployment.elder.canopySigner }}"
+  when: shade_tree_runs_elder | bool
+
+- name: Verify restored gateway identity against its archived hostname
   ansible.builtin.assert:
     that:
-      - (not shade_tree_runs_node | bool) or (shade_tree_gateway_onion.stdout | trim == (lookup('ansible.builtin.file', shade_tree_identity_source ~ '/gateway-hs/hostname') | trim))
-      - (not shade_tree_runs_elder | bool) or (shade_tree_elder_onion.stdout | trim == shade_tree_deployment.elder.onion)
-      - (not shade_tree_runs_elder | bool) or ((lookup('ansible.builtin.file', shade_tree_identity_source ~ '/bootnode-signer.key') | from_json).pub == shade_tree_deployment.elder.canopySigner)
-    fail_msg: "Restored onion or Canopy signer does not match the reviewed deployment record."
+      - shade_tree_gateway_onion.stdout | trim == (lookup('ansible.builtin.file', shade_tree_identity_source ~ '/gateway-hs/hostname') | trim)
+    fail_msg: "Restored gateway onion does not match its archived hostname."
+  when: shade_tree_runs_node | bool
+  no_log: true
+
+- name: Verify public fleet tally excludes this gateway
+  ansible.builtin.assert:
+    that:
+      - ((shade_tree_gateway_onion.stdout | trim) ~ ':8879') not in shade_tree_fleet_tally_peers.split(',')
+    fail_msg: "A public gateway tally must name the other two restored onions, never itself."
+  when:
+    - shade_tree_runs_node | bool
+    - shade_tree_public_stake_profile | bool
+  no_log: true
+
+- name: Verify restored Elder identity and Canopy signer against the record
+  ansible.builtin.assert:
+    that:
+      - shade_tree_elder_onion.stdout | trim == shade_tree_deployment.elder.onion
+      - (lookup('ansible.builtin.file', shade_tree_identity_source ~ '/bootnode-signer.key') | from_json).pub == shade_tree_deployment.elder.canopySigner
+    fail_msg: "Restored Elder onion or Canopy signer does not match the reviewed deployment record."
+  when: shade_tree_runs_elder | bool
   no_log: true
 
 - name: Hash the invited member set on the controller
@@ -303,10 +373,14 @@
       {{ ((shade_tree_deployment | to_json) ~ shade_tree_target_mode ~ (shade_tree_manage_firewall | string) ~ shade_tree_admin_cidr
           ~ (shade_tree_ssh_port | string) ~ shade_tree_gateway_region
           ~ (shade_tree_enable_pow | string)
-          ~ (shade_tree_tunnel_max_payload_bytes | string)
-          ~ (shade_tree_fleet_tally_peers | string)
-          ~ (shade_tree_fleet_tally_token | hash('sha256'))
-          ~ (shade_tree_fleet_tally_port | string)) | hash('sha256') }}
+          ~ (shade_tree_epoch_seconds | string)
+          ~ shade_tree_rate_tiers
+          ~ (shade_tree_root_freshness_seconds | string)
+          ~ (shade_tree_policy_payload_bytes | string)
+          ~ (shade_tree_staked_deploy_block | string)
+          ~ shade_tree_fleet_tally_peers
+          ~ ((shade_tree_fleet_tally_token | hash('sha256')) if (shade_tree_public_stake_profile and shade_tree_runs_node) else '')) | hash('sha256') }}
+  no_log: true
 
 - name: Check whether this exact reviewed configuration was applied
   ansible.builtin.stat:
@@ -354,6 +428,10 @@
     SHADE_TREE_GROUP_CONTRACT: "{{ shade_tree_deployment.admission.roots.staked.contract if shade_tree_deployment.admission.roots.staked is not none else '' }}"
     SHADE_TREE_PAID_ACCESS_CONTRACT: "{{ shade_tree_deployment.admission.roots.paid.contract if shade_tree_deployment.admission.roots.paid is not none else '' }}"
     SHADE_TREE_RPC_URL: "{{ shade_tree_rpc_url }}"
+    SHADE_TREE_EPOCH_SECONDS: "{{ shade_tree_epoch_seconds | string }}"
+    SHADE_TREE_TIERS: "{{ shade_tree_rate_tiers }}"
+    SHADE_TREE_ROOT_FRESHNESS_SECONDS: "{{ shade_tree_root_freshness_seconds | string }}"
+    SHADE_TREE_FROM_BLOCK: "{{ shade_tree_staked_deploy_block | string }}"
     SHADE_TREE_ZK_ARTIFACTS: "{{ shade_tree_artifact_specs | join(',') }}"
     SHADE_TREE_ZK_ARTIFACT_LEGACY: "{{ shade_tree_deployment.artifacts.legacy or '' }}"
     SHADE_TREE_GATEWAY_REGION: "{{ shade_tree_gateway_region }}"
@@ -362,14 +440,9 @@
     SHADE_TREE_BANNER: never
     SHADE_TREE_BOOTNODE_PORT: "{{ shade_tree_bootnode_port | string }}"
     SHADE_TREE_GATEWAY_PORT: "{{ shade_tree_gateway_port | string }}"
-    SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES: "{{ shade_tree_tunnel_max_payload_bytes | string }}"
-    SHADE_TREE_EPOCH_SECONDS: "{{ shade_tree_epoch_seconds | string }}"
-    SHADE_TREE_TIERS: "{{ shade_tree_tiers }}"
-    SHADE_TREE_ROOT_FRESHNESS_SECONDS: "{{ shade_tree_root_freshness_seconds | string }}"
-    SHADE_TREE_CONFIRMATIONS: "{{ shade_tree_confirmations | string }}"
-    SHADE_TREE_FROM_BLOCK: "{{ shade_tree_deployment.admission.roots.staked.deployBlock | string if shade_tree_deployment.admission.roots.staked is not none else '' }}"
-    SHADE_TREE_FLEET_TALLY_PEERS: "{{ shade_tree_fleet_tally_peers }}"
-    SHADE_TREE_FLEET_TALLY_TOKEN: "{{ shade_tree_fleet_tally_token }}"
+    SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES: "{{ shade_tree_policy_payload_bytes | string }}"
+    SHADE_TREE_FLEET_TALLY_PEERS: "{{ shade_tree_fleet_tally_peers if shade_tree_runs_node else '' }}"
+    SHADE_TREE_FLEET_TALLY_TOKEN: "{{ shade_tree_fleet_tally_token if shade_tree_runs_node else '' }}"
     SHADE_TREE_FLEET_TALLY_PORT: "{{ shade_tree_fleet_tally_port | string }}"
     SHADE_TREE_ELDER_METRICS_PORT: "{{ shade_tree_elder_metrics_port | string }}"
     SHADE_TREE_NODE_METRICS_PORT: "{{ shade_tree_node_metrics_port | string }}"
@@ -547,20 +620,49 @@
       {% if shade_tree_runs_node %}
       systemctl show shade-tree-gateway --property=Environment --value | grep -Fq {{ ('SHADE_TREE_ZK_ARTIFACTS=' ~ (shade_tree_artifact_specs | join(','))) | quote }}
       systemctl show shade-tree-heartbeat --property=Environment --value | grep -Fq {{ ('SHADE_TREE_ZK_ARTIFACTS=' ~ (shade_tree_artifact_specs | join(','))) | quote }}
-      systemctl show shade-tree-gateway --property=Environment --value | grep -Fq {{ ('SHADE_TREE_EPOCH_SECONDS=' ~ (shade_tree_epoch_seconds | string)) | quote }}
-      systemctl show shade-tree-gateway --property=Environment --value | grep -Fq {{ ('SHADE_TREE_TIERS=' ~ shade_tree_tiers) | quote }}
-      systemctl show shade-tree-gateway --property=Environment --value | grep -Fq {{ ('SHADE_TREE_ROOT_FRESHNESS_SECONDS=' ~ (shade_tree_root_freshness_seconds | string)) | quote }}
-      systemctl show shade-tree-gateway --property=Environment --value | grep -Fq {{ ('SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=' ~ (shade_tree_record_payload_bytes | string)) | quote }}
       {% endif %}
   args:
     executable: /bin/bash
   changed_when: false
 
+- name: Verify public-stake-v1 runtime policy and fleet tally
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      environment="$(systemctl show shade-tree-gateway --property=Environment --value)"
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_EPOCH_SECONDS=' ~ (shade_tree_epoch_seconds | string)) | quote }}
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_TIERS=' ~ shade_tree_rate_tiers) | quote }}
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_ROOT_FRESHNESS_SECONDS=' ~ (shade_tree_root_freshness_seconds | string)) | quote }}
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=' ~ (shade_tree_policy_payload_bytes | string)) | quote }}
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FROM_BLOCK=' ~ (shade_tree_staked_deploy_block | string)) | quote }}
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FLEET_TALLY_PEERS=' ~ shade_tree_fleet_tally_peers) | quote }}
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FLEET_TALLY_LISTEN=127.0.0.1:' ~ (shade_tree_fleet_tally_port | string)) | quote }}
+      heartbeat_environment="$(systemctl show shade-tree-heartbeat --property=Environment --value)"
+      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_EPOCH_SECONDS=' ~ (shade_tree_epoch_seconds | string)) | quote }}
+      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_TIERS=' ~ shade_tree_rate_tiers) | quote }}
+      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_ROOT_FRESHNESS_SECONDS=' ~ (shade_tree_root_freshness_seconds | string)) | quote }}
+      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=' ~ (shade_tree_policy_payload_bytes | string)) | quote }}
+      test "$(stat -c '%a:%U:%G' /etc/shade-tree/fleet-tally.env)" = '600:root:root'
+      grep -q '^SHADE_TREE_FLEET_TALLY_TOKEN=[-A-Za-z0-9._~]\{32,128\}$' /etc/shade-tree/fleet-tally.env
+      grep -Fq {{ ('HiddenServicePort ' ~ (shade_tree_fleet_tally_port | string) ~ ' 127.0.0.1:' ~ (shade_tree_fleet_tally_port | string)) | quote }} /etc/tor/torrc.d-shade-tree
+      ss -H -lnt | awk '$4 ~ /:{{ shade_tree_fleet_tally_port | int }}$/ { found=1; if ($4 !~ /^127[.]0[.]0[.]1:/ && $4 !~ /^\[::1\]:/) bad=1 } END { exit (!found || bad) ? 1 : 0 }'
+  args:
+    executable: /bin/bash
+  when:
+    - shade_tree_runs_node | bool
+    - shade_tree_public_stake_profile | bool
+  register: shade_tree_public_policy_postflight
+  until: shade_tree_public_policy_postflight.rc == 0
+  retries: 12
+  delay: 2
+  changed_when: false
+  no_log: true
+
 - name: Refuse public service or metrics listeners
   ansible.builtin.shell:
     cmd: |
       set -eu
-      ports='{{ shade_tree_bootnode_port }}|{{ shade_tree_gateway_port }}|{{ shade_tree_elder_metrics_port }}|{{ shade_tree_node_metrics_port }}|{{ shade_tree_heartbeat_metrics_port }}'
+      ports='{{ shade_tree_bootnode_port }}|{{ shade_tree_gateway_port }}|{{ shade_tree_elder_metrics_port }}|{{ shade_tree_node_metrics_port }}|{{ shade_tree_heartbeat_metrics_port }}{% if shade_tree_runs_node and shade_tree_public_stake_profile %}|{{ shade_tree_fleet_tally_port }}{% endif %}'
       if ss -H -lnt | awk -v ports="$ports" '$4 ~ (":" ports "$") && $4 !~ /^127[.]0[.]0[.]1:/ && $4 !~ /^\[::1\]:/ { print; bad=1 } END { exit bad ? 1 : 0 }'; then
         exit 0
       fi

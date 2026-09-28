@@ -15,15 +15,13 @@ shade_tree_rpc_url: ""
 shade_tree_slash_key: ""
 shade_tree_gateway_operator_key: ""
 shade_tree_force_reconcile: false
-shade_tree_required_stake_profile: ""
+shade_tree_fleet_tally_peers: ""
+shade_tree_fleet_tally_token: ""
+shade_tree_fleet_tally_port: 8879
 
 shade_tree_bootnode_port: 8877
 shade_tree_gateway_port: 8443
 shade_tree_tunnel_max_payload_bytes: 41943040
-shade_tree_confirmations: 0
-shade_tree_fleet_tally_peers: ""
-shade_tree_fleet_tally_token: ""
-shade_tree_fleet_tally_port: 8879
 shade_tree_elder_metrics_port: 9100
 shade_tree_node_metrics_port: 9101
 shade_tree_heartbeat_metrics_port: 9103
