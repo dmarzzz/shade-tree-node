@@ -1,23 +1,32 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
 import {
-  BOND,
   CHAIN_ID,
   CONTRACT,
-  LIMIT,
+  DEFAULT_LIMIT,
+  TIERS,
   deriveIdentity,
+  describeMember,
+  finalityEstimate,
   identityBytes,
   parseCommitment,
   parseIdentityFile,
+  registerCommitment,
 } from "../site-src/stake.mjs";
+import { formatEth, formatDuration } from "../site-src/profile.mjs";
+import { describeSetSize } from "../site-src/stake-live.mjs";
+import { renderStakePage } from "../site-src/stake-page.mjs";
+import { GET as stakeHead, readStakeHead, STAKE_HEAD_SCHEMA } from "../docs/post/api/stake-head.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const deployment = JSON.parse(readFileSync(join(ROOT, "network/sepolia/deployment.json"), "utf8"));
 const html = readFileSync(join(ROOT, "docs/post/stake/index.html"), "utf8");
 const source = readFileSync(join(ROOT, "site-src/stake.mjs"), "utf8");
+const liveSource = readFileSync(join(ROOT, "site-src/stake-live.mjs"), "utf8");
+const pageSource = readFileSync(join(ROOT, "site-src/stake-page.mjs"), "utf8");
 const bundle = readFileSync(join(ROOT, "docs/post/stake/stake.js"));
 const checks = [];
 const check = (name, condition) => {
@@ -29,40 +38,77 @@ const check = (name, condition) => {
 const staked = deployment.admission.roots.staked;
 check("browser profile is pinned to the live deployment record", CHAIN_ID === BigInt(staked.chainId)
   && CONTRACT.toLowerCase() === staked.contract.toLowerCase()
-  && LIMIT === BigInt(staked.defaultLimit)
-  && BOND === BigInt(staked.tiers.find((tier) => tier.limit === Number(LIMIT)).bondWei));
+  && DEFAULT_LIMIT === BigInt(staked.defaultLimit)
+  && TIERS.length === staked.tiers.length
+  && TIERS.every((tier, i) => tier.limit === BigInt(staked.tiers[i].limit) && tier.bondWei === BigInt(staked.tiers[i].bondWei)));
+
+check("formatting is exact for wei and whole durations", formatEth(100000000000000000n) === "0.1" && formatEth(800000000000000000n) === "0.8"
+  && formatEth(1250000000000000000n) === "1.25" && formatEth(10n ** 18n) === "1" && formatDuration(86400) === "24 hours" && formatDuration(60) === "1 minute");
 
 const vector = await deriveIdentity(Uint8Array.from({ length: 32 }, () => 0x5a));
 check("browser identity derivation matches the Rust and Semaphore-v3 vector", vector.identitySecret === "619880168657502627082950702222527535803368023538932999730878823680368560389"
   && vector.leaf === "15422591461559048085568001683323977812416390282127809084852072421595506429792"
   && vector.limit === 1);
 check("downloaded identity round-trips without changing its public leaf", parseIdentityFile(identityBytes(vector)).leaf === vector.leaf);
+const tier8 = await deriveIdentity(Uint8Array.from({ length: 32 }, () => 0x5a), 8n);
+check("every offered tier derives its own leaf from the same secret", tier8.limit === 8 && tier8.identitySecret === vector.identitySecret && tier8.leaf !== vector.leaf
+  && parseIdentityFile(identityBytes(tier8)).limit === 8);
+await assert.rejects(() => deriveIdentity(new Uint8Array(32), 3n));
 for (const [name, malformed] of [
-  ["wrong tier", { ...vector, limit: 8 }],
+  ["tier not offered", { ...vector, limit: 3 }],
   ["mismatched leaf", { ...vector, leaf: "1" }],
+  ["tier swapped without leaf", { ...vector, limit: 8 }],
   ["extra secret field", { ...vector, appSecret: "1" }],
 ]) {
   assert.throws(() => parseIdentityFile(JSON.stringify(malformed)), undefined, name);
 }
-check("identity import rejects mismatched tiers, leaves, and extra fields", true);
+check("identity import rejects unoffered tiers, mismatched leaves, and extra fields", true);
+check("register takes the leaf under the current record's ABI", registerCommitment(vector) === vector.leaf);
 assert.throws(() => parseCommitment("0"));
 assert.throws(() => parseCommitment("01"));
 assert.throws(() => parseCommitment("not-a-field"));
 check("sponsor commitments are canonical non-zero field elements", parseCommitment(vector.leaf) === vector.leaf);
 
+check("member status covers active, exiting, withdrawable and unregistered", describeMember({ active: true, limit: 1n, withdrawableAt: 0n, now: 0 }).state === "active"
+  && describeMember({ active: false, limit: 1n, withdrawableAt: 7200n, now: 0 }).state === "exiting"
+  && describeMember({ active: false, limit: 1n, withdrawableAt: 10n, now: 20 }).state === "withdrawable"
+  && describeMember({ active: false, limit: 0n, withdrawableAt: 0n, now: 0 }).state === "unregistered");
+check("finality countdown counts remaining slots", finalityEstimate(110, 100).seconds === 120 && finalityEstimate(100, 105).final);
+check("anonymity-set disclosure is honest at zero and small sizes", /0 staked members today/.test(describeSetSize(0)) && /among 3/.test(describeSetSize(3)) && describeSetSize(-1) === null);
+
+// The page is generated from the record: every tier's bond appears, and no bond or address is typed by hand.
+check("Get access page shows every tier from the record", TIERS.every((tier) => html.includes(`<th scope="row">${tier.limit}</th>`) && html.includes(`${formatEth(tier.bondWei)} ETH`)));
+check("page template hard-codes no bond, contract, rate or unbonding value", !/0\.1 |0\.8 |0x[0-9a-fA-F]{40}|40 MiB|60-second|24 hours|86400|41943040/.test(pageSource));
 check("the static page promises only the privacy boundary it implements", /No identity API exists/.test(html)
   && /Loading any website can expose your IP/.test(html)
   && /wallet, amount, commitment, and timing are public/.test(html)
-  && /Misuse can slash your sponsored bond/.test(html));
-check("the page exposes member, sponsor, recovery, and agent handoff paths", /data-mode="member"/.test(html)
+  && /Misuse can slash your sponsored bond/.test(html)
+  && /data-live-set/.test(html));
+check("the page covers tiers, funding, member, sponsor, recovery, handoff, verify, leave and FAQ", /What a stake buys/.test(html)
+  && /Get Sepolia ETH/.test(html)
+  && /data-mode="member"/.test(html)
   && /data-mode="sponsor"/.test(html)
+  && /data-sponsor-tier/.test(html)
   && /data-download-identity/.test(html)
   && /data-recovery-check/.test(html)
   && /shade-tree enroll --out identity\.json/.test(html)
   && /register-member --identity identity\.json/.test(html)
-  && /member-status --identity identity\.json --json/.test(html)
-  && /private, proof-authorized exit/.test(html));
+  && /chmod 600 identity\.json/.test(html)
+  && /Verify it works/.test(html)
+  && /shade-tree exit-member/.test(html)
+  && /shade-tree withdraw-member/.test(html)
+  && /<details>/.test(html)
+  && /research preview/i.test(html));
+check("errors use an assertive alert region and progress a polite status", /data-alert role="alert"/.test(html) && /data-status role="status" aria-live="polite"/.test(html));
+check("the recovery confirmation is a deliberate click, never auto-ticked", !/recoveryCheck\.checked = true/.test(source));
+check("only identities created in this tab can stake", /state\.imported/.test(source) && /memberBlocked = state\.mode === "member" && \(!saved \|\| state\.imported\)/.test(source));
 check("identity state is never persisted or sent through a site API", !/localStorage|sessionStorage|indexedDB|fetch\s*\(|XMLHttpRequest|sendBeacon|analytics/i.test(source));
+check("the live module fetches only fixed aggregate URLs and never touches identity or wallet state",
+  !/identity|leaf|commitment|ethereum|account|localStorage|sessionStorage/i.test(liveSource.replace(/^\/\/.*$/gm, ""))
+  && (liveSource.match(/fetch\(/g) || []).length === 1
+  && /"\/api\/v1\/data\/stake\/sepolia\/head"/.test(liveSource)
+  && /"\/api\/v1\/data\/grove\/sepolia\/head"/.test(liveSource)
+  && /credentials: "omit"/.test(liveSource));
 check("wallet preflight pins chain, code, bond, active state, simulation, gas, and balance", [
   "wallet_switchEthereumChain",
   "eth_chainId",
@@ -74,18 +120,35 @@ check("wallet preflight pins chain, code, bond, active state, simulation, gas, a
   "eth_getBalance",
   "eth_call",
   "eth_sendTransaction",
-].every((needle) => source.includes(needle)) && /bond !== BOND/.test(source));
+].every((needle) => source.includes(needle)) && /bond !== tier\.bondWei/.test(source));
+check("the stake bundle stays small (poseidon by subpath)", bundle.length < 150_000 && /poseidon-lite\/poseidon1/.test(source));
+check("rendering is deterministic", renderStakePage() === renderStakePage());
 
-const rebuilt = await build({
-  entryPoints: [join(ROOT, "site-src/stake.mjs")],
-  bundle: true,
-  format: "esm",
-  minify: true,
-  legalComments: "eof",
-  sourcemap: false,
-  target: ["chrome109", "firefox115", "safari16.4"],
-  write: false,
-});
-check("committed browser bundle is reproducible from reviewed source", Buffer.compare(bundle, Buffer.from(rebuilt.outputFiles[0].contents)) === 0);
+const build = spawnSync(process.execPath, [join(ROOT, "scripts/build-stake-site.mjs"), "--check"], { encoding: "utf8" });
+check("committed page, bundle, API profile and shared nav are reproducible from reviewed source", build.status === 0);
 
-console.log(`PASS: private staking site selftest (${checks.length} checks)`);
+// Same-origin status API: no parameters accepted, aggregate reads only, fails closed.
+const calls = [];
+const fakeRpc = async (method, params) => {
+  calls.push([method, params]);
+  if (method === "eth_blockNumber") return "0x100";
+  if (method === "eth_getBlockByNumber") return { number: "0xf0" };
+  if (method === "eth_call") {
+    const data = params[0].data;
+    if (data === "0xfc7e9c6f") return `0x${(5n).toString(16).padStart(64, "0")}`;
+    if (data === "0x4331ed1f") return `0x${(4n).toString(16).padStart(64, "0")}`;
+    const limit = BigInt(`0x${data.slice(10)}`);
+    return `0x${TIERS.find((t) => t.limit === limit).bondWei.toString(16).padStart(64, "0")}`;
+  }
+  throw new Error("unexpected");
+};
+const head = await readStakeHead(fakeRpc, new Date("2026-09-28T00:00:00Z"));
+check("stake head reports finalized set size, blocks and on-chain bonds", head.schema === STAKE_HEAD_SCHEMA && head.activeCount === 4 && head.nextIndex === 5
+  && head.headBlock === 256 && head.finalizedBlock === 240 && head.tiers.every((t) => t.onChainBondWei === t.bondWei));
+check("set size is read at the finalized block", calls.filter(([m, p]) => m === "eth_call" && ["0xfc7e9c6f", "0x4331ed1f"].includes(p[0].data)).every(([, p]) => p[1] === "finalized"));
+const rejected = await stakeHead(new Request("https://example.test/api/stake-head?commitment=1"), { rpc: fakeRpc });
+check("stake head refuses any query string, so it never receives a commitment", rejected.status === 400);
+const failing = await stakeHead(new Request("https://example.test/api/stake-head"), { rpc: async () => { throw new Error("down"); } });
+check("stake head fails closed with 503 and no-store", failing.status === 503 && failing.headers.get("cache-control") === "no-store");
+
+console.log(`PASS: Get access page selftest (${checks.length} checks)`);

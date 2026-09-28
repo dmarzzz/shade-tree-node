@@ -844,7 +844,9 @@ img {
   }
 
   .nav-links {
-    gap: clamp(0.2rem, 1.4vw, 0.45rem);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0 clamp(0.2rem, 1.4vw, 0.45rem);
     font-size: 0.72rem;
   }
   .home-hero { min-height: 43rem; }
