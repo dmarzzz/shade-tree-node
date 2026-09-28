@@ -7,7 +7,7 @@ per-topic docs; this page is the one-screen-per-topic version. Index: [`README.m
 
 > **v4 network status.** This checkout speaks envelope v4. There is no repo-maintained
 > production network. The bundled Sepolia profile provides a public, permissionless staking
-> path for the disposable v4 research Grove; see [PUBLIC-STAKING.md](PUBLIC-STAKING.md).
+> path for the disposable v4 research canopy; see [PUBLIC-STAKING.md](PUBLIC-STAKING.md).
 > Its contracts and proof artifacts are untrusted testnet material. The current profile is
 > recorded in `network/sepolia/deployment.json`; the older `network/sepolia/contracts.json`
 > is incompatible pre-v4 history. Run the local loop below to study the components.
@@ -97,7 +97,7 @@ shade-tree leaves --contract <v4-member-set-address> --rpc-url <operator-rpc-url
 ```
 
 That uses the bundled current-v4 Sepolia Elder+signer. Add `--bootnode-onion <elder.onion>
---signer <matching-signer-hex>` to select an alternate Grove.
+--signer <matching-signer-hex>` to select an alternate canopy.
 
 ## The local loop
 
@@ -164,4 +164,4 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
 | `network/` | Committed deployment records per network; `SHADE_TREE_NETWORK` reads them |
 | `crates/` | The distributable client: `shadenet-proto` (wire), `shadenet-rln` (prover + tree), `shadenet-cli` (embedded arti, `-live`) |
 | `test/`, `testdata/`, `scripts/test-all.mjs` | Foundry suite + cross-module selftests; golden vectors + artifact lock; the audit entrypoint |
-| `docker/`, `monitoring/`, `examples/`, `web/`, `smithers/` | Local container fleet; Prometheus/Grafana; agent examples; fleet map page; the roadmap as a Smithers workflow |
+| `docker/`, `monitoring/`, `examples/`, `web/` | Local container fleet; Prometheus/Grafana; agent examples; fleet map page |

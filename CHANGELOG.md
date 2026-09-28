@@ -1,5 +1,38 @@
 # Changelog
 
+ShadeNet was formerly Shade Tree Grove; entries below keep the names they shipped with.
+
+## Unreleased
+
+Work toward the ShadeNet research preview. Wire format, signed strings and the deployed
+Sepolia contracts are unchanged so far.
+
+### Changed
+
+- Public copy, site and current docs renamed to ShadeNet; Grove and Canopy merged into canopy. `/canopy` serves the network page and `/grove`, `/grove/network.json` and the v1/v2 Data API paths keep working. Signed and hashed wire strings are unchanged.
+- `/pricing` redirects to `/stake/`. The stale public `JOIN.md` and `RUN-A-GATEWAY.md` copies under the site are removed.
+- Burn 90% of each slashed member bond instead of paying it all to the slasher (#115).
+  This changes the contract; it takes effect at the next deployment.
+- ADR-0010: the spec and `testdata/vectors.json` are normative; a Rust SDK and a JavaScript
+  SDK live in one monorepo (#130).
+- Moved the Rust workspace from `rust/` to `crates/`, with crates renamed to
+  `shadenet-{proto,rln,egress,cli}`. The binary is still `shade-tree` (#131).
+- Clarified onboarding diagnostics and protocol documentation (#114).
+
+### Added
+
+- The community trusted-setup ceremony kit: `docs/CEREMONY.md`, `docs/ceremony/`,
+  `scripts/ceremony/` (#128).
+- `test/wire-freeze.selftest.mjs` pins every signed, hashed, proved or on-chain v4 string
+  so the rename can't change them (#129).
+- CI: `cargo deny` and `cargo audit` in the supply-chain gate; the Rust embedded-Tor to JS
+  gateway end-to-end run is a required check; nightly full matrix and a monthly mutation run.
+
+### Dependencies
+
+- arti-client and tor-rtcompat 0.46 (#127); rustls 0.23.45 (RUSTSEC-2026-0285); underscore
+  1.13.8 in the ceremony kit; routine npm, cargo and Actions bumps.
+
 ## 0.6.0 — Private staking and recovery
 
 **Official Sepolia research preview.** This release still uses unaudited,

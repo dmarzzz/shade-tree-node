@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Shade Tree Grove Data API",
+    "title": "ShadeNet Data API",
     "version": "2.0.0",
     "description": "Signed Grove head with delayed, rounded relay telemetry and an optional delayed, finalized v4 onchain ledger. Missing, suppressed, or unavailable observations are never encoded as zero."
   },

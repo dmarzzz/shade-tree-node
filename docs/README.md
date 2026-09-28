@@ -3,12 +3,16 @@
 The documentation and canonical specifications, one line each, grouped by what
 you are trying to do. The [README](../README.md) is the short front door;
 [`OVERVIEW.md`](OVERVIEW.md) is the long one.
+
+ShadeNet was formerly called Shade Tree Grove. Current docs say ShadeNet for the protocol and
+product, Shade Tree node for one gateway, and canopy for a group of nodes with the signed
+directory that lists them. Historical logs, ADRs and the changelog keep the old names.
 A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`](../docs-site/README.md)).
 
 > **Network status:** the current implementation speaks envelope v4 only. The legacy Sepolia
 > contracts, bootnode record, and signed directories remain incompatible pre-v4 history and are
 > not client presets. A separate [`network/sepolia/deployment.json`](../network/sepolia/deployment.json)
-> records the live disposable v4 research Grove observed by the public aggregate map. It is
+> records the live disposable v4 research canopy observed by the public aggregate map. It
 > admits invited and explicitly self-staked Sepolia testnet members and uses untrusted testnet
 > artifacts. Invited credentials remain private; the staking profile is public and explicit.
 
@@ -42,8 +46,8 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md) | Current v4 topology, Elder Tree and node rollout gates, safe order, and health checks |
 | [`OPERATOR.md`](OPERATOR.md) | Shade Tree node and Elder Tree runbook, including current deployment blocks, day-2 health, keys, slash response, and retirement |
 | [`../bootnode/deploy/README.md`](../bootnode/deploy/README.md) | The one-command droplet bootstrap and every tunable it accepts |
-| [`BOOTNODE.md`](BOOTNODE.md) | Elder Tree discovery: announce, signed Canopy, per-node signed capabilities, and the trust boundary |
-| [`data-api.md`](../specs/data-api.md) | The canonical public Grove Data API: verified aggregate counts, publisher/observer surfaces, privacy, bounded history, caching, and evolution |
+| [`BOOTNODE.md`](BOOTNODE.md) | Elder Tree discovery: announce, signed canopy directory, per-node signed capabilities, and the trust boundary |
+| [`data-api.md`](../specs/data-api.md) | The canonical public canopy Data API: verified aggregate counts, publisher/observer surfaces, privacy, bounded history, caching, and evolution |
 | [`FLEET.md`](FLEET.md) | Per-tunnel gateway selection, weights, failover, fleet budget |
 | [`INCIDENT.md`](INCIDENT.md) | Incident playbook |
 | [`SLO.md`](SLO.md) | Service-level objectives and error budget (proposals, recalibrated on live data) |
@@ -53,7 +57,7 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | [`LIGHT-CLIENT.md`](LIGHT-CLIENT.md) | Light-client root reads and the Helios sync-committee anchor (`SHADE_TREE_HELIOS=1`), with live receipts |
 | [`../monitoring/README.md`](../monitoring/README.md) | Grafana dashboard + Prometheus alert rules on the real metric names |
 | [`../docker/README.md`](../docker/README.md) | Single image and the local compose fleet |
-| [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md), [`GO-LIVE-LOG-2026-08-25-v4.md`](GO-LIVE-LOG-2026-08-25-v4.md) | The current v4 rollout boundary and the disposable research Grove deployment record |
+| [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md), [`GO-LIVE-LOG-2026-08-25-v4.md`](GO-LIVE-LOG-2026-08-25-v4.md) | The current v4 rollout boundary and the disposable research canopy deployment record |
 | [`../network/README.md`](../network/README.md), [`../network/sepolia/`](../network/sepolia/README.md) | Deployment-record schema, the current v4 research record (`deployment.json`), and historical pre-v4 Sepolia artifacts |
 
 ## Design and security
@@ -100,7 +104,7 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 |-----|------------|
 | [`exit-blocking-benchmark.md`](exit-blocking-benchmark.md) | The benchmark: 51 exits, web and search destinations, block rates and reasons |
 | [`residential-proxies.md`](residential-proxies.md), [`residential-proxy-providers.md`](residential-proxy-providers.md) | What residential proxies do to your privacy; a provider taxonomy |
-| [`post/`](post/) | The published landing page ([`index.html`](post/index.html)), [live Grove](post/grove/index.html), full [research note](post/research/index.html), figures, plus [`JOIN.md`](post/JOIN.md) and [`RUN-A-GATEWAY.md`](post/RUN-A-GATEWAY.md) |
+| [`post/`](post/) | The published landing page ([`index.html`](post/index.html)), [live canopy](post/grove/index.html), full [research note](post/research/index.html), figures, plus [`JOIN.md`](post/JOIN.md) and [`RUN-A-GATEWAY.md`](post/RUN-A-GATEWAY.md) |
 | [`SHIP-PLAN.md`](SHIP-PLAN.md), [`ROADMAP.md`](ROADMAP.md) | The shipping backlog and release gates; the forward roadmap |
 | [`ROADMAP-v1.md`](ROADMAP-v1.md), [`NEXT-VERSION.md`](NEXT-VERSION.md), [`RLN-MIGRATION.md`](RLN-MIGRATION.md) | Historical designs (milestones 1 to 5, next-version spec, RLN migration); what they specified is built |
 | [`REPORT.md`](REPORT.md), [`DEPLOY.md`](DEPLOY.md), [`DEPLOYMENT.md`](DEPLOYMENT.md), [`walkthrough.html`](walkthrough.html) | Historical: the June 2026 PoC report and deploy guide, the July fleet deployment record, the request walkthrough |
