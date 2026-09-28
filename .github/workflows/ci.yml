@@ -1,17 +1,22 @@
 name: ci
 
-# Runs on every push and PR. The independently visible gates mirror local commands:
-#   node      -- JavaScript selftests across the supported Node matrix
+# Runs on every push and PR, and nightly. The independently visible gates mirror local commands:
+#   node      -- JavaScript selftests. PRs run the full suite once, on Node 24, under c8 with the
+#                checked coverage thresholds. main and the nightly run the 20/22/24 matrix, with
+#                Node 24 under coverage (HYG-11: same coverage per PR, a third of the runner minutes).
 #   contracts -- Foundry contracts once (independent of the Node runtime)
-#   rust      -- every Rust workspace target/feature plus fmt and strict Clippy
-#   coverage  -- the repository's checked c8 coverage thresholds
+#   rust      -- every Rust workspace target/feature plus fmt and strict Clippy (cached)
 #   lint      -- `npm run lint` (eslint bug net, not a formatter)
-#   audit     -- `npm run audit:ci` supply-chain gate (blocks on high/critical advisories)
+#   audit     -- npm audit (high/critical), cargo-deny and cargo-audit (HYG-10)
+#   rust coverage -- llvm-cov summary on main and nightly only (informational)
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,12 +45,14 @@ jobs:
           toolchain: 1.98.0
           components: rustfmt, clippy
 
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: clippy
+
       - name: Check formatting
-        working-directory: rust
         run: cargo fmt --all -- --check
 
       - name: Run strict Clippy
-        working-directory: rust
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
   node:
@@ -55,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        node: ${{ fromJSON(github.event_name == 'pull_request' && '[24]' || '[20, 22, 24]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,7 +79,14 @@ jobs:
         run: npm ci
 
       - name: Run Node selftests
+        if: matrix.node != 24
         run: npm run test:node
+
+      # Node 24 runs the same suite under c8, so one job is both the selftests and the
+      # coverage gate.
+      - name: Run Node selftests with coverage thresholds
+        if: matrix.node == 24
+        run: npm run coverage
 
   contracts:
     name: foundry contracts
@@ -100,28 +114,6 @@ jobs:
 
       - name: Verify public staking runtime manifest
         run: node deploy/v4/check-bytecode-manifest.mjs
-
-  coverage:
-    name: coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          submodules: recursive
-
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Enforce coverage thresholds
-        run: npm run coverage
 
   lint:
     name: lint
@@ -165,3 +157,48 @@ jobs:
       # Blocking gate: fails CI on any high or critical production advisory.
       - name: Audit production dependencies (high or critical)
         run: npm run audit:ci
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.98.0
+
+      - name: Install cargo-deny and cargo-audit
+        uses: taiki-e/install-action@dfae9bf3d6f6c6f20ef4ebb3486c01a51341ff12 # v2.87.18
+        with:
+          tool: cargo-deny,cargo-audit
+
+      # deny.toml: advisories, licenses, sources. .cargo/audit.toml mirrors its ignores.
+      - name: cargo deny
+        run: cargo deny --locked check
+
+      - name: cargo audit
+        run: cargo audit
+
+  rust-coverage:
+    name: rust coverage (informational)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.98.0
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: llvm-cov
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@dfae9bf3d6f6c6f20ef4ebb3486c01a51341ff12 # v2.87.18
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Rust line coverage
+        run: cargo llvm-cov --workspace --all-features --locked --summary-only | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "choose-a-unique-lowercase-event-id",
+  "mode": "research-preview",
+  "contributionDeadline": "YYYY-MM-DDTHH:MM:SSZ",
+  "beaconRound": "REPLACE_WITH_INTEGER_FROM_BEACON_ROUND_COMMAND",
+  "minContributors": 3
+}

@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Create a private Shade Tree identity locally and stake 0.1 Sepolia ETH for anonymous, proof-gated Grove access.">
+  <meta name="description" content="Create a private Shade Tree identity locally and stake 0.1 Sepolia ETH for anonymous, proof-gated canopy access.">
   <meta name="theme-color" content="#07100c">
-  <meta property="og:title" content="Private Sepolia Staking · Shade Tree Grove">
+  <meta property="og:title" content="Private Sepolia Staking · ShadeNet">
   <meta property="og:description" content="Create the member secret locally, save its recovery file, and send only the public commitment to Sepolia.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://shade-tree-node.vercel.app/stake/">
-  <meta property="og:site_name" content="Shade Tree Grove">
+  <meta property="og:site_name" content="ShadeNet">
   <meta property="og:image" content="https://shade-tree-node.vercel.app/fig/shade-tree-og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -23,18 +23,18 @@
   <script type="application/ld+json">
     {"@context":"https://schema.org","@type":"WebApplication","name":"Shade Tree private staking","url":"https://shade-tree-node.vercel.app/stake/","applicationCategory":"FinanceApplication","operatingSystem":"Web browser"}
   </script>
-  <title>Private Sepolia Staking · Shade Tree Grove</title>
+  <title>Private Sepolia Staking · ShadeNet</title>
 </head>
 <body class="stake-page">
   <a class="skip-link" href="#staking">Skip to staking</a>
   <nav class="site-nav" aria-label="Primary navigation">
-    <a class="wordmark" href="../index.html" aria-label="Shade Tree Grove home">
+    <a class="wordmark" href="../index.html" aria-label="ShadeNet home">
       <span class="tree-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span>Shade Tree Grove</span>
+      <span>ShadeNet</span>
     </a>
     <div class="nav-links">
       <a href="../agent/index.html">Agents</a>
-      <a href="../grove/index.html">Grove</a>
+      <a href="../canopy/">Canopy</a>
       <a href="../research/index.html">Research</a>
       <a href="https://github.com/dmarzzz/shade-tree-node">Source</a>
     </div>
@@ -44,7 +44,7 @@
     <header class="stake-intro">
       <p class="stake-eyebrow">Public Sepolia · base tier</p>
       <h1>Stake without giving us an identity.</h1>
-      <p>Create a bearer credential in this tab, keep its recovery file, and put only its public commitment on chain. The Grove never receives the secret.</p>
+      <p>Create a bearer credential in this tab, keep its recovery file, and put only its public commitment on chain. The canopy never receives the secret.</p>
       <div class="mode-switch" aria-label="Choose a staking role">
         <button type="button" data-mode="member" aria-pressed="true">I’m joining</button>
         <button type="button" data-mode="sponsor" aria-pressed="false">I’m sponsoring</button>
@@ -56,7 +56,7 @@
       <dl>
         <div><dt>This page</dt><dd>Generates and validates locally. No identity API exists.</dd></div>
         <div><dt>Your wallet / RPC</dt><dd>Sees your address, public commitment, 0.1 ETH, and timing.</dd></div>
-        <div><dt>The Grove</dt><dd>Later sees a valid anonymous membership proof, not which leaf made it.</dd></div>
+        <div><dt>The canopy</dt><dd>Later sees a valid anonymous membership proof, not which leaf made it.</dd></div>
       </dl>
       <p>Loading any website can expose your IP to its host. This static page never sends the commitment or recovery file to the Shade Tree server.</p>
     </aside>

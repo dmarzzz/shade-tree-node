@@ -7,7 +7,7 @@ per-topic docs; this page is the one-screen-per-topic version. Index: [`README.m
 
 > **v4 network status.** This checkout speaks envelope v4. There is no repo-maintained
 > production network. The bundled Sepolia profile provides a public, permissionless staking
-> path for the disposable v4 research Grove; see [PUBLIC-STAKING.md](PUBLIC-STAKING.md).
+> path for the disposable v4 research canopy; see [PUBLIC-STAKING.md](PUBLIC-STAKING.md).
 > Its contracts and proof artifacts are untrusted testnet material. The current profile is
 > recorded in `network/sepolia/deployment.json`; the older `network/sepolia/contracts.json`
 > is incompatible pre-v4 history. Run the local loop below to study the components.
@@ -85,7 +85,7 @@ anonymous: invited, staked, paid.
 ## The Rust binary
 
 `shade-tree-0.6.0-<target>-live` needs no Node and no tor daemon; the default non-live binary
-verifies, selects and fetches directories but does not egress ([`rust/INSTALL.md`](../rust/INSTALL.md)):
+verifies, selects and fetches directories but does not egress ([`crates/INSTALL.md`](../crates/INSTALL.md)):
 
 ```bash
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
@@ -97,7 +97,7 @@ shade-tree leaves --contract <v4-member-set-address> --rpc-url <operator-rpc-url
 ```
 
 That uses the bundled current-v4 Sepolia Elder+signer. Add `--bootnode-onion <elder.onion>
---signer <matching-signer-hex>` to select an alternate Grove.
+--signer <matching-signer-hex>` to select an alternate canopy.
 
 ## The local loop
 
@@ -162,6 +162,6 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
 | `payments/` | The 402 registrar, both wire dialects, EIP-3009 typed data, test-asset deploy |
 | `group/` | Self-enrollment, `shade-tree pay`, `shade-tree leaves`, on-chain register (member / gateway), the committed `members.json` |
 | `network/` | Committed deployment records per network; `SHADE_TREE_NETWORK` reads them |
-| `rust/` | The distributable client: `shade-tree-proto` (wire), `shade-tree-rln` (prover + tree), `shade-tree-client` (embedded arti, `-live`) |
+| `crates/` | The distributable client: `shadenet-proto` (wire), `shadenet-rln` (prover + tree), `shadenet-cli` (embedded arti, `-live`) |
 | `test/`, `testdata/`, `scripts/test-all.mjs` | Foundry suite + cross-module selftests; golden vectors + artifact lock; the audit entrypoint |
-| `docker/`, `monitoring/`, `examples/`, `web/`, `smithers/` | Local container fleet; Prometheus/Grafana; agent examples; fleet map page; the roadmap as a Smithers workflow |
+| `docker/`, `monitoring/`, `examples/`, `web/` | Local container fleet; Prometheus/Grafana; agent examples; fleet map page |

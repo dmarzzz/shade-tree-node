@@ -22,6 +22,8 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/bootstrap-e2e.yml"
+  schedule:
+    - cron: "29 7 * * *"
   workflow_dispatch:
 
 permissions:

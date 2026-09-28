@@ -284,7 +284,7 @@ per-gateway onion↔pubkey binding (section 4.3, reasons 5–6) is then checked 
 | none | success | `{ ok:true, signers:[matched…], threshold }` |
 
 Golden vector: `testdata/vectors.json` `thresholdDirectory` (2-of-3, fixed seeds; its canonical
-bytes equal `canonicalDirectoryBytesHex`). Rust parity: `rust/shade-tree-proto`
+bytes equal `canonicalDirectoryBytesHex`). Rust parity: `crates/shadenet-proto`
 `verify_directory_threshold(dir, pinned_signers)` consumes this shape (T-FEAT-9b);
 `verify_directory` remains the single-signer path.
 
@@ -294,8 +294,9 @@ Server: `bootnode/server.mjs:151` `makeServer`. All responses
 `content-type: application/json`. Listens on loopback (`127.0.0.1:SHADE_TREE_BOOTNODE_PORT`, default
 `8877`) behind its own onion service.
 
-Public copy may call the bootnode the **Elder Tree** and its signed directory the
-**Canopy**. Those are presentation names only. The normative route remains
+Public copy may call the bootnode the **Elder Tree**, and the group of nodes it lists,
+together with the signed directory that lists them, the **canopy** (earlier copy used
+Canopy for the directory and Grove for the nodes). Those are presentation names only. The normative route remains
 `GET /directory`, and the signed shape remains the directory schema in section 4.
 `GET /health` carries the informational header `x-shade-tree-role: elder-tree`.
 `GET /directory` and `GET /directory/delta` carry that header plus
@@ -329,7 +330,7 @@ Public copy may call the bootnode the **Elder Tree** and its signed directory th
   `roundedBytes` below five reporters or when unavailable. See `docs/RELAY-TELEMETRY.md`.
 
 The API has no pulse route and publishes no client-query sequence. Local Proxy progress
-events and the public Grove animation are interface behavior, not additional wire state.
+events and the public canopy animation are interface behavior, not additional wire state.
 
 ### 5.2 Error responses
 
@@ -448,7 +449,7 @@ phase-2 output) the proof was generated with, so a gateway running a dual-VK rol
 (`docs/CEREMONY.md` §6) verifies under the matching vkey. Value = `<circuit>-<sha256(verification_
 key.json bytes) hex[0:16]>`; grammar `^[a-z0-9][a-z0-9._-]{0,63}$`; i.e. literally the vkey's
 hash prefix in `testdata/zk-artifacts.lock.json` (`circuits.rln.artifactId`), derived identically
-by the JS client (`artifactIdOf`), the Rust client (`shade_tree_proto::artifact_id_of`, from its embedded
+by the JS client (`artifactIdOf`), the Rust client (`shadenet_proto::artifact_id_of`, from its embedded
 bytes) and the gateway (from the files `SHADE_TREE_ZK_ARTIFACTS` names). OPTIONAL and additive: an
 envelope WITHOUT it is treated as the gateway's LEGACY id (`SHADE_TREE_ZK_ARTIFACT_LEGACY`, default the
 lock's `previousArtifactId` else the built-in id), so an un-upgraded client keeps working while
@@ -554,10 +555,10 @@ Epoch clock: `epoch = floor(nowMs/1000 / EPOCH_SECONDS)`, `EPOCH_SECONDS` defaul
 6. `requestSignal` string, `signalFieldSafe`, and the target-binding hash.
 7. `artifactIdOf` (sha256 prefix of the vkey bytes), `canonicalCaps.artifacts`, and `selectArtifact`
    (T-HARD-8; the Rust client also hash-checks its embedded artifacts against the embedded lock at
-   startup, `rust/shade-tree-rln/src/artifacts.rs`).
+   startup, `crates/shadenet-rln/src/artifacts.rs`).
 8. `canonicalCaps.admits` (anonymity order, deduped) and `canonicalCaps.pay` (bounded, numeric tier
    order) + the admission-aware selection rule (T-FEAT-9: keep gateways whose `admits` include the
-   client's leaf source; absent `admits` = keep; `--max-anon` = exactly `["invited"]`), `shade_tree_proto`
+   client's leaf source; absent `admits` = keep; `--max-anon` = exactly `["invited"]`), `shadenet_proto`
    `canonical_admits` / `canonical_pay`, `shade-tree-client` `filter_by_admission`.
 
 ## 8. Ambiguities / notes

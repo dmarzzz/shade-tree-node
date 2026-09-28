@@ -201,7 +201,7 @@ The first implementation should provide:
 
 The following are explicitly out of scope:
 
-- transferable tickets that work at any node in the Grove;
+- transferable tickets that work at any node in the canopy;
 - unlinkability between child streams sharing one session;
 - a permanent monetary balance that decreases across epochs;
 - variable request pricing or server-computed refunds;
@@ -307,7 +307,7 @@ The destination sees:
 
 It does not receive the Shade Tree RLN proof, ticket, ticket-book digest, or member leaf.
 
-### 7.4 Elder Tree / Canopy
+### 7.4 Elder Tree / canopy directory
 
 The discovery layer carries only a coarse, onion-signed declaration that a node supports
 `session-v1`, the service port, and a small allowlisted set of policy-class identifiers.
@@ -1239,8 +1239,8 @@ client/session-pool.mjs
   lifecycle, draining, fallback
 ```
 
-Rust mirrors the pure ticket functions in `shade-tree-proto`, puts HTTP/2 transport and
-pooling in `shade-tree-egress`, and keeps CLI policy in `shade-tree-client`.
+Rust mirrors the pure ticket functions in `shadenet-proto`, puts HTTP/2 transport and
+pooling in `shadenet-egress`, and keeps CLI policy in `shade-tree-client`.
 
 Use shared JSON/conformance vectors for:
 
@@ -1600,7 +1600,7 @@ These are intended to become independently reviewable engineering tickets.
 
 **Scope**
 
-- add HTTP/2 client support to `shade-tree-egress`;
+- add HTTP/2 client support to `shadenet-egress`;
 - implement session lifecycle, ticket allocation, and child stream adapter;
 - integrate the Rust loopback Proxy and `run` path;
 - consume shared vectors and acceptance fixtures.
@@ -1887,7 +1887,7 @@ every action is also unnecessary when all state is local to the issuer/verifier.
 
 ### Transferable ticket book in the MVP
 
-Rejected because it immediately requires an atomic Grove-wide reservation service. The
+Rejected because it immediately requires an atomic canopy-wide reservation service. The
 current asynchronous tally can reduce accidental replay but cannot guarantee that two
 nodes do not provide service concurrently.
 

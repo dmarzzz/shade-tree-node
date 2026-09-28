@@ -13,7 +13,7 @@
 //   - VK constants embedded in the Solidity verifiers == the JSON verification keys
 //   - contracts/RlnGroth16Verifier.sol == circuits/rln/Verifier.sol modulo the header comment
 //   - the Rust `live` binary include_bytes!'s the SAME three circuits/rln files (path check on
-//     rust/shade-tree-rln/src/prover.rs, no cargo build), so the lock hashes cover it
+//     crates/shadenet-rln/src/prover.rs, no cargo build), so the lock hashes cover it
 //   - circuits/rln/ARTIFACTS.md's hash table agrees with the lock (docs cannot drift from bytes)
 //   - (T-HARD-8) each circuit's `artifactId` in the lock == `<circuit>-<sha256(vkey)[0:16]>`
 //     (the id the gateway/client/Rust derive at runtime; lib/zk-artifacts.mjs), the Rust `live`
@@ -126,8 +126,8 @@ ok(stripComments(readFileSync(join(ROOT, "contracts/RlnGroth16Verifier.sol"), "u
   "contracts/RlnGroth16Verifier.sol == circuits/rln/Verifier.sol modulo /// comments");
 
 // ---- 5. Rust live binary embeds the SAME files (path check, no cargo build) -----------------
-console.log("\nrust embedded artifacts (rust/shade-tree-rln/src/prover.rs include_bytes! paths):");
-const prover = readFileSync(join(ROOT, "rust/shade-tree-rln/src/prover.rs"), "utf8");
+console.log("\nrust embedded artifacts (crates/shadenet-rln/src/prover.rs include_bytes! paths):");
+const prover = readFileSync(join(ROOT, "crates/shadenet-rln/src/prover.rs"), "utf8");
 for (const f of ["rln.wasm", "rln_final.zkey", "verification_key.json"]) {
   ok(prover.includes(`"/../../circuits/rln/${f}"`), `prover.rs include_bytes! -> circuits/rln/${f} (covered by the lock hash)`);
 }
@@ -166,8 +166,8 @@ ok(buildLock({ prev: lock }).circuits.rln.previousArtifactId === lock.circuits.r
 for (const circuit of Object.keys(VKEY_OF)) {
   ok(md.includes(`| \`${circuit}\` | \`${lock.circuits[circuit].artifactId}\` |`), `ARTIFACTS.md artifact-id table names ${circuit} = ${lock.circuits[circuit].artifactId} (docs cannot drift from the lock)`);
 }
-const artifactsRs = readFileSync(join(ROOT, "rust/shade-tree-rln/src/artifacts.rs"), "utf8");
-ok(artifactsRs.includes('"/../../testdata/zk-artifacts.lock.json"'), "rust/shade-tree-rln/src/artifacts.rs include_str!s THIS lock (the live binary self-checks its embedded bytes against it)");
+const artifactsRs = readFileSync(join(ROOT, "crates/shadenet-rln/src/artifacts.rs"), "utf8");
+ok(artifactsRs.includes('"/../../testdata/zk-artifacts.lock.json"'), "crates/shadenet-rln/src/artifacts.rs include_str!s THIS lock (the live binary self-checks its embedded bytes against it)");
 ok(/#\[cfg\(feature = "embedded-artifacts"\)\]\s*pub const LOCK/.test(artifactsRs), "the embedded lock is behind the embedded-artifacts feature (live binary)");
 const releaseYml = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8");
 ok(releaseYml.includes("node test/zk-artifacts.selftest.mjs"), "release.yml runs test/zk-artifacts.selftest.mjs (a tag build cannot embed drifted artifacts)");

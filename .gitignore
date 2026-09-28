@@ -52,3 +52,9 @@ backups/
 contracts/paid-access.local.json
 .vercel
 .env*.local
+
+# Rust workspace (crates/)
+/target
+**/target/
+**/*.rs.bk
+Cargo.lock.orig

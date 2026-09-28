@@ -1,6 +1,6 @@
-# Grove v2 onchain activity
+# Canopy v2 onchain activity
 
-The optional Grove v2 `onchain` section is a delayed, finalized aggregate from a current
+The optional canopy v2 `onchain` section is a delayed, finalized aggregate from a current
 envelope-v4 deployment. It is not enabled for the checked-in Sepolia deployment: that record is
 `status: "retired"`, predates envelope v4, lacks runtime code hashes and lacks an immutable payment
 attribution source. The observer refuses it before making an RPC request.

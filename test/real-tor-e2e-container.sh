@@ -98,7 +98,7 @@ set -euo pipefail
 cd /opt/shade-tree
 # Derive a single member whose rateCommitment leaf becomes the gateway's whole membership set,
 # so the client (same secret) proves against the exact root the gateway trusts.
-node rust/shade-tree-rln/interop/egress-derive.mjs /tmp "$SECRET"
+node crates/shadenet-rln/interop/egress-derive.mjs /tmp "$SECRET"
 cp /tmp/members.json /opt/shade-tree/deploy-state/members.json
 chown shade-tree:shade-tree /opt/shade-tree/deploy-state/members.json 2>/dev/null || true
 systemctl restart shade-tree-gateway

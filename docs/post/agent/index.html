@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Install Shade Tree Grove and route one local AI agent through a Tor-based, proof-gated HTTPS egress proxy.">
+  <meta name="description" content="Install ShadeNet and route one local AI agent through a Tor-based, proof-gated HTTPS egress proxy.">
   <meta name="theme-color" content="#07100c">
-  <meta property="og:title" content="Tor Proxy Setup for AI Agents · Shade Tree Grove">
+  <meta property="og:title" content="Tor Proxy Setup for AI Agents · ShadeNet">
   <meta property="og:description" content="Route one local AI agent through Tor-based, proof-gated HTTPS egress.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://shade-tree-node.vercel.app/agent/">
-  <meta property="og:site_name" content="Shade Tree Grove">
+  <meta property="og:site_name" content="ShadeNet">
   <meta property="og:image" content="https://shade-tree-node.vercel.app/fig/shade-tree-og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -27,7 +27,7 @@
         {
           "@type": "ListItem",
           "position": 1,
-          "name": "Shade Tree Grove",
+          "name": "ShadeNet",
           "item": "https://shade-tree-node.vercel.app/"
         },
         {
@@ -38,20 +38,20 @@
       ]
     }
   </script>
-  <title>Tor Proxy Setup for AI Agents · Shade Tree Grove</title>
+  <title>Tor Proxy Setup for AI Agents · ShadeNet</title>
 </head>
 <body class="guide-page">
   <a class="skip-link" href="#guide">Skip to the guide</a>
 
   <nav class="site-nav" aria-label="Primary navigation">
-    <a class="wordmark" href="/" aria-label="Shade Tree Grove home">
+    <a class="wordmark" href="/" aria-label="ShadeNet home">
       <span class="tree-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-      <span>Shade Tree Grove</span>
+      <span>ShadeNet</span>
     </a>
     <div class="nav-links">
       <a href="/operator/">Operators</a>
       <a href="/stake/">Stake</a>
-      <a href="/grove/">Grove</a>
+      <a href="/canopy/">Canopy</a>
       <a href="/research/">Research</a>
       <a href="https://github.com/dmarzzz/shade-tree-node">Source</a>
     </div>
@@ -59,7 +59,7 @@
 
   <main id="guide" class="guide-main">
     <header class="guide-intro">
-      <h1>Add Shade Tree Grove to an agent.</h1>
+      <h1>Add ShadeNet to an agent.</h1>
       <p>Install one verified Rust binary, start its embedded-Arti Proxy, then give that route to one agent process.</p>
       <p class="guide-status"><strong>Research preview.</strong> v0.6.0 bundles the public Sepolia tier-1 profile and private member exit. A 0.1 Sepolia ETH stake admits one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload ceiling.</p>
     </header>
@@ -68,11 +68,11 @@
       <section class="guide-step" aria-labelledby="agent-install">
         <h2 id="agent-install">1. Download and verify</h2>
         <p>The installer detects the platform, downloads the matching v0.6.0 <code>-live</code> binary and checksum, verifies both digest and filename, and installs into <code>~/.local/bin</code>. The binary includes the Proxy, RLN prover, private member lifecycle, and Arti; the agent machine needs neither Node.js nor a system Tor daemon.</p>
-        <div class="command" aria-label="Install the Shade Tree Grove v0.6.0 live binary">
+        <div class="command" aria-label="Install the ShadeNet v0.6.0 live binary">
           <code>curl -q -fsSL --proto '=https' --proto-redir '=https' \<br>&nbsp;&nbsp;https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \<br>&nbsp;&nbsp;| SHADE_TREE_VERSION=v0.6.0 sh<br>shade-tree --version</code>
           <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' \&#10;  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \&#10;  | SHADE_TREE_VERSION=v0.6.0 sh&#10;shade-tree --version" aria-label="Copy v0.6.0 live binary installation commands">copy</button>
         </div>
-        <p>Intel macOS has no prebuilt live tunnel. The macOS binary is checksummed and attested but not yet notarized. The <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/rust/INSTALL.md">Rust installation guide</a> lists published targets, manual checksum and attestation verification, and source builds.</p>
+        <p>Intel macOS has no prebuilt live tunnel. The macOS binary is checksummed and attested but not yet notarized. The <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/crates/INSTALL.md">Rust installation guide</a> lists published targets, manual checksum and attestation verification, and source builds.</p>
       </section>
 
       <section class="guide-step" aria-labelledby="agent-profile">
@@ -82,7 +82,7 @@
           <code>shade-tree enroll --out identity.json<br>chmod 600 funded-sepolia.key<br>shade-tree register-member --identity identity.json --key-file funded-sepolia.key<br>shade-tree member-status --identity identity.json --json</code>
           <button class="copy-command" type="button" data-copy="shade-tree enroll --out identity.json&#10;chmod 600 funded-sepolia.key&#10;shade-tree register-member --identity identity.json --key-file funded-sepolia.key&#10;shade-tree member-status --identity identity.json --json" aria-label="Copy identity enrollment and staking commands">copy</button>
         </div>
-        <p><code>identity.json</code> contains the member secret and stays local. The staking wallet address, public leaf, amount, and timing are public. Never post the identity, funded key, member secret, or Proxy token. Alternate invited or paid Groves still require their operator's exact tier and membership input.</p>
+        <p><code>identity.json</code> contains the member secret and stays local. The staking wallet address, public leaf, amount, and timing are public. Never post the identity, funded key, member secret, or Proxy token. Alternate invited or paid canopies still require their operator's exact tier and membership input.</p>
         <p>The profile uses untrusted testnet proof artifacts and is not suitable for real funds or sensitive traffic. See the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/PUBLIC-STAKING.md">exact protocol parameters</a> and ask for help in <a href="https://github.com/dmarzzz/shade-tree-node/discussions">GitHub Discussions</a>.</p>
         <p>To leave, run <code>shade-tree exit-member --identity identity.json --key-file gas.key</code>. After <code>member-status</code> reports that the 24-hour unbonding time has passed, reclaim to a fresh address with <code>shade-tree withdraw-member --identity identity.json --recipient 0x… --key-file gas.key</code>. The proof is generated locally and the gas wallet may be unrelated to the original funder.</p>
       </section>
@@ -104,7 +104,7 @@
 
       <section class="guide-step" aria-labelledby="agent-run">
         <h2 id="agent-run">4. Launch the agent</h2>
-        <div class="command" aria-label="Run one agent with Shade Tree Grove routing">
+        <div class="command" aria-label="Run one agent with ShadeNet routing">
           <code>IFS= read -r SHADE_TREE_PROXY_TOKEN &lt; proxy-token.txt<br>export SHADE_TREE_PROXY_TOKEN<br>shade-tree run -- your-agent</code>
           <button class="copy-command" type="button" data-copy="IFS= read -r SHADE_TREE_PROXY_TOKEN &lt; proxy-token.txt&#10;export SHADE_TREE_PROXY_TOKEN&#10;shade-tree run -- your-agent" aria-label="Copy agent launch commands">copy</button>
         </div>
@@ -116,7 +116,7 @@
         <p>The Proxy accepts HTTP CONNECT and the node permits target port 443. TLS stays between the agent and destination. The serving node still sees the target hostname, timing, lifetime, and traffic volume. This research preview has not had the trusted setup and independent audit required for a production release.</p>
         <div class="guide-links">
           <a class="solid-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md">Full agent guide</a>
-          <a class="line-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/rust/INSTALL.md">Rust install details</a>
+          <a class="line-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/crates/INSTALL.md">Rust install details</a>
           <a class="line-action" href="https://github.com/dmarzzz/shade-tree-node/discussions">Ask for help</a>
         </div>
       </section>

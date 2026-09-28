@@ -1,5 +1,5 @@
 # Dependabot: weekly dependency + toolchain update PRs (T-HARD-2 supply chain).
-# Covers the three ecosystems this repo ships: npm (root), cargo (rust/), and
+# Covers the three ecosystems this repo ships: npm (root), cargo (repo root, crates/), and
 # the GitHub Actions pinned in the workflows themselves.
 version: 2
 updates:
@@ -13,10 +13,23 @@ updates:
       - "javascript"
 
   - package-ecosystem: "cargo"
-    directory: "/rust"
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    # The arkworks crates, ark-circom and num-bigint must move together: ark-circom 0.5 ==
+    # ark 0.5 (crates/shadenet-rln/Cargo.toml), and a lone major bump can't compile. Group
+    # them into one PR and leave majors to a deliberate upgrade.
+    groups:
+      arkworks:
+        patterns:
+          - "ark-*"
+          - "num-bigint"
+    ignore:
+      - dependency-name: "ark-*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "num-bigint"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     labels:
       - "dependencies"
       - "rust"

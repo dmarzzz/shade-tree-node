@@ -13,23 +13,18 @@ name: real-tor-e2e
 # loopback pass metric + the sink actually receiving the tunneled connection); a client that claims
 # ACCEPT without that corroborating evidence is a HARD failure. This job does NOT gate the existing
 # ci.yml suites — it is an additional, best-effort integration signal.
+#
+# The Rust embedded-Tor job IS a required check (HYG-10): it is the one end-to-end test of the
+# product agents run. It triggers on every PR so the required check always reports; the
+# `changes` job skips both e2e jobs when a PR touches nothing they exercise, and a skipped
+# job satisfies the required check. main, the nightly and dispatch always run them.
 
 on:
   push:
     branches: [main]
   pull_request:
-    paths:
-      - "bootnode/**"
-      - "gateway/**"
-      - "client/**"
-      - "lib/**"
-      - "group/**"
-      - "rust/**"
-      - "test/real-tor-e2e-client.mjs"
-      - "test/real-tor-e2e-container.sh"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/real-tor-e2e.yml"
+  schedule:
+    - cron: "41 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -40,8 +35,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: e2e path gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash scripts/ci-changes.sh '^(crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|bootnode/|gateway/|client/|lib/|group/|circuits/|testdata/|network/|package(-lock)?\.json$|test/real-tor-e2e|\.github/workflows/real-tor-e2e\.yml$|scripts/ci-changes\.sh$)'
+
   real-tor-e2e:
     name: real-Tor client tunnel e2e (systemd fleet)
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -58,6 +70,8 @@ jobs:
 
   rust-real-tor-e2e:
     name: Rust embedded-Tor -> JS gateway ACCEPT (blocking)
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -69,6 +83,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
           toolchain: 1.98.0
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: e2e
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -89,4 +107,4 @@ jobs:
           SHADE_TREE_TOR_E2E: "1"
           SHADE_TREE_TOR_DIAL_ATTEMPTS: "5"
           SHADE_TREE_TOR_TIMEOUT_SECS: "300"
-        run: bash rust/shade-tree-rln/interop/egress-tor-run.sh
+        run: bash crates/shadenet-rln/interop/egress-tor-run.sh

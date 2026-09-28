@@ -126,8 +126,8 @@ fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
-INTEROP="$REPO/rust/shade-tree-rln/interop"
-RUST_MANIFEST="$REPO/rust/Cargo.toml"
+INTEROP="$REPO/crates/shadenet-rln/interop"
+RUST_MANIFEST="$REPO/Cargo.toml"
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 WORK="$(mktemp -d)"
 
@@ -186,8 +186,8 @@ else
   command -v cargo >/dev/null 2>&1 || fail "cargo not found; set HERMES_E2E_RUST_BIN to a live shade-tree binary"
   echo "== build the Rust Proxy with embedded Arti and RLN artifacts =="
   cargo build --locked --manifest-path "$RUST_MANIFEST" \
-    -p shade-tree-client --features live
-  RUST_SHADE_TREE="$REPO/rust/target/debug/shade-tree"
+    -p shadenet-cli --features live
+  RUST_SHADE_TREE="$REPO/target/debug/shade-tree"
 fi
 if [ -z "${HERMES_E2E_SSH_TARGET:-}" ]; then
   command -v "${HERMES_E2E_HERMES_BIN:-hermes}" >/dev/null 2>&1 || fail "Hermes not found; set HERMES_E2E_HERMES_BIN or HERMES_E2E_SSH_TARGET"

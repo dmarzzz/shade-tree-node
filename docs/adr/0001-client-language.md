@@ -1,6 +1,6 @@
 # ADR 0001: Client implementation language — JS reference, Rust distributable
 
-- Status: Accepted
+- Status: Accepted; the "JS source wins" rule is superseded by [ADR 0010](0010-two-sdks-one-spec.md)
 - Date: 2026-08-13
 - Task: T-RUST-0 (docs/SHIP-PLAN.md section 7b)
 

@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "purpose": "Reproduce the existing Shade Tree RLN and withdrawal circuit inputs; no ceremony or runtime activation",
+  "compiler": {
+    "repository": "https://github.com/iden3/circom.git",
+    "commit": "e410b0d5cd2948a15931df0bc50d79ce56fa8c32",
+    "tag": "v2.2.2",
+    "version": "2.2.2",
+    "rustToolchain": "1.98.0",
+    "cargoLockSha256": "5f54c3cce2a5f6dbddc525515b08889deea2ebb03d6a176e34c27532291c6a2e",
+    "cargoArgs": ["build", "--release", "--locked"],
+    "flags": ["--r1cs", "--wasm", "--sym", "--O1", "--prime", "bn128"]
+  },
+  "source": {
+    "repository": "https://github.com/Rate-Limiting-Nullifier/circom-rln.git",
+    "commit": "17f0fed7d8d19e8b127fd0b3e5295a4831193a0d",
+    "tag": "v1.0.0",
+    "packageLockSha256": "830729d4905bc5c6882a43b6dc0c0d95b8e85ac787e76ebdd7f0d4ffd494707f",
+    "npmArgs": ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]
+  },
+  "circomlib": {
+    "version": "2.0.5",
+    "resolved": "https://registry.npmjs.org/circomlib/-/circomlib-2.0.5.tgz",
+    "integrity": "sha512-O7NQ8OS+J4eshBuoy36z/TwQU0YHw8W3zxZcs4hVwpEll3e4hDm3mgkIPqItN8FDeLEKZFK3YeT/+k8TiLF3/A=="
+  },
+  "snarkjs": { "version": "0.7.5", "runtimeDirectory": "scripts/ceremony" },
+  "ptau": {
+    "name": "powersOfTau28_hez_final_14.ptau",
+    "power": 14,
+    "bytes": 18957464,
+    "sha256": "489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d",
+    "blake2b512": "eeefbcf7c3803b523c94112023c7ff89558f9b8e0cf5d6cdcba3ade60f168af4a181c9c21774b94fbae6c90411995f7d854d02ebd93fb66043dbb06f17a831c1",
+    "urls": [
+      "https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_14.ptau",
+      "https://hermez.s3-eu-west-1.amazonaws.com/powersOfTau28_hez_final_14.ptau",
+      "https://fastfourier.nyc3.cdn.digitaloceanspaces.com/powers-of-tau/powersOfTau28_hez_final_14.ptau"
+    ],
+    "hashSource": "https://github.com/iden3/snarkjs/blob/v0.7.5/README.md#7-prepare-phase-2",
+    "mirrorSource": "https://github.com/0xPARC/zkrepl/blob/10e655a825e5d060621513e91f4b5d2884c6e790/src/worker/worker.ts#L540"
+  },
+  "circuits": {
+    "rln": {
+      "source": "circuits/rln.circom",
+      "main": "RLN(20,16)",
+      "r1csSha256": "452cd7f8830ef82244c481639bc44b354d9e72ec2504694ce4814b961a2f22a2",
+      "r1csBytes": 1655120,
+      "wasmSha256": "d06035923ab4c7fefedf92e05c9903d059af583b8a92a95ce72466a389ac6ab0",
+      "wasmBytes": 2448462,
+      "repositoryWasm": "circuits/rln/rln.wasm",
+      "constraints": 12390,
+      "wires": 12413,
+      "privateInputs": 43,
+      "publicInputs": 2,
+      "outputs": 3,
+      "nPublic": 5,
+      "publicSignals": ["y", "root", "nullifier", "x", "externalNullifier"]
+    },
+    "withdraw": {
+      "source": "circuits/withdraw.circom",
+      "main": "Withdraw",
+      "r1csSha256": "52dd6134d2223e585b4782f2f033fc882eb7fac567570bffdb9a763f3be88788",
+      "r1csBytes": 53348,
+      "wasmSha256": "d0b6425f026a75a52fd2f324fac663b6f8986b8e4439b86a9e6d73ee03eef2bb",
+      "wasmBytes": 1633988,
+      "repositoryWasm": "circuits/rln/withdraw.wasm",
+      "constraints": 416,
+      "wires": 419,
+      "privateInputs": 1,
+      "publicInputs": 1,
+      "outputs": 1,
+      "nPublic": 2,
+      "publicSignals": ["identityCommitment", "address"]
+    }
+  }
+}
