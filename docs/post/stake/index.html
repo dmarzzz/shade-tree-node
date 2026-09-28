@@ -232,6 +232,13 @@ shade-tree run -- curl -s https://api.ipify.org</code></pre>
 shade-tree member-status --identity identity.json --json
 shade-tree withdraw-member --identity identity.json \
   --recipient 0xFRESH_ADDRESS --key-file gas.key</code></pre>
+        <p>Or leave from this tab: import the identity above, connect a wallet that only pays gas, then exit. The proof is made here and the secret never leaves the page.</p>
+        <div class="leave-actions">
+          <button class="line-action" type="button" data-exit disabled>start exit</button>
+          <label for="withdraw-to">Fresh recipient address</label>
+          <input id="withdraw-to" data-withdraw-to type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="0x…">
+          <button class="line-action" type="button" data-withdraw disabled>withdraw bond</button>
+        </div>
         <p>To change tier, create a new identity at the new tier here, stake it, then exit the old one. For 24 hours both bonds are locked.</p>
       </div>
     </section>
