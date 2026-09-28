@@ -2,7 +2,7 @@
 
 - Status: Accepted; the "JS source wins" rule is superseded by [ADR 0010](0010-two-sdks-one-spec.md)
 - Date: 2026-08-13
-- Task: T-RUST-0 (docs/SHIP-PLAN.md section 7b)
+- Task: T-RUST-0 (docs/history/SHIP-PLAN.md section 7b)
 
 ## Context
 
@@ -78,7 +78,7 @@ Absent those, the servers stay JS and the Rust surface is the client plus
 
 ## References
 
-- docs/SHIP-PLAN.md section 7b (decision + T-RUST-0..4)
+- docs/history/SHIP-PLAN.md section 7b (decision + T-RUST-0..4)
 - docs/WIRE-SPEC.md (wire contract, conformance map)
 - testdata/vectors.json (byte-pinned fixtures)
 - arti: https://gitlab.torproject.org/tpo/core/arti

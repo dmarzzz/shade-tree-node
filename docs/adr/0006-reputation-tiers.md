@@ -4,7 +4,7 @@
   on-chain tier admission / tiered slash (T-FEAT-8b, live on Sepolia as `rln-v4-tiers`,
   `0xFe48De8b9aCA4386DC31C845d579ae62f04f9d25`, 2026-08-17; `docs/ONCHAIN.md` "Tiers on chain")
 - Date: 2026-08-17 (on-chain follow-up landed the same day)
-- Task: T-FEAT-8 / T-FEAT-8b (docs/SHIP-PLAN.md) — reputation-weighted rate budget
+- Task: T-FEAT-8 / T-FEAT-8b (docs/history/SHIP-PLAN.md) — reputation-weighted rate budget
 
 ## Context
 

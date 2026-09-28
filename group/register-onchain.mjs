@@ -1,25 +1,24 @@
-// register-onchain: stake a self-enrolled commitment into the on-chain
+// register-onchain: stake a self-enrolled identity into the on-chain
 // StakedReputationSet (docs/ONCHAIN.md). The sibling of self-enrollment: enroll.mjs
-// generates the identity locally and emits the commitment; this posts that
-// commitment with the fixed BOND so the member is admitted to the *canonical*,
-// tamper-evident on-chain root the gateway reads through its RootProvider.
+// generates the identity locally and prints its identity commitment; this posts that
+// identity commitment with the tier's bond, and the contract derives the member leaf
+// Poseidon2(idc, limit) itself (launch audit 2.1.4), so the member is admitted to the
+// *canonical*, tamper-evident on-chain root the gateway reads through its RootProvider.
 //
-// register() is permissionless: anyone may pay the bond for any commitment, but
+// registerIdentity() is permissionless: anyone may pay the bond for any identity, but
 // only the secret-holder can ever spend or exit it. In production the bond is
 // funded from a Layer-0 shielded (Railgun / Privacy Pools) fresh address so the
 // funding identity never links to the member (R1). For the local anvil demo we
 // fund from a well-known anvil dev key.
 //
 // Usage:
-//   node group/register-onchain.mjs <commitment> [--limit N]
-//   node group/enroll.mjs --commitment-only | node group/register-onchain.mjs
-//   shade-tree register-member <commitment> --limit 32
+//   node group/register-onchain.mjs <identity-commitment> [--limit N]
+//   shade-tree register-member <identity-commitment> --limit 32
 //
 // Reputation tiers (T-FEAT-8b, docs/adr/0006-reputation-tiers.md): `--limit N` (or SHADE_TREE_LIMIT)
-// is the tier the commitment was ENROLLED at (`shade-tree enroll --limit N`); the rln-v4 set records
-// it and prices the bond per tier (`bondFor(limit)`), so the amount is read from the contract
-// for that tier. Default = 8 (the pre-tier K). Against an rln-v3 set (no tiers) only the
-// default tier is admitted: `register(commitment)` at `BOND()`.
+// is the tier the identity was ENROLLED at (`shade-tree enroll --limit N`); the set derives the
+// leaf at that tier and prices the bond per tier (`bondFor(limit)`), so the amount is read from
+// the contract for that tier. Default = 8 (the pre-tier K).
 //
 // Config (all overridable by env; defaults read contracts/deployed.local.json):
 //   SHADE_TREE_RPC_URL        JSON-RPC endpoint         (default: deployed.rpcUrl or anvil)
@@ -34,7 +33,8 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { normLimit, K_SLOTS } from "../lib/rln.mjs";
+import { poseidon2 } from "poseidon-lite";
+import { normLimit, K_SLOTS, FIELD } from "../lib/rln.mjs";
 import { parseContractList } from "../lib/root-provider.mjs";
 import { makeBoundedJsonRpcProvider, registrationKey, requireRpcChainId, waitForTransactionReceipt } from "../lib/rpc-safety.mjs";
 
@@ -61,7 +61,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 const LIMIT = normLimit(limitArg == null || limitArg === "" ? K_SLOTS : limitArg); // throws on a bad tier
 
-async function readCommitment() {
+async function readIdentityCommitment() {
   const arg = argv[0];
   if (arg && !arg.startsWith("--")) return arg.trim();
   // else read a single commitment from stdin (pipe from enroll --commitment-only)
@@ -69,12 +69,19 @@ async function readCommitment() {
   for await (const c of process.stdin) chunks.push(c);
   const s = Buffer.concat(chunks).toString("utf8").trim();
   if (s) return s.split(/\s+/)[0];
-  console.error("usage: node group/register-onchain.mjs <commitment>   (or pipe one on stdin)");
+  console.error("usage: node group/register-onchain.mjs <identity-commitment> [--limit N]   (or pipe one on stdin)");
   process.exit(1);
 }
 
 async function main() {
-  const commitment = await readCommitment();
+  const raw = await readIdentityCommitment();
+  if (!/^[1-9][0-9]*$/.test(raw) || BigInt(raw) >= FIELD) {
+    console.error("the identity commitment must be a non-zero canonical decimal BN254 field element");
+    process.exit(1);
+  }
+  const identityCommitment = BigInt(raw);
+  // The leaf registerIdentity will derive; printed, and used for the already-staked check.
+  const commitment = poseidon2([identityCommitment, LIMIT]);
   const deployed = await readDeployed();
 
   const rpcUrl = process.env.SHADE_TREE_RPC_URL || deployed.rpcUrl || "http://127.0.0.1:8545";
@@ -108,38 +115,36 @@ async function main() {
   }
   const wallet = new ethers.Wallet(key, provider);
   const abi = [
-    "function register(uint256 commitment) payable",
-    "function register(uint256 commitment, uint256 limit) payable",
-    "function BOND() view returns (uint256)",
+    "function registerIdentity(uint256 identityCommitment, uint256 limit) payable returns (uint256)",
     "function bondFor(uint256 limit) view returns (uint256)",
     "function isActive(uint256 commitment) view returns (bool)",
   ];
   const contract = new ethers.Contract(address, abi, wallet);
 
-  // rln-v4 (tiered) vs rln-v3: probe bondFor(limit). A v3 set has no such function.
-  let tiered = true;
-  let tierBond = 0n;
-  try { tierBond = await contract.bondFor(LIMIT); } catch { tiered = false; }
-  if (tiered && tierBond === 0n) {
+  let tierBond;
+  try { tierBond = await contract.bondFor(LIMIT); } catch {
+    console.error(`contract ${address} has no bondFor(); it is not a ShadeNet staking set`);
+    process.exit(1);
+  }
+  if (tierBond === 0n) {
     console.error(`tier ${LIMIT} is not admitted by ${address} (bondFor(${LIMIT}) == 0); enroll at an admitted tier`);
     process.exit(1);
   }
-  if (!tiered && LIMIT !== BigInt(K_SLOTS)) {
-    console.error(`contract ${address} has no tier table (rln-v3): only --limit ${K_SLOTS} can be staked there`);
-    process.exit(1);
+  const bond = process.env.SHADE_TREE_BOND ?? deployed.bond ?? tierBond;
+  if (await contract.isActive(commitment)) {
+    console.log(`member leaf ${commitment} is already staked; nothing to do.`);
+    return;
   }
-  const bond = process.env.SHADE_TREE_BOND ?? deployed.bond ?? (tiered ? tierBond : await contract.BOND());
 
-  console.log(tiered ? `register(${commitment}, ${LIMIT})` : `register(${commitment})`);
-  console.log(`  contract: ${address}${tiered ? "" : " (rln-v3, default tier only)"}`);
+  console.log(`registerIdentity(${identityCommitment}, ${LIMIT})`);
+  console.log(`  leaf:     ${commitment}`);
+  console.log(`  contract: ${address}`);
   console.log(`  rpc:      ${rpcUrl}`);
   console.log(`  from:     ${wallet.address}`);
   console.log(`  limit:    ${LIMIT}`);
   console.log(`  bond:     ${bond} wei`);
 
-  const tx = tiered
-    ? await contract["register(uint256,uint256)"](commitment, LIMIT, { value: bond })
-    : await contract["register(uint256)"](commitment, { value: bond });
+  const tx = await contract.registerIdentity(identityCommitment, LIMIT, { value: bond });
   console.log(`  tx:       ${tx.hash}  (waiting for confirmation...)`);
   const rcpt = await waitForTransactionReceipt(tx, { operation: "member registration" });
   console.log(`  mined in block ${rcpt.blockNumber}; member staked. Public admission begins after this block reaches finality.`);

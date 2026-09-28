@@ -17,11 +17,12 @@ pragma solidity ^0.8.24;
 import {Cheats} from "./Cheats.sol";
 import {FuzzSelector} from "./FuzzHelpers.sol";
 import {StakedReputationSet, IWithdrawVerifier, ICommitmentHasher} from "../contracts/StakedReputationSet.sol";
+import {StakedReputationSetHarness} from "./StakedReputationSetHarness.sol";
 import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
 contract SetHandler is Cheats {
-    StakedReputationSet public set;
+    StakedReputationSetHarness public set;
     RateCommitmentHasher public hasher;
     MockWithdrawVerifier public verifier;
 
@@ -49,7 +50,7 @@ contract SetHandler is Cheats {
     constructor() {
         hasher = new RateCommitmentHasher();
         verifier = new MockWithdrawVerifier(ICommitmentHasher(address(hasher)));
-        set = new StakedReputationSet(
+        set = new StakedReputationSetHarness(
             BOND,
             UNBONDING,
             MIN_UNBONDING,

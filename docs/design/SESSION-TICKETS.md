@@ -9,7 +9,7 @@
 This page scopes a concrete way to exchange one anonymous RLN admission proof for a
 short-lived book of single-use request tickets, then spend those tickets over one
 persistent Tor connection to a Shade Tree node. It turns the provisional multi-target
-capability in [ADR 0009](adr/0009-epoch-bandwidth-envelope.md) into an implementable
+capability in [ADR 0009](../adr/0009-epoch-bandwidth-envelope.md) into an implementable
 transport design.
 
 The design deliberately does **not** claim that a Shade Tree node can count arbitrary
@@ -1951,13 +1951,13 @@ Do not enable session tickets on a public profile until:
 
 ## 35. References
 
-- [Shade Tree Protocol](../specs/protocol.md) — current v4 one-proof/one-CONNECT-tunnel
+- [Shade Tree Protocol](../../specs/protocol.md) — current v4 one-proof/one-CONNECT-tunnel
   semantics.
-- [ADR 0009](adr/0009-epoch-bandwidth-envelope.md) — provisional six-target, 40 MiB,
+- [ADR 0009](../adr/0009-epoch-bandwidth-envelope.md) — provisional six-target, 40 MiB,
   90-second research-session envelope.
-- [Payments](PAYMENTS.md) — shipped paid membership and the rule that hot-path checks
+- [Payments](../PAYMENTS.md) — shipped paid membership and the rule that hot-path checks
   should remain cheap.
-- [Roadmap zkAPI track](ROADMAP.md#7-zkapi--anonymous-api-usage-credits--research-track)
+- [Roadmap zkAPI track](../ROADMAP.md#7-zkapi--anonymous-api-usage-credits--research-track)
   — anonymous-credit and distributed-seer research context.
 - [ZK API Usage Credits: LLMs and Beyond](https://ethresear.ch/t/zk-api-usage-credits-llms-and-beyond/24104)
   — deposit, ticket index, RLN double-spend accountability, and refund-ticket proposal.

@@ -53,10 +53,13 @@ ok(sdk.toShadeNetError(new Error("no verifiable directory (fresh: bad-signature)
 console.log("=== staking (mock wallet) ===");
 const iface = new Interface([
   "function register(uint256,uint256) payable", "function initiateExit(uint256,bytes)", "function withdraw(uint256,address,bytes)",
+  "function registerIdentity(uint256,uint256) payable returns (uint256)",
+  "function members(uint256) view returns (uint256,uint64,uint64,uint32)",
+  "function exitContext(uint256) view returns (bytes32)", "function withdrawContext(uint256,address) view returns (bytes32)",
   "function bondFor(uint256) view returns (uint256)", "function isActive(uint256) view returns (bool)",
   "function limitOf(uint256) view returns (uint256)", "function withdrawableAt(uint256) view returns (uint256)",
 ]);
-function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 0n, chain = 11155111n, finalizedLogs = [] } = {}) {
+function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 0n, chain = 11155111n, finalizedLogs = [], views = {} } = {}) {
   const sent = [];
   return {
     sent,
@@ -77,6 +80,9 @@ function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 
         if (fn.name === "isActive") return enc(active);
         if (fn.name === "limitOf") return enc(limit);
         if (fn.name === "withdrawableAt") return enc(withdrawableAt);
+        if (fn.name === "members") return iface.encodeFunctionResult(fn.name, views.member ?? [0n, 0n, 0n, 0n]);
+        if (fn.name === "exitContext") return enc(views.exitContext);
+        if (fn.name === "withdrawContext") return enc(views.withdrawContext);
         return "0x"; // simulation of a write succeeds
       }
       throw new Error(`unexpected ${method}`);
@@ -103,6 +109,21 @@ ok(await code(() => sdk.createStaking({ provider: mockWallet({ bond: 1n }) }).st
 ok((await sdk.createStaking({ provider: mockWallet({ active: true }) }).stake({ commitment: id.leaf, from: FROM })).alreadyActive === true, "already active -> nothing sent");
 ok(await code(() => sdk.createStaking({ provider: mockWallet({ chain: 1n }) }).stake({ commitment: id.leaf, from: FROM })) !== null, "wrong chain is refused");
 {
+  // A ShadeNet set (registerInput "identityCommitment"): stake sends registerIdentity(idc, tier)
+  // and checks membership on the leaf the set will derive.
+  const record = JSON.parse(JSON.stringify(net1.record));
+  record.admission.roots.staked.registerInput = "identityCommitment";
+  const shadenetNet = sdk.resolveNetwork(record);
+  const w = mockWallet();
+  const s = sdk.createStaking({ network: shadenetNet, provider: w });
+  const idc = s.registrationValue(id, 1);
+  ok(idc === sdk.identityCommitmentOf(id.identitySecret).toString() && idc !== id.leaf, "registrationValue on a ShadeNet set is the identity commitment");
+  await s.stake({ commitment: idc, from: FROM });
+  const tx = iface.parseTransaction({ data: w.sent[0].data });
+  ok(tx.name === "registerIdentity" && tx.args[0].toString() === idc && tx.args[1] === 1n, "stake on a ShadeNet set sends registerIdentity(idc, 1)");
+  ok((await sdk.createStaking({ network: shadenetNet, provider: mockWallet({ active: true }) }).stake({ commitment: idc, from: FROM })).alreadyActive === true, "already-active check uses the derived leaf");
+}
+{
   const st = await sdk.createStaking({ provider: mockWallet({ active: true, limit: 1n, finalizedLogs: [{}] }) }).memberStatus(id.leaf);
   ok(st.state === "active" && st.limit === 1 && st.finalized === true, "memberStatus active + finalized");
   const pending = await sdk.createStaking({ provider: mockWallet({ active: true, limit: 1n }) }).memberStatus(id.leaf);
@@ -114,13 +135,21 @@ ok(await code(() => sdk.createStaking({ provider: mockWallet({ chain: 1n }) }).s
 console.log("=== exit / withdraw proofs (real Groth16) ===");
 {
   const fixture = JSON.parse(readFileSync(join(ROOT, "testdata", "withdraw-proof.json"), "utf8"));
-  ok(sdk.exitContext(fixture.commitment) === fixture.exit.context, "exitContext matches the contract fixture");
-  ok(sdk.withdrawContext(fixture.commitment, fixture.recipient) === fixture.withdraw.context, "withdrawContext matches the contract fixture");
+  const binding = { chainId: fixture.chainId, contract: fixture.set, index: fixture.index };
+  ok(sdk.exitContext(fixture.commitment, binding) === fixture.exit.context, "exitContext (chain, set, index bound) matches the contract fixture");
+  ok(sdk.withdrawContext(fixture.commitment, fixture.recipient, binding) === fixture.withdraw.context, "withdrawContext matches the contract fixture");
+  ok(sdk.exitContext(fixture.commitment, { ...binding, index: 1 }) !== fixture.exit.context, "a different leaf index is a different context");
+  // The fixture's set: a ShadeNet set on forge's chain at the fixture address.
+  const record = JSON.parse(JSON.stringify(sdk.resolveNetwork("sepolia").record));
+  Object.assign(record.admission.roots.staked, { registerInput: "identityCommitment", chainId: fixture.chainId, contract: fixture.set });
+  const fixtureNet = sdk.resolveNetwork(record);
+  const views = { member: [1n, BigInt(fixture.index), 0n, 8n], exitContext: fixture.exit.context, withdrawContext: fixture.withdraw.context };
+  const fixtureWallet = (extra = {}) => mockWallet({ limit: 8n, chain: BigInt(fixture.chainId), views: { ...views, ...extra } });
   // The fixture's witness is identity secret 111 itself (a public test constant).
   const identity = { identitySecret: "111", leaf: fixture.commitment, limit: 8 };
   ok(sdk.rateCommitment(111n, 8).toString() === fixture.commitment, "fixture leaf = rateCommitment(111, 8)");
-  const w = mockWallet({ limit: 8n });
-  await sdk.createStaking({ provider: w }).exit({ identity, from: FROM });
+  const w = fixtureWallet();
+  await sdk.createStaking({ network: fixtureNet, provider: w }).exit({ identity, from: FROM });
   const tx = iface.parseTransaction({ data: w.sent[0].data });
   ok(tx.name === "initiateExit" && tx.args[0].toString() === identity.leaf, "exit sends initiateExit(leaf, proof)");
   const [a, b, c, idc] = AbiCoder.defaultAbiCoder().decode(["uint256[2]", "uint256[2][2]", "uint256[2]", "uint256"], tx.args[1]);
@@ -129,9 +158,10 @@ console.log("=== exit / withdraw proofs (real Groth16) ===");
   const vkey = JSON.parse(readFileSync(join(ROOT, "circuits", "rln", "withdraw_verification_key.json"), "utf8"));
   const proof = { pi_a: [a[0].toString(), a[1].toString(), "1"], pi_b: [[b[0][1].toString(), b[0][0].toString()], [b[1][1].toString(), b[1][0].toString()], ["1", "0"]], pi_c: [c[0].toString(), c[1].toString(), "1"], protocol: "groth16", curve: "bn128" };
   ok(await snarkjs.groth16.verify(vkey, [fixture.identityCommitment, fixture.exit.address], proof), "snarkjs verifies the exit proof against the withdraw VK");
-  const w2 = mockWallet({ limit: 8n });
-  await sdk.createStaking({ provider: w2 }).withdraw({ identity, recipient: fixture.recipient, from: FROM });
+  const w2 = fixtureWallet();
+  await sdk.createStaking({ network: fixtureNet, provider: w2 }).withdraw({ identity, recipient: fixture.recipient, from: FROM });
   ok(iface.parseTransaction({ data: w2.sent[0].data }).args[1] === fixture.recipient, "withdraw binds the recipient");
+  ok(await code(() => sdk.createStaking({ network: fixtureNet, provider: fixtureWallet({ exitContext: "0x" + "11".repeat(32) }) }).exit({ identity, from: FROM })) === "Rpc", "a set whose context view disagrees is refused before proving");
   ok(await code(() => sdk.proveAction({ identitySecret: "0", context: fixture.exit.context })) === "InvalidInput", "zero secret refused before proving");
 }
 

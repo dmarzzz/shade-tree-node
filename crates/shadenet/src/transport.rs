@@ -223,9 +223,17 @@ impl ArtiDialer {
         match &self.shared.directories {
             // Our own state and cache directories, so ShadeNet never shares guard or directory
             // state with another Arti on the same host.
-            Some((state, cache)) => TorClientConfigBuilder::from_directories(state, cache)
-                .build()
-                .map_err(|e| format!("arti config: {e}")),
+            Some((state, cache)) => {
+                // Arti refuses group- or world-writable state. A first run under umask 002 (the
+                // Ubuntu default for users with a private group) leaves lock files mode 664 and
+                // every later start fails; these directories are ours, so tighten them.
+                for dir in [state, cache] {
+                    make_private(dir);
+                }
+                TorClientConfigBuilder::from_directories(state, cache)
+                    .build()
+                    .map_err(|e| format!("arti config: {e}"))
+            }
             None => Ok(TorClientConfig::default()),
         }
     }
@@ -242,7 +250,7 @@ impl ArtiDialer {
                 )
                 .await
                 .map_err(|_| format!("arti bootstrap timed out after {:?}", self.shared.timeout))?
-                .map_err(|e| format!("arti bootstrap: {e}"))?;
+                .map_err(|e| format!("arti bootstrap: {}", error_chain(&e)))?;
                 self.shared
                     .successful_bootstraps
                     .fetch_add(1, Ordering::SeqCst);
@@ -256,6 +264,60 @@ impl ArtiDialer {
                 .await),
             None => Ok(base),
         }
+    }
+}
+
+/// `outer: inner: innermost`: Arti's top-level messages hide the cause (which path, which mode).
+fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut out = error.to_string();
+    let mut source = error.source();
+    while let Some(inner) = source {
+        let text = inner.to_string();
+        if !out.contains(&text) {
+            out.push_str(": ");
+            out.push_str(&text);
+        }
+        source = inner.source();
+    }
+    out
+}
+
+/// Create `dir` if needed and remove group and other access from it and everything below it.
+/// Only ever called on ShadeNet's own Arti directories.
+fn make_private(dir: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fn walk(path: &std::path::Path, depth: usize) {
+            let Ok(meta) = std::fs::symlink_metadata(path) else {
+                return;
+            };
+            if meta.file_type().is_symlink() {
+                return;
+            }
+            let mode = meta.permissions().mode() & 0o7777;
+            let private = if meta.is_dir() {
+                mode & 0o700 | 0o700
+            } else {
+                mode & 0o600
+            };
+            if mode != private {
+                let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(private));
+            }
+            if meta.is_dir() && depth < 8 {
+                if let Ok(entries) = std::fs::read_dir(path) {
+                    for entry in entries.flatten() {
+                        walk(&entry.path(), depth + 1);
+                    }
+                }
+            }
+        }
+        let _ = std::fs::create_dir_all(dir);
+        walk(dir, 0);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = std::fs::create_dir_all(dir);
     }
 }
 
@@ -586,6 +648,24 @@ async fn exchange_ack(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn arti_directories_are_made_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("shadenet-private-{}", std::process::id()));
+        let nested = root.join("state");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o775)).unwrap();
+        let lock = nested.join("state.lock");
+        std::fs::write(&lock, b"").unwrap();
+        std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o664)).unwrap();
+        make_private(&root);
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&nested), 0o700);
+        assert_eq!(mode(&lock), 0o600);
+        std::fs::remove_dir_all(root).ok();
+    }
     use std::sync::atomic::{AtomicBool, AtomicUsize};
 
     fn built(target: String) -> BuiltEnvelope {

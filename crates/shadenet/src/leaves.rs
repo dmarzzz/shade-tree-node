@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use num_bigint::BigUint;
 use serde::Serialize;
 use serde_json::{json, Value};
-use shadenet_rln::tree::{dec_to_fr, fr_to_dec, MerkleTree, TREE_DEPTH};
+use shadenet_rln::tree::{fr_to_dec, parse_fr, MerkleTree, TREE_DEPTH};
 
 const REGISTERED: &[&str] = &[
     "0x0dbb6a3ed41d8f3d21e481b86d0e8bbf65a630b7dc4c5ee6c2c1a74561841e6d",
@@ -107,7 +107,12 @@ pub fn reconstruct(logs: &[Value], rln_identifier: u64) -> Result<DiscoveredMemb
             }
         }
     }
-    let fields = members.iter().map(|m| dec_to_fr(m)).collect::<Vec<_>>();
+    // Commitments come from an RPC we do not trust: a malformed or out-of-field value is an error
+    // for this fetch, never a panic that would take the proxy down.
+    let fields = members
+        .iter()
+        .map(|m| parse_fr(m).map_err(|e| format!("member set from RPC: {e}")))
+        .collect::<Result<Vec<_>, _>>()?;
     let tree = MerkleTree::new(&id, TREE_DEPTH, &fields);
     Ok(DiscoveredMembers {
         document: MembersDocument {
