@@ -29,7 +29,7 @@ shade-tree-node doctor        # checks node, tor, deps, keys
 Common `--flags` map to `SHADE_TREE_*` variables; command-specific flags pass through to the
 underlying module (see [CONFIG.md](CONFIG.md)).
 Agent developers who do not need the repository can use the shorter
-[agent install](AGENT.md#1-install-the-live-binary).
+[agent install](AGENT.md#1-install).
 
 ## Path A: connect to an operator's v4 canopy
 

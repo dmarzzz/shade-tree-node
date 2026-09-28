@@ -1,5 +1,5 @@
 #!/bin/sh
-# install.sh: one-line installer for the prebuilt Rust `shade-tree` client (issue #64).
+# install.sh: one-line installer for the prebuilt `shadenet` client (issue #64).
 #
 #   curl -q -fsSL --proto '=https' --proto-redir '=https' \
 #     https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | sh
@@ -7,22 +7,26 @@
 # What it does, in order: detect OS/arch, resolve the release tag, refuse to replace a symlink
 # at the destination (unless forced), download the matching release asset AND its .sha256,
 # verify the checksum, and only then place the binary in ~/.local/bin (or
-# $SHADE_TREE_INSTALL_DIR). It never uses sudo, never executes a byte it has not verified, and
-# never fetches a binary over cleartext from the network.
+# $SHADENET_INSTALL_DIR) as `shadenet`, plus a copy named `shade-tree` (the old name, kept for one
+# minor release). It never uses sudo, never executes a byte it has not verified, and never
+# fetches a binary over cleartext from the network.
 #
-# Knobs (environment; `curl | sh` cannot take flags):
-#   SHADE_TREE_VERSION       release tag to install (`v0.6.0` or `0.6.0`); default: latest
-#   SHADE_TREE_LIVE=auto     install the `-live` agent where published (default); use 0 for
-#                            the verifier-only binary or 1 to require a live binary
-#   SHADE_TREE_INSTALL_DIR   destination directory; default $HOME/.local/bin
-#   SHADE_TREE_FORCE=1       replace a destination that is a symlink to a file
-#   SHADE_TREE_TARGET        skip detection; one of the seven published targets
-#   SHADE_TREE_LIBC=gnu|musl choose the Linux libc when it cannot be detected
-#   SHADE_TREE_RELEASE_BASE  where releases live; default the GitHub Releases page. Must be
-#                            https://; file:// / loopback http:// exist only for offline tests.
+# Knobs (environment; `curl | sh` cannot take flags). Each SHADENET_* knob is also read under its
+# old SHADE_TREE_* name; setting both to different values is refused.
+#   SHADENET_VERSION       release tag to install (`v0.7.0` or `0.7.0`); default: latest
+#   SHADENET_LIVE=auto     install the `-live` agent where published (default); use 0 for
+#                          the verifier-only binary or 1 to require a live binary
+#   SHADENET_INSTALL_DIR   destination directory; default $HOME/.local/bin
+#   SHADENET_FORCE=1       replace a destination that is a symlink to a file
+#   SHADENET_TARGET        skip detection; one of the seven published targets
+#   SHADENET_LIBC=gnu|musl choose the Linux libc when it cannot be detected
+#   SHADENET_RELEASE_BASE  where releases live; default the GitHub Releases page. Must be
+#                          https://; file:// / loopback http:// exist only for offline tests.
 #
 # Asset naming comes from .github/workflows/release.yml:
-#   shade-tree-<version>-<target>[-live][.exe]   plus   <asset>.sha256   ("<hex>  <file>")
+#   shadenet-<version>-<target>[-live][.exe]     plus   <asset>.sha256   ("<hex>  <file>")
+# Releases before the rename publish the same program as shade-tree-<version>-…; the installer
+# falls back to that name when a release has no shadenet-* asset.
 #
 # POSIX sh only (dash, bash --posix, BusyBox ash, Git Bash): no arrays, no [[ ]], no
 # pipefail, no local.
@@ -38,18 +42,19 @@ usage() {
   cat <<'EOF'
 usage: sh install.sh            (or: curl -q -fsSL --proto '=https' --proto-redir '=https' <https url> | sh)
 
-Installs the prebuilt Rust `shade-tree` client from a GitHub Release into ~/.local/bin after
-verifying its sha256 against the published .sha256 asset. No sudo, ever.
+Installs the prebuilt `shadenet` client (and a `shade-tree` copy under its old name) from a
+GitHub Release into ~/.local/bin after verifying its sha256 against the published .sha256
+asset. No sudo, ever.
 
-environment:
-  SHADE_TREE_VERSION=v0.6.0     pin a release (default: latest)
-  SHADE_TREE_LIVE=auto          default: -live agent where published, verifier otherwise;
-                                1 requires -live, 0 installs the verifier-only binary
-  SHADE_TREE_INSTALL_DIR=DIR    destination (default: $HOME/.local/bin)
-  SHADE_TREE_FORCE=1            replace a destination that is a symlink to a file
-  SHADE_TREE_TARGET=TRIPLE      skip OS/arch detection (one of the seven published targets)
-  SHADE_TREE_LIBC=gnu|musl      choose the Linux libc when it cannot be detected
-  SHADE_TREE_RELEASE_BASE=URL   https:// release base (local schemes are test-only)
+environment (each also read under its old SHADE_TREE_* name, e.g. SHADE_TREE_VERSION):
+  SHADENET_VERSION=v0.7.0     pin a release (default: latest)
+  SHADENET_LIVE=auto          default: -live agent where published, verifier otherwise;
+                              1 requires -live, 0 installs the verifier-only binary
+  SHADENET_INSTALL_DIR=DIR    destination (default: $HOME/.local/bin)
+  SHADENET_FORCE=1            replace a destination that is a symlink to a file
+  SHADENET_TARGET=TRIPLE      skip OS/arch detection (one of the seven published targets)
+  SHADENET_LIBC=gnu|musl      choose the Linux libc when it cannot be detected
+  SHADENET_RELEASE_BASE=URL   https:// release base (local schemes are test-only)
 
 Prefer to inspect before running? Download the script, read it, then `sh install.sh`.
 Windows: works from Git Bash or MSYS2 (x86_64 only); see crates/INSTALL.md for PowerShell.
@@ -59,8 +64,21 @@ EOF
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   "") ;;
-  *) die "unknown argument '$1' (this installer is configured through SHADE_TREE_* variables; -h for help)" ;;
+  *) die "unknown argument '$1' (this installer is configured through SHADENET_* variables; -h for help)" ;;
 esac
+
+# SHADENET_* is the current prefix. The rest of this script reads the SHADE_TREE_* names, so copy
+# each current value onto its old name, refusing a conflict rather than guessing.
+for knob in VERSION LIVE INSTALL_DIR FORCE TARGET LIBC RELEASE_BASE; do
+  eval "new_value=\${SHADENET_$knob-}"
+  eval "old_value=\${SHADE_TREE_$knob-}"
+  if [ -n "$new_value" ]; then
+    if [ -n "$old_value" ] && [ "$old_value" != "$new_value" ]; then
+      die "SHADENET_$knob and SHADE_TREE_$knob are set to different values; unset one"
+    fi
+    eval "SHADE_TREE_$knob=\$new_value"
+  fi
+done
 
 REPO_BASE_DEFAULT="https://github.com/dmarzzz/shade-tree-node/releases"
 BASE="${SHADE_TREE_RELEASE_BASE:-$REPO_BASE_DEFAULT}"
@@ -261,20 +279,28 @@ esac
 # refused even then: `mv` would follow it and drop the binary inside. A regular file there is
 # replaced with a note so rerunning the installer can upgrade it. Anything else (a directory,
 # a device) is refused.
-BIN_NAME="shade-tree$EXT"
+BIN_NAME="shadenet$EXT"
+ALIAS_NAME="shade-tree$EXT"
 DEST="$INSTALL_DIR/$BIN_NAME"
-check_destination() {
-  if [ -L "$DEST" ]; then
-    [ ! -d "$DEST" ] || die "$DEST is a symlink to a directory; refusing to install through it. Remove it or choose another SHADE_TREE_INSTALL_DIR"
-    [ "$FORCE" = 1 ] || die "$DEST is a symlink; refusing to replace it. Use another SHADE_TREE_INSTALL_DIR, or SHADE_TREE_FORCE=1 to replace it explicitly"
-  elif [ -e "$DEST" ] && [ ! -f "$DEST" ]; then
-    die "$DEST exists and is not a regular file; refusing to replace it"
+ALIAS_DEST="$INSTALL_DIR/$ALIAS_NAME"
+check_destination_path() {
+  if [ -L "$1" ]; then
+    [ ! -d "$1" ] || die "$1 is a symlink to a directory; refusing to install through it. Remove it or choose another SHADENET_INSTALL_DIR"
+    [ "$FORCE" = 1 ] || die "$1 is a symlink; refusing to replace it. Use another SHADENET_INSTALL_DIR, or SHADENET_FORCE=1 (SHADE_TREE_FORCE=1) to replace it explicitly"
+  elif [ -e "$1" ] && [ ! -f "$1" ]; then
+    die "$1 exists and is not a regular file; refusing to replace it"
   fi
 }
+check_destination() {
+  check_destination_path "$DEST"
+  check_destination_path "$ALIAS_DEST"
+}
 check_destination
-if [ -L "$DEST" ]; then say "note: will replace symlink $DEST (SHADE_TREE_FORCE=1)"
-elif [ -f "$DEST" ]; then say "note: will replace existing $DEST"
-fi
+for existing in "$DEST" "$ALIAS_DEST"; do
+  if [ -L "$existing" ]; then say "note: will replace symlink $existing (SHADE_TREE_FORCE=1)"
+  elif [ -f "$existing" ]; then say "note: will replace existing $existing"
+  fi
+done
 mkdir -p "$INSTALL_DIR" || die "cannot create $INSTALL_DIR"
 [ -w "$INSTALL_DIR" ] || die "$INSTALL_DIR is not writable (choose another SHADE_TREE_INSTALL_DIR; this installer never uses sudo)"
 
@@ -291,28 +317,38 @@ trap 'exit 143' TERM HUP
 # `auto` probes the selected release instead of assuming every tag has the current target
 # matrix. It falls back only for a genuine 404/file-not-found. Network, TLS, and integrity
 # failures remain fail-closed. An explicit SHADE_TREE_LIVE=1 never falls back.
+# Within one variant the `shadenet-*` asset is tried first and the pre-rename `shade-tree-*`
+# asset second; both hold the same program.
 select_asset() {
   SUFFIX=
   [ "$LIVE" != 0 ] && SUFFIX=-live
-  ASSET="shade-tree-$VERSION-$TARGET$SUFFIX$EXT"
+  ASSET_PREFIX="${1:-shadenet}"
+  ASSET="$ASSET_PREFIX-$VERSION-$TARGET$SUFFIX$EXT"
   URL="$BASE/download/$TAG/$ASSET"
 }
 fetch_to() {
   FETCH_CODE="$(curl_get -w '%{http_code}' -o "$2" "$1" 2>/dev/null)"
 }
-fetch_variant() {
+fetch_one() {
   FETCH_WHAT="$ASSET.sha256"
   if fetch_to "$URL.sha256" "$TMP/$ASSET.sha256"; then :; else FETCH_RC=$?; return "$FETCH_RC"; fi
   FETCH_WHAT="$ASSET"
   if fetch_to "$URL" "$TMP/$ASSET"; then :; else FETCH_RC=$?; return "$FETCH_RC"; fi
 }
+fetch_variant() {
+  select_asset shadenet
+  if fetch_one; then return 0; else FETCH_RC=$?; fi
+  fetch_was_missing "$FETCH_RC" || return "$FETCH_RC"
+  select_asset shade-tree
+  if fetch_one; then say "note: $TAG publishes the pre-rename name; using $ASSET"; return 0; else FETCH_RC=$?; fi
+  return "$FETCH_RC"
+}
 fetch_was_missing() {
   [ "$1" = 37 ] || { [ "$1" = 22 ] && [ "$FETCH_CODE" = 404 ]; }
 }
 
-select_asset
-say "asset: $ASSET"
 if fetch_variant; then
+  say "asset: $ASSET"
   [ "$LIVE" != auto ] || LIVE=1
 else
   RC=$?
@@ -324,10 +360,8 @@ else
         say "      (Intel macOS cannot use this release for live tunneling; see crates/INSTALL.md)"
       fi
       LIVE=0
-      select_asset
-      say "asset: $ASSET"
       if fetch_variant; then
-        :
+        say "asset: $ASSET"
       else
         RC=$?
         if fetch_was_missing "$RC"; then
@@ -371,17 +405,22 @@ say "verified transfer integrity: sha256 $ACTUAL"
 # attacker could pre-create. The destination is re-checked right before the rename: the
 # download took time, and an approved file symlink is removed explicitly so `mv` replaces the
 # link itself rather than following it.
-STAGE="$(mktemp "$INSTALL_DIR/.shade-tree.XXXXXX")" || die "cannot create a staging file in $INSTALL_DIR"
-cp "$TMP/$ASSET" "$STAGE"
-chmod 0755 "$STAGE"
+install_as() {
+  STAGE="$(mktemp "$INSTALL_DIR/.shade-tree.XXXXXX")" || die "cannot create a staging file in $INSTALL_DIR"
+  cp "$TMP/$ASSET" "$STAGE"
+  chmod 0755 "$STAGE"
+  check_destination_path "$1"
+  if [ -L "$1" ]; then rm -f "$1" || die "cannot remove symlink $1"; fi
+  mv -f "$STAGE" "$1"
+  STAGE=""
+  if [ ! -f "$1" ] || [ -L "$1" ] || [ ! -x "$1" ]; then
+    die "$1 is not the installed executable after the rename; refusing to report success"
+  fi
+}
 check_destination
-if [ -L "$DEST" ]; then rm -f "$DEST" || die "cannot remove symlink $DEST"; fi
-mv -f "$STAGE" "$DEST"
-STAGE=""
-if [ ! -f "$DEST" ] || [ -L "$DEST" ] || [ ! -x "$DEST" ]; then
-  die "$DEST is not the installed executable after the rename; refusing to report success"
-fi
-say "installed: $DEST ($TAG, $TARGET${SUFFIX:+, live})"
+install_as "$DEST"
+install_as "$ALIAS_DEST"
+say "installed: $DEST ($TAG, $TARGET${SUFFIX:+, live}), and the same program as $ALIAS_DEST"
 
 # --- after-care -------------------------------------------------------------------------------
 QDEST="$(shquote "$DEST")"
@@ -402,19 +441,19 @@ IFS=:
 set -f
 for d in $PATH; do
   [ -n "$d" ] || continue
-  for cand in "$d/shade-tree" "$d/shade-tree.exe"; do
-    [ -x "$cand" ] && [ "$cand" != "$DEST" ] && OTHERS="$OTHERS $cand"
+  for cand in "$d/shadenet" "$d/shadenet.exe" "$d/shade-tree" "$d/shade-tree.exe"; do
+    [ -x "$cand" ] && [ "$cand" != "$DEST" ] && [ "$cand" != "$ALIAS_DEST" ] && OTHERS="$OTHERS $cand"
   done
 done
 set +f
 IFS="$SAVED_IFS"
 if [ -n "$OTHERS" ]; then
   FIRST="$(command -v shade-tree 2>/dev/null || true)"
-  say "warning: other shade-tree executables are on PATH:$OTHERS"
-  if [ "$FIRST" = "$DEST" ]; then
+  say "warning: other shadenet or shade-tree executables are on PATH:$OTHERS"
+  if [ "$FIRST" = "$ALIAS_DEST" ] || [ "$FIRST" = "$DEST" ]; then
     say "         Your shell will run this Rust client first and shadow them."
   else
-    say "         Your shell will run $FIRST first and shadow $DEST; call the Rust client by its"
+    say "         Your shell will run $FIRST first and shadow $ALIAS_DEST; call the Rust client by its"
     say "         full path, or put $INSTALL_DIR earlier in PATH."
   fi
 fi
@@ -426,7 +465,7 @@ case ":$PATH:" in
 esac
 
 say ""
-say "warning: Shade Tree is a research preview with testnet-only, unaudited RLN setup artifacts;"
+say "warning: ShadeNet is a research preview with testnet-only, unaudited RLN setup artifacts;"
 say "         do not use it as a production anonymity or security boundary."
 say "note: the checksum establishes transfer integrity, not publisher provenance;"
 say "      verify the GitHub build attestation when provenance matters (crates/INSTALL.md)."
@@ -434,13 +473,10 @@ say ""
 say "next:"
 say "  $QDEST --help"
 if [ "$LIVE" = 1 ]; then
-  say "  # Create the owner-only identity locally; send only public-leaf.txt to the operator:"
-  say "  read -r SHADE_TREE_LIMIT"
-  say "  $QDEST enroll --limit \"\$SHADE_TREE_LIMIT\" --out identity.json > public-leaf.txt"
-  say "  # After admission, use the operator's member set, Elder onion, and signer pin:"
-  say "  $QDEST proxy --bootnode-onion <elder.onion> --signer <canopy-signer-hex> \\"
-  say "    --identity identity.json --members members.json --listen 127.0.0.1:8118"
-  say "  # Slot allocation is automatic and safely coordinated by default; see crates/INSTALL.md."
+  say "  $QDEST init"
+  say "  # init creates an owner-only identity, a proxy token and ~/.config/shadenet/config.toml,"
+  say "  # then prints the stake to make, how to wait for finality, and how to start the proxy."
+  say "  # Guide: https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md"
 else
   say "  $QDEST verify-directory directory.json --signer <canopy-signer-hex>"
   say "  (tunneling needs a -live build, which is not published for Intel macOS)"

@@ -1,0 +1,183 @@
+openapi: 3.1.0
+info:
+  title: ShadeNet local proxy API
+  version: 1.0.0
+  license:
+    name: MIT
+    identifier: MIT
+  description: >-
+    The HTTP surface of `shadenet proxy` on the agent's own machine. Besides
+    these GET endpoints the proxy accepts `CONNECT host:443` (HTTP/1.1), which
+    OpenAPI cannot describe as an operation: a CONNECT that succeeds answers
+    `200 Connection Established` and becomes a byte tunnel to the destination;
+    one that fails answers with the status, `X-ShadeNet-Error` code,
+    `Retry-After` and `Error` body described under components.
+    Every request needs the proxy token, as `Proxy-Authorization: Basic
+    base64(shadenet:<token>)` or, on these GET endpoints, `Authorization:
+    Bearer <token>`.
+servers:
+  - url: http://127.0.0.1:8118
+security:
+  - bearer: []
+  - proxyBasic: []
+paths:
+  /_shadenet/status:
+    get:
+      operationId: getStatus
+      summary: Admission, tunnel budget and canopy state
+      description: >-
+        Refreshes a stale canopy or member set before answering, so it can take
+        a few seconds on a cold proxy.
+      responses:
+        "200":
+          description: Current status.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Status" }
+        "407": { $ref: "#/components/responses/AuthRequired" }
+  /_shadenet/health:
+    get:
+      operationId: getHealth
+      summary: Liveness; used by `shadenet run` before it starts a command
+      description: The legacy path `/_shade_tree/health` answers the same way.
+      responses:
+        "204": { description: The proxy is up and the token is right. }
+        "407": { $ref: "#/components/responses/AuthRequired" }
+  /_shadenet/metrics:
+    get:
+      operationId: getMetrics
+      summary: Prometheus counters
+      responses:
+        "200":
+          description: >-
+            `shadenet_tunnels_opened_total`, `shadenet_tunnels_failed_total`,
+            `shadenet_errors_total{code}`, `shadenet_canopy_refreshes_total`,
+            `shadenet_canopy_refresh_failures_total`,
+            `shadenet_member_fetches_total`,
+            `shadenet_member_fetch_failures_total`, `shadenet_tunnels_open`,
+            `shadenet_tor_bootstrapped`.
+          content:
+            text/plain:
+              schema: { type: string }
+        "407": { $ref: "#/components/responses/AuthRequired" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: The proxy token.
+    proxyBasic:
+      type: apiKey
+      in: header
+      name: Proxy-Authorization
+      description: "`Basic base64(shadenet:<token>)`"
+  responses:
+    AuthRequired:
+      description: Missing or wrong token.
+      headers:
+        Proxy-Authenticate:
+          schema: { type: string, const: 'Basic realm="shadenet"' }
+        X-ShadeNet-Error:
+          schema: { type: string, const: proxy_auth_required }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  headers:
+    X-ShadeNet-Error:
+      description: The stable error code, also in the body.
+      schema: { $ref: "#/components/schemas/ErrorCode" }
+    Retry-After:
+      description: Seconds until retrying makes sense (for `budget_exhausted`, the epoch reset).
+      schema: { type: integer, minimum: 1 }
+  schemas:
+    ErrorCode:
+      type: string
+      enum:
+        - config
+        - not_admitted
+        - not_finalized
+        - budget_exhausted
+        - port_not_allowed
+        - no_eligible_node
+        - node_refused
+        - transport
+        - canopy
+        - rpc
+        - artifact
+        - slot_state
+        - prove
+        - internal
+        - busy
+        - proxy_auth_required
+        - bad_request
+        - not_found
+        - method_not_allowed
+      description: >-
+        CONNECT statuses: 403 for not_admitted, not_finalized and
+        port_not_allowed; 429 for budget_exhausted; 502 for node_refused; 503
+        for no_eligible_node, canopy, rpc, transport and busy; 500 otherwise.
+        See docs/ERRORS.md.
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { $ref: "#/components/schemas/ErrorCode" }
+            message: { type: string }
+            retryAfterSeconds: { type: integer, minimum: 1 }
+            gateway: { type: string, description: "For node_refused: the node that refused." }
+            reason: { type: string, description: "For node_refused: the node's reason code." }
+    Status:
+      type: object
+      required:
+        - version
+        - network
+        - state
+        - epoch
+        - epochSeconds
+        - epochResetsInSeconds
+        - canopy
+        - torReady
+      properties:
+        version: { type: string, examples: ["0.7.0"] }
+        network: { type: string, examples: [sepolia] }
+        state:
+          type: string
+          enum: [ready, not_admitted, not_finalized, budget_exhausted, no_identity, degraded]
+        admitted: { type: [boolean, "null"] }
+        finalized: { type: [boolean, "null"] }
+        leaf: { type: [string, "null"], description: "The member leaf, shortened." }
+        admissionSet: { type: [string, "null"], description: "The contract or member file checked." }
+        tier: { type: [integer, "null"], description: "Tunnels per epoch (RLN userMessageLimit)." }
+        epoch: { type: integer }
+        epochSeconds: { type: integer }
+        epochResetsInSeconds: { type: integer }
+        slotsUsed: { type: [integer, "null"] }
+        slotsLeft: { type: [integer, "null"] }
+        canopy:
+          type: object
+          required: [nodes, eligible, fromLastKnownGood]
+          properties:
+            nodes: { type: integer }
+            eligible: { type: integer, description: "Nodes this member may use." }
+            issued: { type: [integer, "null"], description: "Unix seconds the canopy was signed." }
+            ageSeconds: { type: [integer, "null"] }
+            fromLastKnownGood: { type: boolean }
+            error: { type: [string, "null"] }
+        torReady: { type: boolean }
+        lastError:
+          oneOf:
+            - type: "null"
+            - type: object
+              properties:
+                code: { $ref: "#/components/schemas/ErrorCode" }
+                message: { type: string }
+                retryAfterSeconds: { type: integer }
+                at: { type: integer, description: "Unix seconds." }
