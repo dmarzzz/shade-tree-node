@@ -3,7 +3,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
-import { ShadeTreeClient } from "../client/shade-tree-client.mjs";
+import { createClient } from "@shadenet/sdk/node";
 import { envFlag } from "../lib/admission.mjs";
 
 export const LAB_TARGET = "https://example.com/";
@@ -43,8 +43,9 @@ function proofTuple(value, depth = 0) {
   return out.some((part) => part == null) ? null : out;
 }
 
+// Public codes are UPPER_SNAKE. SDK codes (BudgetExhausted) are converted; anything else is dropped.
 function errorCode(value) {
-  const code = String(value ?? "");
+  const code = String(value ?? "").replace(/^([A-Z][a-z]+)+$/, (name) => name.replace(/(?!^)([A-Z])/g, "_$1").toUpperCase());
   return /^[A-Z0-9_]{1,64}$/.test(code) ? code : undefined;
 }
 
@@ -157,7 +158,7 @@ async function readEmptyObject(request) {
 export function createLabRunner({
   token = process.env.SHADE_TREE_LAB_RUNNER_TOKEN,
   cooldownMs = Number(process.env.SHADE_TREE_LAB_COOLDOWN_MS || DEFAULT_COOLDOWN_MS),
-  clientFactory = () => new ShadeTreeClient(labClientOptions()),
+  clientFactory = () => createClient(labClientOptions()),
   now = Date.now,
 } = {}) {
   if (!token || token.length < 32) throw new Error("SHADE_TREE_LAB_RUNNER_TOKEN must be at least 32 characters");

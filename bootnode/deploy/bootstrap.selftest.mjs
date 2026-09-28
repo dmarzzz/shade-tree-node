@@ -251,6 +251,34 @@ async function main() {
       const r = render(work, "gw-bad-maxstreams", { SHADE_TREE_BOOTNODE_ONION: ONION, SHADE_TREE_HS_MAX_STREAMS: bad });
       ok(r.status !== 0 && /SHADE_TREE_HS_MAX_STREAMS must be an integer/.test(r.stderr), `bad SHADE_TREE_HS_MAX_STREAMS rejected: ${JSON.stringify(bad)}`);
     }
+    ok(gwPow.status === 0 && gwPowBlocks.length === 1 && gwPowBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 1", "gateway-only + SHADE_TREE_ENABLE_POW=1: single block, PoW on");
+    // OPS-11: SHADENET_NETWORK fills a joining node from the deployment record; explicit env wins.
+    const recordPath = join(HERE, "..", "..", "network", "sepolia", "deployment.json");
+    const record = JSON.parse(await readFile(recordPath, "utf8"));
+    const pre = render(work, "preset", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath });
+    ok(pre.status === 0 && /gateway-only/.test(pre.stdout), `SHADENET_NETWORK=sepolia renders a gateway-only join (${(pre.stdout || pre.stderr || "").trim()})`);
+    const preGw = await readFile(join(pre.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
+    const preHb = await readFile(join(pre.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
+    const st = record.admission.roots.staked;
+    ok(unitEnv(preGw, "SHADE_TREE_GROUP_CONTRACT") === st.contract && unitEnv(preGw, "SHADE_TREE_FROM_BLOCK") === String(st.deployBlock), "preset: staked contract + deploy block from the record");
+    ok(unitEnv(preGw, "SHADE_TREE_EPOCH_SECONDS") === String(record.ratePolicy.epochSeconds) && unitEnv(preGw, "SHADE_TREE_TIERS") === st.tiers.map((t) => t.limit).join(","), "preset: epoch + tiers from the record");
+    ok(unitEnv(preGw, "SHADE_TREE_ADMIT") === "staked", "preset: a joiner without a members file admits staked only");
+    ok(unitEnv(preHb, "SHADE_TREE_BOOTNODE_ONION") === record.elder.onion, "preset: heartbeat announces to the record's Elder");
+    const preOverride = render(work, "preset-override", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath, SHADE_TREE_EPOCH_SECONDS: "120", SHADE_TREE_ROOT_FRESHNESS_SECONDS: "120" });
+    ok(unitEnv(await readFile(join(preOverride.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8"), "SHADE_TREE_EPOCH_SECONDS") === "120", "preset: explicit env wins over the record");
+    const retired = join(tmpdir(), `shade-retired-${process.pid}.json`);
+    await writeFile(retired, JSON.stringify({ ...record, status: "retired" }));
+    const preRetired = render(work, "preset-retired", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: retired });
+    await rm(retired, { force: true });
+    ok(preRetired.status !== 0 && /not joinable/.test(preRetired.stderr), "preset: a retired record is refused");
+    ok(render(work, "preset-bad", { SHADENET_NETWORK: "../x" }).status !== 0, "preset: a bad network name is refused");
+    ok(/^ImportCredential=SHADE_TREE_\*$/m.test(preGw) && !/KEY=/.test(preGw), "units import SHADE_TREE_* credentials and hold no key material");
+    // OPS-9: a joining Elder federates with the record's Elder and checks stake on chain.
+    const preElder = render(work, "preset-elder", { SHADE_TREE_ELDER_ONLY: "1", SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath });
+    const preElderUnit = await readFile(join(preElder.out, "etc/systemd/system/shade-tree-bootnode.service"), "utf8");
+    ok(preElder.status === 0 && unitEnv(preElderUnit, "SHADE_TREE_BOOTNODE_PEERS") === record.elder.onion && unitEnv(preElderUnit, "SHADE_TREE_STAKE_MODE") === "onchain"
+      && unitEnv(preElderUnit, "SHADE_TREE_GATEWAY_REGISTRY") === record.elder.gatewayRegistry, "preset + ELDER_ONLY: federated stake-admission Elder");
+    ok(render(work, "peers-bad", { SHADE_TREE_BOOTNODE_PEERS: "nope.onion" }).status !== 0, "malformed federation peer rejected");
     // --render <dir> CLI form == env form.
     const cli = render(work, "cli", { SHADE_TREE_BOOTNODE_ONION: ONION }, ["--render", join(work, "cli")]);
     ok(cli.status === 0 && (await readAll(join(work, "cli"))).get("etc/systemd/system/shade-tree-heartbeat.service") === hb, "`--render <dir>` == SHADE_TREE_RENDER_ONLY=<dir>");

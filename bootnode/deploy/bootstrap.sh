@@ -144,7 +144,88 @@ set -euo pipefail
 
 if [ "${1:-}" = "--render" ]; then SHADE_TREE_RENDER_ONLY="${2:?--render needs a directory}"; shift 2; fi
 
+die() { echo "bootstrap.sh: $*" >&2; exit 1; }
+# --- network preset (OPS-11): join a published canopy with one command -----------------------
+#   SHADENET_NETWORK=sepolia bash bootstrap.sh
+# reads network/<name>/deployment.json (from SHADENET_NETWORK_RECORD=<file>, else from the repo
+# at SHADENET_RECORD_REF, default main) and fills every UNSET tunable a joining node needs: the
+# Elder onion and signer, the staked-root contract, RPC, deploy block, tiers, epoch, freshness,
+# payload budget and accepted artifacts. SHADE_TREE_REF defaults to the record's immutable node
+# commit, never a branch. Explicit env always wins. SHADE_TREE_NETWORK is accepted as an alias.
+SHADENET_NETWORK="${SHADENET_NETWORK:-${SHADE_TREE_NETWORK:-}}"
+SHADENET_NETWORK_RECORD="${SHADENET_NETWORK_RECORD:-}"
+SHADENET_RECORD_REF="${SHADENET_RECORD_REF:-main}"
+if [ -n "$SHADENET_NETWORK" ]; then
+  [[ "$SHADENET_NETWORK" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]] || die "SHADENET_NETWORK must be a record name like sepolia"
+  if [ -z "$SHADENET_NETWORK_RECORD" ]; then
+    [[ "$SHADENET_RECORD_REF" =~ ^[A-Za-z0-9._/-]{1,100}$ ]] || die "SHADENET_RECORD_REF is not a git ref"
+    command -v curl >/dev/null || die "SHADENET_NETWORK needs curl to fetch the deployment record"
+    SHADENET_NETWORK_RECORD="$(mktemp)"
+    repo="${SHADE_TREE_REPO:-https://github.com/dmarzzz/shade-tree-node}"
+    raw="${repo/https:\/\/github.com\//https://raw.githubusercontent.com/}"
+    curl -fsSL --proto '=https' "$raw/$SHADENET_RECORD_REF/network/$SHADENET_NETWORK/deployment.json" -o "$SHADENET_NETWORK_RECORD" \
+      || die "could not fetch network/$SHADENET_NETWORK/deployment.json at $SHADENET_RECORD_REF"
+  fi
+  [ -f "$SHADENET_NETWORK_RECORD" ] || die "SHADENET_NETWORK_RECORD not found: $SHADENET_NETWORK_RECORD"
+  command -v python3 >/dev/null || die "SHADENET_NETWORK needs python3 to read the deployment record"
+  preset="$(python3 - "$SHADENET_NETWORK_RECORD" "${SHADE_TREE_ELDER_ONLY:-0}" <<'PY'
+import json, re, shlex, sys
+r = json.load(open(sys.argv[1], encoding="utf-8"))
+if r.get("status") not in ("live", "staging"):
+    sys.exit(f"record status is {r.get('status')!r}; only live or staging records can be joined")
+elder, adm, rate = r["elder"], r["admission"], r["ratePolicy"]
+staked = (adm.get("roots") or {}).get("staked") or {}
+elder_only = sys.argv[2] in ("1", "true", "yes", "on")
+out = {
+    # A joining node announces to the Elder in the record; a joining Elder federates with it instead.
+    ("SHADE_TREE_BOOTNODE_PEERS" if elder_only else "SHADE_TREE_BOOTNODE_ONION"): elder["onion"],
+    "SHADE_TREE_BOOTNODE_SIGNER": elder["canopySigner"],
+    "SHADE_TREE_EPOCH_SECONDS": rate["epochSeconds"],
+    "SHADE_TREE_ROOT_FRESHNESS_SECONDS": rate["rootFreshnessSeconds"],
+    "SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES": rate["payloadBytesPerSlot"],
+    "SHADE_TREE_REF": r["services"]["node"]["commit"],
+    "SHADE_TREE_ADMIT": "staked",
+}
+if staked:
+    rpc = staked.get("rpcUrls") or [staked["rpcUrl"]]
+    out.update({
+        "SHADE_TREE_GROUP_CONTRACT": staked["contract"],
+        "SHADE_TREE_RPC_URL": ",".join(rpc),
+        "SHADE_TREE_FROM_BLOCK": staked["deployBlock"],
+        "SHADE_TREE_TIERS": ",".join(str(t["limit"]) for t in staked["tiers"]),
+    })
+arts = [f'{a["id"]}={a["verificationKeyPath"]}' for a in (r.get("artifacts") or {}).get("accepted", [])]
+if arts:
+    out["SHADE_TREE_ZK_ARTIFACTS"] = ",".join(arts)
+if elder.get("admission"):
+    out["SHADE_TREE_ADMISSION"] = elder["admission"]
+if elder.get("gatewayRegistry"):
+    out["SHADE_TREE_GATEWAY_REGISTRY"] = elder["gatewayRegistry"]
+for k, v in out.items():
+    v = str(v)
+    if not re.fullmatch(r"[A-Za-z0-9._:/,=@%+-]{1,512}", v):
+        sys.exit(f"record value for {k} has unexpected characters")
+    print(f"{k}={shlex.quote(v)}")
+PY
+)" || die "network/$SHADENET_NETWORK deployment record is not joinable"
+  while IFS='=' read -r key value; do
+    [ -n "$key" ] || continue
+    value="${value#\'}"; value="${value%\'}"
+    [ -z "${!key:-}" ] || continue            # explicit env wins
+    printf -v "$key" '%s' "$value"
+    export "$key"
+  done <<< "$preset"
+  # A node joining a published canopy admits staked members only; invited needs the operator's
+  # private members file, so it is added only when one is supplied.
+  [ -n "${SHADE_TREE_MEMBERS_FILE:-}" ] && [ "${SHADE_TREE_ADMIT:-}" = "staked" ] && SHADE_TREE_ADMIT="invited,staked"
+  SHADENET_PRESET_APPLIED=1
+fi
+SHADENET_PRESET_APPLIED="${SHADENET_PRESET_APPLIED:-0}"
+
+
 SHADE_TREE_REPO="${SHADE_TREE_REPO:-https://github.com/dmarzzz/shade-tree-node}"
+# Default ref: the preset's immutable commit, else main (a self-contained test canopy). For a
+# public canopy always pass a tag or 40-hex commit; a branch prints a warning below.
 SHADE_TREE_REF="${SHADE_TREE_REF:-main}"
 SHADE_TREE_DIR="${SHADE_TREE_DIR:-/opt/shade-tree}"
 SHADE_TREE_ADMISSION="${SHADE_TREE_ADMISSION:-open}"
@@ -154,6 +235,8 @@ SHADE_TREE_ENABLE_POW="${SHADE_TREE_ENABLE_POW:-0}"
 SHADE_TREE_BOOTNODE_ONION="${SHADE_TREE_BOOTNODE_ONION:-}"
 SHADE_TREE_BOOTNODE_SIGNER="${SHADE_TREE_BOOTNODE_SIGNER:-}"
 SHADE_TREE_ELDER_ONLY="${SHADE_TREE_ELDER_ONLY:-0}"
+SHADE_TREE_BOOTNODE_PEERS="${SHADE_TREE_BOOTNODE_PEERS:-}"
+SHADE_TREE_GATEWAY_REGISTRY="${SHADE_TREE_GATEWAY_REGISTRY:-}"
 SHADE_TREE_GATEWAY_REGION="${SHADE_TREE_GATEWAY_REGION:-}"
 SHADE_TREE_RENDER_ONLY="${SHADE_TREE_RENDER_ONLY:-}"
 RUN_USER="${SHADE_TREE_USER:-shade-tree}"
@@ -210,8 +293,22 @@ helios_pinned_sha256() {  # $1 = version, $2 = amd64|arm64 -> echoes sha256 or n
   esac
 }
 
+SHADE_TREE_NODE_VERSION="${SHADE_TREE_NODE_VERSION:-24.20.0}"
+# sha256 of the nodejs.org linux tarballs, checked against SHASUMS256.txt 2026-09-28.
+node_pinned_sha256() {  # $1 = version, $2 = x64|arm64
+  case "$1:$2" in
+    24.20.0:x64)   echo 2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2 ;;
+    24.20.0:arm64) echo 5f4ddab610c1ab2016b3c227cebdbf6d9495161487e4739c7b90090595f465f7 ;;
+    *) ;;
+  esac
+}
+SHADE_TREE_CREDENTIALS_FROM="${SHADE_TREE_CREDENTIALS_FROM:-}"
+SHADE_TREE_JOURNAL_MAX_USE="${SHADE_TREE_JOURNAL_MAX_USE:-500M}"
+SHADE_TREE_JOURNAL_RETENTION="${SHADE_TREE_JOURNAL_RETENTION:-14day}"
+
 log() { echo -e "\n\033[1;36m== $*\033[0m"; }
 die() { echo "bootstrap.sh: $*" >&2; exit 1; }
+
 
 # --- validate the tunables up front (fail fast, before anything is installed) ---
 case "$SHADE_TREE_ENABLE_POW" in
@@ -437,6 +534,18 @@ fi
 
 [[ "$SHADE_TREE_HS_MAX_STREAMS" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$SHADE_TREE_HS_MAX_STREAMS" -le 65535 ] \
   || die "SHADE_TREE_HS_MAX_STREAMS must be an integer 1..65535"
+[[ "$SHADE_TREE_JOURNAL_MAX_USE" =~ ^[0-9]{1,6}[KMG]$ ]] || die "SHADE_TREE_JOURNAL_MAX_USE must look like 500M"
+[[ "$SHADE_TREE_JOURNAL_RETENTION" =~ ^[0-9]{1,4}(day|week|month|h)$ ]] || die "SHADE_TREE_JOURNAL_RETENTION must look like 14day"
+[[ "$SHADE_TREE_NODE_VERSION" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || die "SHADE_TREE_NODE_VERSION must be x.y.z"
+[ -z "$SHADE_TREE_CREDENTIALS_FROM" ] || [ -d "$SHADE_TREE_CREDENTIALS_FROM" ] || die "SHADE_TREE_CREDENTIALS_FROM must be a directory"
+
+for peer in ${SHADE_TREE_BOOTNODE_PEERS//,/ }; do
+  [[ "${peer%.onion}" =~ ^[a-z2-7]{56}$ ]] || die "SHADE_TREE_BOOTNODE_PEERS must be comma-separated v3 onions"
+done
+if [ -n "$SHADE_TREE_GATEWAY_REGISTRY" ]; then
+  [[ "$SHADE_TREE_GATEWAY_REGISTRY" =~ ^0x[0-9a-fA-F]{40}$ ]] || die "SHADE_TREE_GATEWAY_REGISTRY must be 0x<40 hex>"
+  [ -n "$SHADE_TREE_RPC_URL" ] || die "SHADE_TREE_GATEWAY_REGISTRY needs SHADE_TREE_RPC_URL"
+fi
 
 # --- renderers: the ONLY places torrc / unit text is produced (live + render mode share them) ---
 # torrc include: one HiddenServiceDir block per onion this box publishes. The PoW line is a
@@ -496,6 +605,9 @@ render_torrc() {  # $1 = output file
 render_sandbox() {
   local cpu_quota="${1:-50%}" memory_max="${2:-512M}" tasks_max="${3:-128}"
   cat <<EOF
+# --- secrets: systemd credentials (OPS-12). Files named SHADE_TREE_<SECRET> in /etc/credstore
+# (root, 0600) reach the service via \$CREDENTIALS_DIRECTORY, never Environment= or systemctl show.
+ImportCredential=SHADE_TREE_*
 # --- sandbox (see rationale in bootstrap.sh) ---
 NoNewPrivileges=true
 UMask=0077
@@ -555,6 +667,14 @@ Environment=SHADE_TREE_LOG_FORMAT=${SHADE_TREE_LOG_FORMAT}
 Environment=SHADE_TREE_BANNER=${SHADE_TREE_BANNER}
 SyslogIdentifier=shade-tree-elder
 EOF
+    if [ "$SHADE_TREE_ADMISSION" = "stake" ] && [ -n "$SHADE_TREE_GATEWAY_REGISTRY" ]; then
+      # Stake admission: the Elder checks each announcing operator in GatewayRegistry.
+      echo "Environment=SHADE_TREE_STAKE_MODE=onchain"
+      echo "Environment=SHADE_TREE_GATEWAY_REGISTRY=${SHADE_TREE_GATEWAY_REGISTRY}"
+      echo "Environment=SHADE_TREE_RPC_URL=${SHADE_TREE_RPC_URL}"
+    fi
+    # Federation (T-FEAT-1, OPS-9): pull and re-verify peers' announces.
+    [ -z "$SHADE_TREE_BOOTNODE_PEERS" ] || echo "Environment=SHADE_TREE_BOOTNODE_PEERS=${SHADE_TREE_BOOTNODE_PEERS}"
     if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
       # Advertise the registrar in GET /health (`pay: {port, protocols, asset, chain, tiers}`).
       echo "Environment=SHADE_TREE_REGISTRAR_ADVERTISE=1"
@@ -791,6 +911,9 @@ fi
 # --- LIVE mode --------------------------------------------------------------------------
 [ "$(id -u)" -eq 0 ] || { echo "run as root or with sudo"; exit 1; }
 
+[[ "$SHADE_TREE_REF" =~ ^([0-9a-f]{40}|v[0-9]+\.[0-9]+\.[0-9]+.*)$ ]] \
+  || echo "bootstrap.sh: WARNING: SHADE_TREE_REF=$SHADE_TREE_REF is a branch; pin a release tag or commit for a public canopy" >&2
+
 log "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -803,12 +926,23 @@ log "node 24"
 # (status=31/SYS) in a restart loop. Observed on the 2026-08-17 go-live box (pre-installed
 # NodeSource 20.20.2); Node 24 starts clean under the same filter. See
 # docs/GO-LIVE-LOG-2026-08-17.md (Phase 1.3).
-if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 24 ]; then
-  curl -fsSL https://deb.nodesource.com/setup_24.x | bash - >/dev/null 2>&1
-  apt-get install -y -qq nodejs >/dev/null
+# The runtime is a pinned, checksum-verified nodejs.org release (OPS-11), not an unpinned
+# `curl | bash` of a third-party apt setup script. Another version must bring its own sha256.
+case "$(uname -m)" in x86_64) NODE_ARCH=x64 ;; aarch64|arm64) NODE_ARCH=arm64 ;; *) die "unsupported CPU $(uname -m)" ;; esac
+NODE_SHA256="${SHADE_TREE_NODE_SHA256:-$(node_pinned_sha256 "$SHADE_TREE_NODE_VERSION" "$NODE_ARCH")}"
+# Installed privately under /opt/node-v<version>; the units and npm use it by absolute path, so a
+# system node that other software on the host depends on is left alone.
+node_dir="/opt/node-v${SHADE_TREE_NODE_VERSION}"
+if [ -z "${SHADE_TREE_NODE_BIN:-}" ] && [ "$("$node_dir/bin/node" -p process.versions.node 2>/dev/null)" != "$SHADE_TREE_NODE_VERSION" ]; then
+  [ -n "$NODE_SHA256" ] || die "no pinned sha256 for node $SHADE_TREE_NODE_VERSION ($NODE_ARCH); set SHADE_TREE_NODE_SHA256"
+  node_tar="$(mktemp)"
+  curl -fsSL --proto '=https' "https://nodejs.org/dist/v${SHADE_TREE_NODE_VERSION}/node-v${SHADE_TREE_NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o "$node_tar"
+  echo "${NODE_SHA256}  ${node_tar}" | sha256sum -c --quiet - || die "node tarball checksum mismatch"
+  rm -rf "$node_dir" && mkdir -p "$node_dir"
+  tar -xJf "$node_tar" -C "$node_dir" --strip-components=1 && rm -f "$node_tar"
 fi
-node --version
-NODE_BIN="${SHADE_TREE_NODE_BIN:-$(command -v node)}"
+NODE_BIN="${SHADE_TREE_NODE_BIN:-$node_dir/bin/node}"
+"$NODE_BIN" --version
 
 log "tor (official repo, for pow: yes)"
 if ! command -v tor >/dev/null; then
@@ -842,7 +976,7 @@ else
   git clone --depth 1 --branch "$SHADE_TREE_REF" "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q \
     || { git clone --depth 1 "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q && git -C "$SHADE_TREE_DIR" checkout -q "$SHADE_TREE_REF"; }
 fi
-( cd "$SHADE_TREE_DIR" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 )
+( cd "$SHADE_TREE_DIR" && PATH="$(dirname "$NODE_BIN"):$PATH" npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 )
 
 # A live invited gateway must trust an operator-supplied set, never the repository's demo
 # members. Validate the document with the runtime we just installed, then copy it outside every
@@ -851,7 +985,7 @@ fi
 # the source remains explicit, while the unit always reads the canonical protected copy.
 if [ "$WITH_GATEWAY" = "1" ] && [ "$ADMIT_INVITED" = "1" ]; then
   MEMBERS_SOURCE="$SHADE_TREE_MEMBERS_FILE"
-  node - "$MEMBERS_SOURCE" <<'NODE'
+  "$NODE_BIN" - "$MEMBERS_SOURCE" <<'NODE'
 const { readFileSync } = require("node:fs");
 const path = process.argv[2];
 let doc;
@@ -876,13 +1010,13 @@ fi
 
 log "onion identities (reused if present)"
 if [ "$WITH_BOOTNODE" = "1" ]; then
-  [ -f "$BN_HS/hostname" ] || node "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$BN_HS" --label bootnode >/dev/null
+  [ -f "$BN_HS/hostname" ] || "$NODE_BIN" "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$BN_HS" --label bootnode >/dev/null
   BN_ONION="$(cat "$BN_HS/hostname")"
 else
   BN_ONION="$SHADE_TREE_BOOTNODE_ONION"   # remote; nothing minted here
 fi
 if [ "$WITH_GATEWAY" = "1" ]; then
-  [ -f "$GW_HS/hostname" ] || node "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$GW_HS" --label gateway  >/dev/null
+  [ -f "$GW_HS/hostname" ] || "$NODE_BIN" "$SHADE_TREE_DIR/bootnode/keygen.mjs" "$GW_HS" --label gateway  >/dev/null
   GW_ONION="$(cat "$GW_HS/hostname")"
 else
   GW_ONION=""
@@ -968,6 +1102,20 @@ else
   GATEWAY_WAS_ACTIVE=0
 fi
 UNITS=""
+log "journald caps + credentials"
+install -d -m 0755 /etc/systemd/journald.conf.d
+printf '[Journal]\nSystemMaxUse=%s\nMaxRetentionSec=%s\n' "$SHADE_TREE_JOURNAL_MAX_USE" "$SHADE_TREE_JOURNAL_RETENTION" \
+  > /etc/systemd/journald.conf.d/shade-tree.conf
+systemctl restart systemd-journald || true
+install -d -m 0700 /etc/credstore
+if [ -n "$SHADE_TREE_CREDENTIALS_FROM" ]; then
+  # Copy SHADE_TREE_* secret files (e.g. SHADE_TREE_GW_OPERATOR_KEY) into the credential store.
+  for f in "$SHADE_TREE_CREDENTIALS_FROM"/SHADE_TREE_*; do
+    [ -f "$f" ] || continue
+    install -m 0600 -o root -g root "$f" "/etc/credstore/$(basename "$f")"
+  done
+fi
+
 if [ "$WITH_BOOTNODE" = "1" ]; then
   render_bootnode_unit /etc/systemd/system/shade-tree-bootnode.service
   UNITS="shade-tree-bootnode"
@@ -1048,7 +1196,7 @@ EOF
 if [ "$WITH_GATEWAY" = "0" ]; then
   log "waiting for the Elder signer + onion descriptor (~15s)…"
   sleep 15
-  SIGNER="$(node -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
+  SIGNER="$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
   cat <<EOF
 
 ========================================================================
@@ -1067,7 +1215,7 @@ EOF
 elif [ "$WITH_BOOTNODE" = "1" ]; then
   log "waiting for the bootnode signer + onion descriptors (~15s)…"
   sleep 15
-  SIGNER="$(node -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
+  SIGNER="$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
   cat <<EOF
 
 ========================================================================
