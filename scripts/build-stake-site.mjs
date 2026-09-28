@@ -1,13 +1,15 @@
 // Builds the Get access page from the network record:
-//   docs/post/stake/stake.js          bundled flow (esbuild)
+//   docs/post/stake/stake.js          bundled flow (esbuild); the SDK + prover split into
+//                                     docs/post/stake/chunks/, loaded only on exit or withdraw
+//   docs/post/stake/zk/withdraw.*     the withdraw circuit the in-browser prover runs
 //   docs/post/stake/index.html        rendered by site-src/stake-page.mjs
 //   docs/post/api/_stake-profile.mjs  the contract + RPC the same-origin status API reads
 // and writes the shared primary nav into every secondary page.
 //   node scripts/build-stake-site.mjs          write
 //   node scripts/build-stake-site.mjs --check  exit 1 if any committed output is stale
 import { build } from "esbuild";
-import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative as relativePath } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderStakePage } from "../site-src/stake-page.mjs";
 import { navLinks } from "../site-src/site-nav.mjs";
@@ -17,7 +19,11 @@ const check = process.argv.includes("--check");
 const stale = [];
 
 export const BUNDLE_OPTIONS = {
-  entryPoints: [join(root, "site-src", "stake-entry.mjs")],
+  entryPoints: { stake: join(root, "site-src", "stake-entry.mjs") },
+  outdir: join(root, "docs", "post", "stake"),
+  chunkNames: "chunks/[name]-[hash]",
+  splitting: true,
+  platform: "browser",
   bundle: true,
   format: "esm",
   minify: true,
@@ -57,8 +63,16 @@ export function withSharedNav(html, current, relative) {
   return html.replace(match[0], navLinks(current, match[1], { relative }));
 }
 
+// The withdraw circuit, served same-origin for the in-browser exit/withdraw prover. Copied from
+// circuits/rln so the ceremony's new zkey reaches the page on the next build.
+export const PROVER_ARTIFACTS = [
+  ["circuits/rln/withdraw.wasm", "docs/post/stake/zk/withdraw.wasm"],
+  ["circuits/rln/withdraw_final.zkey", "docs/post/stake/zk/withdraw_final.zkey"],
+];
+
 function emit(relative, contents) {
   const path = join(root, relative);
+  mkdirSync(dirname(path), { recursive: true });
   let current = null;
   try { current = readFileSync(path); } catch {}
   const next = Buffer.isBuffer(contents) ? contents : Buffer.from(contents);
@@ -68,7 +82,20 @@ function emit(relative, contents) {
 }
 
 const bundled = await build(BUNDLE_OPTIONS);
-emit("docs/post/stake/stake.js", Buffer.from(bundled.outputFiles[0].contents));
+const chunkDir = join(root, "docs/post/stake/chunks");
+const wanted = new Set();
+for (const file of bundled.outputFiles) {
+  const rel = relativePath(root, file.path);
+  if (rel.includes("/chunks/")) wanted.add(basename(rel));
+  emit(rel, Buffer.from(file.contents));
+}
+let present = [];
+try { present = readdirSync(chunkDir); } catch {}
+for (const name of present.filter((n) => !wanted.has(n))) {
+  if (check) stale.push(`docs/post/stake/chunks/${name} (orphaned)`);
+  else rmSync(join(chunkDir, name));
+}
+for (const [from, to] of PROVER_ARTIFACTS) emit(to, readFileSync(join(root, from)));
 emit("docs/post/stake/index.html", renderStakePage());
 emit("docs/post/api/_stake-profile.mjs", stakeProfileModule());
 for (const [page, current, relative] of NAV_PAGES) {

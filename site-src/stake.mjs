@@ -1,6 +1,6 @@
-import { Interface, getAddress } from "ethers";
-import { poseidon1 } from "poseidon-lite/poseidon1";
-import { poseidon2 } from "poseidon-lite/poseidon2";
+import { getAddress } from "ethers";
+import { createIdentity, createStaking, importIdentity, serializeIdentity, identityCommitmentOf } from "../packages/sdk/src/index.mjs";
+import { deriveIdentity as deriveCore, leafFromIdentityCommitment, parseCommitment as parseCore } from "../lib/identity-core.mjs";
 import {
   CHAIN_ID,
   CHAIN_NAME,
@@ -13,41 +13,29 @@ import {
   formatDuration,
   formatEth,
   tierFor,
+  NETWORK_RECORD,
 } from "./profile.mjs";
 
 export { CHAIN_ID, DEFAULT_LIMIT, EXPLORER_URL, REGISTER_INPUT, RPC_URL, TIERS };
-export const FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 export const CONTRACT = getAddress(RECORD_CONTRACT);
 // Sepolia targets 12 s slots; finality is two epochs behind head in the normal case.
 const SLOT_SECONDS = 12;
+// The withdraw circuit the in-browser prover runs, served same-origin by the site build.
+export const PROVER_ARTIFACTS = Object.freeze({ wasm: "/stake/zk/withdraw.wasm", zkey: "/stake/zk/withdraw_final.zkey" });
 
-const ABI = [
-  "function register(uint256 commitment, uint256 limit) payable",
-  "function registerIdentity(uint256 identityCommitment, uint256 limit) payable returns (uint256)",
-  "function bondFor(uint256 limit) view returns (uint256)",
-  "function isActive(uint256 commitment) view returns (bool)",
-  "function limitOf(uint256 commitment) view returns (uint256)",
-  "function withdrawableAt(uint256 commitment) view returns (uint256)",
-];
-const iface = new Interface(ABI);
-
-const encoder = new TextEncoder();
-
-function bytesToBigInt(bytes) {
-  let value = 0n;
-  for (const byte of bytes) value = (value << 8n) | BigInt(byte);
-  return value;
+// Stake, sponsor, status, exit and withdraw all go through the SDK. snarkjs inside it loads
+// lazily, only when someone exits or withdraws.
+function staking() {
+  if (!window.ethereum?.request) throw new Error("No compatible Ethereum wallet was found in this browser.");
+  return createStaking({ network: NETWORK_RECORD, provider: window.ethereum });
 }
 
-function canonicalField(value, label, { nonzero = true } = {}) {
-  if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/.test(value)) {
-    throw new Error(`${label} must be a canonical decimal field element.`);
-  }
-  const parsed = BigInt(value);
-  if (parsed >= FIELD || (nonzero && parsed === 0n)) {
-    throw new Error(`${label} is outside the supported identity field.`);
-  }
-  return parsed;
+export function parseRecipient(text) {
+  const value = String(text || "").trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error("Enter the fresh recipient as a 0x address.");
+  const address = getAddress(value);
+  if (/^0x0{40}$/i.test(address)) throw new Error("The recipient cannot be the zero address.");
+  return address;
 }
 
 function offeredTier(limit) {
@@ -58,23 +46,11 @@ function offeredTier(limit) {
   return tier;
 }
 
+// Seeded derivation, for the shared Rust/Semaphore test vector. The page itself calls the SDK's
+// createIdentity, which draws the seed from WebCrypto.
 export async function deriveIdentity(seed, limit = DEFAULT_LIMIT) {
-  if (!(seed instanceof Uint8Array) || seed.byteLength !== 32) {
-    throw new Error("Identity seed must be exactly 32 random bytes.");
-  }
   const tier = offeredTier(limit);
-  const appSecret = bytesToBigInt(seed) % FIELD;
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-512", encoder.encode(appSecret.toString())));
-  const nullifier = bytesToBigInt(digest.slice(0, 32)) >> 3n;
-  const trapdoor = bytesToBigInt(digest.slice(32)) >> 3n;
-  digest.fill(0);
-  const identitySecret = poseidon2([nullifier, trapdoor]);
-  const leaf = poseidon2([poseidon1([identitySecret]), tier.limit]);
-  return {
-    identitySecret: identitySecret.toString(),
-    leaf: leaf.toString(),
-    limit: Number(tier.limit),
-  };
+  return deriveCore(seed, Number(tier.limit));
 }
 
 export function parseIdentityFile(text) {
@@ -84,51 +60,44 @@ export function parseIdentityFile(text) {
   } catch {
     throw new Error("That is not a valid ShadeNet identity JSON file.");
   }
-  if (!value || Array.isArray(value) || typeof value !== "object") {
-    throw new Error("The identity file must contain one JSON object.");
-  }
-  const keys = Object.keys(value).sort().join(",");
-  if (keys !== "identitySecret,leaf,limit") {
+  if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("The identity file must contain one JSON object.");
+  if (Object.keys(value).sort().join(",") !== "identitySecret,leaf,limit") {
     throw new Error("The identity file must contain only identitySecret, leaf, and limit.");
   }
-  if (!Number.isSafeInteger(value.limit)) throw new Error("The identity file's limit must be an integer tier.");
-  const tier = offeredTier(value.limit);
-  const identitySecret = canonicalField(value.identitySecret, "identitySecret");
-  const leaf = canonicalField(value.leaf, "leaf");
-  const expected = poseidon2([poseidon1([identitySecret]), tier.limit]);
-  if (leaf !== expected) {
-    throw new Error("The public leaf does not match this identity secret and tier.");
-  }
-  return { identitySecret: identitySecret.toString(), leaf: leaf.toString(), limit: Number(tier.limit) };
+  offeredTier(value.limit);
+  return importIdentity(value, { network: NETWORK_RECORD });
 }
 
 // The value `register` takes for this identity, per the deployment record's ABI.
 export function registerCommitment(identity) {
-  if (REGISTER_INPUT === "identityCommitment") return poseidon1([BigInt(identity.identitySecret)]).toString();
+  if (REGISTER_INPUT === "identityCommitment") return identityCommitmentOf(BigInt(identity.identitySecret)).toString();
   return identity.leaf;
 }
 
-// The member leaf the contract stores for a registration value at `limit`. The ShadeNet sets take
-// the identity commitment and derive Poseidon2(idc, limit) themselves (launch audit 2.1.4).
+// The member leaf the contract stores for a registration value at `limit`. ShadeNet sets take the
+// identity commitment and derive Poseidon2(idc, limit) themselves (launch audit 2.1.4).
 export function memberLeaf(commitment, limit) {
   if (REGISTER_INPUT !== "identityCommitment") return String(commitment);
-  return poseidon2([BigInt(commitment), BigInt(limit)]).toString();
+  return leafFromIdentityCommitment(BigInt(commitment), BigInt(limit)).toString();
 }
 
 export function parseCommitment(text) {
-  return canonicalField(String(text || "").trim(), "Commitment").toString();
+  try {
+    return parseCore(String(text || "").trim()).toString();
+  } catch {
+    throw new Error("Commitment must be a canonical, non-zero decimal field element.");
+  }
 }
 
-export function identityBytes(identity) {
-  return `${JSON.stringify(identity, null, 2)}\n`;
-}
+export const identityBytes = serializeIdentity;
 
 // Pure status model for a commitment read from the contract: what the page tells the member.
-export function describeMember({ active, limit, withdrawableAt, now }) {
-  if (active) return { state: "active", message: `Active at tier ${limit}. Nodes accept it once its block is finalized.` };
-  if (limit !== 0n) {
-    const at = Number(withdrawableAt);
-    if (at > now) return { state: "exiting", message: `Exiting. The bond is withdrawable in about ${formatDuration(Math.max(60, Math.ceil((at - now) / 60) * 60))}.` };
+export function describeMember({ state, limit, withdrawableAt, finalized, now }) {
+  if (state === "active" && finalized === false) return { state: "pending", message: `Registered at tier ${limit}. Nodes accept it once its block is finalized.` };
+  if (state === "active") return { state: "active", message: `Active at tier ${limit} and finalized. Nodes accept it.` };
+  if (state === "exiting" || state === "withdrawable") {
+    const at = withdrawableAt ? Date.parse(withdrawableAt) / 1000 : 0;
+    if (state === "exiting" && at > now) return { state: "exiting", message: `Exiting. The bond is withdrawable in about ${formatDuration(Math.max(60, Math.ceil((at - now) / 60) * 60))}.` };
     return { state: "withdrawable", message: "Exit complete. Withdraw the bond to a fresh address with the CLI." };
   }
   return { state: "unregistered", message: "Not registered on this contract." };
@@ -174,6 +143,9 @@ function elements() {
     receipt: document.querySelector("[data-receipt]"),
     receiptLink: document.querySelector("[data-receipt-link]"),
     memberState: document.querySelector("[data-member-state]"),
+    exitButton: document.querySelector("[data-exit]"),
+    withdrawButton: document.querySelector("[data-withdraw]"),
+    withdrawTo: document.querySelector("[data-withdraw-to]"),
     finality: document.querySelector("[data-finality]"),
   };
 }
@@ -236,19 +208,24 @@ function mount() {
         : `stake ${tier ? formatEth(tier.bondWei) : "?"} ${CHAIN_NAME} ETH`;
     }
     if (el.statusButton) el.statusButton.disabled = state.busy || !state.account || !commitment;
+    const canProve = hasIdentity && Boolean(state.account) && !state.busy && state.mode === "member";
+    if (el.exitButton) el.exitButton.disabled = !canProve;
+    if (el.withdrawButton) {
+      let recipientOk = false;
+      try { parseRecipient(el.withdrawTo.value); recipientOk = true; } catch {}
+      el.withdrawButton.disabled = !canProve || !recipientOk;
+    }
     el.leaf.textContent = hasIdentity ? registerCommitment(state.identity) : "Create or import an identity to reveal its public commitment.";
     el.leafTag.dataset.ready = String(hasIdentity);
     el.wallet.textContent = state.account ? `Connected: ${short(state.account, 8, 6)}` : "No wallet connected";
   }
 
-  async function createIdentity() {
+  async function onCreateIdentity() {
     state.busy = true;
     update();
     try {
-      const seed = crypto.getRandomValues(new Uint8Array(32));
-      state.identity = await deriveIdentity(seed, state.tier);
+      state.identity = await createIdentity({ network: NETWORK_RECORD, limit: Number(state.tier) });
       state.imported = false;
-      seed.fill(0);
       el.recoveryCheck.checked = false;
       announce(`Tier ${state.identity.limit} identity created in this tab. Download it and confirm you saved it before staking.`, "good");
     } catch (error) {
@@ -347,22 +324,6 @@ function mount() {
     }
   }
 
-  async function readContract(name, args, block = "latest") {
-    const data = iface.encodeFunctionData(name, args);
-    const result = await request("eth_call", [{ to: CONTRACT, data }, block]);
-    return iface.decodeFunctionResult(name, result)[0];
-  }
-
-  async function waitForReceipt(hash) {
-    const deadline = Date.now() + 180_000;
-    while (Date.now() < deadline) {
-      const receipt = await request("eth_getTransactionReceipt", [hash]);
-      if (receipt) return receipt;
-      await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-    }
-    return null;
-  }
-
   function watchFinality(blockNumber) {
     window.clearInterval(state.finalityTimer);
     const tick = async () => {
@@ -398,19 +359,60 @@ function mount() {
     update();
     try {
       await selectChain();
-      const leaf = memberLeaf(commitment, (tierFor(stakeTier()) ?? tierFor(DEFAULT_LIMIT)).limit);
-      const [active, limit, withdrawableAt] = await Promise.all([
-        readContract("isActive", [leaf]),
-        readContract("limitOf", [leaf]),
-        readContract("withdrawableAt", [leaf]).catch(() => 0n),
-      ]);
-      const view = describeMember({ active, limit, withdrawableAt, now: Math.floor(Date.now() / 1000) });
+      const status = await staking().memberStatus(memberLeaf(commitment, stakeTier()));
+      const view = describeMember({ ...status, now: Math.floor(Date.now() / 1000) });
       el.memberState.textContent = view.message;
       el.memberState.dataset.state = view.state;
       el.memberState.hidden = false;
       announce("Status read through your wallet's RPC. This page sent it nowhere else.", "good");
     } catch (error) {
       announce(error.shortMessage || error.message || "Status check failed.", "bad");
+    } finally {
+      state.busy = false;
+      update();
+    }
+  }
+
+  // Exit and withdraw prove knowledge of the identity secret in this tab (Groth16 over the
+  // withdraw circuit). The wallet only pays gas; use one unrelated to the funder.
+  async function leave(action) {
+    if (!state.identity || !state.account) return;
+    let recipient;
+    if (action === "withdraw") {
+      try {
+        recipient = parseRecipient(el.withdrawTo.value);
+      } catch (error) {
+        announce(error.message, "bad");
+        return;
+      }
+    }
+    state.busy = true;
+    update();
+    try {
+      announce("Loading the prover (about 2 MB, once)…");
+      const sdk = staking();
+      const status = await sdk.memberStatus(state.identity.leaf);
+      if (action === "exit" && status.state !== "active") throw new Error("Only an active membership can start an exit.");
+      if (action === "withdraw" && status.state !== "withdrawable") {
+        throw new Error(status.state === "exiting" ? "Still unbonding. Withdraw after the deadline passes." : "There is no finished exit to withdraw.");
+      }
+      announce("Proving in this tab. This can take a few seconds; the secret never leaves the page.");
+      const onSent = (hash) => {
+        if (EXPLORER_URL) el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
+        el.receiptLink.textContent = short(hash, 12, 10);
+        el.receipt.hidden = false;
+        announce("Transaction sent. Waiting for one confirmation…");
+      };
+      const sent = action === "exit"
+        ? await sdk.exit({ identity: state.identity, from: state.account, artifacts: PROVER_ARTIFACTS, onSent })
+        : await sdk.withdraw({ identity: state.identity, recipient, from: state.account, artifacts: PROVER_ARTIFACTS, onSent });
+      const receipt = await sent.wait();
+      if (!receipt) announce("Still pending after three minutes. Follow the transaction link; do not send again blindly.");
+      else announce(action === "exit"
+        ? "Exit started. The bond unlocks after the unbonding period; withdraw it here to a fresh address."
+        : "Withdrawn. The bond went to the recipient address.", "good");
+    } catch (error) {
+      announce(error.shortMessage || error.message || `${action} failed.`, "bad");
     } finally {
       state.busy = false;
       update();
@@ -435,43 +437,25 @@ function mount() {
     update();
     try {
       await selectChain();
-      const [bond, active, existingLimit] = await Promise.all([
-        readContract("bondFor", [tier.limit]),
-        readContract("isActive", [memberLeaf(commitment, tier.limit)]),
-        readContract("limitOf", [memberLeaf(commitment, tier.limit)]),
-      ]);
-      if (bond !== tier.bondWei) {
-        throw new Error(`The contract's tier-${tier.limit} bond differs from the published ${formatEth(tier.bondWei)} ETH; refusing to send.`);
-      }
-      if (active) {
+      announce(`Confirm the exact ${formatEth(tier.bondWei)} ${CHAIN_NAME} ETH transaction in your wallet.`);
+      const sent = await staking().stake({
+        commitment,
+        limit: Number(tier.limit),
+        from: state.account,
+        onSent: (hash) => {
+          if (EXPLORER_URL) el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
+          el.receiptLink.textContent = short(hash, 12, 10);
+          el.receipt.hidden = false;
+          announce("Transaction sent. Waiting for one confirmation…");
+        },
+      });
+      if (sent.alreadyActive) {
         announce("This commitment is already active. Nothing was sent.", "good");
         return;
       }
-      if (existingLimit !== 0n) {
-        throw new Error("This commitment is exiting and cannot be registered again. Create a new identity instead.");
-      }
-      const data = REGISTER_INPUT === "identityCommitment"
-        ? iface.encodeFunctionData("registerIdentity", [commitment, tier.limit])
-        : iface.encodeFunctionData("register", [commitment, tier.limit]);
-      const transaction = { from: state.account, to: CONTRACT, value: hexQuantity(bond), data };
-      const balance = BigInt(await request("eth_getBalance", [state.account, "latest"]));
-      const gas = BigInt(await request("eth_estimateGas", [transaction]));
-      const gasPrice = BigInt(await request("eth_gasPrice"));
-      if (balance < bond + gas * gasPrice) {
-        throw new Error(`This wallet needs at least ${formatEth(bond)} ${CHAIN_NAME} ETH plus about ${formatEth(gas * gasPrice)} ETH gas.`);
-      }
-      await request("eth_call", [transaction, "latest"]);
-      announce(`Confirm the exact ${formatEth(bond)} ${CHAIN_NAME} ETH transaction in your wallet.`);
-      const hash = await request("eth_sendTransaction", [transaction]);
-      if (EXPLORER_URL) el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
-      el.receiptLink.textContent = short(hash, 12, 10);
-      el.receipt.hidden = false;
-      announce("Transaction sent. Waiting for one confirmation…");
-      const receipt = await waitForReceipt(hash);
+      const receipt = await sent.wait();
       if (!receipt) {
         announce("Still pending after three minutes. Use the transaction link to follow it; do not send again blindly.", "plain");
-      } else if (BigInt(receipt.status) !== 1n) {
-        throw new Error("The registration transaction reverted. No stake was admitted.");
       } else {
         announce("Stake confirmed. Hand the identity file to your agent while finality lands.", "good");
         watchFinality(receipt.blockNumber);
@@ -496,7 +480,7 @@ function mount() {
     update();
   });
   for (const input of el.sponsorTierInputs) input.addEventListener("change", update);
-  el.createButton.addEventListener("click", createIdentity);
+  el.createButton.addEventListener("click", onCreateIdentity);
   el.importButton.addEventListener("click", () => el.fileInput.click());
   el.fileInput.addEventListener("change", () => importIdentity(el.fileInput.files?.[0]));
   el.downloadButton.addEventListener("click", downloadIdentity);
@@ -504,6 +488,9 @@ function mount() {
   el.recoveryCheck.addEventListener("change", update);
   el.sponsorInput.addEventListener("input", update);
   el.statusButton?.addEventListener("click", checkStatus);
+  el.exitButton?.addEventListener("click", () => leave("exit"));
+  el.withdrawButton?.addEventListener("click", () => leave("withdraw"));
+  el.withdrawTo?.addEventListener("input", update);
   for (const button of el.connectButtons) button.addEventListener("click", connectWallet);
   for (const button of el.stakeButtons) button.addEventListener("click", stake);
   window.ethereum?.on?.("accountsChanged", (accounts) => {
