@@ -1095,14 +1095,6 @@ else
   rm -f "$FLEET_TALLY_ENV_FILE"
 fi
 
-# `enable --now` starts an inactive unit but deliberately does not reload an active one. Remember
-# the pre-run state so a live re-run applies new peer/token configuration (or stops a disabled
-# tally listener) without needlessly double-starting the gateway on its first install.
-if [ "$WITH_GATEWAY" = "1" ] && systemctl is-active --quiet shade-tree-gateway; then
-  GATEWAY_WAS_ACTIVE=1
-else
-  GATEWAY_WAS_ACTIVE=0
-fi
 UNITS=""
 log "journald caps + credentials"
 install -d -m 0755 /etc/systemd/journald.conf.d
@@ -1137,17 +1129,17 @@ fi
 chown -R "$RUN_USER":"$RUN_USER" "$SHADE_TREE_DIR/deploy-state"
 systemctl daemon-reload
 # shellcheck disable=SC2086
-if ! systemctl enable --now $UNITS >/dev/null 2>&1; then
-  systemctl restart $UNITS
-elif [ "$WITH_GATEWAY" = "1" ] && [ "$GATEWAY_WAS_ACTIVE" = "1" ]; then
-  systemctl restart shade-tree-gateway
-fi
+# enable --now does not restart a unit that is already running, so a re-run would keep the old
+# code and environment. Restart every unit this run rendered.
+systemctl enable $UNITS >/dev/null 2>&1 || true
+systemctl restart $UNITS
 
 if [ "$WITH_GATEWAY" = "1" ]; then
   log "gateway heartbeat -> bootnode ${BN_ONION}"
   render_heartbeat_unit /etc/systemd/system/shade-tree-heartbeat.service
   systemctl daemon-reload
-  systemctl enable --now shade-tree-heartbeat >/dev/null 2>&1 || systemctl restart shade-tree-heartbeat
+  systemctl enable shade-tree-heartbeat >/dev/null 2>&1 || true
+  systemctl restart shade-tree-heartbeat
 elif [ -f /etc/systemd/system/shade-tree-heartbeat.service ]; then
   systemctl disable --now shade-tree-heartbeat >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/shade-tree-heartbeat.service
