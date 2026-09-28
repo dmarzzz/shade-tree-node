@@ -59,3 +59,25 @@ the keys themselves.
 
 The operator EOA key (`SHADE_TREE_GW_OPERATOR_KEY` / `SHADE_TREE_REGISTER_KEY` / `SHADE_TREE_SLASH_KEY`) is **not**
 covered here — back it up with your normal wallet backups.
+
+## Operator wallet keys (not covered by `shade-tree backup`)
+
+`shade-tree backup` covers onion seeds, Tor keys and the directory signer. The Ethereum keys an
+operator holds are separate and must be backed up separately:
+
+| Key | Used for | Where the reference deployment keeps it |
+|---|---|---|
+| gateway operator | GatewayRegistry stake; signs node announces | SOPS-encrypted (age) in the operator's infrastructure repository; delivered to nodes as the systemd credential `SHADE_TREE_GW_OPERATOR_KEY` |
+| slasher | Gas for permissionless member slashes | Same, credential `SHADE_TREE_SLASH_KEY` |
+| registrar | Settles and inserts paid leaves (when paid admission is on) | Same, credential `SHADE_TREE_REGISTRAR_KEY` |
+| registry owner | GatewayRegistry `owner` (governed gateway slash) | Controller only; never on a host |
+
+Rules that follow from the 2026-09-28 rotation ([KEY-ROTATIONS.md](KEY-ROTATIONS.md)):
+
+- One key per role. A leaked slasher key must not also move the operator's stake.
+- Keep the age identity that decrypts the SOPS files offline or on one controller, and keep a
+  second encrypted copy of it off that machine. Losing it loses every key above.
+- Record every rotation in `docs/KEY-ROTATIONS.md` with addresses and transaction hashes.
+- To recover a lost node, restore its onion identity with `shade-tree restore`, re-run the
+  bootstrap with the same `SHADENET_NETWORK`, and place the credential files again. The operator
+  address, not the host, holds the stake.

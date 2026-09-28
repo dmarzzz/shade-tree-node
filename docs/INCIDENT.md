@@ -11,6 +11,35 @@ or add entries, including a malicious onion it controls. Onion/key binding preve
 an existing onion terminate at another key. Optional stake checks and onion-signed capabilities
 narrow the risk but do not remove signer trust. Keep that boundary in mind before escalating.
 
+## 0. On-call, contact and escalation
+
+**Who.** One maintainer operates the Sepolia research canopy on a best-effort basis; there is no
+24/7 rotation. Reports and alerts are acknowledged within 24 hours.
+
+**How problems reach the operator.**
+
+| Source | Path |
+|---|---|
+| Canopy monitor (orbital-one) | Prometheus scrapes the Elder, every node and heartbeat, and each host over forwarding-only SSH tunnels; Alertmanager sends every firing and resolved alert to the operator's Matrix room through Hermes (`[shadenet] FIRING <alert> (<host>)`). Rules: `monitoring/alerts.yml` plus host, probe and pin-drift rules in the operator's `shadenet_monitor` role |
+| Uptime probes | Hosted workflow (every 15 minutes) and the Lab runner (every 5 minutes); an Elder unreachable from the Lab for 15 minutes pages |
+| Security reports | GitHub private vulnerability reporting (SECURITY.md) |
+| Everyone else | GitHub issues |
+
+**Severity.**
+
+| Severity | Examples | Response |
+|---|---|---|
+| page | Elder down or unreachable, fleet under 2 nodes, host down, no fresh staked root, suspected key compromise | Start the matching playbook below the same day |
+| warn | RPC endpoint failing over, verify latency high, pin drift, probe stale, disk or memory pressure | Fix within a week |
+| security | A key or signer compromise, a proof or contract soundness issue | Contain first (playbooks 2, 3, 4), then disclose through a GitHub security advisory |
+
+**Communicating an outage.** Open a GitHub issue titled `incident: <what>` with the start time, the
+affected surface and the current state, and close it with a short cause and fix. The canopy page
+shows the probe history, so no separate status host is needed.
+
+**If the operator is unreachable.** The canopy is disposable Sepolia research infrastructure. Clients
+keep working from the last-known-good canopy until nodes age out; nothing holds real funds.
+
 ---
 
 ## 1. Bootnode down / unreachable
@@ -342,6 +371,8 @@ member's own rate accounting matches what the gateway enforces. Run the slasher 
 - **Automated bootnode failover** (#1): clients auto-degrade to the LKG cache and bootnodes can
   federate (T-FEAT-1), but a client pins one bootnode onion; re-pointing it to a healthy peer is
   manual.
+- **Chain / RPC outage** (#5): `SHADE_TREE_RPC_URL` takes up to five endpoints with failover (OPS-8);
+  a canopy with every endpoint down still refuses staked members after one root-freshness window.
 - **Cross-node replay suppression is opt-in** (#3, #7): per-gateway replay rejection is always on
   (T-FEAT-12); the cross-gateway tally (T-FEAT-20/20b) must be enabled with
   `SHADE_TREE_FLEET_TALLY_PEERS` plus `SHADE_TREE_FLEET_TALLY_TOKEN` and is fail-open by design.

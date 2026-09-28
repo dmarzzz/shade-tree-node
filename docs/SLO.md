@@ -14,6 +14,23 @@ for an availability SLO.** They are correctness properties, not availability dia
 hit a target is to weaken the gate, admit an unverified gateway, or narrow the anonymity set, you miss
 the target. See the closing section.
 
+## 0. What the research preview commits to (OPS-14)
+
+The ShadeNet research preview on Sepolia runs on a **best-effort** basis. The only published
+targets are these, measured over 30 days:
+
+| Target | Measured by |
+|---|---|
+| The Elder answers over Tor with a fresh, signer-verified canopy 95% of probe runs | The hosted uptime probe (dispatched every 15 minutes) and the Lab-runner probe (every 5 minutes); runs where the probe's own Tor failed are UNKNOWN and excluded |
+| At least 2 nodes are listed in the signed canopy 95% of probe runs | The same probes (`fleetSize`) |
+| A paging alert is acknowledged within 24 hours | The canopy monitor's Matrix alert log |
+
+Everything in sections 1 to 3 below is the longer-term model; its targets stay proposals until
+there is real member traffic to calibrate them. Contact and escalation are in
+[INCIDENT.md](INCIDENT.md#0-on-call-contact-and-escalation). The live surfaces are the canopy page
+(`/canopy`, built from the signed public snapshot) and the Data API head
+(`/api/v2/data/grove/sepolia/head`).
+
 ---
 
 ## 1. The SLIs that matter
