@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "network": "sepolia",
   "status": "live",
   "protocol": {
@@ -41,6 +41,20 @@
     "admission": "stake",
     "gatewayRegistry": "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868"
   },
+  "elders": [
+    {
+      "onion": "a4xt55gef66pifqebadjobjpy2drsoa63bdok4toisvenmyehslaz4id.onion",
+      "canopySigner": "e0ce2892955b506c63d746ff61e06c0fdf446536c2b7b3dc68a3ba214608ca8c",
+      "admission": "stake",
+      "gatewayRegistry": "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868"
+    },
+    {
+      "onion": "k54vz4zu7l76qcqjclbfsd276j7uvtggpoyfxelusmpof2qizngxgrid.onion",
+      "canopySigner": "3d5bfa23dbf75d78b0f8ce54320c5dd52dccc7d2dcdd61c6ed8ba6501e67faa1",
+      "admission": "stake",
+      "gatewayRegistry": "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868"
+    }
+  ],
   "admission": {
     "defaultPath": "staked",
     "paths": [
@@ -62,8 +76,14 @@
         "withdrawVerifier": "0x2a905423D252e39d73d37156C28503aD8650C952",
         "defaultLimit": 1,
         "tiers": [
-          { "limit": 1, "bondWei": "100000000000000000" },
-          { "limit": 8, "bondWei": "800000000000000000" }
+          {
+            "limit": 1,
+            "bondWei": "100000000000000000"
+          },
+          {
+            "limit": 8,
+            "bondWei": "800000000000000000"
+          }
         ],
         "unbondingSeconds": 86400,
         "minUnbondingSeconds": 3720

@@ -309,7 +309,7 @@ async function main() {
       const r = runInstall(work, { env: pinned({ SHADE_TREE_INSTALL_DIR: dest, SHADE_TREE_TARGET: target, SHADE_TREE_LIVE: "auto" }) });
       const installed = join(dest, `shade-tree${ext(target)}`);
       ok(r.status === 0 && existsSync(installed) && readFileSync(installed).equals(assets.get(assetName(target, true))), `default live ${target}: installs ${assetName(target, true)}${r.status === 0 ? "" : `\n${r.out}`}`);
-      ok(/enroll/.test(r.stdout) && /proxy/.test(r.stdout) && /automatic and safely coordinated/.test(r.stdout) && !/#75|npm CLI/.test(r.stdout), "  next steps use native enroll/proxy and current automatic slot coordination");
+      ok(/shadenet(?:\.exe)?' init/.test(r.stdout) && /stake to make/.test(r.stdout) && /docs\/AGENT\.md/.test(r.stdout) && !/#75|npm CLI|read -r SHADE_TREE_LIMIT/.test(r.stdout), "  next step is `shadenet init` and the agent guide, not the old invited flow");
       rmSync(work, { recursive: true, force: true });
     }
     {
@@ -581,7 +581,7 @@ async function main() {
     }
     {
       const r = spawnSync("sh", [SCRIPT, "-h"], { env: { PATH: process.env.PATH }, encoding: "utf8" });
-      ok(r.status === 0 && /SHADE_TREE_INSTALL_DIR/.test(r.stdout), "-h works with HOME unset");
+      ok(r.status === 0 && /SHADENET_INSTALL_DIR/.test(r.stdout), "-h works with HOME unset");
       const r2 = runInstall(fresh("nohome"), { env: pinned({ SHADE_TREE_TARGET: target }) });
       // runInstall always sets HOME; emulate an unset HOME by passing an empty one.
       const r3 = spawnSync("sh", [SCRIPT], { env: { PATH: process.env.PATH, HOME: "", SHADE_TREE_RELEASE_BASE: BASE, SHADE_TREE_VERSION: `v${VERSION}`, SHADE_TREE_TARGET: target }, encoding: "utf8" });
@@ -605,7 +605,48 @@ async function main() {
       const r = spawnSync("sh", [SCRIPT, "--live"], { env: { PATH: process.env.PATH, HOME: tmpdir() }, encoding: "utf8" });
       ok(failedCleanly(r) && /unknown argument/.test(r.stderr), "stray argument: refused with a pointer to the env knobs");
       const h = spawnSync("sh", [SCRIPT, "-h"], { env: { PATH: process.env.PATH, HOME: tmpdir() }, encoding: "utf8" });
-      ok(h.status === 0 && /SHADE_TREE_RELEASE_BASE/.test(h.stdout) && /SHADE_TREE_FORCE/.test(h.stdout), "-h lists every knob");
+      ok(h.status === 0 && /SHADENET_RELEASE_BASE/.test(h.stdout) && /SHADENET_FORCE/.test(h.stdout) && /SHADE_TREE_\*/.test(h.stdout), "-h lists every knob and says the old names still work");
+    }
+
+    // --- 6b. the ShadeNet rename --------------------------------------------------------------
+    console.log("\n-- shadenet names: assets, installed binaries, knobs");
+    {
+      // A release that publishes shadenet-* assets: they win over shade-tree-* ones.
+      const work = fresh("rename");
+      const target = "x86_64-unknown-linux-gnu";
+      const renamedRoot = join(work, "release");
+      const dir = join(renamedRoot, "download", `v${VERSION}`);
+      mkdirSync(dir, { recursive: true });
+      const newName = `shadenet-${VERSION}-${target}`;
+      const oldName = assetName(target);
+      const newBody = Buffer.from("#!/bin/sh\necho shadenet-asset\n");
+      const oldBody = Buffer.from("#!/bin/sh\necho shade-tree-asset\n");
+      writeFileSync(join(dir, newName), newBody);
+      writeFileSync(join(dir, `${newName}.sha256`), `${sha256(newBody)}  ${newName}\n`);
+      writeFileSync(join(dir, oldName), oldBody);
+      writeFileSync(join(dir, `${oldName}.sha256`), `${sha256(oldBody)}  ${oldName}\n`);
+      const dest = join(work, "bin");
+      const env = { SHADENET_RELEASE_BASE: pathToFileURL(renamedRoot).href, SHADENET_VERSION: `v${VERSION}`, SHADENET_LIVE: "0", SHADENET_INSTALL_DIR: dest, SHADENET_TARGET: target };
+      const r = runInstall(work, { env });
+      ok(r.status === 0 && readFileSync(join(dest, "shadenet")).equals(newBody), `a release with shadenet-* assets installs ${newName}${r.status === 0 ? "" : `\n${r.out}`}`);
+      ok(existsSync(join(dest, "shade-tree")) && readFileSync(join(dest, "shade-tree")).equals(newBody), "  the same program is also installed as shade-tree");
+      ok(!/pre-rename/.test(r.stdout) && noStage(dest) && tmpEmpty(r.tmp), "  no fallback note, nothing left behind");
+      // SHADENET_* and SHADE_TREE_* naming one knob differently is refused before any fetch.
+      const r2 = runInstall(work, { env: { ...env, SHADE_TREE_VERSION: "v9.9.9" } });
+      ok(failedCleanly(r2) && /SHADENET_VERSION and SHADE_TREE_VERSION/.test(r2.stderr), "  conflicting SHADENET_VERSION / SHADE_TREE_VERSION: refused");
+      // The same value under both names is fine.
+      const r3 = runInstall(work, { env: { ...env, SHADE_TREE_VERSION: `v${VERSION}` } });
+      ok(r3.status === 0, "  equal values under both names: accepted");
+      rmSync(work, { recursive: true, force: true });
+    }
+    {
+      // A pre-rename release (only shade-tree-* assets): falls back and says so; installs both names.
+      const work = fresh("prerename");
+      const dest = join(work, "bin");
+      const r = runInstall(work, { env: { SHADENET_RELEASE_BASE: BASE, SHADENET_VERSION: VERSION, SHADENET_LIVE: "0", SHADENET_INSTALL_DIR: dest, SHADENET_TARGET: target } });
+      ok(r.status === 0 && /pre-rename name/.test(r.stdout), "pre-rename release: falls back to shade-tree-* assets with a note");
+      ok(readFileSync(join(dest, "shadenet")).equals(assets.get(assetName(target))) && readFileSync(join(dest, "shade-tree")).equals(assets.get(assetName(target))), "  both names installed from the verified asset");
+      rmSync(work, { recursive: true, force: true });
     }
 
     // --- 7. hints --------------------------------------------------------------------------------
@@ -615,7 +656,7 @@ async function main() {
       const dest = join(work, "not-on-path");
       const r = runInstall(work, { env: pinned({ SHADE_TREE_INSTALL_DIR: dest, SHADE_TREE_TARGET: target }) });
       ok(r.status === 0 && /PATH/.test(r.stdout), "install dir not on PATH: PATH hint printed");
-      ok(/shade-tree' --help/.test(r.stdout), "  next command printed, path quoted ('...shade-tree' --help)");
+      ok(/shadenet' --help/.test(r.stdout), "  next command printed, path quoted ('...shadenet' --help)");
       ok(new RegExp(esc(dest)).test(r.stdout), "  installed path printed");
       rmSync(work, { recursive: true, force: true });
     }

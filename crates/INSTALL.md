@@ -1,5 +1,11 @@
 # Install the Rust client
 
+The binary is `shadenet`. Releases from the ShadeNet rename on publish it as
+`shadenet-<version>-<target>[-live]`; the installer also places the same program
+at `shade-tree` (its old name) for one minor release, and falls back to the
+`shade-tree-*` asset names on older releases. Every `SHADENET_*` installer
+variable below is also read under its old `SHADE_TREE_*` name.
+
 The checksummed `-live` binary is the agent distribution. It includes identity
 creation, the RLN prover, embedded Arti, the loopback HTTP CONNECT Proxy, and
 the process-scoped `run` wrapper. The agent machine needs neither Node.js nor a
@@ -36,19 +42,19 @@ curl -q -fsSL --proto '=https' --proto-redir '=https' \
 The default probes the selected release for its self-contained `-live` agent.
 Only a missing live checksum or binary triggers a clearly reported fallback to
 that same release's verifier-only binary; network, TLS, and integrity failures
-remain fail-closed. `SHADE_TREE_LIVE=1` disables fallback. On Apple Silicon the
+remain fail-closed. `SHADENET_LIVE=1` disables fallback. On Apple Silicon the
 installer detects an x86_64 shell running under Rosetta and selects the native
 arm64 live asset. Intel macOS (`x86_64-apple-darwin`) has no live asset.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SHADE_TREE_VERSION` | latest release | Pin a release, such as `v0.6.0` or `0.6.0` |
-| `SHADE_TREE_LIVE` | `auto` | `auto` probes live, falling back only when that release lacks it; `1` requires live; `0` installs verifier-only |
-| `SHADE_TREE_INSTALL_DIR` | `$HOME/.local/bin` | User-writable destination directory, created if missing |
-| `SHADE_TREE_FORCE` | `0` | `1` explicitly permits replacing a destination symlink to a file; directory links are always refused |
-| `SHADE_TREE_TARGET` | detected | Override with one of the exact published target triples above |
-| `SHADE_TREE_LIBC` | detected | Set `gnu` or `musl` only when Linux libc detection is unavailable |
-| `SHADE_TREE_RELEASE_BASE` | GitHub Releases | Alternate network bases must use HTTPS; local schemes exist only for the offline selftest |
+| `SHADENET_VERSION` | latest release | Pin a release, such as `v0.6.0` or `0.6.0` |
+| `SHADENET_LIVE` | `auto` | `auto` probes live, falling back only when that release lacks it; `1` requires live; `0` installs verifier-only |
+| `SHADENET_INSTALL_DIR` | `$HOME/.local/bin` | User-writable destination directory, created if missing |
+| `SHADENET_FORCE` | `0` | `1` explicitly permits replacing a destination symlink to a file; directory links are always refused |
+| `SHADENET_TARGET` | detected | Override with one of the exact published target triples above |
+| `SHADENET_LIBC` | detected | Set `gnu` or `musl` only when Linux libc detection is unavailable |
+| `SHADENET_RELEASE_BASE` | GitHub Releases | Alternate network bases must use HTTPS; local schemes exist only for the offline selftest |
 
 For example, pin the patched research preview while keeping automatic
 target selection:

@@ -10,5 +10,5 @@ export {
 export { createStaking, jsonRpcProvider, stakingInterface } from "./staking.mjs";
 export { exitContext, withdrawContext } from "./contexts.mjs";
 export { proveAction } from "./exit-proof.mjs";
-export { verifyCanopy } from "./canopy.mjs";
+export { verifyCanopy, mergeCanopies } from "./canopy.mjs";
 export { daemonStatus, normalizeStatus, DEFAULT_DAEMON, STATUS_PATH } from "./status.mjs";

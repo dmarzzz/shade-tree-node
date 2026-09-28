@@ -1,233 +1,196 @@
 # Agent guide
 
-Use the checksummed Rust `-live` binary when one local agent should use Shade
-Tree and the rest of the machine should not. Its Proxy listens on loopback,
-embeds Arti, and mints one RLN proof for every CONNECT tunnel. `shade-tree run`
-gives the Proxy settings to one child process. The agent path needs neither
-Node.js nor a system Tor daemon.
+ShadeNet gives an agent anonymous, unlinkable egress. A local proxy proves in
+zero knowledge that the agent's member has paid for access (an RLN membership
+proof) and a Shade Tree node, reached as a Tor onion service, opens the
+connection to the destination. The node never learns who is asking; the
+destination sees the node's IP, not yours.
+
+One binary, `shadenet`, does everything on the agent side. It embeds Tor, so you
+need neither Node.js nor a system Tor daemon. (`shade-tree` is the same binary
+under its old name, kept for one release.)
 
 > [!WARNING]
-> Research preview. The bundled public Sepolia profile uses untrusted testnet ZK
-> artifacts and links the staking wallet to the public member commitment. It is
-> not suitable for real funds or sensitive use. Retired pre-v4 records remain unusable.
+> Research preview on Sepolia. The ZK artifacts are from an untrusted testnet
+> setup and the staking wallet is linked to the public member leaf. Do not use
+> it for real funds or sensitive work.
 
-## 1. Install the live binary
-
-Download the `-live` binary and matching `.sha256` for your platform from the
-[latest release](https://github.com/dmarzzz/shade-tree-node/releases/latest).
-This example installs the v0.6.0 x86_64 GNU/Linux asset; change `TARGET` to the
-published target for your machine when needed:
+## Quickstart
 
 ```sh
-VERSION=0.6.0
-TARGET=x86_64-unknown-linux-gnu
-ASSET="shade-tree-$VERSION-$TARGET-live"
-curl -LO "https://github.com/dmarzzz/shade-tree-node/releases/download/v$VERSION/$ASSET"
-curl -LO "https://github.com/dmarzzz/shade-tree-node/releases/download/v$VERSION/$ASSET.sha256"
-sha256sum -c "$ASSET.sha256"
-chmod +x "$ASSET"
-mkdir -p "$HOME/.local/bin"
-install -m 0755 "$ASSET" "$HOME/.local/bin/shade-tree"
-shade-tree --version
+curl -fsSL --proto '=https' --proto-redir '=https' \
+  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | sh
+shadenet init
 ```
 
-Use `shasum -a 256 -c` on macOS. See the Rust
-[installation guide](../crates/INSTALL.md) for platform targets, Windows
-verification, source builds, attestations, and the current macOS notarization
-limitation.
-
-## 2. Create an identity and obtain admission
-
-For the bundled public Sepolia canopy, tier 1 costs exactly 0.1 Sepolia ETH and
-permits one CONNECT tunnel per fixed 60-second epoch, capped at 40 MiB combined
-payload. Create the identity locally and register its public leaf with a separately
-funded testnet wallet:
+`init` creates an owner-only identity, a proxy token and
+`~/.config/shadenet/config.toml`, then prints what is left: staking the leaf,
+waiting for finality, starting the proxy. With a funded Sepolia key:
 
 ```sh
-shade-tree enroll --out identity.json
 chmod 600 funded-sepolia.key
-shade-tree register-member --identity identity.json --key-file funded-sepolia.key
-shade-tree member-status --identity identity.json --json
+shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet status --wait        # returns once the registration is final (about 13 minutes)
+shadenet proxy                # leave running, or install it as a service (below)
+shadenet run --no-proxy api.openai.com -- your-agent
 ```
 
-The CLI reads the current contract, RPC, deployment block, tier, Elder, signer,
-and rate policy from its bundled deployment record. The wallet signs locally;
-the private key never goes to the RPC. The receipt confirms mining; wait for that
-block to reach Sepolia finality before starting the Proxy, because client and
-gateway membership snapshots both default to the finalized tree.
+That is the whole path. The rest of this page explains each step and the
+choices an agent developer has.
 
-The identity is also the recovery credential. To leave, run `shade-tree exit-member
---identity identity.json --key-file gas.key`, wait until `member-status` reports that
-the 24-hour deadline has passed, then run `shade-tree withdraw-member --identity
-identity.json --recipient 0xFRESH_ADDRESS --key-file gas.key`. Both proofs are generated
-locally; the gas wallet may be unrelated to the original funder or recipient.
+## 1. Install
 
-For an invited, paid, or alternate canopy, ask its operator for:
+The installer detects your platform, downloads the matching release asset and
+its checksum, verifies both the digest and the file name, and installs
+`shadenet` (and the `shade-tree` alias) into `~/.local/bin` without sudo.
+See the [installation guide](../crates/INSTALL.md) for targets, Windows,
+attestations and source builds.
 
-- the exact rate tier (`limit`) your new leaf should use;
-- an invited, staked, or paid admission process;
-- an alternate Elder trust pair or pinned node only when not using the bundled default;
-- the member-set input matching the root its nodes verify.
+## 2. Get admitted
 
-An overridden Elder onion and signer are one trust-pinned pair; get both from
-the same operator. Then create a new owner-only identity locally:
+A member is admitted by staking its public leaf. For the bundled public Sepolia
+canopy the current record admits tier 1 (one CONNECT tunnel per fixed 60-second
+epoch, 40 MiB per tunnel) for a 0.1 Sepolia ETH bond, and tier 8 for 0.8.
+`shadenet init` prints the values in force, read from the network record.
 
 ```sh
-read -r SHADE_TREE_LIMIT
-shade-tree enroll --limit "$SHADE_TREE_LIMIT" --out identity.json > public-leaf.txt
+shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
 ```
 
-`identity.json` contains the member secret. Do not send it anywhere. Submit only
-`public-leaf.txt` through the operator's admission process.
+The key signs locally and never reaches the RPC. The funding wallet can be any
+wallet: a person can **sponsor** an agent by staking the agent's leaf from their
+own wallet (`shadenet register-member <leaf> --key-file theirs.key`, or the
+"Get access" page). The identity file stays with the agent either way.
 
-Identity generation and admission are separate operations. `enroll` does not
-change a remote canopy or submit an on-chain transaction. Its optional
-`--members <file>` updates only an explicit local version-2 demo set. Wait for
-the operator to confirm that the public leaf is present in the exact root its
-nodes use. For invited access, save the corresponding operator-supplied
-`members.json` beside the identity.
+Nodes accept only finalized registrations. `shadenet status` distinguishes
+`not_admitted` from `not_finalized`; `shadenet status --wait` returns when the
+member is `ready`.
 
-If you are migrating an existing Shade Tree secret, derive its identity rather
-than generating a new one:
+To leave: `shadenet exit-member --identity … --key-file gas.key`, wait out the
+unbonding period shown by `shadenet member-status`, then
+`shadenet withdraw-member --identity … --recipient 0xFRESH --key-file gas.key`.
+Both proofs are built locally; the gas wallet can be unrelated to the funder.
+
+For an invited or custom canopy, ask its operator for the tier, the member set
+or contract, and (only if not bundled) the network record, then pass
+`--network path/to/deployment.json` or `--members members.json`.
+
+`identity.json` holds the member secret. It is never sent anywhere, it is the
+only way to exit and withdraw, and it is never accepted on a command line.
+
+## 3. Run the proxy
 
 ```sh
-read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
-shade-tree identity --limit "$SHADE_TREE_LIMIT" --out identity.json
-unset SHADE_TREE_SECRET
+shadenet proxy
 ```
 
-The tier must match admission. A different `limit` derives a different leaf and
-membership verification fails.
+The proxy listens on `127.0.0.1:8118` and requires the token `init` wrote, even
+on loopback: loopback is shared by every account on the host. It keeps the
+verified canopy fresh in the background, reuses the member set, and holds many
+tunnels at once; proving is bounded separately so long-lived tunnels never
+block new ones.
 
-## 3. Start the local Proxy
-
-For bundled public staked access through its Elder Tree:
+To keep it running:
 
 ```sh
-(umask 077; set -C; shade-tree proxy-token > proxy-token.txt)
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-shade-tree proxy --identity identity.json --listen 127.0.0.1:8118
+shadenet init --service systemd > ~/.config/systemd/user/shadenet-proxy.service
+systemctl --user daemon-reload && systemctl --user enable --now shadenet-proxy
+# macOS: shadenet init --service launchd > ~/Library/LaunchAgents/xyz.shadenet.proxy.plist
 ```
 
-For invited access, add the operator's member set:
+Ask it how things stand at any time:
 
 ```sh
-(umask 077; set -C; shade-tree proxy-token > proxy-token.txt)
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-shade-tree proxy \
-  --identity identity.json \
-  --members members.json \
-  --listen 127.0.0.1:8118
+shadenet status --json
+curl -s -H "Authorization: Bearer $(cat ~/.config/shadenet/proxy-token)" \
+  http://127.0.0.1:8118/_shadenet/status
 ```
 
-The Proxy requires an unpredictable URL-safe token of at least 32 characters,
-even on loopback: loopback is host-local, not user-local, and another OS account
-must not be able to spend this member's slots. It verifies the signed canopy directory and
-reuses one successfully bootstrapped base Arti client. Each logical CONNECT gets
-an isolated Arti view that is reused only for that tunnel's gateway failover, so
-separate tunnels do not share circuits. Successive tunnels rotate across healthy
-gateways with smooth weighted round-robin by default; `--no-rotation-spread`
-restores independent weighted-random first choices. Use
-`--directory directory.json --signer <hex>` for a static signed canopy directory, or
-`--bootnode-onion <elder.onion> --signer <hex>` to override the bundled Elder,
-or `--onion <node.onion>:80` for one pinned node. Alternate staked or paid profiles
-use the operator's `--contract` and `--rpc-url` values instead of `--members`.
+Both report `state`, `admitted`, `finalized`, `tier`, `slotsUsed`, `slotsLeft`,
+`epochResetsInSeconds`, canopy size and age, and the last error. The endpoint is
+specified in [`specs/local-api.openapi.yaml`](../specs/local-api.openapi.yaml).
 
-RLN slot allocation is default-on, durable, and atomic across Rust and
-JavaScript clients using the same public leaf. It stores no bearer secret and
-fails closed on corrupt, unavailable, or locked state. A crash or local proof
-failure burns the already-reserved slot, so restart is safe but may reach the
-epoch budget sooner. Do not delete or edit the state to reclaim capacity inside
-an epoch.
+## 4. Connect the agent
 
-## 4. Launch one agent through it
+Pick one of three ways.
 
-Open another terminal:
+**Scoped environment (any program).** `shadenet run` checks the proxy, then
+starts one command with `HTTPS_PROXY`, `HTTP_PROXY` and `WSS_PROXY` pointing at
+it. Only that child sees them; the token and every `SHADENET_*`/`SHADE_TREE_*`
+variable are removed from its environment.
 
 ```sh
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-shade-tree run -- your-agent
+shadenet run --no-proxy api.openai.com,api.anthropic.com -- your-agent
+shadenet run --no-proxy api.openai.com -- hermes
 ```
 
-The default Proxy URL is `http://127.0.0.1:8118`. An explicit equivalent is:
+**Keep the model API off ShadeNet.** Every connection a routed agent opens
+spends a tunnel, including calls to its own model. List the model host in
+`--no-proxy` (loopback hosts such as a local Ollama bypass automatically).
+
+**MCP tools (the agent chooses per request).** `shadenet mcp` serves
+`shadenet_fetch`, `shadenet_status` and, with `--searxng-url`,
+`shadenet_search`. The agent keeps its normal network and uses ShadeNet only for
+the fetches that need it.
 
 ```sh
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-shade-tree run --proxy http://127.0.0.1:8118 -- your-agent
+hermes mcp add shadenet --command shadenet --args mcp
+claude mcp add shadenet -- shadenet mcp
 ```
 
-For Hermes:
+**Explicit proxy URL (programs that ignore proxy variables).** Point them at
+`http://shadenet:<token>@127.0.0.1:8118`. The proxy speaks HTTP CONNECT only and
+nodes serve port 443; TLS runs end to end to the destination.
 
-```sh
-shade-tree run -- hermes
+[Adapters](ADAPTERS.md) has recipes for SearXNG, Hermes, Claude Code, Codex,
+curl, Python and Rust.
+
+## 5. When a request fails
+
+A refused CONNECT answers with a status, an `X-ShadeNet-Error` code, a JSON body
+and, when waiting helps, `Retry-After`:
+
+| Status | Code | Meaning |
+|---|---|---|
+| 403 | `not_admitted`, `not_finalized` | Register, or wait for finality |
+| 403 | `port_not_allowed` | Nodes serve HTTPS on 443 only |
+| 429 | `budget_exhausted` | This epoch's tunnels are spent; `Retry-After` is the reset |
+| 502 | `node_refused` | A node refused; the body has its reason |
+| 503 | `no_eligible_node`, `canopy`, `rpc`, `transport`, `busy` | Temporary; retry after `Retry-After` |
+
+The full table, exit codes and budget arithmetic are in
+[ERRORS.md](ERRORS.md). `shadenet doctor` checks the whole local setup at once.
+
+## Rust applications
+
+Rust programs can use the SDK the CLI is built on:
+
+```rust
+let client = shadenet::Client::new(
+    shadenet::Config::builder().identity_file("identity.json").build()?,
+)?;
+let page = client.fetch(shadenet::FetchRequest::get("https://example.com/")).await?;
 ```
 
-`run` authenticates its Proxy preflight before spawning the agent and fails
-closed if the Proxy is unavailable or rejects the token. It gives uppercase and
-lowercase HTTP, HTTPS, and WSS URLs containing `shade-tree:<token>` only to the
-child, removes inherited `ALL_PROXY`, the raw token, and other `SHADE_TREE_*`
-secrets/operator settings, and leaves the parent shell unchanged. Use
-`--no-proxy <hosts>` to add child-only bypasses or
-`--check-timeout-ms <milliseconds>` to change the 2000 ms preflight timeout.
+See [`crates/README.md`](../crates/README.md) and
+[`crates/shadenet/examples`](../crates/shadenet/examples). JavaScript
+applications use the JavaScript SDK ([SDK.md](SDK.md)).
 
-If an agent ignores standard proxy variables, point its HTTP proxy setting at
-`http://shade-tree:$SHADE_TREE_PROXY_TOKEN@127.0.0.1:8118`. The Proxy accepts
-HTTP CONNECT only, and nodes permit target port 443. TLS continues to the
-destination.
+## What the node sees
 
-Token-file creation refuses to overwrite an existing path. Reuse that file only
-for the same running Proxy, and remove it after the Proxy stops before generating
-a replacement.
+- The target host, port, timing, duration and traffic volume of each tunnel.
+- Not the request path or body (TLS runs to the destination), and not who you
+  are: the proof shows only that some admitted member is asking, within budget.
+- One proof admits one CONNECT tunnel, not every request inside it.
+- Tor does not stop an observer who watches both ends from correlating timing.
+- A SearXNG query that fans out to several routed engines creates several
+  tunnels close together in time; nodes may link them to one another, though
+  not to you.
 
-## Library integration
-
-Rust applications that own their networking can use the `shadenet` SDK crate
-directly through a Git or path dependency; it is not currently published on
-crates.io. Its long-lived `Client` is the same code the CLI proxy runs: the same
-proving, failover, transport, caching, and slot-state paths, with typed errors.
-See [`crates/README.md`](../crates/README.md). Generic
-applications should prefer the loopback Proxy unless they need an in-process
-Rust stream API.
-
-JavaScript applications can still install the Git dependency and import
-`ShadeTreeClient` from `shade-tree-node/client`:
-
-```sh
-npm install git+https://github.com/dmarzzz/shade-tree-node.git
-```
-
-Read the [SDK reference](SDK.md) and the tested
-[`examples/agent-egress.mjs`](../examples/agent-egress.mjs) example. This npm
-path is for JavaScript SDK users and repository contributors; it is not part of
-the binary agent quickstart.
+Read the [threat model](THREAT-MODEL.md) for the exact guarantees.
 
 ## Contributor integration test
 
-Repository contributors can exercise a disposable local canopy, the
-embedded-Arti Rust Proxy, and a real Hermes one-shot. This gated live test needs
-a configured model, server-side Tor for the temporary onion, Rust, Node.js for
-the operator/test harness, and one public HTTPS request:
-
-```sh
-npm run test:hermes
-```
-
-The test requires both the agent's success marker and an accepted-tunnel metric
-from the ephemeral node. It can also keep the canopy local while running an
-existing Hermes installation over a loopback-only SSH reverse tunnel; see
+Repository contributors can run a disposable local canopy, the embedded-Arti
+proxy and a real Hermes one-shot with `npm run test:hermes`; see
 [`test/HERMES-E2E.md`](../test/HERMES-E2E.md).
-
-## Current boundary
-
-- The node sees the target hostname, port, timing, lifetime, and traffic volume.
-- TLS hides the application path and body from the node when the agent uses HTTPS.
-- Tor does not prevent timing correlation by an observer who can watch both ends.
-- One proof admits one CONNECT tunnel, not every HTTP request inside it.
-- RLN slot state is local and fail-closed; back it up only as opaque state and never rewind it inside an epoch.
-
-Read [Adapters](ADAPTERS.md) for proxy-aware tools and the
-[threat model](THREAT-MODEL.md) for the exact guarantees.

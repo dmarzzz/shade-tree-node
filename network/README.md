@@ -14,6 +14,25 @@ network/
     README.md                human-readable deployment record
 ```
 
+### Several Elder Trees (`deployment.json` schemaVersion 2)
+
+A network can run several Elder Trees, each with its own canopy signer. Version 2 lists them all
+in `elders[]` and keeps `elder` equal to `elders[0]`, so a reader that knows one Elder still
+works:
+
+```json
+"schemaVersion": 2,
+"elder":  { "onion": "a4xt…onion", "canopySigner": "e0ce…", "admission": "stake", "gatewayRegistry": "0x94EC…" },
+"elders": [ { "onion": "a4xt…onion", "canopySigner": "e0ce…", … },
+            { "onion": "k54v…onion", "canopySigner": "3d5b…", … } ]
+```
+
+Clients fetch every Elder's canopy directory, verify each against that Elder's own signer, and
+use the union of the verified node lists; an unreachable Elder only removes its own directory
+(its last-known-good copy is still used). The Rust SDK does this in `shadenet::Client`; the
+JavaScript SDK exposes `network.elders`, `verifyCanopy` (tries each Elder's signer, or pin one with
+`{ elder }`) and `mergeCanopies`. Version 1 records (one `elder`) remain valid.
+
 Local anvil deploys write `contracts/deployed.local.json` (gitignored) instead — only
 real networks get a committed `network/<name>/` record.
 
