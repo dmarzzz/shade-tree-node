@@ -1,0 +1,12 @@
+{
+  "name": "shade-tree-ceremony-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local community Groth16 ceremony preparation; research preview only",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "snarkjs": "0.7.5",
+    "drand-client": "1.4.2"
+  }
+}
