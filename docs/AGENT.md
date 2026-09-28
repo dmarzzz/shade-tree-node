@@ -32,7 +32,7 @@ shade-tree --version
 ```
 
 Use `shasum -a 256 -c` on macOS. See the Rust
-[installation guide](../rust/INSTALL.md) for platform targets, Windows
+[installation guide](../crates/INSTALL.md) for platform targets, Windows
 verification, source builds, attestations, and the current macOS notarization
 limitation.
 
@@ -185,7 +185,7 @@ a replacement.
 
 ## Library integration
 
-Rust applications that own their networking can use the `shade-tree-egress`
+Rust applications that own their networking can use the `shadenet-egress`
 workspace crate directly through a Git or path dependency; it is not currently
 published on crates.io. Its long-lived async client shares the same proving,
 failover, transport, and slot-state paths as the CLI Proxy. Generic

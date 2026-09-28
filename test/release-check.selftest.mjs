@@ -40,9 +40,9 @@ function run(...args) {
 }
 
 write("package.json", '{"name":"fixture","version":"1.2.3"}\n');
-write("rust/Cargo.toml", '[workspace]\nmembers = ["one", "nested/two"]\n');
-write("rust/one/Cargo.toml", '[package]\nname = "one"\nversion = "1.2.3"\n');
-write("rust/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n');
+write("Cargo.toml", '[workspace]\nmembers = ["one", "nested/two"]\n');
+write("crates/one/Cargo.toml", '[package]\nname = "one"\nversion = "1.2.3"\n');
+write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n');
 write(
   "CHANGELOG.md",
   "# Changelog\n\n## 1.2.3 — Fixture\n\nResearch preview.\n\n### Added\n\n- A release gate.\n\n## 1.2.2\n\n- Earlier.\n",
@@ -81,11 +81,11 @@ const wrongTag = run("--tag", "v1.2.4", "--main-ref", "main");
 assert.notEqual(wrongTag.status, 0);
 assert.match(wrongTag.stderr, /does not match package\.json version/);
 
-write("rust/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.2"\n');
+write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.2"\n');
 const wrongCrate = run("--tag", "v1.2.3", "--main-ref", "main");
 assert.notEqual(wrongCrate.status, 0);
-assert.match(wrongCrate.stderr, /rust\/nested\/two\/Cargo\.toml: 1\.2\.2/);
-write("rust/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n');
+assert.match(wrongCrate.stderr, /crates\/nested\/two\/Cargo\.toml: 1\.2\.2/);
+write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n');
 
 git("switch", "--detach");
 write("off-main.txt", "not releasable\n");

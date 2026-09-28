@@ -598,7 +598,7 @@ async function main() {
       const dest = join(work, "bin");
       const r = runInstall(work, { pathPrefix: bin, env: pinned({ SHADE_TREE_INSTALL_DIR: dest }) });
       ok(failedCleanly(r) && !existsSync(join(dest, "shade-tree")), `${host.label}: refused, nothing installed`);
-      ok(host.re.test(r.stderr) && /INSTALL\.md/.test(r.stderr), `  error explains (${host.re}) and points at rust/INSTALL.md`);
+      ok(host.re.test(r.stderr) && /INSTALL\.md/.test(r.stderr), `  error explains (${host.re}) and points at crates/INSTALL.md`);
       rmSync(work, { recursive: true, force: true });
     }
     {

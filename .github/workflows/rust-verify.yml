@@ -41,7 +41,7 @@ jobs:
                       "cargo",
                       "metadata",
                       "--manifest-path",
-                      "rust/Cargo.toml",
+                      "Cargo.toml",
                       "--no-deps",
                       "--format-version",
                       "1",
@@ -73,11 +73,9 @@ jobs:
           PY
 
       - name: Check workspace (all targets and features)
-        working-directory: rust
         run: cargo check --workspace --all-targets --all-features --locked
 
       - name: Test workspace (all features)
-        working-directory: rust
         run: cargo test --workspace --all-features --locked
 
       - name: Set up Node for cross-implementation verification
@@ -90,10 +88,10 @@ jobs:
         run: npm ci
 
       - name: Rust proof -> JavaScript verifier interop (blocking)
-        run: bash rust/shade-tree-rln/interop/run.sh
+        run: bash crates/shadenet-rln/interop/run.sh
 
       - name: Rust client -> JavaScript gateway + payload relay (blocking)
-        run: bash rust/shade-tree-rln/interop/egress-run.sh
+        run: bash crates/shadenet-rln/interop/egress-run.sh
 
       - name: Rust CONNECT Proxy -> JavaScript gateway + early payload (blocking)
-        run: bash rust/shade-tree-rln/interop/proxy-run.sh
+        run: bash crates/shadenet-rln/interop/proxy-run.sh

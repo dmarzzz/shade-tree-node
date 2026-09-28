@@ -40,7 +40,7 @@ Both implementations are research previews under the warning above.
 | **Node.js / JavaScript** | Full-stack reference preview | Proxy and SDK, Shade Tree node, Elder Tree, membership/operator tools, and contributor harnesses. This remains the operator and in-process JavaScript path. | Full suite on Node.js 20, 22, and 24; bootstrap E2E; best-effort real-Tor E2E. |
 | **Rust** | Primary agent distribution preview | The checksummed `-live` binary creates identities, runs the embedded-Arti CONNECT Proxy, launches one proxy-scoped agent, and exposes the reusable Rust egress client. It does not provide a Shade Tree node or Elder Tree. | All-target, all-feature Cargo CI; shared v4 conformance vectors; Rust-to-JavaScript proof and Proxy interop; scheduled real-Hermes/Arti E2E gate. |
 
-Use the checksummed Rust [`-live` release](rust/INSTALL.md) for agents. It needs
+Use the checksummed Rust [`-live` release](crates/INSTALL.md) for agents. It needs
 neither Node.js nor a client-side Tor daemon. Use the Node.js implementation for
 Grove operation, the JavaScript SDK, and repository development.
 
@@ -61,7 +61,7 @@ and falls back to its verifier-only binary only when that live asset is absent.
 On Apple Silicon it detects Rosetta shells and still selects the native arm64
 live build. Intel macOS has only the verifier binary. Pin v0.6.0 with
 `... | SHADE_TREE_VERSION=v0.6.0 sh`, or read the
-[installer options and manual verification steps](rust/INSTALL.md). Checksums
+[installer options and manual verification steps](crates/INSTALL.md). Checksums
 provide transfer integrity; GitHub attestations provide the stronger build
 provenance check.
 
@@ -105,7 +105,7 @@ child's proxy URLs; the raw `SHADE_TREE_PROXY_TOKEN` and other operator settings
 are removed from the child environment. Software that ignores proxy variables
 must be configured with the authenticated URL
 `http://shade-tree:$SHADE_TREE_PROXY_TOKEN@127.0.0.1:8118`. Rust applications
-can use the `shade-tree-egress` crate; JavaScript applications can import
+can use the `shadenet-egress` crate; JavaScript applications can import
 [`ShadeTreeClient`](docs/SDK.md). The exact public semantics and their non-atomic
 cross-gateway caveat are recorded in
 [`docs/PUBLIC-STAKING.md`](docs/PUBLIC-STAKING.md).
@@ -211,7 +211,7 @@ allowance per RLN epoch slot on each node; reaching it closes the tunnel. Read t
 | [`client/`](client/) | Local proxy, discovery, and node rotation |
 | [`gateway/`](gateway/) | Proof gate and destination tunnel |
 | [`bootnode/`](bootnode/) | Elder Tree discovery service and operator tools |
-| [`rust/`](rust/) | Rust binary, reusable egress/protocol crates, and RLN prover |
+| [`crates/`](crates/) | Rust binary, reusable egress/protocol crates, and RLN prover |
 | [`contracts/`](contracts/) | Optional Sepolia membership and operator sets |
 | [`network/`](network/) | Signed test-network records |
 | [`specs/`](specs/) | Canonical protocol and public Data API contracts |
@@ -220,7 +220,7 @@ allowance per RLN epoch slot on each node; reaching it closes the tunnel. Read t
 npm ci
 npm run test:fast       # quick first check; skips slow proof/onchain suites and Foundry
 npm test                # full pre-PR check
-(cd rust && cargo test --workspace)
+cargo test --workspace
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the test layout. Report security

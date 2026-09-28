@@ -34,7 +34,7 @@ fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
-INTEROP="$REPO/rust/shade-tree-rln/interop"     # reuse egress-derive.mjs + wait-log.mjs
+INTEROP="$REPO/crates/shadenet-rln/interop"     # reuse egress-derive.mjs + wait-log.mjs
 WORK="$(mktemp -d)"
 TORBIN="${SHADE_TREE_TOR_BIN:-tor}"
 

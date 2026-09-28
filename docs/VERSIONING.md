@@ -84,5 +84,5 @@ Golden values live in [`../testdata/vectors.json`](../testdata/vectors.json). Ru
 ```bash
 node gateway/version-negotiation.selftest.mjs
 node lib/zk-artifacts.selftest.mjs
-(cd rust && cargo test --workspace --all-features)
+cargo test --workspace --all-features
 ```

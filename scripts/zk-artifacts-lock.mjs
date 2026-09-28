@@ -2,7 +2,7 @@
 //
 // (Re)generates testdata/zk-artifacts.lock.json: sha256 + byte size + role + provenance for
 // every ZK artifact the code loads (gateway/client via lib/rln.mjs, the Rust `live` binary via
-// include_bytes! in rust/shade-tree-rln/src/prover.rs, the Solidity verifiers, and the exit-auth
+// include_bytes! in crates/shadenet-rln/src/prover.rs, the Solidity verifiers, and the exit-auth
 // proof fixture bound to the withdraw VK). test/zk-artifacts.selftest.mjs recomputes every hash
 // against this file, so `npm test` (ci.yml) fails on any silent artifact swap.
 //
@@ -36,21 +36,21 @@ export const PROVENANCES = new Set([PROVENANCE_DEV, PROVENANCE_CEREMONY]);
 // for the reader (which code path reads the bytes) — not used for verification.
 export const ARTIFACTS = [
   { path: "circuits/rln/rln.wasm", circuit: "rln", role: "witness-calculator (circom wasm, RLN(20,16))",
-    loadedBy: ["lib/rln.mjs proveForSlot (client)", "rust/shade-tree-rln/src/prover.rs (embedded, live binary)", "rust/shade-tree-rln/src/main.rs (probe)"] },
+    loadedBy: ["lib/rln.mjs proveForSlot (client)", "crates/shadenet-rln/src/prover.rs (embedded, live binary)", "crates/shadenet-rln/src/main.rs (probe)"] },
   { path: "circuits/rln/rln_final.zkey", circuit: "rln", role: "groth16 proving key (phase-2 output)",
-    loadedBy: ["lib/rln.mjs proveForSlot (client)", "rust/shade-tree-rln/src/prover.rs (embedded, live binary)"] },
+    loadedBy: ["lib/rln.mjs proveForSlot (client)", "crates/shadenet-rln/src/prover.rs (embedded, live binary)"] },
   { path: "circuits/rln/verification_key.json", circuit: "rln", role: "groth16 verification key (exported from rln_final.zkey)",
-    loadedBy: ["lib/rln.mjs verifyEnvelope (gateway)", "rust/shade-tree-rln/src/prover.rs (embedded self-check)", "rust/shade-tree-rln/interop/verify-envelope.mjs"] },
+    loadedBy: ["lib/rln.mjs verifyEnvelope (gateway)", "crates/shadenet-rln/src/prover.rs (embedded self-check)", "crates/shadenet-rln/interop/verify-envelope.mjs"] },
   { path: "circuits/rln/Verifier.sol", circuit: "rln", role: "solidity groth16 verifier (snarkjs export of rln_final.zkey; provenance copy, not deployed)",
     loadedBy: ["contracts/RlnGroth16Verifier.sol is this file + a header comment"] },
   { path: "contracts/RlnGroth16Verifier.sol", circuit: "rln", role: "solidity groth16 verifier for the RLN membership circuit (VK == verification_key.json); NOT wired on-chain yet",
     loadedBy: ["forge build (compiles); no contract references it"] },
   { path: "circuits/rln/withdraw.wasm", circuit: "withdraw", role: "witness-calculator (circom wasm, withdraw / exit-auth)",
-    loadedBy: ["testdata/gen-withdraw-proof.mjs", "rust/shade-tree-rln/src/withdraw.rs (exit-member / withdraw-member)"] },
+    loadedBy: ["testdata/gen-withdraw-proof.mjs", "crates/shadenet-rln/src/withdraw.rs (exit-member / withdraw-member)"] },
   { path: "circuits/rln/withdraw_final.zkey", circuit: "withdraw", role: "groth16 proving key (phase-2 output)",
-    loadedBy: ["testdata/gen-withdraw-proof.mjs", "rust/shade-tree-rln/src/withdraw.rs"] },
+    loadedBy: ["testdata/gen-withdraw-proof.mjs", "crates/shadenet-rln/src/withdraw.rs"] },
   { path: "circuits/rln/withdraw_verification_key.json", circuit: "withdraw", role: "groth16 verification key (exported from withdraw_final.zkey)",
-    loadedBy: ["testdata/gen-withdraw-proof.mjs (local verify)", "rust/shade-tree-rln/src/withdraw.rs (self-verify)"] },
+    loadedBy: ["testdata/gen-withdraw-proof.mjs (local verify)", "crates/shadenet-rln/src/withdraw.rs (self-verify)"] },
   { path: "contracts/WithdrawGroth16Verifier.sol", circuit: "withdraw", role: "solidity groth16 verifier for the withdraw circuit (VK == withdraw_verification_key.json); wrapped by contracts/WithdrawVerifier.sol, DEPLOYED (network/sepolia/contracts.json)",
     loadedBy: ["contracts/WithdrawVerifier.sol", "contracts/script/DeployRegistry.s.sol", "test/WithdrawVerifier.t.sol"] },
   { path: "testdata/withdraw-proof.json", circuit: "withdraw", role: "exit-auth proof fixture bound to withdraw_verification_key.json (regenerate: node testdata/gen-withdraw-proof.mjs)",

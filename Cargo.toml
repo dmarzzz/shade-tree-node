@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/shadenet-proto",
+    "crates/shadenet-cli",
+    "crates/shadenet-egress",
+    "crates/shadenet-rln",
+]
+# shadenet-rln (T-RUST-2b RLN-INTEROP) has a heavy dep tree (ark-circom -> wasmer). Keep
+# it OUT of default-members so the everyday `cargo build` / `cargo test` only touch
+# the fast shadenet-proto + shadenet-cli crates; build the RLN probe with `-p shadenet-rln`.
+default-members = [
+    "crates/shadenet-proto",
+    "crates/shadenet-cli",
+]
+
+# Shared release profile for the distributable binary (T-RUST-4).
+# A single static binary is the whole point of the Rust client (see
+# docs/adr/0001-client-language.md), so optimize for size + strip by default.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

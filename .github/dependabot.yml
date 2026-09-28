@@ -1,5 +1,5 @@
 # Dependabot: weekly dependency + toolchain update PRs (T-HARD-2 supply chain).
-# Covers the three ecosystems this repo ships: npm (root), cargo (rust/), and
+# Covers the three ecosystems this repo ships: npm (root), cargo (repo root, crates/), and
 # the GitHub Actions pinned in the workflows themselves.
 version: 2
 updates:
@@ -13,7 +13,7 @@ updates:
       - "javascript"
 
   - package-ecosystem: "cargo"
-    directory: "/rust"
+    directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10

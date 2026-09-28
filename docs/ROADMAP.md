@@ -299,7 +299,7 @@ be an optional stronger deployment mode, not a prerequisite for the base network
 ### 2.6 Reusable in-process Rust client — P2
 
 **Implementation status (v0.4.0).** The reusable core now lives in the
-non-crates.io `shade-tree-egress` workspace crate. Its async public surface is
+non-crates.io `shadenet-egress` workspace crate. Its async public surface is
 `Client`, `ConnectRequest`, `ProofRequest`, `SlotPolicy`, `Connected`, and
 `Gateway`. The CLI remains the policy/configuration shell: it verifies signed
 directories, applies capability/admission filters, negotiates artifacts, and
