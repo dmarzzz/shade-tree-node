@@ -29,6 +29,12 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | [`SDK.md`](SDK.md) | The older in-repo `ShadeTreeClient` surface |
 | [`../crates/INSTALL.md`](../crates/INSTALL.md) | Rust binaries, checksums, attestations, source builds |
 
+## Launch
+
+| Doc | What it is |
+|-----|------------|
+| [`LAUNCH-RUNBOOK.md`](LAUNCH-RUNBOOK.md) | The owner's gates in order: set the economics (H2), adopt the trusted setup (H3), deploy and launch (M8), each rehearsable on staging |
+
 ## Run
 
 | Doc | What it is |
