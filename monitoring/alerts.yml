@@ -155,7 +155,7 @@ groups:
         annotations:
           summary: "Elevated slash rate on {{ $labels.instance }}"
           description: >-
-            rate(shade_tree_gateway_slashes_total[15m]) = {{ printf \"%.3f\" $value }}/s on
+            rate(shade_tree_gateway_slashes_total[15m]) = {{ printf "%.3f" $value }}/s on
             {{ $labels.instance }} for >10m. A slash is the rate limit working (an RLN over-spend
             caught), not a failure, so this never spends error budget. Investigate the cause: a
             misbehaving client re-using a nullifier, or an attacker probing. Do NOT treat as an
@@ -206,7 +206,7 @@ groups:
         annotations:
           summary: "verifyEnvelope p95 > 50ms on {{ $labels.instance }}"
           description: >-
-            p95 of shade_tree_gateway_verify_seconds = {{ printf \"%.3f\" $value }}s on
+            p95 of shade_tree_gateway_verify_seconds = {{ printf "%.3f" $value }}s on
             {{ $labels.instance }} for >15m, over the SLO 2.4 target of 50ms. This is server-side
             proof-verify CPU only. Approaching the ~30 verifies/sec/core ceiling: add cores or
             gateways before backpressure turns into failed tunnels. Never buy latency by skipping
@@ -225,7 +225,7 @@ groups:
         annotations:
           summary: "verifyEnvelope p99 > 100ms on {{ $labels.instance }}"
           description: >-
-            p99 of shade_tree_gateway_verify_seconds = {{ printf \"%.3f\" $value }}s on
+            p99 of shade_tree_gateway_verify_seconds = {{ printf "%.3f" $value }}s on
             {{ $labels.instance }} for >15m, over the SLO 2.4 target of 100ms. Tail verify latency
             is climbing; check for GC/scheduling jitter or verify-throughput saturation, and add
             capacity. Runbook: docs/SLO.md 2.4, error-budget section 3.
