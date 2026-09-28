@@ -245,6 +245,19 @@ async function main() {
     ok(mismatch.status === 402, "body.limit != the tier paid for -> 402");
     const already = await x402Post(BUYER_A, COMMIT_A, 8);
     ok(already.status === 409 && already.json.err === "already-member" && !(await token.authorizationState(BUYER_A.address, already.auth.nonce)), "commitment already active -> 409 BEFORE any settlement (nonce still unused)");
+    // Audit 2.3.3 / #113 regression: a slash burns the identity's leaves (every tier); a repeat
+    // purchase of a burned leaf is refused BEFORE settlement, so the buyer is never charged for a
+    // leaf PaidAccessSet.insert would reject.
+    const slashable = new ethers.Contract(setAddr, ["function slash(uint256,uint256,uint256,address)", "function burned(uint256) view returns (bool)"], operator);
+    await (await slashable.slash(COMMIT_A, 111, 8, OPERATOR)).wait();
+    ok(await slashable.burned(COMMIT_A) && await slashable.burned(COMMIT_C), "slashing (111, 8) burns that identity's leaf at tier 8 AND tier 32");
+    const balBeforeBurned = await token.balanceOf(BUYER_A.address);
+    const burnedBuy = await x402Post(BUYER_A, COMMIT_A, 8);
+    ok(burnedBuy.status === 409 && burnedBuy.json.err === "burned-commitment", "repeat purchase of a burned leaf -> 409 burned-commitment");
+    ok((await token.balanceOf(BUYER_A.address)) === balBeforeBurned && !(await token.authorizationState(BUYER_A.address, burnedBuy.auth.nonce)), "the buyer is not charged and the authorization nonce stays unused");
+    ok((await set.limitOf(COMMIT_A)) === 0n, "no membership was created for the burned leaf");
+    const zeroLeaf = await x402Post(BUYER_A, "0", 8);
+    ok(zeroLeaf.status === 400 && !(await token.authorizationState(BUYER_A.address, zeroLeaf.auth.nonce)), "commitment 0 (the tree's empty-slot sentinel) -> 400 before any settlement");
     const poor = ethers.Wallet.createRandom();
     const broke = await x402Post(poor, "1010", 8);
     ok(broke.status === 402 && decodeX402Header(broke.headers["payment-response"]).errorReason === "insufficient_funds", "unfunded payer -> 402 insufficient_funds");
