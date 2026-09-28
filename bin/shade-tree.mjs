@@ -82,21 +82,21 @@ const FLAG_ENV = {
 // command -> { script, help }. `long` marks a durable service (just for the help hint).
 const COMMANDS = {
   run:               { help: "run an agent with process-scoped Shade Tree routing: shade-tree run [--proxy http://127.0.0.1:8888] -- <command> [args]" },
-  keygen:            { script: "bootnode/keygen.mjs",       help: "mint an onion identity (refuses overwrite): shade-tree keygen <hsDir> [--label name] [--force]" },
+  keygen:            { script: "bootnode/keygen.mjs",       help: "mint an onion identity (refuses overwrite): shade-tree-node keygen <hsDir> [--label name] [--force]" },
   elder:             { script: "bootnode/server.mjs",       help: "run the Elder Tree, which signs the canopy directory", long: true },
   bootnode:          { script: "bootnode/server.mjs",       help: "legacy alias for `elder`", long: true },
   heartbeat:         { script: "bootnode/heartbeat.mjs",    help: "keep this node announced to the Elder Tree", long: true },
-  join:              { script: "group/join.mjs",            help: "guided front door: `shade-tree join [member]` or `shade-tree join node`; make an identity + print the next commands (`gateway` remains an alias)" },
+  join:              { script: "group/join.mjs",            help: "guided front door: `shade-tree-node join [member]` or `shade-tree-node join node`; make an identity + print the next commands (`gateway` remains an alias)" },
   enroll:            { script: "group/enroll.mjs",          help: "generate a member identity + print its secret/commitment" },
   identity:          { script: "group/identity.mjs",         help: "export the Rust client's --identity file {identitySecret, leaf} from your secret: shade-tree identity [--out <path>] [--secret-file <path>] (secret: --secret-file | SHADE_TREE_SECRET | ./.secret)" },
   "register-member": { script: "group/register-onchain.mjs", help: "stake a member commitment into StakedReputationSet: shade-tree register-member <commitment> [--limit N] (current Sepolia default: 1)" },
-  pay:               { script: "group/pay.mjs",              help: "BUY a membership leaf over HTTP 402 (x402 or MPP; stablecoin, no gas): shade-tree pay --bootnode <onion> --limit 8|32 [--protocol x402|mpp] [--key-file <buyer-key>] [--dry-run]" },
+  pay:               { script: "group/pay.mjs",              help: "BUY a membership leaf over HTTP 402 (x402 or MPP; stablecoin, no gas): shade-tree-node pay --bootnode <onion> --limit 8|32 [--protocol x402|mpp] [--key-file <buyer-key>] [--dry-run]" },
   leaves:            { script: "group/leaves.mjs",           help: "export an on-chain set's ordered leaves as a members.json for the Rust client: shade-tree leaves --contract 0x.. [--out members.json]" },
   "register-gateway":{ script: "group/register-gateway.mjs", help: "stake a gateway operator bond into GatewayRegistry" },
   // exit/withdraw/status share one script (group/exit-gateway.mjs); `prepend` selects the mode.
-  "exit-gateway":    { script: "group/exit-gateway.mjs", prepend: ["exit"],     help: "start the GatewayRegistry unbonding clock for this operator (leave the active set; stay slashable for UNBONDING): shade-tree exit-gateway [--dry-run]" },
-  "withdraw-gateway":{ script: "group/exit-gateway.mjs", prepend: ["withdraw"], help: "after UNBONDING, reclaim the gateway bond: shade-tree withdraw-gateway [--recipient 0x..] [--dry-run]" },
-  "gateway-status":  { script: "group/exit-gateway.mjs", prepend: ["status"],   help: "read-only: this operator's GatewayRegistry stake state (staked / exiting / withdrawableAt): shade-tree gateway-status [--operator 0x..]" },
+  "exit-gateway":    { script: "group/exit-gateway.mjs", prepend: ["exit"],     help: "start the GatewayRegistry unbonding clock for this operator (leave the active set; stay slashable for UNBONDING): shade-tree-node exit-gateway [--dry-run]" },
+  "withdraw-gateway":{ script: "group/exit-gateway.mjs", prepend: ["withdraw"], help: "after UNBONDING, reclaim the gateway bond: shade-tree-node withdraw-gateway [--recipient 0x..] [--dry-run]" },
+  "gateway-status":  { script: "group/exit-gateway.mjs", prepend: ["status"],   help: "read-only: this operator's GatewayRegistry stake state (staked / exiting / withdrawableAt): shade-tree-node gateway-status [--operator 0x..]" },
   "sign-directory":  { script: "group/sign-directory.mjs",  help: "sign a static fleet directory (offline discovery)" },
   node:              { script: "gateway/gateway.mjs",       help: "run a proof-gated Shade Tree egress node", long: true },
   gateway:           { script: "gateway/gateway.mjs",       help: "legacy alias for `node`", long: true },
@@ -106,9 +106,9 @@ const COMMANDS = {
   doctor:            { script: "scripts/doctor.mjs",        help: "check the local setup (node, tor, keys, deps)" },
   // backup/restore share one script (scripts/backup.mjs); `prepend` selects the mode. The
   // passphrase is passed only via SHADE_TREE_BACKUP_PASSPHRASE (never on argv), inherited into the child.
-  backup:            { script: "scripts/backup.mjs", prepend: ["backup"],  help: "encrypt & back up secret key material (onion seeds + signer key): shade-tree backup <srcDir> <outFile> (SHADE_TREE_BACKUP_PASSPHRASE)" },
-  restore:           { script: "scripts/backup.mjs", prepend: ["restore"], help: "restore an encrypted key backup: shade-tree restore <inFile> <destDir> [--force] (SHADE_TREE_BACKUP_PASSPHRASE)" },
-  "record-deploy":   { script: "scripts/record-deploy.mjs", help: "record a broadcast contract deploy into network/<name>/contracts.json: shade-tree record-deploy --network <name> --from-broadcast <run-latest.json>" },
+  backup:            { script: "scripts/backup.mjs", prepend: ["backup"],  help: "encrypt & back up secret key material (onion seeds + signer key): shade-tree-node backup <srcDir> <outFile> (SHADE_TREE_BACKUP_PASSPHRASE)" },
+  restore:           { script: "scripts/backup.mjs", prepend: ["restore"], help: "restore an encrypted key backup: shade-tree-node restore <inFile> <destDir> [--force] (SHADE_TREE_BACKUP_PASSPHRASE)" },
+  "record-deploy":   { script: "scripts/record-deploy.mjs", help: "record a broadcast contract deploy into network/<name>/contracts.json: shade-tree-node record-deploy --network <name> --from-broadcast <run-latest.json>" },
 };
 
 // command -> config ROLE (lib/config.mjs). Before spawning a service we validate the effective
@@ -188,11 +188,11 @@ function proxyHelp(command = "proxy") {
 
 function nodeHelp(command = "node") {
   console.log(`shade-tree ${command}: run the proof-gated destination-facing Shade Tree node\n`);
-  console.log("usage: shade-tree node --admit invited[,staked][,paid] [operator flags]\n");
+  console.log("usage: shade-tree-node node --admit invited[,staked][,paid] [operator flags]\n");
   console.log("A node verifies one RLN proof before each CONNECT tunnel and publishes no direct listener;");
   console.log("Tor maps its onion service to the loopback gateway. Keep private services unreachable.");
   console.log("Public rollout remains blocked by the deployment gates and development ZK setup.\n");
-  console.log("Guided local setup: shade-tree join node");
+  console.log("Guided local setup: shade-tree-node join node");
   console.log("Guide: https://github.com/dmarzzz/shade-tree-node/blob/main/docs/OPERATOR.md");
 }
 

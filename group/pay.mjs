@@ -2,11 +2,11 @@
 // docs/PAYMENTS.md as shipped). Two rails, one signature: the buyer signs an EIP-3009
 // TransferWithAuthorization for the stablecoin (needs the coin, NO gas); the operator submits it,
 // then inserts the buyer's commitment into the on-chain PaidAccessSet. Egress afterwards is the
-// ordinary `shade-tree client` with the same secret (the gateway trusts the paid root).
+// ordinary `shade-tree-node client` with the same secret (the gateway trusts the paid root).
 //
-//   shade-tree pay --bootnode <onion> --limit 8 [--protocol x402|mpp] [--key-file <path>] [--dry-run]
-//   shade-tree pay --bootnode <v4-operator-onion> --limit 32 --protocol mpp
-//   shade-tree pay --registrar-url http://127.0.0.1:8878 ...      (no Tor: tests / a local registrar)
+//   shade-tree-node pay --bootnode <onion> --limit 8 [--protocol x402|mpp] [--key-file <path>] [--dry-run]
+//   shade-tree-node pay --bootnode <v4-operator-onion> --limit 32 --protocol mpp
+//   shade-tree-node pay --registrar-url http://127.0.0.1:8878 ...      (no Tor: tests / a local registrar)
 //
 // Flow (x402):  GET  /pay/quote?limit=N          -> 402 + PAYMENT-REQUIRED (accepts[])
 //               POST /pay {commitment,limit}     + PAYMENT-SIGNATURE (signed authorization)
@@ -44,7 +44,7 @@ import { resolveSecret } from "./identity.mjs";
 import { identityFileFor } from "../lib/identity-file.mjs";
 import { K_SLOTS, normLimit } from "../lib/rln.mjs";
 
-const USAGE = `usage: shade-tree pay (--bootnode <onion> | --registrar-url <url>) --limit <tier> [--protocol x402|mpp] [--key-file <path> | --account <keystore.json>] [--commitment <dec> | --secret-file <path>] [--dry-run]`;
+const USAGE = `usage: shade-tree-node pay (--bootnode <onion> | --registrar-url <url>) --limit <tier> [--protocol x402|mpp] [--key-file <path> | --account <keystore.json>] [--commitment <dec> | --secret-file <path>] [--dry-run]`;
 
 export function parseArgs(argv, env = process.env) {
   const o = { bootnode: env.SHADE_TREE_BOOTNODE_ONION || null, registrarUrl: env.SHADE_TREE_REGISTRAR_URL || null, registrarPort: Number(env.SHADE_TREE_REGISTRAR_PORT || 8878),

@@ -13,10 +13,10 @@ For running a Shade Tree node or Elder Tree. Every command here exists in
 
 Two ways to invoke the CLI:
 
-- Workstation with the repo: run `npm ci && npm link` once, then `shade-tree <cmd>`. Use this
+- Workstation with the repo: run `npm ci && npm link` once, then `shade-tree-node <cmd>`. Use this
   path for the full local canopy, tests, code changes, and any future deployment work.
 - On a bootstrapped droplet (repo at `/opt/shade-tree`, not linked): run it explicitly,
-  e.g. `sudo -u shade-tree node /opt/shade-tree/bin/shade-tree.mjs <cmd>`.
+  e.g. `sudo -u shade-tree-node node /opt/shade-tree/bin/shade-tree.mjs <cmd>`.
 
 `shade-tree help` lists commands; `shade-tree <cmd> --help` prints one-line help. Every `--flag`
 just sets the matching `SHADE_TREE_*` env var (see [CLI.md](CLI.md)).
@@ -155,7 +155,7 @@ If you did not use `bootstrap.sh` (bringing your own host, or a non-systemd setu
 ### a. Mint an onion identity
 
 ```bash
-shade-tree keygen tor/hs-gateway --label gateway
+shade-tree-node keygen tor/hs-gateway --label gateway
 ```
 
 This writes Tor's HS key files (`hs_ed25519_secret_key`, `hs_ed25519_public_key`,
@@ -184,9 +184,9 @@ one-shot environment assignment keeps its value out of argv and `unset` clears i
 ### c. Run the gateway and heartbeat
 
 ```bash
-shade-tree node                                       # the egress; verifies proofs, tunnels :443
+shade-tree-node node                                       # the egress; verifies proofs, tunnels :443
 
-shade-tree heartbeat \
+shade-tree-node heartbeat \
   --bootnode <bootnode-onion> \
   --identity tor/hs-gateway/identity.local.json
 ```
@@ -196,7 +196,7 @@ onion<->operator authorization:
 
 ```bash
 read -s SHADE_TREE_GW_OPERATOR_KEY
-SHADE_TREE_GW_OPERATOR_KEY="$SHADE_TREE_GW_OPERATOR_KEY" shade-tree heartbeat \
+SHADE_TREE_GW_OPERATOR_KEY="$SHADE_TREE_GW_OPERATOR_KEY" shade-tree-node heartbeat \
   --bootnode <bootnode-onion> \
   --identity tor/hs-gateway/identity.local.json
 unset SHADE_TREE_GW_OPERATOR_KEY
@@ -226,10 +226,10 @@ curl --socks5-hostname 127.0.0.1:9050 http://<bootnode-onion>/health      # live
 curl --socks5-hostname 127.0.0.1:9050 http://<bootnode-onion>/directory   # current signed directory
 
 # local sanity (node, tor, deps, keys):
-shade-tree doctor
+shade-tree-node doctor
 ```
 
-`shade-tree doctor` is read-only; it flags a missing Tor daemon, missing deps, missing onion
+`shade-tree-node doctor` is read-only; it flags a missing Tor daemon, missing deps, missing onion
 identity, and whether on-chain mode is configured.
 
 ### Operator output
@@ -252,13 +252,13 @@ CI, a pipe, or a service log.
 
 ```bash
 # Interactive operator view with the startup tree.
-shade-tree node --log-level debug --log-format pretty --banner --metrics-port 9101
+shade-tree-node node --log-level debug --log-format pretty --banner --metrics-port 9101
 
 # One JSON object per line, with no tree.
-shade-tree node --log-format json --no-banner
+shade-tree-node node --log-format json --no-banner
 
 # Warnings and errors only.
-shade-tree node --quiet
+shade-tree-node node --quiet
 ```
 
 Levels have a narrow purpose:
@@ -328,7 +328,7 @@ Locally (non-bootstrapped) the same files live under `tor/hs*/identity.local.jso
 
 ### Backup
 
-`shade-tree backup` / `shade-tree restore` (`scripts/backup.mjs`, full guide in
+`shade-tree-node backup` / `shade-tree-node restore` (`scripts/backup.mjs`, full guide in
 [BACKUP.md](./BACKUP.md)) encrypt the onion seeds (`identity.local.json`,
 `hs_ed25519_secret_key`) and the bootnode signer key into one tamper-evident file
 (scrypt + AES-256-GCM, Node crypto only, no `gpg` needed). The passphrase is read
@@ -500,19 +500,19 @@ or `SHADE_TREE_REGISTER_KEY` in the environment — never on the command line.
 0. Look before you leap (read-only, no key needed):
 
    ```bash
-   shade-tree gateway-status --operator 0x<operator> --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry>
+   shade-tree-node gateway-status --operator 0x<operator> --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry>
    ```
 
 1. Start the unbonding clock (operator-only). You stay slashable for the whole
    `UNBONDING` window, so you cannot exit-then-dodge a slash:
 
    ```bash
-   shade-tree exit-gateway --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry> --dry-run
-   shade-tree exit-gateway --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry>
+   shade-tree-node exit-gateway --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry> --dry-run
+   shade-tree-node exit-gateway --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry>
    # raw equivalent: cast send 0x<GatewayRegistry> "initiateExit()" --account shade-tree-operator --rpc-url https://<rpc-endpoint>
    ```
 
-   The command prints `withdrawable at <unix> (<ISO>)`; `shade-tree gateway-status` shows the same
+   The command prints `withdrawable at <unix> (<ISO>)`; `shade-tree-node gateway-status` shows the same
    (raw: `cast call 0x<GatewayRegistry> "withdrawableAt(address)(uint256)" 0x<operator>`).
    A stake-admission bootnode stops admitting this operator on its next refresh
    (`SHADE_TREE_STAKE_CACHE_MS`), so do step 2 right away.
@@ -533,13 +533,13 @@ or `SHADE_TREE_REGISTER_KEY` in the environment — never on the command line.
    command refuses with `StillBonded until <ISO> — N s to go` and sends nothing:
 
    ```bash
-   shade-tree withdraw-gateway --recipient 0x<recipient> --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry> --dry-run
-   shade-tree withdraw-gateway --recipient 0x<recipient> --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry>
+   shade-tree-node withdraw-gateway --recipient 0x<recipient> --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry> --dry-run
+   shade-tree-node withdraw-gateway --recipient 0x<recipient> --account shade-tree-operator --rpc-url https://<rpc-endpoint> --gateway-registry 0x<GatewayRegistry>
    # raw equivalent: cast send 0x<GatewayRegistry> "withdraw(address)" 0x<recipient> --account shade-tree-operator --rpc-url https://<rpc-endpoint>
    ```
 
 **Rotating** an onion (new address, same operator/stake): mint a new identity
-(`shade-tree keygen ...`), point Tor and the heartbeat at it, and let the old entry TTL out.
+(`shade-tree-node keygen ...`), point Tor and the heartbeat at it, and let the old entry TTL out.
 No re-staking needed; the stake is keyed to the operator address, not the onion.
 
 An **unstaked** (`--admission open`) gateway is just steps 2-3: stop the units, let the
@@ -698,16 +698,16 @@ Every gateway PROVIDER decides two things; the defaults are the maximum-anonymit
 
 ```bash
 # the default: invited ONLY -- even when env supplies contract addresses (opt in explicitly)
-SHADE_TREE_ADMIT=invited shade-tree gateway
+SHADE_TREE_ADMIT=invited shade-tree-node gateway
 # admit staked members too
-SHADE_TREE_ADMIT=invited,staked shade-tree gateway \
+SHADE_TREE_ADMIT=invited,staked shade-tree-node gateway \
   --group-contract <v4-staked-set-address> --rpc-url <operator-rpc-url>
 # admit everyone you can (what the pre-T-FEAT-9 union heuristic silently did)
-SHADE_TREE_ADMIT=invited,staked,paid shade-tree gateway \
+SHADE_TREE_ADMIT=invited,staked,paid shade-tree-node gateway \
   --group-contract <v4-staked-set-address> --paid-access-contract <v4-paid-set-address> \
   --rpc-url <operator-rpc-url>
 # on-chain only, no members.json at all
-SHADE_TREE_ADMIT=staked shade-tree gateway \
+SHADE_TREE_ADMIT=staked shade-tree-node gateway \
   --group-contract <v4-staked-set-address> --rpc-url <operator-rpc-url>
 ```
 
@@ -822,7 +822,7 @@ Day 2:
   then swap the drop-in and restart. Real USDC instead of the test token: change
   `SHADE_TREE_PAY_ASSET` (one env), restart.
 
-Buyer side: `docs/JOIN.md` "Buy access" / `shade-tree pay --help`.
+Buyer side: `docs/JOIN.md` "Buy access" / `shade-tree-node pay --help`.
 
 ### Selling access: the paid set (T-FEAT-7)
 

@@ -1,4 +1,4 @@
-// The two HTTP-402 wire formats the registrar speaks and `shade-tree pay` consumes, implemented directly
+// The two HTTP-402 wire formats the registrar speaks and `shade-tree-node pay` consumes, implemented directly
 // from the primary specs (fetched 2026-08-17; no SDK — see docs/PAYMENTS.md "Why no x402 SDK"):
 //
 //   x402 v2 (coinbase/x402 specs/x402-specification-v2.md + specs/transports-v2/http.md +

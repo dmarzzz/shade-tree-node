@@ -8,7 +8,7 @@
   "type": "module",
   "private": true,
   "bin": {
-    "shade-tree": "bin/shade-tree.mjs"
+    "shade-tree-node": "bin/shade-tree.mjs"
   },
   "//exports": "Public SDK surface (T-FEAT-3). Subpath imports resolve by package name once published; internal relative imports (./…) are unaffected. See docs/SDK.md.",
   "exports": {

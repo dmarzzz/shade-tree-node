@@ -21,7 +21,7 @@ if [ -z "${SHADE_TREE_SECRET:-}" ]; then
   exit 1
 fi
 # Default to the original PoC gateway onion (single-gateway path; the fleet path is
-# `shade-tree client --bootnode ...`, see docs/QUICKSTART.md) so a friend can run with no
+# `shade-tree-node client --bootnode ...`, see docs/QUICKSTART.md) so a friend can run with no
 # args. Override SHADE_TREE_ONION to point at a different box. The onion is a discovery
 # handle: knowing it buys nothing without a valid membership proof (fail-closed gate).
 # Its clearnet IP is deliberately not repeated here; scripts/join.sh carries it as
