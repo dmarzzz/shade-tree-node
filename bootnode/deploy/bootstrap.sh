@@ -906,7 +906,7 @@ fi
 log "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl gnupg ca-certificates git apt-transport-https >/dev/null
+apt-get install -y -qq curl gnupg ca-certificates git apt-transport-https xz-utils >/dev/null
 
 log "node 24"
 # Node < 24 is upgraded, not tolerated: the units below run under
@@ -928,7 +928,8 @@ if [ -z "${SHADE_TREE_NODE_BIN:-}" ] && [ "$("$node_dir/bin/node" -p process.ver
   curl -fsSL --proto '=https' "https://nodejs.org/dist/v${SHADE_TREE_NODE_VERSION}/node-v${SHADE_TREE_NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o "$node_tar"
   echo "${NODE_SHA256}  ${node_tar}" | sha256sum -c --quiet - || die "node tarball checksum mismatch"
   rm -rf "$node_dir" && mkdir -p "$node_dir"
-  tar -xJf "$node_tar" -C "$node_dir" --strip-components=1 && rm -f "$node_tar"
+  tar -xJf "$node_tar" -C "$node_dir" --strip-components=1 || die "could not unpack node $SHADE_TREE_NODE_VERSION"
+  rm -f "$node_tar"
 fi
 NODE_BIN="${SHADE_TREE_NODE_BIN:-$node_dir/bin/node}"
 "$NODE_BIN" --version
@@ -962,8 +963,15 @@ esac
 if [ -d "$SHADE_TREE_DIR/.git" ]; then
   git -C "$SHADE_TREE_DIR" fetch --depth 1 origin "$SHADE_TREE_REF" -q && git -C "$SHADE_TREE_DIR" checkout -q FETCH_HEAD
 else
-  git clone --depth 1 --branch "$SHADE_TREE_REF" "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q \
-    || { git clone --depth 1 "$SHADE_TREE_REPO" "$SHADE_TREE_DIR" -q && git -C "$SHADE_TREE_DIR" checkout -q "$SHADE_TREE_REF"; }
+  # init + fetch works for a branch, a tag and a bare commit SHA alike (a shallow
+  # `clone --branch` cannot take a SHA, which is what SHADENET_NETWORK pins).
+  # Never delete an existing install: its deploy-state holds the onion identities.
+  if [ -e "$SHADE_TREE_DIR" ] && [ -n "$(ls -A "$SHADE_TREE_DIR" 2>/dev/null)" ]; then
+    die "$SHADE_TREE_DIR exists, is not a git checkout and is not empty; move it aside first"
+  fi
+  git init -q "$SHADE_TREE_DIR"
+  git -C "$SHADE_TREE_DIR" remote add origin "$SHADE_TREE_REPO"
+  git -C "$SHADE_TREE_DIR" fetch --depth 1 -q origin "$SHADE_TREE_REF" && git -C "$SHADE_TREE_DIR" checkout -q FETCH_HEAD
 fi
 ( cd "$SHADE_TREE_DIR" && PATH="$(dirname "$NODE_BIN"):$PATH" npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 )
 
