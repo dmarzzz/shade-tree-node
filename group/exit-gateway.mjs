@@ -1,7 +1,7 @@
 // exit-gateway: the operator-side EXIT half of GatewayRegistry (contracts/GatewayRegistry.sol) —
 // the dual of group/register-gateway.mjs and the rollback for a staked gateway
 // (docs/OPERATOR.md section 6). One script, three modes selected by the first argument (the
-// shade-tree router prepends it: `shade-tree exit-gateway` / `shade-tree withdraw-gateway` / `shade-tree gateway-status`):
+// shade-tree router prepends it: `shade-tree-node exit-gateway` / `shade-tree-node withdraw-gateway` / `shade-tree-node gateway-status`):
 //
 //   exit      initiateExit()        operator-only. Start the UNBONDING clock and leave the active
 //                                   set (bootnode admission=stake stops admitting this operator on
@@ -234,10 +234,10 @@ async function main() {
   const refuse = (msg) => { console.error(`exit-gateway: refusing to send — ${msg}`); process.exit(1); };
   if (opts.mode === "exit") {
     if (st.bond === 0n) refuse("operator is not staked (NotStaked); nothing to exit");
-    if (st.exitInitiatedAt !== 0n) { console.log(`  already exiting (AlreadyExiting); withdraw after ${iso(st.wAt)} with: shade-tree withdraw-gateway`); return; }
+    if (st.exitInitiatedAt !== 0n) { console.log(`  already exiting (AlreadyExiting); withdraw after ${iso(st.wAt)} with: shade-tree-node withdraw-gateway`); return; }
   } else {
     if (st.bond === 0n) refuse("operator is not staked (NotStaked); nothing to withdraw (already withdrawn or slashed?)");
-    if (st.exitInitiatedAt === 0n) refuse("operator has not started exiting (NotExiting); run `shade-tree exit-gateway` first, then wait UNBONDING");
+    if (st.exitInitiatedAt === 0n) refuse("operator has not started exiting (NotExiting); run `shade-tree-node exit-gateway` first, then wait UNBONDING");
     if (st.now < st.wAt) refuse(`still bonded (StillBonded) until ${iso(st.wAt)} — ${st.wAt - st.now} s to go`);
   }
 
@@ -263,7 +263,7 @@ async function main() {
   if (opts.mode === "exit") {
     const ev = rcpt.logs.map((l) => { try { return iface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "GatewayExiting");
     const wAt = ev ? ev.args.withdrawableAt : st.now + st.UNBONDING;
-    console.log(`  mined in block ${rcpt.blockNumber}; exiting. Bond withdrawable at ${wAt} (${iso(wAt)}) via: shade-tree withdraw-gateway`);
+    console.log(`  mined in block ${rcpt.blockNumber}; exiting. Bond withdrawable at ${wAt} (${iso(wAt)}) via: shade-tree-node withdraw-gateway`);
     console.log(`  next:     stop announcing — systemctl disable --now shade-tree-heartbeat shade-tree-gateway (docs/OPERATOR.md section 6)`);
   } else {
     console.log(`  mined in block ${rcpt.blockNumber}; bond ${st.bond} wei paid to ${recipient}. Stake record cleared.`);

@@ -169,7 +169,7 @@ prepare its onion identity:
 git clone https://github.com/dmarzzz/shade-tree-node.git
 cd shade-tree-node
 npm ci && npm link
-shade-tree join node
+shade-tree-node join node
 ```
 
 A node can run near GPU workers, model servers, or an Ethereum validator. Give

@@ -125,8 +125,8 @@ async function main() {
        "prints only the remaining deployment blockers before the node command");
     ok(/SHADE_TREE_REGISTER_KEY="\$SHADE_TREE_REGISTER_KEY" shade-tree register-gateway/.test(g.stdout) && /unset SHADE_TREE_REGISTER_KEY/.test(g.stdout), "prints a process-scoped optional `shade-tree register-gateway` step");
     ok(!/--register-key\s+/.test(g.stdout), "the node guide keeps the operator key out of argv");
-    ok(/shade-tree node/.test(g.stdout), "prints the `shade-tree node` command");
-    ok(/shade-tree heartbeat --bootnode <elder-onion>/.test(g.stdout), "prints the `shade-tree heartbeat --bootnode <onion>` command");
+    ok(/shade-tree-node node/.test(g.stdout), "prints the `shade-tree node` command");
+    ok(/shade-tree-node heartbeat --bootnode <elder-onion>/.test(g.stdout), "prints the `shade-tree heartbeat --bootnode <onion>` command");
     ok(new RegExp(`--identity ${join(hsDir, "identity.local.json").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(g.stdout),
        "the heartbeat command points --identity at the minted identity file");
 

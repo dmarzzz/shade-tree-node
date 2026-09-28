@@ -7,7 +7,7 @@
 // so one stake can back many/rotating onions and the fleet is never enumerable on chain.
 //
 // After staking, authorize your onion off chain and hand it to the heartbeat:
-//   SHADE_TREE_GW_OPERATOR_KEY=<this key> shade-tree heartbeat --bootnode <onion>
+//   SHADE_TREE_GW_OPERATOR_KEY=<this key> shade-tree-node heartbeat --bootnode <onion>
 // (the heartbeat signs operatorAuthMessage(onion, operator) durably; see bootnode/heartbeat.mjs).
 //
 // Config:
