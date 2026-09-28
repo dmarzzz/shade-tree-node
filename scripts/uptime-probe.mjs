@@ -9,7 +9,9 @@
 // directory: a swapped/MITM'd bootnode fails signerOk, not just reachability.
 //
 //   node scripts/uptime-probe.mjs                 -> one-line JSON, exit 0 healthy / nonzero not
-//   node scripts/uptime-probe.mjs --format nagios -> "OK|CRITICAL: ..." line, exit 0 / 2
+//   node scripts/uptime-probe.mjs --format nagios -> "OK|CRITICAL|UNKNOWN: ..." line, exit 0 / 2 / 3
+//   ... --prom-file <path>                        -> also write node_exporter textfile metrics
+//                                                    (atomic; for a second vantage point, OPS-7)
 //
 // Config (all SHADE_TREE_*):
 //   SHADE_TREE_BOOTNODE_ONION   the bootnode v3 .onion  (production: fetched over Tor)
@@ -22,20 +24,32 @@
 //                                  research fleet's capability signatures (default off)
 //   SHADE_TREE_NETWORK          <name>: default BOOTNODE_ONION + DIR_SIGNER from network/<name>/bootnode.json
 //                         (explicit env wins; a pending record supplies nothing -> misconfig)
-//   SHADE_TREE_PROBE_TIMEOUT_MS per-request timeout     (default 20000)
+//   SHADE_TREE_PROBE_TIMEOUT_MS per-attempt timeout     (default 60000; a cold onion descriptor
+//                               fetch plus rendezvous regularly exceeds 20 s)
+//
+// Outcomes (OPS-7): OK (exit 0); CRITICAL (exit 2 nagios / 1 json) when the Elder is unreachable
+// or serves a bad directory; UNKNOWN (exit 3) when the probe's OWN Tor SOCKS port is down, so a
+// broken runner never counts against the canopy. When SHADE_TREE_NETWORK names a record with a
+// service pin and the Elder's /health reports its commit, `pinMatch` says whether they agree
+// (informational; a mismatch is reported, not counted as downtime).
 //
 // PRIVACY: machine-readable output can include a COUNT for private monitoring, but the hosted
 // workflow uses the count-free Nagios line. Neither mode prints gateway identities, and errors
 // scrub any .onion. Fail-closed: any error reports UNHEALTHY and never hangs.
 
 import http from "node:http";
+import net from "node:net";
+import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { verifyDirectory } from "../lib/directory.mjs";
 import { applyNetworkEnv } from "../lib/network-record.mjs";
 
 const TOR_HOST = process.env.SHADE_TREE_TOR_HOST || "127.0.0.1";
 const TOR_PORT = Number(process.env.SHADE_TREE_TOR_PORT || 9250);
-const TIMEOUT_MS = Number(process.env.SHADE_TREE_PROBE_TIMEOUT_MS || 20000);
+const TIMEOUT_MS = Number(process.env.SHADE_TREE_PROBE_TIMEOUT_MS || 60000);
+const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_RESP = Number(process.env.SHADE_TREE_BOOTNODE_MAX_RESP || 2 * 1024 * 1024);
 const boundedSeconds = (value, fallback) => {
   const parsed = Number(value ?? fallback);
@@ -101,6 +115,30 @@ function makeFetcher({ preferUrl = false } = {}) {
   return null; // misconfigured
 }
 
+// Is the probe's own Tor SOCKS listener accepting connections? If not, the probe cannot say
+// anything about the canopy (UNKNOWN), which is different from the canopy being down.
+function localTorUp(host = TOR_HOST, port = TOR_PORT, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    const done = (up) => { socket.destroy(); resolve(up); };
+    socket.setTimeout(timeoutMs, () => done(false));
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+  });
+}
+
+// The Elder commit the committed record pins, or null when no record/pin applies.
+export function recordElderCommit(network = process.env.SHADE_TREE_NETWORK) {
+  if (!network || !/^[a-z0-9-]{1,32}$/.test(network)) return null;
+  try {
+    const record = JSON.parse(readFileSync(join(HERE, "..", "network", network, "deployment.json"), "utf8"));
+    const pin = String(record?.services?.elder?.commit || "").toLowerCase();
+    return /^[0-9a-f]{40}$/.test(pin) ? pin : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function observeFleet() {
   // Fail-closed default: everything false / zero until proven otherwise.
   const result = { ok: false, bootnodeReachable: false, signerOk: false, directoryFresh: false, fleetSize: 0, ts: Math.floor(Date.now() / 1000) };
@@ -119,6 +157,12 @@ export async function observeFleet() {
   if (!fetchJson) { result.reason = "misconfig:set SHADE_TREE_BOOTNODE_ONION or SHADE_TREE_BOOTNODE_URL"; return { result, health, directory }; }
   if (!pinnedSigner) { result.reason = "misconfig:set SHADE_TREE_DIR_SIGNER (pinned signer)"; return { result, health, directory }; }
 
+  if (process.env.SHADE_TREE_BOOTNODE_ONION && !(explicitUrl && process.env.SHADE_TREE_BOOTNODE_URL) && !(await localTorUp())) {
+    result.status = "unknown";
+    result.reason = "probe:local-tor-unavailable";
+    return { result, health, directory };
+  }
+
   try {
     health = await fetchJson("/health");
     result.bootnodeReachable = true;            // we got a 200 from the bootnode
@@ -136,6 +180,10 @@ export async function observeFleet() {
     result.ok = healthOk && result.signerOk && result.directoryFresh;
     if (result.directoryFresh) directory = dir; // exposed only to trusted local aggregators; never printed here
 
+    const pin = recordElderCommit();
+    const running = /^[0-9a-f]{40}$/.test(String(health?.commit || "")) ? health.commit : null;
+    if (pin && running) result.pinMatch = running === pin;
+
     if (!v.ok) result.reason = "directory:" + directoryReason(v.reason);
     else if (!result.directoryFresh) result.reason = "directory:issued-outside-freshness-window";
     else if (!healthOk) result.reason = "bootnode health not ok";
@@ -151,25 +199,59 @@ export async function probe() {
 }
 
 function nagiosLine(r) {
-  if (r.ok) return "OK: bootnode reachable, signed directory fresh";
+  if (r.status === "unknown") return "UNKNOWN: probe-side Tor unavailable; canopy state not measured";
+  if (r.ok) return "OK: bootnode reachable, signed directory fresh" + (r.pinMatch === false ? " (Elder commit differs from the record pin)" : "");
   if (!r.bootnodeReachable) return "CRITICAL: bootnode unreachable";
   if (!r.signerOk) return "CRITICAL: directory verification failed";
   if (!r.directoryFresh) return "CRITICAL: signed directory outside freshness window";
   return "CRITICAL: bootnode health not ok";
 }
 
+function parsePromFile(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--prom-file") return argv[i + 1] || null;
+    if (argv[i].startsWith("--prom-file=")) return argv[i].slice("--prom-file=".length) || null;
+  }
+  return null;
+}
+
+// node_exporter textfile collector format. Counts only; no onion, signer or gateway identity.
+export function promLines(r) {
+  const b = (v) => (v ? 1 : 0);
+  const lines = [
+    ["shade_tree_probe_ok", "1 = Elder reachable and serving a fresh, signer-verified directory.", b(r.ok)],
+    ["shade_tree_probe_unknown", "1 = the probe's own Tor was unavailable; the canopy was not measured.", b(r.status === "unknown")],
+    ["shade_tree_probe_bootnode_reachable", "1 = the Elder answered /health over Tor.", b(r.bootnodeReachable)],
+    ["shade_tree_probe_directory_fresh", "1 = the signed directory verified and is inside the freshness window.", b(r.directoryFresh)],
+    ["shade_tree_probe_fleet_size", "Nodes listed in the fresh signed directory.", Number(r.fleetSize) || 0],
+    ["shade_tree_probe_last_run_timestamp_seconds", "Unix time of this probe run.", Number(r.ts) || Math.floor(Date.now() / 1000)],
+  ];
+  if (r.pinMatch !== undefined) lines.push(["shade_tree_probe_pin_match", "1 = the Elder runs the commit the record pins.", b(r.pinMatch)]);
+  return lines.map(([name, help, value]) => `# HELP ${name} ${help}\n# TYPE ${name} gauge\n${name} ${value}`).join("\n") + "\n";
+}
+
+function writePromFile(path, r) {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, promLines(r), { mode: 0o644 });
+  renameSync(tmp, path);
+}
+
 // Only run when invoked directly; importing (the selftest) pulls probe() with no side effects.
 if (import.meta.url === `file://${process.argv[1]}`) {
   const format = parseFormat(process.argv.slice(2));
+  const promFile = parsePromFile(process.argv.slice(2));
   probe().then((result) => {
+    if (promFile) {
+      try { writePromFile(promFile, result); } catch (e) { console.error(`prom-file write failed: ${scrub(e?.message || e)}`); }
+    }
     if (format === "nagios") {
       console.log(nagiosLine(result));
-      process.exit(result.ok ? 0 : 2); // Nagios convention: 0 OK, 2 CRITICAL
+      process.exit(result.status === "unknown" ? 3 : result.ok ? 0 : 2); // Nagios: 0 OK, 2 CRITICAL, 3 UNKNOWN
     } else {
       // Ordered, machine-readable one-liner for private/operator monitoring.
-      const { ok, bootnodeReachable, signerOk, directoryFresh, fleetSize, ts, reason } = result;
-      console.log(JSON.stringify({ ok, bootnodeReachable, signerOk, directoryFresh, fleetSize, ts, ...(reason ? { reason } : {}) }));
-      process.exit(ok ? 0 : 1);
+      const { ok, bootnodeReachable, signerOk, directoryFresh, fleetSize, ts, reason, status, pinMatch } = result;
+      console.log(JSON.stringify({ ok, bootnodeReachable, signerOk, directoryFresh, fleetSize, ts, ...(status ? { status } : {}), ...(pinMatch !== undefined ? { pinMatch } : {}), ...(reason ? { reason } : {}) }));
+      process.exit(status === "unknown" ? 3 : ok ? 0 : 1);
     }
   }).catch(() => {
     // Last-resort fail-closed: even an unexpected throw reports unhealthy, never hangs or

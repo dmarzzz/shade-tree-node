@@ -12,6 +12,8 @@
 //   node scripts/uptime-probe.selftest.mjs   (exit 0 = all invariants held)
 
 import { spawn, execFileSync } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { generateKeyPairSync } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -222,6 +224,44 @@ async function main() {
     let bj = {};
     try { bj = JSON.parse(nBadNet.stdout.trim()); } catch {}
     ok(nBadNet.status === 1 && bj.ok === false && /^misconfig:/.test(bj.reason || ""), "unknown SHADE_TREE_NETWORK -> misconfig reason, exit 1");
+
+    // 8. OPS-7: probe-side Tor down is UNKNOWN, never CRITICAL; the Elder commit is checked
+    // against the record pin and reported without counting as downtime.
+    console.log("\nprobe-side failures and pin check (OPS-7):");
+    const unk = runProbe({ SHADE_TREE_BOOTNODE_ONION: pubkeyToOnion(mintEd().pub), SHADE_TREE_DIR_SIGNER: signer.pub, SHADE_TREE_TOR_PORT: "1" });
+    let unkJson = {};
+    try { unkJson = JSON.parse(unk.stdout.trim()); } catch {}
+    ok(unk.status === 3 && unkJson.status === "unknown" && unkJson.reason === "probe:local-tor-unavailable", "local Tor down -> UNKNOWN, exit 3");
+    const unkN = runProbe({ SHADE_TREE_BOOTNODE_ONION: pubkeyToOnion(mintEd().pub), SHADE_TREE_DIR_SIGNER: signer.pub, SHADE_TREE_TOR_PORT: "1" }, ["--format", "nagios"]);
+    ok(unkN.status === 3 && unkN.stdout.startsWith("UNKNOWN:"), "nagios UNKNOWN line, exit 3");
+    const { recordElderCommit, promLines } = await import("./uptime-probe.mjs");
+    const prom = promLines({ ok: true, bootnodeReachable: true, directoryFresh: true, fleetSize: 3, ts: 1, pinMatch: false });
+    ok(/^shade_tree_probe_ok 1$/m.test(prom) && /^shade_tree_probe_pin_match 0$/m.test(prom) && /^shade_tree_probe_fleet_size 3$/m.test(prom), "textfile metrics render");
+    ok(!/onion|signer/i.test(prom.replace(/# HELP.*$/gm, "")), "textfile metrics carry no identities");
+    const promPath = join(tmpdir(), `probe-${process.pid}.prom`);
+    runProbe({ SHADE_TREE_BOOTNODE_URL: base, SHADE_TREE_DIR_SIGNER: signer.pub }, ["--prom-file", promPath]);
+    let written = "";
+    try { written = readFileSync(promPath, "utf8"); rmSync(promPath); } catch {}
+    ok(/^shade_tree_probe_ok 1$/m.test(written), "--prom-file writes the textfile after a healthy run");
+    const pin = recordElderCommit("sepolia");
+    ok(/^[0-9a-f]{40}$/.test(pin || ""), "sepolia record pin resolves");
+    ok(recordElderCommit("../etc") === null && recordElderCommit("no-such-network-zzz") === null, "bad or unknown network -> no pin");
+    for (const [commit, want] of [[pin, true], ["f".repeat(40), false]]) {
+      const { child: pc, port: pp } = startMockBootnode(JSON.stringify(dir), JSON.stringify({ ok: true, count: FLEET, admission: "open", signer: signer.pub, commit }));
+      try {
+        const pbase = `http://127.0.0.1:${await pp}`;
+        const r = runProbe({ SHADE_TREE_NETWORK: "sepolia", SHADE_TREE_BOOTNODE_URL: pbase, SHADE_TREE_DIR_SIGNER: signer.pub });
+        let rj = {};
+        try { rj = JSON.parse(r.stdout.trim()); } catch {}
+        ok(r.status === 0 && rj.ok === true && rj.pinMatch === want, `Elder commit ${want ? "matches" : "differs from"} the record pin -> pinMatch ${want}, still healthy`);
+        if (!want) {
+          const n = runProbe({ SHADE_TREE_NETWORK: "sepolia", SHADE_TREE_BOOTNODE_URL: pbase, SHADE_TREE_DIR_SIGNER: signer.pub }, ["--format", "nagios"]);
+          ok(n.status === 0 && /differs from the record pin/.test(n.stdout), "nagios reports pin drift as OK with a note");
+        }
+      } finally {
+        pc.kill();
+      }
+    }
   } finally {
     child.kill();
     staleChild.kill();
