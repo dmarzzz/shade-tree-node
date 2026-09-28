@@ -663,7 +663,12 @@ EOF
       echo "Environment=SHADE_TREE_RPC_URL=${SHADE_TREE_RPC_URL}"
     fi
     # Federation (T-FEAT-1, OPS-9): pull and re-verify peers' announces.
-    [ -z "$SHADE_TREE_BOOTNODE_PEERS" ] || echo "Environment=SHADE_TREE_BOOTNODE_PEERS=${SHADE_TREE_BOOTNODE_PEERS}"
+    if [ -n "$SHADE_TREE_BOOTNODE_PEERS" ]; then
+      echo "Environment=SHADE_TREE_BOOTNODE_PEERS=${SHADE_TREE_BOOTNODE_PEERS}"
+      # Peers are pulled over this box's system tor (the federation default of 9250 is not it).
+      echo "Environment=SHADE_TREE_TOR_HOST=127.0.0.1"
+      echo "Environment=SHADE_TREE_TOR_PORT=9050"
+    fi
     if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
       # Advertise the registrar in GET /health (`pay: {port, protocols, asset, chain, tiers}`).
       echo "Environment=SHADE_TREE_REGISTRAR_ADVERTISE=1"
