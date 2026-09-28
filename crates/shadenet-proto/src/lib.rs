@@ -1,6 +1,6 @@
 //! # shadenet-proto
 //!
-//! Trust-critical wire-format primitives for the Shade Tree protocol. This crate is a
+//! Trust-critical wire-format primitives for the ShadeNet protocol (v4). This crate is a
 //! Rust port of the security-critical checks in
 //! the JavaScript reference client, and it is the reimplementation target for the
 //! conformance harness (T-RUST-1).

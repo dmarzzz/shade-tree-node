@@ -1,4 +1,4 @@
-//! Process-scoped agent launcher for `shade-tree run`.
+//! Process-scoped agent launcher for `shadenet run`.
 //!
 //! The wrapper deliberately does not mutate this process's environment and does
 //! not start an agent until the configured loopback CONNECT proxy accepts a TCP
@@ -90,20 +90,20 @@ pub fn run(args: &[String], defaults: &RunDefaults) -> ExitCode {
     let parsed = match parse_run_args(args) {
         Ok(parsed) => parsed,
         Err(error) => {
-            eprintln!("shade-tree run: {error}\n\n{HELP}");
+            eprintln!("shadenet run: {error}\n\n{HELP}");
             return ExitCode::from(2);
         }
     };
     let config = match resolve_config(&parsed, defaults) {
         Ok(config) => config,
         Err(error) => {
-            eprintln!("shade-tree run: {error}");
+            eprintln!("shadenet run: {error}");
             return ExitCode::from(2);
         }
     };
 
     if let Err(error) = check_proxy(&config.proxy, &config.auth_token, config.timeout) {
-        eprintln!("shade-tree run: local proxy unavailable; command not started ({error})");
+        eprintln!("shadenet run: local proxy unavailable; command not started ({error})");
         return ExitCode::from(1);
     }
 
@@ -118,7 +118,7 @@ pub fn run(args: &[String], defaults: &RunDefaults) -> ExitCode {
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            eprintln!("shade-tree run: could not start child: {error}");
+            eprintln!("shadenet run: could not start child: {error}");
             return ExitCode::from(127);
         }
     };
@@ -141,7 +141,7 @@ pub fn run(args: &[String], defaults: &RunDefaults) -> ExitCode {
             exit_code_for_status(status)
         }
         Err(error) => {
-            eprintln!("shade-tree run: could not wait for child: {error}");
+            eprintln!("shadenet run: could not wait for child: {error}");
             ExitCode::from(1)
         }
     }
@@ -368,7 +368,7 @@ fn build_no_proxy(extra: &str) -> Result<String, RunError> {
     {
         if value == "*" {
             return Err(RunError(
-                "a wildcard `*` in --no-proxy would bypass Shade Tree".into(),
+                "a wildcard `*` in --no-proxy would bypass ShadeNet".into(),
             ));
         }
         if !values.iter().any(|existing| existing == value) {
