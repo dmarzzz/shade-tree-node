@@ -1,92 +1,31 @@
-import { Interface, getAddress } from "ethers";
-import { poseidon1, poseidon2 } from "poseidon-lite";
+import { getAddress } from "ethers";
+import {
+  resolveNetwork, tierFor, createStaking, importIdentity, serializeIdentity, parseCommitment as sdkParseCommitment,
+  identityFileName,
+} from "@shadenet/sdk";
+import { deriveIdentity as deriveCore } from "../lib/identity-core.mjs";
 
-export const FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-export const CHAIN_ID = 11155111n;
-export const CONTRACT = getAddress("0xEB67Abf066c11D78856BccC63476ed14d51e4275");
-export const LIMIT = 1n;
-export const BOND = 100000000000000000n;
-export const RPC_URL = "https://rpc.sepolia.ethpandaops.io";
+// Everything below comes from the bundled deployment record through @shadenet/sdk.
+const NETWORK = resolveNetwork("sepolia");
+export const CHAIN_ID = BigInt(NETWORK.staked.chainId);
+export const CONTRACT = getAddress(NETWORK.staked.contract);
+export const LIMIT = BigInt(NETWORK.staked.defaultLimit);
+export const BOND = tierFor(NETWORK, LIMIT).bondWei;
 export const EXPLORER_URL = "https://sepolia.etherscan.io";
 
-const ABI = [
-  "function register(uint256 commitment, uint256 limit) payable",
-  "function bondFor(uint256 limit) view returns (uint256)",
-  "function isActive(uint256 commitment) view returns (bool)",
-  "function limitOf(uint256 commitment) view returns (uint256)",
-];
-const iface = new Interface(ABI);
-
-const encoder = new TextEncoder();
-
-function bytesToBigInt(bytes) {
-  let value = 0n;
-  for (const byte of bytes) value = (value << 8n) | BigInt(byte);
-  return value;
-}
-
-function canonicalField(value, label, { nonzero = true } = {}) {
-  if (typeof value !== "string" || !/^(0|[1-9][0-9]*)$/.test(value)) {
-    throw new Error(`${label} must be a canonical decimal field element.`);
-  }
-  const parsed = BigInt(value);
-  if (parsed >= FIELD || (nonzero && parsed === 0n)) {
-    throw new Error(`${label} is outside the supported identity field.`);
-  }
-  return parsed;
-}
-
-export async function deriveIdentity(seed) {
-  if (!(seed instanceof Uint8Array) || seed.byteLength !== 32) {
-    throw new Error("Identity seed must be exactly 32 random bytes.");
-  }
-  const appSecret = bytesToBigInt(seed) % FIELD;
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-512", encoder.encode(appSecret.toString())));
-  const nullifier = bytesToBigInt(digest.slice(0, 32)) >> 3n;
-  const trapdoor = bytesToBigInt(digest.slice(32)) >> 3n;
-  digest.fill(0);
-  const identitySecret = poseidon2([nullifier, trapdoor]);
-  const leaf = poseidon2([poseidon1([identitySecret]), LIMIT]);
-  return {
-    identitySecret: identitySecret.toString(),
-    leaf: leaf.toString(),
-    limit: Number(LIMIT),
-  };
+// The page admits the base tier only.
+export function deriveIdentity(seed) {
+  return deriveCore(seed, LIMIT);
 }
 
 export function parseIdentityFile(text) {
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new Error("That is not a valid Shade Tree identity JSON file.");
-  }
-  if (!value || Array.isArray(value) || typeof value !== "object") {
-    throw new Error("The identity file must contain one JSON object.");
-  }
-  const keys = Object.keys(value).sort().join(",");
-  if (keys !== "identitySecret,leaf,limit") {
-    throw new Error("The identity file must contain only identitySecret, leaf, and limit.");
-  }
-  if (value.limit !== Number(LIMIT)) {
-    throw new Error(`This Grove currently admits the base tier only (limit ${LIMIT}).`);
-  }
-  const identitySecret = canonicalField(value.identitySecret, "identitySecret");
-  const leaf = canonicalField(value.leaf, "leaf");
-  const expected = poseidon2([poseidon1([identitySecret]), LIMIT]);
-  if (leaf !== expected) {
-    throw new Error("The public leaf does not match this identity secret and tier.");
-  }
-  return { identitySecret: identitySecret.toString(), leaf: leaf.toString(), limit: Number(LIMIT) };
+  const identity = importIdentity(text, { network: NETWORK });
+  if (identity.limit !== Number(LIMIT)) throw new Error(`This canopy currently admits the base tier only (limit ${LIMIT}).`);
+  return identity;
 }
 
-export function parseCommitment(text) {
-  return canonicalField(String(text || "").trim(), "Commitment").toString();
-}
-
-export function identityBytes(identity) {
-  return `${JSON.stringify(identity, null, 2)}\n`;
-}
+export const parseCommitment = sdkParseCommitment;
+export const identityBytes = serializeIdentity;
 
 function short(value, left = 8, right = 7) {
   if (!value) return "";
@@ -183,7 +122,7 @@ function mount() {
 
   async function importIdentity(file) {
     try {
-      if (!file || file.size > 16 * 1024) throw new Error("Choose a Shade Tree identity file under 16 KiB.");
+      if (!file || file.size > 16 * 1024) throw new Error("Choose an identity file under 16 KiB.");
       state.identity = parseIdentityFile(await file.text());
       el.recoveryCheck.checked = true;
       announce("Identity validated locally. The file was not uploaded.", "good");
@@ -203,7 +142,7 @@ function mount() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.href = url;
-    link.download = `shade-tree-identity-${state.identity.leaf.slice(0, 8)}.json`;
+    link.download = identityFileName(state.identity);
     link.click();
     URL.revokeObjectURL(url);
     el.recoveryCheck.checked = true;
@@ -231,22 +170,8 @@ function mount() {
     return window.ethereum.request({ method, params });
   }
 
-  async function selectSepolia() {
-    try {
-      await request("wallet_switchEthereumChain", [{ chainId: hexQuantity(CHAIN_ID) }]);
-    } catch (error) {
-      if (error?.code !== 4902) throw error;
-      await request("wallet_addEthereumChain", [{
-        chainId: hexQuantity(CHAIN_ID),
-        chainName: "Sepolia",
-        nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
-        rpcUrls: [RPC_URL],
-        blockExplorerUrls: [EXPLORER_URL],
-      }]);
-    }
-    const chain = BigInt(await request("eth_chainId"));
-    if (chain !== CHAIN_ID) throw new Error(`Wallet is on chain ${chain}; Sepolia (${CHAIN_ID}) is required.`);
-  }
+  // The SDK does the preflight: chain, deployed code, record-pinned bond, simulation, gas and balance.
+  const staking = () => createStaking({ network: NETWORK, provider: window.ethereum });
 
   async function connectWallet() {
     state.busy = true;
@@ -254,11 +179,12 @@ function mount() {
     try {
       const accounts = await request("eth_requestAccounts");
       if (!Array.isArray(accounts) || !accounts[0]) throw new Error("The wallet did not provide an account.");
-      await selectSepolia();
+      const chain = BigInt(await request("eth_chainId"));
+      if (chain !== CHAIN_ID) {
+        await request("wallet_switchEthereumChain", [{ chainId: hexQuantity(CHAIN_ID) }]);
+      }
       state.account = getAddress(accounts[0]);
-      const code = await request("eth_getCode", [CONTRACT, "latest"]);
-      if (!code || code === "0x") throw new Error("The pinned staking contract is not deployed on this wallet network.");
-      announce("Wallet connected on Sepolia. Its address and the staking transaction will be public.", "good");
+      announce("Wallet connected. Its address and the staking transaction will be public.", "good");
     } catch (error) {
       state.account = null;
       announce(error.shortMessage || error.message || "Wallet connection failed.", "bad");
@@ -266,22 +192,6 @@ function mount() {
       state.busy = false;
       update();
     }
-  }
-
-  async function readContract(name, args) {
-    const data = iface.encodeFunctionData(name, args);
-    const result = await request("eth_call", [{ to: CONTRACT, data }, "latest"]);
-    return iface.decodeFunctionResult(name, result)[0];
-  }
-
-  async function waitForReceipt(hash) {
-    const deadline = Date.now() + 180_000;
-    while (Date.now() < deadline) {
-      const receipt = await request("eth_getTransactionReceipt", [hash]);
-      if (receipt) return receipt;
-      await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-    }
-    return null;
   }
 
   async function stake() {
@@ -296,40 +206,27 @@ function mount() {
     el.receipt.hidden = true;
     update();
     try {
-      await selectSepolia();
-      const [bond, active, existingLimit] = await Promise.all([
-        readContract("bondFor", [LIMIT]),
-        readContract("isActive", [commitment]),
-        readContract("limitOf", [commitment]),
-      ]);
-      if (bond !== BOND) throw new Error(`Contract bond changed from the pinned 0.1 ETH profile; refusing to send.`);
-      if (active) {
+      announce(`Confirm the exact ${Number(BOND) / 1e18} ETH transaction in your wallet.`);
+      const sent = await staking().stake({
+        commitment,
+        limit: Number(LIMIT),
+        from: state.account,
+        onSent(hash) {
+          el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
+          el.receiptLink.textContent = short(hash, 12, 10);
+          el.receipt.hidden = false;
+          announce("Transaction sent. Waiting for one confirmation…");
+        },
+      });
+      if (sent.alreadyActive) {
         announce("This commitment is already active. Nothing was sent.", "good");
         return;
       }
-      if (existingLimit !== 0n) {
-        throw new Error("This commitment is already exiting and cannot be registered again yet.");
-      }
-      const data = iface.encodeFunctionData("register", [commitment, LIMIT]);
-      const transaction = { from: state.account, to: CONTRACT, value: hexQuantity(bond), data };
-      const balance = BigInt(await request("eth_getBalance", [state.account, "latest"]));
-      const gas = BigInt(await request("eth_estimateGas", [transaction]));
-      const gasPrice = BigInt(await request("eth_gasPrice"));
-      if (balance < bond + gas * gasPrice) throw new Error("This wallet needs at least 0.1 Sepolia ETH plus estimated gas.");
-      await request("eth_call", [transaction, "latest"]);
-      announce("Confirm the exact 0.1 Sepolia ETH transaction in your wallet.");
-      const hash = await request("eth_sendTransaction", [transaction]);
-      el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
-      el.receiptLink.textContent = short(hash, 12, 10);
-      el.receipt.hidden = false;
-      announce("Transaction sent. Waiting for one confirmation…");
-      const receipt = await waitForReceipt(hash);
+      const receipt = await sent.wait();
       if (!receipt) {
         announce("Still pending after three minutes. Use the transaction link to follow it; do not send again blindly.", "plain");
-      } else if (BigInt(receipt.status) !== 1n) {
-        throw new Error("The registration transaction reverted. No stake was admitted.");
       } else {
-        announce("Stake confirmed. The identity becomes usable after Sepolia finality.", "good");
+        announce("Stake confirmed. The identity becomes usable after finality.", "good");
       }
     } catch (error) {
       announce(error.shortMessage || error.message || "Staking failed.", "bad");

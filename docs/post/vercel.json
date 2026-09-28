@@ -95,6 +95,15 @@
       ]
     },
     {
+      "source": "/stake/chunks/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
       "source": "/stake/stake.js",
       "headers": [
         {

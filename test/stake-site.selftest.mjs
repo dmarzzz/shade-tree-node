@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { stakeBuildOptions, STAKE_OUT } from "../scripts/stake-build-options.mjs";
 import {
   BOND,
   CHAIN_ID,
@@ -18,7 +19,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const deployment = JSON.parse(readFileSync(join(ROOT, "network/sepolia/deployment.json"), "utf8"));
 const html = readFileSync(join(ROOT, "docs/post/stake/index.html"), "utf8");
 const source = readFileSync(join(ROOT, "site-src/stake.mjs"), "utf8");
-const bundle = readFileSync(join(ROOT, "docs/post/stake/stake.js"));
+const sdkStaking = readFileSync(join(ROOT, "packages/sdk/src/staking.mjs"), "utf8");
+const sdkIdentity = readFileSync(join(ROOT, "packages/sdk/src/identity.mjs"), "utf8");
 const checks = [];
 const check = (name, condition) => {
   assert.ok(condition, name);
@@ -62,7 +64,7 @@ check("the page exposes member, sponsor, recovery, and agent handoff paths", /da
   && /register-member --identity identity\.json/.test(html)
   && /member-status --identity identity\.json --json/.test(html)
   && /private, proof-authorized exit/.test(html));
-check("identity state is never persisted or sent through a site API", !/localStorage|sessionStorage|indexedDB|fetch\s*\(|XMLHttpRequest|sendBeacon|analytics/i.test(source));
+check("identity state is never persisted or sent through a site API", [source, sdkIdentity].every((text) => !/localStorage|sessionStorage|indexedDB|fetch\s*\(|XMLHttpRequest|sendBeacon|analytics/i.test(text)));
 check("wallet preflight pins chain, code, bond, active state, simulation, gas, and balance", [
   "wallet_switchEthereumChain",
   "eth_chainId",
@@ -74,18 +76,15 @@ check("wallet preflight pins chain, code, bond, active state, simulation, gas, a
   "eth_getBalance",
   "eth_call",
   "eth_sendTransaction",
-].every((needle) => source.includes(needle)) && /bond !== BOND/.test(source));
+].every((needle) => (source + sdkStaking).includes(needle)) && /bond !== tier\.bondWei/.test(sdkStaking) && /createStaking\(/.test(source));
 
-const rebuilt = await build({
-  entryPoints: [join(ROOT, "site-src/stake.mjs")],
-  bundle: true,
-  format: "esm",
-  minify: true,
-  legalComments: "eof",
-  sourcemap: false,
-  target: ["chrome109", "firefox115", "safari16.4"],
-  write: false,
-});
-check("committed browser bundle is reproducible from reviewed source", Buffer.compare(bundle, Buffer.from(rebuilt.outputFiles[0].contents)) === 0);
+const rebuilt = await build({ ...stakeBuildOptions, write: false });
+const committed = ["stake.js", ...readdirSync(join(STAKE_OUT, "chunks")).map((f) => `chunks/${f}`)].sort();
+const built = rebuilt.outputFiles.map((f) => f.path.slice(STAKE_OUT.length + 1)).sort();
+check("committed browser bundle and chunks are reproducible from reviewed source", JSON.stringify(committed) === JSON.stringify(built)
+  && rebuilt.outputFiles.every((f) => Buffer.compare(readFileSync(f.path), Buffer.from(f.contents)) === 0));
+const entry = rebuilt.outputFiles.find((f) => f.path.endsWith("/stake.js"));
+check("the staking entry stays small and loads snarkjs only lazily (STAKE-14)", entry.contents.length < 110 * 1024
+  && /import\("\.\/chunks\/browser\.esm-[A-Z0-9]+\.js"\)/.test(Buffer.from(entry.contents).toString("utf8")));
 
 console.log(`PASS: private staking site selftest (${checks.length} checks)`);
