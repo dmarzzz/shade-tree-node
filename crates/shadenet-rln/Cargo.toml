@@ -58,7 +58,7 @@ hex = "0.4"
 #   - CircomReduction (the snarkjs-compatible QAP reduction).
 ark-circom = "0.5"
 ark-groth16 = { version = "0.5", default-features = false }
-ark-bn254 = "0.5"
+ark-bn254 = "0.6"
 ark-ff = "0.5"
 ark-ec = "0.5"
 ark-serialize = "0.5"
