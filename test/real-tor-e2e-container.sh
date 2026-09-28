@@ -95,6 +95,7 @@ docker exec \
 log "point the gateway's PoC root at a derived member + restart it"
 docker exec -i "$CONTAINER" env SECRET="$SECRET" bash -s <<'PREP'
 set -euo pipefail
+export PATH="$(ls -d /opt/node-v*/bin 2>/dev/null | sort -V | tail -1):$PATH"  # bootstrap.sh installs Node off PATH
 cd /opt/shade-tree
 # Derive a single member whose rateCommitment leaf becomes the gateway's whole membership set,
 # so the client (same secret) proves against the exact root the gateway trusts.
@@ -117,6 +118,7 @@ set +e
 docker exec -i "$CONTAINER" \
   env GW_ONION="$GW_ONION" SECRET="$SECRET" SINK_PORT="$SINK_PORT" RUN_ATTEMPTS="$RUN_ATTEMPTS" bash -s <<'RUN'
 set -uo pipefail
+export PATH="$(ls -d /opt/node-v*/bin 2>/dev/null | sort -V | tail -1):$PATH"  # bootstrap.sh installs Node off PATH
 cd /opt/shade-tree
 
 # local egress sink; :443 matches the gateway's default *:443 policy (no unit edit needed)
