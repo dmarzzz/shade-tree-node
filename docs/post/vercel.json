@@ -15,6 +15,9 @@
     },
     "api/lab-run.mjs": {
       "maxDuration": 120
+    },
+    "api/stake-head.mjs": {
+      "maxDuration": 5
     }
   },
   "rewrites": [
@@ -49,6 +52,10 @@
     {
       "source": "/api/v2/data/grove/sepolia/head",
       "destination": "/api/grove-v2"
+    },
+    {
+      "source": "/api/v1/data/stake/sepolia/head",
+      "destination": "/api/stake-head"
     },
     {
       "source": "/api/v2/openapi.json",
@@ -87,15 +94,6 @@
     },
     {
       "source": "/vendor/three-0.185.1/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/stake/chunks/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

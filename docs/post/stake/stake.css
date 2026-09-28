@@ -361,9 +361,171 @@
   border-top: 1px solid rgba(215, 227, 217, 0.14);
 }
 
+.live-chips {
+  margin: 1.6rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.8rem;
+}
+
+.live-chips div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.live-chips dt {
+  color: rgba(215, 227, 217, 0.58);
+  font-size: 0.74rem;
+}
+
+.live-chips dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 1rem;
+}
+
+.tier-table,
+.funding,
+.stake-lifecycle,
+.stake-faq {
+  grid-column: 1 / -1;
+}
+
+.tier-table h2,
+.funding h2,
+.stake-lifecycle h2,
+.stake-faq h2 {
+  margin: 0 0 0.8rem;
+  font-size: 1.35rem;
+}
+
+.tier-table p,
+.funding p,
+.funding li,
+.stake-lifecycle p,
+.stake-faq p {
+  max-width: 48rem;
+  color: rgba(215, 227, 217, 0.76);
+  line-height: 1.6;
+}
+
+.table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.tier-table table {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.tier-table th,
+.tier-table td {
+  padding: 0.7rem 0.9rem 0.7rem 0;
+  border-bottom: 1px solid rgba(215, 227, 217, 0.14);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.tier-table thead th {
+  color: rgba(215, 227, 217, 0.58);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.tier-table tbody th {
+  font-family: var(--mono);
+}
+
+.funding ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.funding a,
+.stake-lifecycle a,
+.stake-faq a,
+.agent-handoff p a {
+  color: var(--pulse);
+}
+
+.tier-pick {
+  margin: 0.9rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  border: 0;
+}
+
+.tier-pick legend {
+  margin-bottom: 0.35rem;
+  color: rgba(215, 227, 217, 0.58);
+  font-size: 0.76rem;
+}
+
+.tier-pick label {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 2.75rem;
+  font-family: var(--mono);
+  font-size: 0.86rem;
+}
+
+.stake-feedback [data-alert] {
+  color: #f08a63;
+}
+
+.stake-feedback [data-alert]:empty {
+  display: none;
+}
+
+.stake-feedback [data-member-state] {
+  font-family: var(--mono);
+}
+
+.stake-lifecycle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2rem clamp(2rem, 5vw, 4rem);
+  padding-top: 2rem;
+  border-top: 1px solid rgba(215, 227, 217, 0.14);
+}
+
+.stake-lifecycle pre {
+  max-width: 100%;
+  margin: 0.8rem 0;
+  padding: 1.1rem;
+  overflow-x: auto;
+  border: 1px solid rgba(215, 227, 217, 0.14);
+  background: #050b08;
+  color: var(--mist);
+  font-size: 0.76rem;
+  line-height: 1.65;
+}
+
+.stake-faq details {
+  max-width: 48rem;
+  border-bottom: 1px solid rgba(215, 227, 217, 0.14);
+}
+
+.stake-faq summary {
+  min-height: 2.75rem;
+  padding: 0.75rem 0;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.stake-faq details p {
+  margin: 0 0 1rem;
+}
+
 @media (max-width: 900px) {
   .stake-main {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .stake-trail {
     grid-template-columns: 1fr;
@@ -379,8 +541,9 @@
     left: -0.28rem;
   }
   .sponsor-panel,
-  .agent-handoff {
-    grid-template-columns: 1fr;
+  .agent-handoff,
+  .stake-lifecycle {
+    grid-template-columns: minmax(0, 1fr);
   }
   .agent-handoff a {
     width: fit-content;

@@ -26,8 +26,15 @@ name: release
 # embedded circuits/rln/* drift from testdata/zk-artifacts.lock.json (the binary also re-checks
 # its embedded bytes against the embedded lock at `egress` startup — crates/shadenet-rln/src/artifacts.rs).
 #
-# Assets are named `shade-tree-<version>-<target>` (default) and `shade-tree-<version>-<target>-live`
-# (live), each with a `.sha256`. Symbols are stripped by `[profile.release]` (strip = true).
+# Assets are named `shadenet-<version>-<target>` (default) and `shadenet-<version>-<target>-live`
+# (live), each with a `.sha256`, plus the same set under the `shade-tree-` prefix as an alias for
+# one minor release (scripts/release/package.sh). Symbols are stripped by `[profile.release]`.
+#
+# Also: macOS binaries are signed and notarized when the Apple secrets exist
+# (scripts/release/macos-notarize.sh); the publish job attaches a generated Homebrew formula
+# (`shadenet.rb`); the image job builds ghcr.io/<owner>/shadenet from the musl live binaries.
+# `workflow_dispatch` on any branch is the release rehearsal: it builds, smoke-tests and
+# attests everything and publishes nothing.
 #
 # v0.1.1 release-fix notes (v0.1.0 shipped with 3 of 10 targets missing):
 #   - Package: `shasum` does not exist on the windows runner's bash -> use `sha256sum` where
@@ -183,6 +190,22 @@ jobs:
           RELEASE_TARGET: ${{ matrix.target }}
         run: cargo build --release -p shadenet-cli --target "$RELEASE_TARGET"
 
+      - name: Sign and notarize (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: >-
+          bash scripts/release/macos-notarize.sh
+          "target/$RELEASE_TARGET/release/shadenet"
+          "target/$RELEASE_TARGET/release/shade-tree"
+
       - name: Package
         id: package
         shell: bash
@@ -190,41 +213,42 @@ jobs:
           RELEASE_EXT: ${{ matrix.ext }}
           RELEASE_TARGET: ${{ matrix.target }}
           RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
-        run: |
-          mkdir -p dist
-          BIN="target/$RELEASE_TARGET/release/shade-tree$RELEASE_EXT"
-          OUT="shade-tree-$RELEASE_VERSION-$RELEASE_TARGET$RELEASE_EXT"
-          cp "$BIN" "dist/$OUT"
-          # sha256sum on linux + windows(git-bash); shasum -a 256 on macOS (no sha256sum there).
-          # The hex is re-framed by hand as "<hex>  <file>" so the .sha256 asset format is
-          # byte-identical across targets (msys sha256sum would otherwise print "<hex> *<file>").
-          ( cd dist \
-            && if command -v sha256sum >/dev/null; then HEX=$(sha256sum "$OUT"); else HEX=$(shasum -a 256 "$OUT"); fi \
-            && printf '%s  %s\n' "${HEX%% *}" "$OUT" > "$OUT.sha256" \
-            && cat "$OUT.sha256" )
-          ls -l dist
-          echo "artifact=dist/$OUT" >> "$GITHUB_OUTPUT"
-          echo "sbom=dist/$OUT.spdx.json" >> "$GITHUB_OUTPUT"
+        run: bash scripts/release/package.sh "$RELEASE_TARGET" "$RELEASE_VERSION" "" "$RELEASE_EXT"
 
-      - name: Generate SPDX SBOM
+      - name: Generate SPDX SBOM (shadenet)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          file: ${{ steps.package.outputs.artifact }}
+          file: ${{ steps.package.outputs.shadenet }}
           format: spdx-json
-          output-file: ${{ steps.package.outputs.sbom }}
+          output-file: ${{ steps.package.outputs.shadenet }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SPDX SBOM (shade-tree alias)
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          file: ${{ steps.package.outputs.shade_tree }}
+          format: spdx-json
+          output-file: ${{ steps.package.outputs.shade_tree }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
 
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: ${{ steps.package.outputs.artifact }}
+          subject-path: ${{ steps.package.outputs.artifacts }}
 
-      - name: Attest SBOM
+      - name: Attest SBOM (shadenet)
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: ${{ steps.package.outputs.artifact }}
-          sbom-path: ${{ steps.package.outputs.sbom }}
+          subject-path: ${{ steps.package.outputs.shadenet }}
+          sbom-path: ${{ steps.package.outputs.shadenet }}.spdx.json
+
+      - name: Attest SBOM (shade-tree alias)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.package.outputs.shade_tree }}
+          sbom-path: ${{ steps.package.outputs.shade_tree }}.spdx.json
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -252,6 +276,8 @@ jobs:
           - { target: x86_64-unknown-linux-musl, os: ubuntu-latest, builder: zig }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, builder: zig }
           - { target: aarch64-apple-darwin, os: macos-latest, builder: native }
+          # Intel Mac live build on an Intel runner: wasmer and arti stay on their native arch.
+          - { target: x86_64-apple-darwin, os: macos-15-intel, builder: native }
           - { target: x86_64-pc-windows-msvc, os: windows-latest, builder: native, ext: ".exe" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -309,6 +335,24 @@ jobs:
           grep -Eq '^[[:space:]]+run([[:space:]]|$)' <<<"$HELP"
           TOKEN="$("$BIN" proxy-token)"
           [[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]]
+          NEW="target/$RELEASE_TARGET/release/shadenet$RELEASE_EXT"
+          if [ -f "$NEW" ]; then "$NEW" --help >/dev/null; fi
+
+      - name: Sign and notarize (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: >-
+          bash scripts/release/macos-notarize.sh
+          "target/$RELEASE_TARGET/release/shadenet"
+          "target/$RELEASE_TARGET/release/shade-tree"
 
       - name: Package
         id: package
@@ -317,47 +361,123 @@ jobs:
           RELEASE_EXT: ${{ matrix.ext }}
           RELEASE_TARGET: ${{ matrix.target }}
           RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
-        run: |
-          mkdir -p dist
-          BIN="target/$RELEASE_TARGET/release/shade-tree$RELEASE_EXT"
-          OUT="shade-tree-$RELEASE_VERSION-$RELEASE_TARGET-live$RELEASE_EXT"
-          cp "$BIN" "dist/$OUT"
-          # sha256sum on linux + windows(git-bash); shasum -a 256 on macOS (no sha256sum there).
-          # The hex is re-framed by hand as "<hex>  <file>" so the .sha256 asset format is
-          # byte-identical across targets (msys sha256sum would otherwise print "<hex> *<file>").
-          ( cd dist \
-            && if command -v sha256sum >/dev/null; then HEX=$(sha256sum "$OUT"); else HEX=$(shasum -a 256 "$OUT"); fi \
-            && printf '%s  %s\n' "${HEX%% *}" "$OUT" > "$OUT.sha256" \
-            && cat "$OUT.sha256" )
-          ls -l dist
-          echo "artifact=dist/$OUT" >> "$GITHUB_OUTPUT"
-          echo "sbom=dist/$OUT.spdx.json" >> "$GITHUB_OUTPUT"
+        run: bash scripts/release/package.sh "$RELEASE_TARGET" "$RELEASE_VERSION" "-live" "$RELEASE_EXT"
 
-      - name: Generate SPDX SBOM
+      - name: Generate SPDX SBOM (shadenet)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          file: ${{ steps.package.outputs.artifact }}
+          file: ${{ steps.package.outputs.shadenet }}
           format: spdx-json
-          output-file: ${{ steps.package.outputs.sbom }}
+          output-file: ${{ steps.package.outputs.shadenet }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SPDX SBOM (shade-tree alias)
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          file: ${{ steps.package.outputs.shade_tree }}
+          format: spdx-json
+          output-file: ${{ steps.package.outputs.shade_tree }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
 
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: ${{ steps.package.outputs.artifact }}
+          subject-path: ${{ steps.package.outputs.artifacts }}
 
-      - name: Attest SBOM
+      - name: Attest SBOM (shadenet)
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: ${{ steps.package.outputs.artifact }}
-          sbom-path: ${{ steps.package.outputs.sbom }}
+          subject-path: ${{ steps.package.outputs.shadenet }}
+          sbom-path: ${{ steps.package.outputs.shadenet }}.spdx.json
+
+      - name: Attest SBOM (shade-tree alias)
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.package.outputs.shade_tree }}
+          sbom-path: ${{ steps.package.outputs.shade_tree }}.spdx.json
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: shade-tree-${{ matrix.target }}-live
           path: dist/*
+
+  # ------------------------------------------------------------ client container image
+  # Assembled from the musl live binaries built, smoke-tested and attested above; no
+  # compilation or emulation here. Tags push to GHCR; a rehearsal builds and runs it only.
+  image:
+    name: client container image
+    needs: [set-version, live]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write # push ghcr.io/<owner>/shadenet on tags
+      id-token: write # Sigstore certificate for the image attestation
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download musl live binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: shade-tree-*-unknown-linux-musl-live
+          path: dist
+          merge-multiple: true
+
+      - name: Stage binaries per Docker architecture
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+        run: |
+          for pair in amd64:x86_64 arm64:aarch64; do
+            arch="${pair%%:*}"; cpu="${pair##*:}"
+            asset="shadenet-$RELEASE_VERSION-$cpu-unknown-linux-musl-live"
+            (cd dist && sha256sum -c "$asset.sha256")
+            mkdir -p "image/$arch"
+            cp "dist/$asset" "image/$arch/shadenet"
+          done
+
+      - name: Build and smoke-test (amd64)
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+        run: |
+          docker buildx create --use --name shadenet >/dev/null
+          docker buildx build --platform linux/amd64 --load \
+            -f docker/shadenet.Dockerfile --build-arg VERSION="$RELEASE_VERSION" \
+            -t shadenet:smoke .
+          docker run --rm shadenet:smoke --help | grep -Eq '^[[:space:]]+proxy([[:space:]]|$)'
+
+      - name: Push multi-arch image
+        id: push
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shadenet"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            -f docker/shadenet.Dockerfile --build-arg VERSION="$RELEASE_VERSION" \
+            -t "$image:$RELEASE_VERSION" -t "$image:latest" \
+            --metadata-file "$RUNNER_TEMP/image.json" .
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Attest image provenance
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   # Release publication is isolated from compilation so build tools never receive
   # a token that can modify repository contents. A tag is published atomically only
@@ -384,6 +504,21 @@ jobs:
           pattern: shade-tree-*
           path: dist
           merge-multiple: true
+
+      - name: Check out the release scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: src
+          sparse-checkout: scripts/release
+
+      - name: Render the Homebrew formula
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+        run: >-
+          node src/scripts/release/homebrew-formula.mjs
+          --version "$RELEASE_VERSION" --dist dist --repo "$GITHUB_REPOSITORY"
 
       - name: Revalidate the remote tag before publication
         shell: bash

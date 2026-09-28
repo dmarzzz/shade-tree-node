@@ -58,3 +58,6 @@ contracts/paid-access.local.json
 **/target/
 **/*.rs.bk
 Cargo.lock.orig
+
+# gateway spent-set snapshot (OPS-17; runtime state)
+deploy-state/
