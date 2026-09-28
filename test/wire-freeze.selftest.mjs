@@ -33,11 +33,11 @@ const FROZEN = [
   // chain id, set address and leaf index under these tags, which are now compiled into every
   // ShadeNet deployment and bound into withdraw proofs. No code verifies the v4 tags any more.
   ['"SHADENET_EXIT"', [
-    "contracts/StakedReputationSet.sol", "crates/shadenet-cli/src/member.rs",
+    "contracts/StakedReputationSet.sol", "crates/shadenet/src/member.rs",
     "testdata/gen-withdraw-proof.mjs", "test/StakedReputationSet.tiers.t.sol", "test/WithdrawVerifier.t.sol",
   ]],
   ['"SHADENET_WITHDRAW"', [
-    "contracts/StakedReputationSet.sol", "crates/shadenet-cli/src/member.rs",
+    "contracts/StakedReputationSet.sol", "crates/shadenet/src/member.rs",
     "testdata/gen-withdraw-proof.mjs", "test/WithdrawVerifier.t.sol",
   ]],
   // RLN request signal: its hash is the circuit's public x.
