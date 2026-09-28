@@ -968,10 +968,7 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
     }
     println!("  {bin} proxy");
     println!("and run your agent through it (keep your model API off ShadeNet):");
-    println!(
-        "  SHADENET_PROXY_TOKEN_FILE={} {bin} run --no-proxy api.openai.com -- your-agent",
-        token_path.display()
-    );
+    println!("  {bin} run --no-proxy api.openai.com -- your-agent");
     println!("To run the proxy as a service: {bin} init --service systemd (or launchd)");
     ExitCode::SUCCESS
 }

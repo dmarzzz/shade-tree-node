@@ -352,10 +352,16 @@ fn init_logging(level: Option<LogLevel>, format: Option<LogFormat>) {
         LogLevel::Debug => "debug",
         LogLevel::Trace => "trace",
     };
-    // Third-party crates (Arti in particular) stay at warn unless SHADENET_LOG asks for more.
+    // Third-party crates stay at warn unless SHADENET_LOG asks for more. Arti's directory manager
+    // warns about every malformed document a relay serves and then retries on its own; that is
+    // noise for a client, so it is kept at error.
     let filter = shadenet::env::var_lenient("LOG")
         .and_then(|spec| EnvFilter::try_new(spec).ok())
-        .unwrap_or_else(|| EnvFilter::new(format!("warn,shadenet={ours},shadenet_cli={ours}")));
+        .unwrap_or_else(|| {
+            EnvFilter::new(format!(
+                "warn,tor_dirmgr=error,shadenet={ours},shadenet_cli={ours}"
+            ))
+        });
     use std::io::IsTerminal;
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
@@ -412,7 +418,13 @@ fn dispatch(command: Command, ctx: &net::Context) -> ExitCode {
         Command::FetchDirectory(args) => offline::fetch_directory(args),
         Command::Select(args) => offline::select(args, ctx),
         Command::VerifyReceipt(args) => offline::verify_receipt(args),
-        Command::Run(pass) => run::run(&pass.args),
+        Command::Run(pass) => run::run(
+            &pass.args,
+            &run::RunDefaults {
+                listen: ctx.file.listen.clone(),
+                proxy_token_file: ctx.file.proxy_token_file.clone(),
+            },
+        ),
         #[cfg(feature = "live")]
         command => live::dispatch(command, ctx),
         #[cfg(not(feature = "live"))]

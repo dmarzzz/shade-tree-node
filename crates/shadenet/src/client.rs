@@ -1139,6 +1139,7 @@ impl Client {
                 }
             }
         }
+        status.tor_ready = self.tor_bootstraps() > 0;
         let Some(identity) = &self.identity else {
             status.state = "no_identity".into();
             return status;

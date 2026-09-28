@@ -20,19 +20,27 @@ const MAX_CHECK_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_NO_PROXY: [&str; 4] = ["127.0.0.1", "localhost", "::1", "host.docker.internal"];
 
 pub const HELP: &str = "\
-shade-tree run: start one command with scoped HTTP(S) proxy settings
+shadenet run: start one command with scoped HTTP(S) proxy settings
 
 USAGE:
-    shade-tree run [--proxy URL] [--no-proxy HOSTS]
-                   [--check-timeout-ms N] -- <command> [args]
+    shadenet run [--proxy URL] [--no-proxy HOSTS]
+                 [--check-timeout-ms N] -- <command> [args]
 
-The local proxy and its credentials are checked before launch. Provide the same
-unpredictable token used by `shade-tree proxy`, preferably in
-SHADE_TREE_PROXY_TOKEN. Only the child receives authenticated proxy URLs; the
-current shell is unchanged. Other inherited SHADE_TREE_* settings and ALL_PROXY
-escape hatches are stripped. Loopback services bypass the proxy; add other
-agent-local hosts with --no-proxy.
+The local proxy and its credentials are checked before launch. The token is the
+one `shadenet proxy` uses: SHADENET_PROXY_TOKEN, SHADENET_PROXY_TOKEN_FILE, or the
+proxy_token_file in config.toml (written by `shadenet init`). Only the child
+receives authenticated proxy URLs; the current shell is unchanged. Inherited
+SHADENET_* and SHADE_TREE_* settings and ALL_PROXY escape hatches are stripped.
+Loopback services bypass the proxy; add other agent-local hosts, and your model
+API, with --no-proxy.
 ";
+
+/// Defaults from `config.toml`, below flags and environment variables.
+#[derive(Debug, Default, Clone)]
+pub struct RunDefaults {
+    pub listen: Option<String>,
+    pub proxy_token_file: Option<std::path::PathBuf>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedRun {
@@ -73,7 +81,7 @@ impl fmt::Display for RunError {
 /// `--` separator. Wrapper/configuration errors use status 2, an unavailable
 /// proxy uses status 1, and a missing child executable uses status 127. A
 /// started child's exit status is propagated.
-pub fn run(args: &[String]) -> ExitCode {
+pub fn run(args: &[String], defaults: &RunDefaults) -> ExitCode {
     if matches!(args, [arg] if arg == "--help" || arg == "-h") {
         println!("{HELP}");
         return ExitCode::SUCCESS;
@@ -86,7 +94,7 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let config = match resolve_config(&parsed) {
+    let config = match resolve_config(&parsed, defaults) {
         Ok(config) => config,
         Err(error) => {
             eprintln!("shade-tree run: {error}");
@@ -195,20 +203,47 @@ fn parse_run_args(args: &[String]) -> Result<ParsedRun, RunError> {
     })
 }
 
-fn resolve_config(parsed: &ParsedRun) -> Result<RunConfig, RunError> {
+fn read_token_file(path: &std::path::Path) -> Result<String, RunError> {
+    std::fs::read_to_string(path)
+        .map(|raw| raw.trim().to_string())
+        .map_err(|e| RunError(format!("read proxy token file {}: {e}", path.display())))
+}
+
+fn resolve_config(parsed: &ParsedRun, defaults: &RunDefaults) -> Result<RunConfig, RunError> {
     let proxy_raw = match &parsed.proxy {
         Some(value) => value.clone(),
         None => match env::var("SHADE_TREE_PROXY_URL") {
             Ok(value) if !value.trim().is_empty() => value,
             _ => match env::var("SHADE_TREE_SHIM_PORT") {
                 Ok(port) if !port.trim().is_empty() => format!("http://127.0.0.1:{port}"),
-                _ => DEFAULT_PROXY_URL.to_string(),
+                _ => match env::var("SHADE_TREE_LISTEN")
+                    .ok()
+                    .or_else(|| defaults.listen.clone())
+                {
+                    Some(listen) if !listen.trim().is_empty() => {
+                        format!("http://{}", listen.trim())
+                    }
+                    _ => DEFAULT_PROXY_URL.to_string(),
+                },
             },
         },
     };
     let proxy = parse_proxy_url(&proxy_raw)?;
-    let auth_token = env::var("SHADE_TREE_PROXY_TOKEN")
-        .map_err(|_| RunError("missing proxy authentication; set SHADE_TREE_PROXY_TOKEN".into()))?;
+    // SHADENET_* names are copied onto SHADE_TREE_* at startup, so one read covers both.
+    let auth_token = match env::var("SHADE_TREE_PROXY_TOKEN") {
+        Ok(token) => token,
+        Err(_) => match env::var_os("SHADE_TREE_PROXY_TOKEN_FILE")
+            .map(std::path::PathBuf::from)
+            .or_else(|| defaults.proxy_token_file.clone())
+        {
+            Some(path) => read_token_file(&path)?,
+            None => {
+                return Err(RunError(
+                    "missing proxy authentication; set SHADENET_PROXY_TOKEN or SHADENET_PROXY_TOKEN_FILE, or run `shadenet init`".into(),
+                ))
+            }
+        },
+    };
     validate_auth_token(&auth_token).map_err(RunError)?;
 
     let no_proxy_extra = parsed
@@ -442,8 +477,10 @@ fn child_environment_removals(keys: impl IntoIterator<Item = OsString>) -> Vec<O
             // Windows environment names are case-insensitive but case-preserving.
             // Normalize on every platform so a mixed-case credential cannot survive
             // scrubbing and then alias one of the child markers installed below.
+            // Both prefixes: a SHADENET_SECRET left behind would hand the member secret to the
+            // agent just as surely as SHADE_TREE_SECRET.
             let normalized = key.to_string_lossy().to_ascii_uppercase();
-            normalized.starts_with("SHADE_TREE_") || normalized == "ALL_PROXY"
+            shadenet::env::is_protected(&normalized) || normalized == "ALL_PROXY"
         })
         .collect()
 }
@@ -469,6 +506,10 @@ fn child_environment_values(config: &RunConfig) -> Vec<(&'static str, String)> {
         ("NO_PROXY", no_proxy.clone()),
         ("no_proxy", no_proxy.clone()),
         ("NODE_USE_ENV_PROXY", "1".into()),
+        ("SHADENET_ACTIVE", "1".into()),
+        ("SHADENET_PROXY_URL", proxy.clone()),
+        ("SHADENET_NO_PROXY", no_proxy.clone()),
+        // Old names for one minor release.
         ("SHADE_TREE_ACTIVE", "1".into()),
         ("SHADE_TREE_PROXY_URL", proxy),
         ("SHADE_TREE_NO_PROXY", no_proxy.clone()),
@@ -643,6 +684,10 @@ mod tests {
                 "shade_tree_register_key",
                 "ShAdE_TrEe_DiReCtOrY",
                 "SHADE_TREE_DIRECTORY",
+                "SHADENET_SECRET",
+                "shadenet_proxy_token",
+                "ShadeNet_Register_Key",
+                "SHADENETWORK_UNRELATED",
                 "ALL_PROXY",
                 "all_proxy",
                 "AGENT_TOKEN",
@@ -660,6 +705,9 @@ mod tests {
                 "shade_tree_register_key",
                 "ShAdE_TrEe_DiReCtOrY",
                 "SHADE_TREE_DIRECTORY",
+                "SHADENET_SECRET",
+                "shadenet_proxy_token",
+                "ShadeNet_Register_Key",
                 "ALL_PROXY",
                 "all_proxy"
             ])
@@ -688,6 +736,9 @@ mod tests {
             "NO_PROXY",
             "no_proxy",
             "NODE_USE_ENV_PROXY",
+            "SHADENET_ACTIVE",
+            "SHADENET_PROXY_URL",
+            "SHADENET_NO_PROXY",
             "SHADE_TREE_ACTIVE",
             "SHADE_TREE_PROXY_URL",
             "SHADE_TREE_NO_PROXY",
@@ -756,24 +807,29 @@ mod tests {
             test "$SHADE_TREE_ACTIVE" = 1 || exit 19
             test "$1" = 'child arg' || exit 20
             test -z "$SHADE_TREE_PROXY_TOKEN" || exit 21
+            test "$SHADENET_ACTIVE" = 1 || exit 22
+            test -z "$SHADENET_PROXY_TOKEN" || exit 24
             exit 23
         "#;
         let previous_token = env::var_os("SHADE_TREE_PROXY_TOKEN");
         env::set_var("SHADE_TREE_PROXY_TOKEN", TOKEN);
-        let result = run(&[
-            "--proxy".into(),
-            proxy.clone(),
-            "--no-proxy".into(),
-            "ollama.local".into(),
-            "--".into(),
-            "/bin/sh".into(),
-            "-c".into(),
-            script.into(),
-            "probe".into(),
-            "child arg".into(),
-            authenticated_proxy,
-            expected_no_proxy.into(),
-        ]);
+        let result = run(
+            &[
+                "--proxy".into(),
+                proxy.clone(),
+                "--no-proxy".into(),
+                "ollama.local".into(),
+                "--".into(),
+                "/bin/sh".into(),
+                "-c".into(),
+                script.into(),
+                "probe".into(),
+                "child arg".into(),
+                authenticated_proxy,
+                expected_no_proxy.into(),
+            ],
+            &RunDefaults::default(),
+        );
         match previous_token {
             Some(value) => env::set_var("SHADE_TREE_PROXY_TOKEN", value),
             None => env::remove_var("SHADE_TREE_PROXY_TOKEN"),
