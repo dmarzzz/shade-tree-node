@@ -51,6 +51,8 @@ pub mod fetch;
 #[cfg(feature = "live")]
 pub mod leaves;
 #[cfg(feature = "live")]
+pub mod member;
+#[cfg(feature = "live")]
 pub mod proxy;
 #[cfg(feature = "live")]
 pub mod stream;

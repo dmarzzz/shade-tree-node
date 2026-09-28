@@ -4,36 +4,28 @@
 //! withdrawal proof. JSON-RPC sees the already-public leaf and a zero-knowledge
 //! proof, never the identity secret. Transactions are signed locally.
 
-use ethers_core::abi::{decode, encode, ParamType, Token};
-use ethers_core::types::{
-    transaction::eip2718::TypedTransaction, Address, Bytes, Eip1559TransactionRequest,
-    NameOrAddress, U256, U64,
-};
-use ethers_core::utils::{id, keccak256};
 use serde_json::json;
+use shadenet::eth::{Address, Wallet, U256};
+use shadenet::member::{self, rpc_label, ExitOutcome, MemberState, Progress, StakingSet};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
-use std::thread;
-use std::time::{Duration, Instant};
+use zeroize::Zeroizing;
 
-use crate::register::{
-    bundled_defaults, checked_fee, key_file, receipt_quantity, receipt_timeout_ms, result_quantity,
-    rpc_label, verified_identity, FundingWallet, HttpRpc, RpcCall,
-};
+use crate::register::{bundled_defaults, http_rpc, key_file, send_options, verified_identity};
 
-const HELP: &str = r#"Shade Tree staked-member lifecycle (Sepolia)
+const HELP: &str = r#"ShadeNet staked-member lifecycle
 
 usage:
-  shade-tree member-status --identity identity.json [--json]
-  shade-tree exit-member --identity identity.json [--key-file gas.key]
-  shade-tree withdraw-member --identity identity.json --recipient 0x... [--key-file gas.key]
+  shadenet member-status --identity identity.json [--json]
+  shadenet exit-member --identity identity.json [--key-file gas.key]
+  shadenet withdraw-member --identity identity.json --recipient 0x... [--key-file gas.key]
 
 All commands accept --contract, --rpc-url, and --limit. Defaults come from the
-bundled public Grove. exit-member and withdraw-member build a fresh Groth16 proof
+bundled network. exit-member and withdraw-member build a fresh Groth16 proof
 locally and sign an EIP-1559 gas transaction locally. The identity secret is never
-sent to the RPC. The gas key comes from --key-file, SHADE_TREE_MEMBER_KEY, or
-SHADE_TREE_REGISTER_KEY; it may be unrelated to the wallet that funded the stake.
+sent to the RPC. The gas key comes from --key-file, SHADENET_MEMBER_KEY, or
+SHADENET_REGISTER_KEY; it may be unrelated to the wallet that funded the stake.
 withdraw-member requires an explicit recipient because it is cryptographically
 bound into the proof. Use --circuits only to override the embedded release artifacts."#;
 
@@ -54,34 +46,6 @@ struct CliOptions {
     recipient: Option<String>,
     circuits: Option<String>,
     json: bool,
-}
-
-#[derive(Debug, Clone)]
-struct Network {
-    contract: Address,
-    rpc_url: String,
-    expected_chain_id: Option<u64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MemberState {
-    bond: U256,
-    index: U256,
-    exit_initiated_at: U256,
-    limit: U256,
-    withdrawable_at: U256,
-}
-
-impl MemberState {
-    fn phase(self) -> &'static str {
-        if self.bond.is_zero() {
-            "absent"
-        } else if self.exit_initiated_at.is_zero() {
-            "active"
-        } else {
-            "exiting"
-        }
-    }
 }
 
 fn value_for(args: &[String], index: &mut usize, name: &str) -> Result<String, String> {
@@ -181,7 +145,7 @@ fn first_contract(value: &str) -> &str {
     value.split(',').next().unwrap_or_default().trim()
 }
 
-fn resolve_network(cli: &CliOptions) -> Result<Network, String> {
+fn resolve_set(cli: &CliOptions) -> Result<StakingSet, String> {
     let (bundled_contract, bundled_rpc, _, bundled_chain_id) = bundled_defaults()?;
     let bundled_address = Address::from_str(first_contract(&bundled_contract)).ok();
     let env_contract = std::env::var("SHADE_TREE_GROUP_CONTRACT").ok();
@@ -199,342 +163,49 @@ fn resolve_network(cli: &CliOptions) -> Result<Network, String> {
         .or(env_rpc.as_deref())
         .unwrap_or(&bundled_rpc)
         .to_string();
-    let parsed = reqwest::Url::parse(&rpc_url)
-        .map_err(|_| "staking RPC must be an absolute HTTP(S) URL".to_string())?;
-    if !matches!(parsed.scheme(), "http" | "https") || parsed.host().is_none() {
-        return Err("staking RPC must be an absolute HTTP(S) URL".into());
-    }
     let expected_chain_id = match std::env::var("SHADE_TREE_CHAIN_ID").ok() {
         Some(value) if !value.trim().is_empty() => Some(
             value
                 .parse::<u64>()
                 .ok()
                 .filter(|chain_id| *chain_id > 0)
-                .ok_or_else(|| "SHADE_TREE_CHAIN_ID must be a positive integer".to_string())?,
+                .ok_or_else(|| "SHADENET_CHAIN_ID must be a positive integer".to_string())?,
         ),
         _ if bundled_address == Some(contract) => bundled_chain_id,
         _ => None,
     };
-    Ok(Network {
+    Ok(StakingSet {
         contract,
         rpc_url,
         expected_chain_id,
     })
 }
 
-fn calldata(signature: &str, tokens: Vec<Token>) -> Bytes {
-    let mut bytes = id(signature)[..4].to_vec();
-    bytes.extend(encode(&tokens));
-    bytes.into()
-}
-
-fn check_chain<R: RpcCall>(rpc: &mut R, network: &Network) -> Result<u64, String> {
-    let chain_id = result_quantity(rpc.call("eth_chainId", json!([]))?, "eth_chainId")?;
-    if chain_id.is_zero() || chain_id > U256::from(u64::MAX) {
-        return Err("eth_chainId returned an unsupported value".into());
-    }
-    let chain_id = chain_id.as_u64();
-    if network
-        .expected_chain_id
-        .is_some_and(|expected| expected != chain_id)
-    {
-        return Err(format!(
-            "staking RPC chainId {chain_id} does not match configured chainId {}; refusing to continue",
-            network.expected_chain_id.unwrap()
-        ));
-    }
-    let code = rpc.call(
-        "eth_getCode",
-        json!([format!("{:#x}", network.contract), "latest"]),
-    )?;
-    let has_code = code
-        .as_str()
-        .and_then(|value| value.strip_prefix("0x"))
-        .is_some_and(|value| !value.is_empty() && value.bytes().any(|byte| byte != b'0'));
-    if !has_code {
-        return Err(format!(
-            "no contract bytecode at {:#x} on chainId {chain_id}",
-            network.contract
-        ));
-    }
-    Ok(chain_id)
-}
-
-fn eth_call<R: RpcCall>(rpc: &mut R, network: &Network, data: &Bytes) -> Result<Vec<u8>, String> {
-    let result = rpc.call(
-        "eth_call",
-        json!([{"to":format!("{:#x}", network.contract),"data":format!("0x{}", hex::encode(data))},"latest"]),
-    )?;
-    let raw = result
-        .as_str()
-        .and_then(|value| value.strip_prefix("0x"))
-        .ok_or_else(|| "eth_call: expected 0x-hex data".to_string())?;
-    hex::decode(raw).map_err(|_| "eth_call: returned invalid hex data".to_string())
-}
-
-fn uint_token(token: &Token, label: &str) -> Result<U256, String> {
-    token
-        .clone()
-        .into_uint()
-        .ok_or_else(|| format!("members(): invalid {label}"))
-}
-
-fn member_state<R: RpcCall>(
-    rpc: &mut R,
-    network: &Network,
-    commitment: U256,
-) -> Result<MemberState, String> {
-    let member_raw = eth_call(
-        rpc,
-        network,
-        &calldata("members(uint256)", vec![Token::Uint(commitment)]),
-    )?;
-    let member = decode(
-        &[
-            ParamType::Uint(256),
-            ParamType::Uint(64),
-            ParamType::Uint(64),
-            ParamType::Uint(32),
-        ],
-        &member_raw,
-    )
-    .map_err(|_| "members(): contract returned malformed state".to_string())?;
-    let withdraw_raw = eth_call(
-        rpc,
-        network,
-        &calldata("withdrawableAt(uint256)", vec![Token::Uint(commitment)]),
-    )?;
-    let withdraw = decode(&[ParamType::Uint(256)], &withdraw_raw)
-        .map_err(|_| "withdrawableAt(): contract returned malformed state".to_string())?;
-    Ok(MemberState {
-        bond: uint_token(&member[0], "bond")?,
-        index: uint_token(&member[1], "index")?,
-        exit_initiated_at: uint_token(&member[2], "exit timestamp")?,
-        limit: uint_token(&member[3], "limit")?,
-        withdrawable_at: uint_token(&withdraw[0], "withdrawable timestamp")?,
-    })
-}
-
-/// The proof context `StakedReputationSet.exitContext` / `withdrawContext` compute: the tag,
-/// chain id, set address, leaf and leaf index, plus the recipient for a withdrawal (audit
-/// 2.2.1), all `abi.encodePacked`.
-fn action_context(
-    action: Action,
-    chain_id: u64,
-    contract: Address,
-    commitment: U256,
-    index: U256,
-    recipient: Option<Address>,
-) -> [u8; 32] {
-    let mut packed = match action {
-        Action::Exit => b"SHADENET_EXIT".to_vec(),
-        Action::Withdraw => b"SHADENET_WITHDRAW".to_vec(),
-        Action::Status => unreachable!("status has no proof context"),
-    };
-    let mut word = [0_u8; 32];
-    U256::from(chain_id).to_big_endian(&mut word);
-    packed.extend(word);
-    packed.extend(contract.as_bytes());
-    commitment.to_big_endian(&mut word);
-    packed.extend(word);
-    index.to_big_endian(&mut word);
-    packed.extend(word);
-    if let Some(recipient) = recipient {
-        packed.extend(recipient.as_bytes());
-    }
-    keccak256(packed)
-}
-
-/// Ask the set for the context it will check, and refuse to prove if it differs from the
-/// local one: a set without these views predates the ShadeNet contracts.
-fn onchain_context<R: RpcCall>(
-    rpc: &mut R,
-    network: &Network,
-    action: Action,
-    commitment: U256,
-    recipient: Option<Address>,
-) -> Result<[u8; 32], String> {
-    let data = match action {
-        Action::Exit => calldata("exitContext(uint256)", vec![Token::Uint(commitment)]),
-        Action::Withdraw => calldata(
-            "withdrawContext(uint256,address)",
-            vec![
-                Token::Uint(commitment),
-                Token::Address(recipient.unwrap_or_default()),
-            ],
-        ),
-        Action::Status => unreachable!("status has no proof context"),
-    };
-    let raw = eth_call(rpc, network, &data).map_err(|error| {
-        format!("the staking set has no proof-context view; it predates the ShadeNet contracts ({error})")
-    })?;
-    <[u8; 32]>::try_from(raw.as_slice())
-        .map_err(|_| "proof-context view returned malformed data".to_string())
-}
-
-fn gas_wallet(cli: &CliOptions) -> Result<FundingWallet, String> {
-    let mut key = if let Some(path) = &cli.key_file {
+fn gas_wallet(cli: &CliOptions) -> Result<Wallet, String> {
+    let key = Zeroizing::new(if let Some(path) = &cli.key_file {
         key_file(path)?
-    } else if let Ok(value) = std::env::var("SHADE_TREE_MEMBER_KEY") {
+    } else if let Some(value) = shadenet::env::var("MEMBER_KEY")? {
         value
-    } else if let Ok(value) = std::env::var("SHADE_TREE_REGISTER_KEY") {
+    } else if let Some(value) = shadenet::env::var("REGISTER_KEY")? {
         value
     } else {
         return Err(
-            "a gas key is required via --key-file, SHADE_TREE_MEMBER_KEY, or SHADE_TREE_REGISTER_KEY"
+            "a gas key is required via --key-file, SHADENET_MEMBER_KEY, or SHADENET_REGISTER_KEY"
                 .into(),
         );
-    };
+    });
     if key.trim().is_empty() {
         return Err("configured gas key is empty".into());
     }
-    use ethers_core::k256::elliptic_curve::zeroize::Zeroize;
-    let wallet = FundingWallet::from_key(&key);
-    key.zeroize();
-    wallet
+    Wallet::from_hex(&key)
 }
 
-fn latest_timestamp<R: RpcCall>(rpc: &mut R) -> Result<U256, String> {
-    let block = rpc.call("eth_getBlockByNumber", json!(["latest", false]))?;
-    result_quantity(
-        block
-            .get("timestamp")
-            .cloned()
-            .ok_or_else(|| "latest block has no timestamp".to_string())?,
-        "latest block timestamp",
-    )
-}
-
-fn send_action<R: RpcCall>(
-    rpc: &mut R,
-    network: &Network,
-    wallet: &FundingWallet,
-    chain_id: u64,
-    data: Bytes,
-    label: &str,
-) -> Result<(String, U256), String> {
-    let from = wallet.address;
-    let call = json!({
-        "from":format!("{from:#x}"), "to":format!("{:#x}", network.contract),
-        "value":"0x0", "data":format!("0x{}", hex::encode(&data)),
-    });
-    // Simulate the exact call before signing so stale state and bad proofs fail safely.
-    rpc.call("eth_call", json!([call.clone(), "latest"]))?;
-    let nonce = result_quantity(
-        rpc.call(
-            "eth_getTransactionCount",
-            json!([format!("{from:#x}"), "pending"]),
-        )?,
-        "eth_getTransactionCount",
-    )?;
-    let estimated = result_quantity(
-        rpc.call("eth_estimateGas", json!([call]))?,
-        "eth_estimateGas",
-    )?;
-    let gas = estimated
-        .checked_mul(U256::from(120))
-        .map(|value| value / U256::from(100))
-        .ok_or_else(|| "eth_estimateGas returned an unsupported value".to_string())?;
-    let gas_price = result_quantity(rpc.call("eth_gasPrice", json!([]))?, "eth_gasPrice")?;
-    let block = rpc.call("eth_getBlockByNumber", json!(["latest", false]))?;
-    let base_fee = result_quantity(
-        block.get("baseFeePerGas").cloned().ok_or_else(|| {
-            "latest block has no baseFeePerGas; this signer requires EIP-1559".to_string()
-        })?,
-        "baseFeePerGas",
-    )?;
-    let priority = rpc
-        .call("eth_maxPriorityFeePerGas", json!([]))
-        .ok()
-        .and_then(|value| result_quantity(value, "eth_maxPriorityFeePerGas").ok())
-        .or_else(|| {
-            gas_price
-                .checked_sub(base_fee)
-                .filter(|value| !value.is_zero())
-        })
-        .unwrap_or_else(|| gas_price.min(U256::from(1_000_000_000_u64)));
-    let max_fee = checked_fee(base_fee, priority)?.max(gas_price);
-    let balance = result_quantity(
-        rpc.call("eth_getBalance", json!([format!("{from:#x}"), "latest"]))?,
-        "eth_getBalance",
-    )?;
-    let required = gas
-        .checked_mul(max_fee)
-        .ok_or_else(|| "estimated lifecycle gas cost is too large to encode".to_string())?;
-    if balance < required {
-        return Err(format!(
-            "gas wallet balance {balance} wei is below the worst-case gas estimate {required} wei"
-        ));
-    }
-    let request = Eip1559TransactionRequest {
-        from: Some(from),
-        to: Some(NameOrAddress::Address(network.contract)),
-        gas: Some(gas),
-        value: Some(U256::zero()),
-        data: Some(data),
-        nonce: Some(nonce),
-        access_list: Default::default(),
-        max_priority_fee_per_gas: Some(priority),
-        max_fee_per_gas: Some(max_fee),
-        chain_id: Some(U64::from(chain_id)),
-    };
-    let transaction = TypedTransaction::Eip1559(request);
-    let signature = wallet.sign(&transaction)?;
-    let raw = transaction.rlp_signed(&signature);
-    let local_hash = format!("0x{}", hex::encode(keccak256(&raw)));
-    let remote = rpc
-        .call("eth_sendRawTransaction", json!([format!("0x{}", hex::encode(&raw))]))
-        .map_err(|error| format!(
-            "{label} transaction {local_hash} may have been broadcast ({error}); check the hash before retrying"
-        ))?;
-    let remote_hash = remote
-        .as_str()
-        .filter(|value| value.len() == 66 && value.starts_with("0x"))
-        .map(str::to_ascii_lowercase)
-        .ok_or_else(|| format!(
-            "RPC returned an invalid hash; {label} transaction {local_hash} may have been broadcast, so check it before retrying"
-        ))?;
-    if remote_hash != local_hash {
-        return Err(format!(
-            "RPC returned {remote_hash}, but locally signed {label} transaction is {local_hash}; check both before retrying"
-        ));
-    }
-    println!("  tx:       {local_hash}  (waiting for confirmation...)");
-    let started = Instant::now();
-    let timeout = Duration::from_millis(receipt_timeout_ms());
-    loop {
-        let receipt = rpc
-            .call("eth_getTransactionReceipt", json!([local_hash]))
-            .map_err(|error| format!(
-                "{label} transaction {local_hash} was broadcast but its receipt could not be checked ({error}); check the hash before retrying"
-            ))?;
-        if receipt.is_null() {
-            if started.elapsed() >= timeout {
-                return Err(format!(
-                    "{label} transaction {local_hash} did not reach 1 confirmation within {}ms; it may still confirm, so check before retrying",
-                    timeout.as_millis()
-                ));
-            }
-            thread::sleep(Duration::from_secs(1));
-            continue;
-        }
-        let status = receipt_quantity(&receipt, "status", &local_hash)?;
-        let block = receipt_quantity(&receipt, "blockNumber", &local_hash)?;
-        if status != U256::one() {
-            return Err(format!(
-                "{label} transaction {local_hash} reverted in block {block}"
-            ));
-        }
-        return Ok((local_hash, block));
-    }
-}
-
-fn print_status(state: MemberState, commitment: U256, json_output: bool) {
+fn print_status(state: &MemberState, leaf: &U256, json_output: bool) {
     if json_output {
         println!(
             "{}",
             json!({
-                "commitment": commitment.to_string(),
+                "commitment": leaf.to_string(),
                 "status": state.phase(),
                 "bondWei": state.bond.to_string(),
                 "index": state.index.to_string(),
@@ -544,7 +215,7 @@ fn print_status(state: MemberState, commitment: U256, json_output: bool) {
             })
         );
     } else {
-        println!("member {}", commitment);
+        println!("member {leaf}");
         println!("  status:          {}", state.phase());
         println!("  bond:            {} wei", state.bond);
         if !state.bond.is_zero() {
@@ -560,6 +231,11 @@ fn print_status(state: MemberState, commitment: U256, json_output: bool) {
     }
 }
 
+fn fail(error: impl std::fmt::Display, code: u8) -> ExitCode {
+    eprintln!("member: {error}");
+    ExitCode::from(code)
+}
+
 pub fn cmd_member(action: Action, args: &[String]) -> ExitCode {
     let cli = match parse_args(action, args) {
         Ok(Some(cli)) => cli,
@@ -572,192 +248,112 @@ pub fn cmd_member(action: Action, args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    // Strictly validate secret/leaf/tier consistency before the first network call.
+    // Validate secret/leaf/tier consistency before the first network call.
     let identity = match verified_identity(cli.identity.as_ref().unwrap(), cli.limit) {
         Ok(identity) => identity,
-        Err(error) => {
-            eprintln!("member: {error}");
-            return ExitCode::from(2);
-        }
+        Err(error) => return fail(error, 2),
     };
-    let network = match resolve_network(&cli) {
-        Ok(network) => network,
-        Err(error) => {
-            eprintln!("member: {error}");
-            return ExitCode::from(2);
-        }
+    let set = match resolve_set(&cli) {
+        Ok(set) => set,
+        Err(error) => return fail(error, 2),
     };
-    // Validate the gas key before contacting a public RPC, but status needs no key.
+    // Validate the gas key before contacting a public RPC; status needs no key.
     let wallet = if action == Action::Status {
         None
     } else {
         match gas_wallet(&cli) {
             Ok(wallet) => Some(wallet),
-            Err(error) => {
-                eprintln!("member: {error}");
-                return ExitCode::from(2);
-            }
+            Err(error) => return fail(error, 2),
         }
     };
-    let mut rpc = match HttpRpc::new(&network.rpc_url) {
-        Ok(rpc) => rpc,
-        Err(error) => {
-            eprintln!("member: {error}");
-            return ExitCode::from(1);
-        }
-    };
-    let chain_id = match check_chain(&mut rpc, &network) {
-        Ok(chain_id) => chain_id,
-        Err(error) => {
-            eprintln!("member: {error}");
-            return ExitCode::from(1);
-        }
-    };
-    let state = match member_state(&mut rpc, &network, identity.commitment) {
-        Ok(state) => state,
-        Err(error) => {
-            eprintln!("member: {error}");
-            return ExitCode::from(1);
-        }
-    };
-    if action == Action::Status {
-        print_status(state, identity.commitment, cli.json);
-        return ExitCode::SUCCESS;
-    }
-    if state.bond.is_zero() {
-        eprintln!("member: leaf is not currently bonded (it may be absent, withdrawn, or slashed)");
-        return ExitCode::from(1);
-    }
-    if state.limit != U256::from(identity.limit) {
-        eprintln!(
-            "member: on-chain tier {} does not match identity tier {}; refusing to prove",
-            state.limit, identity.limit
-        );
-        return ExitCode::from(1);
-    }
-    if action == Action::Exit && !state.exit_initiated_at.is_zero() {
-        println!(
-            "member is already exiting; withdrawable at {}.",
-            state.withdrawable_at
-        );
-        return ExitCode::SUCCESS;
-    }
-    if action == Action::Withdraw && state.exit_initiated_at.is_zero() {
-        eprintln!("member: exit has not been initiated; run exit-member first");
-        return ExitCode::from(1);
-    }
-    if action == Action::Withdraw {
-        let now = match latest_timestamp(&mut rpc) {
-            Ok(now) => now,
-            Err(error) => {
-                eprintln!("member: {error}");
-                return ExitCode::from(1);
-            }
-        };
-        if now < state.withdrawable_at {
-            eprintln!(
-                "member: still bonded; chain time {now}, withdrawable at {}",
-                state.withdrawable_at
-            );
-            return ExitCode::from(1);
-        }
-    }
     let recipient = match cli.recipient.as_deref() {
         Some(value) => match Address::from_str(value) {
-            Ok(address) if address != Address::zero() => Some(address),
-            _ => {
-                eprintln!("member: --recipient must be a non-zero 20-byte Ethereum address");
-                return ExitCode::from(2);
-            }
+            Ok(address) if address != Address::default() => Some(address),
+            _ => return fail("--recipient must be a non-zero 20-byte Ethereum address", 2),
         },
         None => None,
     };
-    let context = action_context(
-        action,
-        chain_id,
-        network.contract,
-        identity.commitment,
-        state.index,
-        recipient,
-    );
-    match onchain_context(&mut rpc, &network, action, identity.commitment, recipient) {
-        Ok(expected) if expected == context => {}
-        Ok(_) => {
-            eprintln!(
-                "member: the set's proof context differs from the local one; refusing to prove"
-            );
-            return ExitCode::from(1);
+    let mut rpc = match http_rpc(&set.rpc_url) {
+        Ok(rpc) => rpc,
+        Err(error) => return fail(error, 1),
+    };
+    let mut progress = |progress: Progress| match progress {
+        Progress::Proving => println!("building a local zero-knowledge proof..."),
+        Progress::Broadcast { hash } => {
+            println!("  tx:       {hash}  (waiting for confirmation...)")
         }
-        Err(error) => {
-            eprintln!("member: {error}");
-            return ExitCode::from(1);
-        }
-    }
-    if cli.circuits.is_none() {
-        if let Err(error) = shadenet_rln::artifacts::verify_withdraw_embedded() {
-            eprintln!("member: {error}");
-            return ExitCode::from(1);
-        }
-    }
-    println!("building a local zero-knowledge proof...");
-    let proof = match shadenet_rln::withdraw::build_withdraw_proof(
-        &shadenet_rln::withdraw::WithdrawProofInput {
-            identity_secret: identity.identity_secret,
-            context,
-            circuits_dir: cli.circuits,
-        },
-    ) {
-        Ok(proof) => proof,
-        Err(error) => {
-            eprintln!("member: could not build authorization proof: {error}");
-            return ExitCode::from(1);
+        Progress::Bond { .. } => {}
+    };
+    let header = |label: &str, wallet: &Wallet| {
+        println!("{label}({})", identity.leaf);
+        println!("  contract: {}", set.contract);
+        println!("  rpc:      {}", rpc_label(&set.rpc_url));
+        println!("  from:     {}", wallet.address);
+        if let Some(recipient) = recipient {
+            println!("  recipient:{recipient}");
         }
     };
-    let data = match action {
-        Action::Exit => calldata(
-            "initiateExit(uint256,bytes)",
-            vec![
-                Token::Uint(identity.commitment),
-                Token::Bytes(proof.proof_bytes),
-            ],
-        ),
-        Action::Withdraw => calldata(
-            "withdraw(uint256,address,bytes)",
-            vec![
-                Token::Uint(identity.commitment),
-                Token::Address(recipient.unwrap()),
-                Token::Bytes(proof.proof_bytes),
-            ],
-        ),
-        Action::Status => unreachable!(),
-    };
-    let label = if action == Action::Exit {
-        "exit"
-    } else {
-        "withdrawal"
-    };
-    println!("{label}({})", identity.commitment);
-    println!("  contract: {:#x}", network.contract);
-    println!("  rpc:      {}", rpc_label(&network.rpc_url));
-    println!("  from:     {:#x}", wallet.as_ref().unwrap().address);
-    if let Some(recipient) = recipient {
-        println!("  recipient:{recipient:#x}");
-    }
-    match send_action(
-        &mut rpc,
-        &network,
-        wallet.as_ref().unwrap(),
-        chain_id,
-        data,
-        label,
-    ) {
-        Ok((hash, block)) => {
-            println!("  mined:    {hash} in block {block}; {label} confirmed.");
-            ExitCode::SUCCESS
+    match action {
+        Action::Status => {
+            if let Err(error) = member::check_chain(&mut rpc, &set) {
+                return fail(error, 1);
+            }
+            match member::member_state(&mut rpc, &set, &identity.leaf) {
+                Ok(state) => {
+                    print_status(&state, &identity.leaf, cli.json);
+                    ExitCode::SUCCESS
+                }
+                Err(error) => fail(error, 1),
+            }
         }
-        Err(error) => {
-            eprintln!("member: {error}");
-            ExitCode::from(1)
+        Action::Exit => {
+            let wallet = wallet.unwrap();
+            header("exit", &wallet);
+            match member::exit(
+                &mut rpc,
+                &set,
+                &identity,
+                &wallet,
+                cli.circuits,
+                send_options(),
+                &mut progress,
+            ) {
+                Ok(ExitOutcome::AlreadyExiting { withdrawable_at }) => {
+                    println!("member is already exiting; withdrawable at {withdrawable_at}.");
+                    ExitCode::SUCCESS
+                }
+                Ok(ExitOutcome::Mined(mined)) => {
+                    println!(
+                        "  mined:    {} in block {}; exit confirmed.",
+                        mined.hash, mined.block
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => fail(error, 1),
+            }
+        }
+        Action::Withdraw => {
+            let wallet = wallet.unwrap();
+            header("withdrawal", &wallet);
+            match member::withdraw(
+                &mut rpc,
+                &set,
+                &identity,
+                recipient.unwrap(),
+                &wallet,
+                cli.circuits,
+                send_options(),
+                &mut progress,
+            ) {
+                Ok(mined) => {
+                    println!(
+                        "  mined:    {} in block {}; withdrawal confirmed.",
+                        mined.hash, mined.block
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => fail(error, 1),
+            }
         }
     }
 }
@@ -765,82 +361,6 @@ pub fn cmd_member(action: Action, args: &[String]) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
-    use std::sync::{Arc, Mutex};
-
-    struct MockRpc {
-        calls: Arc<Mutex<Vec<(String, Value)>>>,
-        wrong_chain: bool,
-    }
-
-    impl RpcCall for MockRpc {
-        fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
-            self.calls
-                .lock()
-                .unwrap()
-                .push((method.to_string(), params.clone()));
-            Ok(match method {
-                "eth_chainId" => Value::String(if self.wrong_chain {
-                    "0x1".into()
-                } else {
-                    "0xaa36a7".into()
-                }),
-                "eth_getCode" => Value::String("0x6001600055".into()),
-                "eth_call" => {
-                    let data = params[0]["data"].as_str().unwrap_or_default();
-                    if data.starts_with(&format!("0x{}", hex::encode(&id("members(uint256)")[..4])))
-                    {
-                        Value::String(format!(
-                            "0x{}",
-                            hex::encode(encode(&[
-                                Token::Uint(U256::from(100_u64)),
-                                Token::Uint(U256::from(7_u64)),
-                                Token::Uint(U256::from(55_u64)),
-                                Token::Uint(U256::one()),
-                            ]))
-                        ))
-                    } else if data.starts_with(&format!(
-                        "0x{}",
-                        hex::encode(&id("withdrawableAt(uint256)")[..4])
-                    )) {
-                        Value::String(format!(
-                            "0x{}",
-                            hex::encode(encode(&[Token::Uint(U256::from(86_455_u64))]))
-                        ))
-                    } else {
-                        Value::String("0x".into())
-                    }
-                }
-                "eth_getTransactionCount" => Value::String("0x7".into()),
-                "eth_estimateGas" => Value::String("0x186a0".into()),
-                "eth_gasPrice" => Value::String("0x77359400".into()),
-                "eth_maxPriorityFeePerGas" => Value::String("0x3b9aca00".into()),
-                "eth_getBalance" => Value::String("0xde0b6b3a7640000".into()),
-                "eth_getBlockByNumber" => {
-                    json!({"baseFeePerGas":"0x3b9aca00","timestamp":"0x15180"})
-                }
-                "eth_sendRawTransaction" => {
-                    let raw = params[0].as_str().unwrap();
-                    Value::String(format!(
-                        "0x{}",
-                        hex::encode(keccak256(hex::decode(&raw[2..]).unwrap()))
-                    ))
-                }
-                "eth_getTransactionReceipt" => {
-                    json!({"status":"0x1","blockNumber":"0x2a"})
-                }
-                _ => panic!("unexpected method {method}"),
-            })
-        }
-    }
-
-    fn network() -> Network {
-        Network {
-            contract: Address::from_str("0x2222222222222222222222222222222222222222").unwrap(),
-            rpc_url: "https://rpc.example/private-token".into(),
-            expected_chain_id: Some(11_155_111),
-        }
-    }
 
     #[test]
     fn parser_enforces_private_identity_and_action_specific_flags() {
@@ -868,158 +388,5 @@ mod tests {
         .unwrap();
         assert_eq!(parsed.identity, Some(PathBuf::from("a.json")));
         assert_eq!(parsed.key_file, Some(PathBuf::from("gas.key")));
-    }
-
-    #[test]
-    fn action_context_matches_solidity_packed_layout() {
-        // Golden values from testdata/withdraw-proof.json, which the Foundry tests replay
-        // against StakedReputationSet.exitContext / withdrawContext at the same address.
-        let fixture: Value =
-            serde_json::from_str(include_str!("../../../testdata/withdraw-proof.json")).unwrap();
-        let chain_id = fixture["chainId"].as_u64().unwrap();
-        let contract = Address::from_str(fixture["set"].as_str().unwrap()).unwrap();
-        let commitment = U256::from_dec_str(fixture["commitment"].as_str().unwrap()).unwrap();
-        let index = U256::from(fixture["index"].as_u64().unwrap());
-        let recipient = Address::from_str(fixture["recipient"].as_str().unwrap()).unwrap();
-        let hex32 = |value: &Value| {
-            let bytes = hex::decode(value.as_str().unwrap().trim_start_matches("0x")).unwrap();
-            <[u8; 32]>::try_from(bytes.as_slice()).unwrap()
-        };
-        assert_eq!(
-            action_context(Action::Exit, chain_id, contract, commitment, index, None),
-            hex32(&fixture["exit"]["context"])
-        );
-        assert_eq!(
-            action_context(
-                Action::Withdraw,
-                chain_id,
-                contract,
-                commitment,
-                index,
-                Some(recipient)
-            ),
-            hex32(&fixture["withdraw"]["context"])
-        );
-        // Every bound field changes the context.
-        let base = action_context(Action::Exit, chain_id, contract, commitment, index, None);
-        assert_ne!(
-            base,
-            action_context(Action::Exit, 1, contract, commitment, index, None)
-        );
-        assert_ne!(
-            base,
-            action_context(
-                Action::Exit,
-                chain_id,
-                Address::zero(),
-                commitment,
-                index,
-                None
-            )
-        );
-        assert_ne!(
-            base,
-            action_context(
-                Action::Exit,
-                chain_id,
-                contract,
-                commitment,
-                U256::one(),
-                None
-            )
-        );
-    }
-
-    #[test]
-    fn member_phase_is_unambiguous() {
-        let state = MemberState {
-            bond: U256::zero(),
-            index: U256::zero(),
-            exit_initiated_at: U256::zero(),
-            limit: U256::zero(),
-            withdrawable_at: U256::zero(),
-        };
-        assert_eq!(state.phase(), "absent");
-        assert_eq!(
-            MemberState {
-                bond: U256::one(),
-                ..state
-            }
-            .phase(),
-            "active"
-        );
-        assert_eq!(
-            MemberState {
-                bond: U256::one(),
-                exit_initiated_at: U256::one(),
-                ..state
-            }
-            .phase(),
-            "exiting"
-        );
-    }
-
-    #[test]
-    fn reads_typed_member_state_and_rejects_wrong_chain_first() {
-        let calls = Arc::new(Mutex::new(Vec::new()));
-        let mut rpc = MockRpc {
-            calls: calls.clone(),
-            wrong_chain: false,
-        };
-        assert_eq!(check_chain(&mut rpc, &network()).unwrap(), 11_155_111);
-        let state = member_state(&mut rpc, &network(), U256::from(123_u64)).unwrap();
-        assert_eq!(state.phase(), "exiting");
-        assert_eq!(state.bond, U256::from(100_u64));
-        assert_eq!(state.limit, U256::one());
-        assert_eq!(state.withdrawable_at, U256::from(86_455_u64));
-
-        let mut wrong = MockRpc {
-            calls: Arc::new(Mutex::new(Vec::new())),
-            wrong_chain: true,
-        };
-        assert!(check_chain(&mut wrong, &network())
-            .unwrap_err()
-            .contains("does not match"));
-        assert_eq!(wrong.calls.lock().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn locally_signs_and_simulates_exact_lifecycle_calldata() {
-        const KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-        let calls = Arc::new(Mutex::new(Vec::new()));
-        let mut rpc = MockRpc {
-            calls: calls.clone(),
-            wrong_chain: false,
-        };
-        let wallet = FundingWallet::from_key(KEY).unwrap();
-        let data = calldata(
-            "initiateExit(uint256,bytes)",
-            vec![Token::Uint(U256::from(123_u64)), Token::Bytes(vec![9; 288])],
-        );
-        let expected_selector = format!("0x{}", hex::encode(&data[..4]));
-        let (hash, block) =
-            send_action(&mut rpc, &network(), &wallet, 11_155_111, data, "exit").unwrap();
-        assert!(hash.starts_with("0x"));
-        assert_eq!(block, U256::from(42_u64));
-        let calls = calls.lock().unwrap();
-        let simulation = calls
-            .iter()
-            .find(|(method, params)| {
-                method == "eth_call"
-                    && params[0]["data"]
-                        .as_str()
-                        .is_some_and(|value| value.starts_with(&expected_selector))
-            })
-            .expect("exact lifecycle simulation");
-        assert_eq!(simulation.1[0]["value"], "0x0");
-        let raw = calls
-            .iter()
-            .find(|(method, _)| method == "eth_sendRawTransaction")
-            .unwrap()
-            .1[0]
-            .as_str()
-            .unwrap();
-        assert!(raw.starts_with("0x02"));
-        assert!(!raw.contains(KEY.trim_start_matches("0x")));
     }
 }
