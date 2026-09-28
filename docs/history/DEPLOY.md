@@ -1,8 +1,10 @@
 # Deploying the split: droplet gateway + laptop client
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 > **PoC-era guide** (single pinned gateway, `scripts/run-*.sh`, `members.json`). The
 > current one-command bring-up is `bootnode/deploy/bootstrap.sh` — see
-> [`OPERATOR.md`](OPERATOR.md) and [`QUICKSTART.md`](QUICKSTART.md).
+> [`OPERATOR.md`](../OPERATOR.md) and [`QUICKSTART.md`](../QUICKSTART.md).
 
 The PoC runs all three pieces (Tor, gateway, shim) on one machine via
 `scripts/run-all.sh`. A real deployment splits them across the trust boundary:

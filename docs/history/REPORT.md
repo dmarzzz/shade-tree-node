@@ -8,7 +8,7 @@ that they belong to a curated set, and drops everyone else before a byte leaves.
 
 This report is the record of what was built, what was deployed, and what we tested.
 For the moving picture see [`walkthrough.html`](walkthrough.html); for the raw
-experiment view see [`../experiments/dashboard.html`](../experiments/dashboard.html).
+experiment view see [`../experiments/dashboard.html`](../../experiments/dashboard.html).
 
 ## The problem
 
@@ -130,7 +130,7 @@ procedure, invariants, and a verification matrix are in [`DEPLOY.md`](DEPLOY.md)
 
 Laptop: `export SHADE_TREE_ONION=<onion>` then `bash scripts/run-client.sh` and
 `bash scripts/verify.sh`. To hand the egress to a friend, give them their own key
-and [`JOIN.md`](JOIN.md); they run `bash scripts/join.sh <onion> <secret>`.
+and [`JOIN.md`](../JOIN.md); they run `bash scripts/join.sh <onion> <secret>`.
 
 ## Bottom line
 

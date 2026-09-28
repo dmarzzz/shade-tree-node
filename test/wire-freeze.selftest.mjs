@@ -28,13 +28,15 @@ const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { conso
 
 // [frozen literal as it appears in source, [files that must contain it byte for byte]]
 const FROZEN = [
-  // keccak contexts compiled into the deployed Sepolia StakedReputationSet (0xEB67…4275) and
-  // bound into the withdraw proof. A fresh deploy (M1, CHAIN-4) is the one place these may move.
-  ['"SHADE_TREE_EXIT"', [
+  // Exit / withdraw proof-context tags. The v4 tags "SHADE_TREE_EXIT" / "SHADE_TREE_WITHDRAW" were
+  // compiled into the retired v4 set 0xEB67…4275; the ShadeNet contracts (M1, audit 2.2.1) bind
+  // chain id, set address and leaf index under these tags, which are now compiled into every
+  // ShadeNet deployment and bound into withdraw proofs. No code verifies the v4 tags any more.
+  ['"SHADENET_EXIT"', [
     "contracts/StakedReputationSet.sol", "crates/shadenet-cli/src/member.rs",
     "testdata/gen-withdraw-proof.mjs", "test/StakedReputationSet.tiers.t.sol", "test/WithdrawVerifier.t.sol",
   ]],
-  ['"SHADE_TREE_WITHDRAW"', [
+  ['"SHADENET_WITHDRAW"', [
     "contracts/StakedReputationSet.sol", "crates/shadenet-cli/src/member.rs",
     "testdata/gen-withdraw-proof.mjs", "test/WithdrawVerifier.t.sol",
   ]],

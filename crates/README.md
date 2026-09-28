@@ -135,5 +135,5 @@ variable under either prefix from the child's environment.
 
 ShadeNet speaks protocol v4. Signed, hashed and proved strings keep their
 "Shade Tree" spelling until a versioned v5; `test/wire-freeze.selftest.mjs`
-pins them. See [`../docs/MIGRATING-TO-SHADE-TREE.md`](../docs/MIGRATING-TO-SHADE-TREE.md)
+pins them. See [`../docs/MIGRATING-TO-SHADE-TREE.md`](../docs/history/MIGRATING-TO-SHADE-TREE.md)
 for the v3 to v4 boundary.

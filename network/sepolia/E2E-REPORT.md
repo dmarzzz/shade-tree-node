@@ -10,7 +10,7 @@ onion, and hop is here, with the flows drawn out.
 - **Network:** Ethereum Sepolia (chainId 11155111) + Tor + DigitalOcean nyc3.
 - **Companion artifacts:** [`contracts.json`](contracts.json), [`directory.json`](directory.json),
   [`integration-report.md`](integration-report.md) (the on-chain slash trace),
-  [`../../docs/DEPLOYMENT.md`](../../docs/DEPLOYMENT.md) (runbook), and the design docs
+  [`../../docs/DEPLOYMENT.md`](../../docs/history/DEPLOYMENT.md) (runbook), and the design docs
   ONCHAIN / FLEET / LIGHT-CLIENT / NEXT-VERSION.
 
 ---

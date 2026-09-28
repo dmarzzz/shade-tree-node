@@ -40,7 +40,7 @@ use crate::tree::{external_nullifier, fr_to_dec, parse_fr, MerkleTree, TREE_DEPT
 // the `embedded-artifacts` feature (OFF by default; `shadenet-cli`'s `live` feature turns
 // it on) so the standalone probe/tree bins and the everyday shadenet-rln build stay lean.
 // Paths are anchored at CARGO_MANIFEST_DIR (crates/shadenet-rln) -> repo root -> circuits/rln.
-// TESTNET-ONLY artifacts (untrusted ceremony, docs/SHIP-PLAN.md T-HARD-1): embedding does
+// TESTNET-ONLY artifacts (untrusted ceremony, docs/history/SHIP-PLAN.md T-HARD-1): embedding does
 // not change their provenance — a production build must re-embed audited artifacts.
 #[cfg(feature = "embedded-artifacts")]
 mod embedded {

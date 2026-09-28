@@ -1,5 +1,7 @@
 # Migrating to Shade Tree v4
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 Shade Tree v4 is a clean protocol and naming boundary. It intentionally does
 not accept the earlier wire format or configuration names.
 
@@ -74,5 +76,5 @@ shade-tree run -- your-agent
 ```
 
 The wrapper replaces ambient proxy bypass configuration with a loopback-safe
-list plus explicit additions. Review [`CLI.md`](CLI.md) before using it around
+list plus explicit additions. Review [`CLI.md`](../CLI.md) before using it around
 software with custom proxy behavior.

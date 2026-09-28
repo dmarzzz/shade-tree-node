@@ -159,7 +159,7 @@ fn remove_middle_matches_zero_in_place_reconstruction() {
 
     // The loop-26 JS/contract golden root for {register c0@0,c1@1,c2@2; slash c1}.
     // It is the SAME constant pinned in lib/rln-removal-parity.selftest.mjs and
-    // docs/SHIP-PLAN.md T-DEV-2 — the three-way triangulated JS↔contract oracle.
+    // docs/history/SHIP-PLAN.md T-DEV-2 — the three-way triangulated JS↔contract oracle.
     const GOLDEN_ROOT: &str =
         "14367190620832145537223890636337926502210861635134078778082353204233456513838";
 

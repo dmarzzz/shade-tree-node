@@ -44,13 +44,26 @@ const commitment32 = poseidon2([identityCommitment, K32]); // the SAME identity'
 // The recipient the withdraw proof is bound to (matches the Foundry test's RECIPIENT).
 const RECIPIENT = getAddress("0x000000000000000000000000000000000000bEEF");
 
-// Build the two contexts EXACTLY as StakedReputationSet computes them, then reduce into
-// the field to get the circuit's public `address` input.
+// Audit 2.2.1: contexts bind the chain, the set's address and the leaf index. The Foundry
+// tests deploy the set at SET with Cheats.deployAt, on forge's default chain id, and each
+// fixtured leaf is the set's first registration (index 0).
+const CHAIN_ID = 31337n;
+const SET = getAddress("0x00000000000000000000000000000000005E7F17");
+const INDEX = 0n;
+
+// Build the two contexts EXACTLY as StakedReputationSet.exitContext / withdrawContext do,
+// then reduce into the field to get the circuit's public `address` input.
 function ctxExit(c) {
-  return solidityPackedKeccak256(["string", "uint256"], ["SHADE_TREE_EXIT", c]);
+  return solidityPackedKeccak256(
+    ["string", "uint256", "address", "uint256", "uint256"],
+    ["SHADENET_EXIT", CHAIN_ID, SET, c, INDEX],
+  );
 }
 function ctxWithdraw(c, recipient) {
-  return solidityPackedKeccak256(["string", "uint256", "address"], ["SHADE_TREE_WITHDRAW", c, recipient]);
+  return solidityPackedKeccak256(
+    ["string", "uint256", "address", "uint256", "uint256", "address"],
+    ["SHADENET_WITHDRAW", CHAIN_ID, SET, c, INDEX, recipient],
+  );
 }
 
 const coder = AbiCoder.defaultAbiCoder();
@@ -98,6 +111,9 @@ async function main() {
     circuit: "circom-rln withdraw (RLN slash-side): out = Poseidon(1)([identitySecret]); public [address]",
     pubSignalLayout: ["identityCommitment", "address"],
     K: Number(K),
+    chainId: Number(CHAIN_ID),
+    set: SET,
+    index: Number(INDEX),
     commitment: commitment.toString(),
     identityCommitment: identityCommitment.toString(),
     recipient: RECIPIENT,

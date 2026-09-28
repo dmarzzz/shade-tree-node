@@ -1,5 +1,7 @@
 # Next version: combined build spec (A + B + C)
 
+> **History.** Kept as written for the record; it describes an earlier version and is not a current runbook. Current docs: [docs index](../README.md).
+
 **Status: build spec for the next version.** This is the integration contract three
 parallel tracks build against, then combine. It bundles the increments discussed in
 ONCHAIN.md / FLEET.md / LIGHT-CLIENT.md into one coherent demo:

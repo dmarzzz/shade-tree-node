@@ -11,5 +11,5 @@
   },
   "deployedRef": "main@d8a6530146b13986870eb42299ace1118ebfb0b9",
   "updated": "2026-08-23",
-  "note": "RETIRED FROM SHADE TREE v4 on 2026-08-23. This pre-v4 research fleet may remain reachable for the read-only public Grove census, but current clients and nodes must not use it: its envelope and signed capability domains are intentionally incompatible with v4. Historical deployment details: live from 2026-08-17 (docs/GO-LIVE-LOG-2026-08-17.md, T-DEPLOY-1 + T-DEPLOY-2 + Phase 3), with one bootnode and two gateways, stake admission, on-chain slashing, onion PoW off, and the committed group/members.json fallback. staticDirectory is retained as signed migration evidence. Onions and pubkeys only, never IPs."
+  "note": "RETIRED FROM SHADE TREE v4 on 2026-08-23. This pre-v4 research fleet may remain reachable for the read-only public Grove census, but current clients and nodes must not use it: its envelope and signed capability domains are intentionally incompatible with v4. Historical deployment details: live from 2026-08-17 (docs/history/GO-LIVE-LOG-2026-08-17.md, T-DEPLOY-1 + T-DEPLOY-2 + Phase 3), with one bootnode and two gateways, stake admission, on-chain slashing, onion PoW off, and the committed group/members.json fallback. staticDirectory is retained as signed migration evidence. Onions and pubkeys only, never IPs."
 }

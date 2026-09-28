@@ -9,7 +9,7 @@
   rest of that design — the on-chain tree, off-chain redemption via the existing RLN proof, no
   facilitator, Layer 0 as the buyer's choice — is unchanged and is what this ADR records.
 - Date: 2026-08-17
-- Task: T-FEAT-7 (docs/SHIP-PLAN.md) — payments / anonymous access funding
+- Task: T-FEAT-7 (docs/history/SHIP-PLAN.md) — payments / anonymous access funding
 
 ## Context
 

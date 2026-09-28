@@ -8,6 +8,7 @@ pragma solidity ^0.8.24;
 
 import {FuzzBase} from "./FuzzHelpers.sol";
 import {StakedReputationSet, IWithdrawVerifier, ICommitmentHasher} from "../contracts/StakedReputationSet.sol";
+import {StakedReputationSetHarness} from "./StakedReputationSetHarness.sol";
 import {RateCommitmentHasher} from "../contracts/RateCommitmentHasher.sol";
 import {MockWithdrawVerifier} from "../contracts/MockWithdrawVerifier.sol";
 
@@ -16,7 +17,7 @@ contract StakedReputationSetFuzzTest is FuzzBase {
     uint256 constant UNBONDING = 300;
     uint256 constant MIN_UNBONDING = 270;
 
-    StakedReputationSet set;
+    StakedReputationSetHarness set;
     RateCommitmentHasher hasher;
     MockWithdrawVerifier verifier;
 
@@ -26,7 +27,7 @@ contract StakedReputationSetFuzzTest is FuzzBase {
     function setUp() public {
         hasher = new RateCommitmentHasher();
         verifier = new MockWithdrawVerifier(ICommitmentHasher(address(hasher)));
-        set = new StakedReputationSet(
+        set = new StakedReputationSetHarness(
             BOND,
             UNBONDING,
             MIN_UNBONDING,
@@ -166,7 +167,7 @@ contract StakedReputationSetFuzzTest is FuzzBase {
         uint256[] memory b = new uint256[](1);
         l[0] = 1;
         b[0] = PUBLIC_BOND;
-        t = new StakedReputationSet(
+        t = new StakedReputationSetHarness(
             PUBLIC_DEFAULT_BOND,
             UNBONDING,
             MIN_UNBONDING,
@@ -185,13 +186,14 @@ contract StakedReputationSetFuzzTest is FuzzBase {
         uint256 limit = tierOne ? 1 : 8;
         uint256 due = t.bondFor(limit);
         uint256 commit = hasher.commitmentOf(secret, limit);
+        uint256 idc = hasher.identityCommitmentOf(secret);
 
         uint256 wrongWei = _bound(rawWei, 0, 10 * PUBLIC_DEFAULT_BOND);
         vmf.assume(wrongWei != due);
         vm.expectRevert(StakedReputationSet.BadBond.selector);
-        t.register{value: wrongWei}(commit, limit);
+        t.registerIdentity{value: wrongWei}(idc, limit);
 
-        t.register{value: due}(commit, limit);
+        t.registerIdentity{value: due}(idc, limit);
         assertTrue(t.isActive(commit), "tier bond admits the leaf");
         assertEq(t.limitOf(commit), limit, "recorded limit == staked limit");
         assertEq(address(t).balance, due);
@@ -207,7 +209,7 @@ contract StakedReputationSetFuzzTest is FuzzBase {
         uint256 limit = tierOne ? 1 : 8;
         uint256 due = t.bondFor(limit);
         uint256 commit = hasher.commitmentOf(secret, limit);
-        t.register{value: due}(commit, limit);
+        t.registerIdentity{value: due}(hasher.identityCommitmentOf(secret), limit);
         if (exiting) t.initiateExit(commit, _proof(secret));
 
         uint256 other = _bound(rawOther, 0, 70_000);

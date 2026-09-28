@@ -1,6 +1,6 @@
 name: uptime-probe
 
-# T-DEPLOY-5 / GAP-8 (docs/GO-LIVE.md row 6.3): a hosted, tor-capable runner for
+# T-DEPLOY-5 / GAP-8 (docs/history/GO-LIVE.md row 6.3): a hosted, tor-capable runner for
 # scripts/uptime-probe.mjs — the SLI source for docs/SLO.md 2.2/2.3 (monitoring/UPTIME.md).
 #
 # It installs tor on the runner, waits for it to bootstrap, then runs the probe OVER TOR against

@@ -38,7 +38,7 @@ and serves clients in priority order by the effort they proved.
   apt package (what `bootstrap.sh` installs) ships the `pow` module; the
   Homebrew bottle does NOT (the PoW code is GPL, the bottle is BSD-only), and a
   `pow: no` client could not reach a PoW-enabled onion at all
-  (`docs/DEPLOYMENT.md` "PoW capability mismatch") — which is why the deploy
+  (`docs/history/DEPLOYMENT.md` "PoW capability mismatch") — which is why the deploy
   default is off, the repo's `tor/torrc` leaves it off, and the local demo enables
   it only when the running tor has the module. Check with `tor --version` /
   `tor --list-modules` (look for `pow: yes`).
@@ -63,7 +63,7 @@ tuning the queue geometry, not the difficulty.
 A long-lived onion service builds many circuits over its lifetime. An adversary
 running middle relays can, over time, use guard-discovery attacks to learn the
 service's entry guards and then attack or watch them (Biryukov-Pustogarov-
-Weinmann 2013; see `docs/adversarial-review.md` section 11). Vanguards pin extra
+Weinmann 2013; see `docs/history/adversarial-review.md` section 11). Vanguards pin extra
 layers of semi-persistent guards so the set of relays adjacent to the service
 does not churn freely, raising the cost of that discovery.
 

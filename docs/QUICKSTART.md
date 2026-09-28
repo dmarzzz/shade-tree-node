@@ -29,7 +29,7 @@ shade-tree-node doctor        # checks node, tor, deps, keys
 Common `--flags` map to `SHADE_TREE_*` variables; command-specific flags pass through to the
 underlying module (see [CONFIG.md](CONFIG.md)).
 Agent developers who do not need the repository can use the shorter
-[agent install](AGENT.md#1-install-the-agent-cli).
+[agent install](AGENT.md#1-install-the-live-binary).
 
 ## Path A: connect to an operator's v4 canopy
 
@@ -91,7 +91,7 @@ shade-tree-node pay --bootnode <v4-elder.onion> --limit "$SHADE_TREE_LIMIT" \
 # staked admission, when offered by the v4 operator
 read -s SHADE_TREE_REGISTER_KEY
 SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" \
-shade-tree register-member <commitment> --limit "$SHADE_TREE_LIMIT" \
+shade-tree register-member <identity-commitment> --limit "$SHADE_TREE_LIMIT" \
   --rpc-url <operator-rpc-url> --group-contract <v4-staked-set-address>
 unset SHADE_TREE_REGISTER_KEY
 ```
@@ -233,7 +233,7 @@ anvil &
 forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --broadcast \
   --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-shade-tree register-member <commitment> --limit 8 # stake a tier-8 member from `shade-tree enroll --commitment-only --limit 8`
+shade-tree register-member <identity-commitment> --limit 8 # stake a tier-8 member; `enroll` prints its identity commitment
 shade-tree register-gateway                      # stake a node operator; command retains wire name
 shade-tree-node elder --admission stake --stake-mode onchain \
   --gateway-registry <addr> --rpc-url http://127.0.0.1:8545

@@ -9,7 +9,7 @@ tested reference implementation to something robustly deployed, monitored, docum
 and safe for others to run. It is the source of truth for the autonomous build loop.
 
 For the *protocol design* milestones (what each feature is and why) see
-[`ROADMAP.md`](ROADMAP.md). This doc is the *shipping* backlog: concrete, checkable
+[`ROADMAP.md`](../ROADMAP.md). This doc is the *shipping* backlog: concrete, checkable
 tasks across every workstream, prioritized, with acceptance criteria.
 
 ---
@@ -68,7 +68,7 @@ Development-correctness P0s (workstream 1) run alongside Gate 1 (they are what t
 
 > **Gate 1 + Gate 2 DONE; Gate 3 (deploy) IN PROGRESS (2026-08-17 ship day).** PR #5 merged to `main`; the
 > loop-34 backlog (T-TEST-3, T-DEPLOY-5, T-DOC-8, T-HARD-4, T-HARD-8) shipped as PRs #7–#13. `GatewayRegistry`
-> is live on Sepolia. Next up: **T-DEPLOY-1/2** per `docs/GO-LIVE.md` (in flight), then the human items:
+> is live on Sepolia. Next up: **T-DEPLOY-1/2** per `docs/history/GO-LIVE.md` (in flight), then the human items:
 > the trusted-setup **ceremony** (issue #6, `docs/CEREMONY.md` §8), stake admission (GO-LIVE Phase 3),
 > **T-DEV-9b** (Helios), **T-FEAT-7** (payments).
 
@@ -234,7 +234,7 @@ slash, stake lifecycle) gets negative and concurrent cases, not just a positive 
 - [x] **T-TEST-15 (P1) Fuzz regression corpus.** DONE (loop-14): `testdata/corpus/regressions.json` (16 curated adversarial inputs drawn from real audit findings) replayed first+fast in `test/fuzz.selftest.mjs`; documented add-procedure. No entry revealed a still-unfixed bug.
 - [x] **T-TEST-16 (P2) Timing/side-channel sanity.** DONE (loop-7, `test/timing.selftest.mjs`: per-member verify medians within ~1.1-1.3x, gated at 2x; Groth16 verify is witness-oblivious).
 - [x] **T-TEST-17 (P1) Fast/slow test split.** DONE (loop-10): `SHADE_TREE_FAST=1`/`--fast` in scripts/test-all.mjs skips the 3 real-proof suites + forge and prints exactly what it skipped; `npm run test:fast` ~7s vs ~86s full. Also fixed a pre-existing wall-clock flake in `lib/rln.selftest.mjs` (pin verifyEnvelope nowMs to the proof's epoch).
-- [x] **T-DEPLOY-1 (P0) First live deployment.** DONE 2026-08-17 (PR #38, `docs/GO-LIVE-LOG-2026-08-17.md`): box =
+- [x] **T-DEPLOY-1 (P0) First live deployment.** DONE 2026-08-17 (PR #38, `docs/history/GO-LIVE-LOG-2026-08-17.md`): box =
   the idle June PoC droplet `anon-egress` (DO NYC1) via `bootstrap.sh` (main@cb237e07, PoW off, admission open, root =
   committed `group/members.json`). Bootnode `kssrk54kb5kngr4jjdzjouecwjh5ayzbzhamwmvju4kz63vno7hy4uyd.onion`, signer
   `d79f78c3…953a73`, gateway-1 `yaxo4ywgoizk4yiylx66k3vjsgcj5waruumgi6dgds4fgaihd2eh7yqd.onion` (region na). Acceptance A:
@@ -247,7 +247,7 @@ slash, stake lifecycle) gets negative and concurrent cases, not just a positive 
   egresses through the fleet end to end. Do NOT start until the test suite is hardened and the Rust
   client MVP passes conformance. *Accept:* `curl -x` through the client returns the gateway IP;
   `/directory` lists it. Take care not to disrupt the existing live gateway on `anon-egress`.
-- [x] **T-DEPLOY-2 (P1) Multi-gateway across regions/ASNs.** DONE 2026-08-17 (later) (PR #47, `docs/GO-LIVE-LOG-2026-08-17.md`
+- [x] **T-DEPLOY-2 (P1) Multi-gateway across regions/ASNs.** DONE 2026-08-17 (later) (PR #47, `docs/history/GO-LIVE-LOG-2026-08-17.md`
   "(later)" rows 5.7–5.10): box-2 = agent-devops `shade-tree-gw-04` (DO SFO3, s-1vcpu-1gb, gateway-only bootstrap), gateway-2
   `av4m256h4wwgwdmg74wnqem7s7l333h6755sroydlbcq62ptkmawtwid.onion`; signed directory = 2 gateways
   (`network/sepolia/directory-bootnode.json`), JS rotation 4/4 across both egress IPs, Rust rotation across both, two
@@ -280,7 +280,7 @@ slash, stake lifecycle) gets negative and concurrent cases, not just a positive 
   `WITH_BOOTNODE` (`SHADE_TREE_BOOTNODE_ONION` gateway-only mode, + `SHADE_TREE_RENDER_ONLY`, `bootnode/deploy/bootstrap.selftest.mjs`,
   gateway-only CI matrix entry); GAP-8 `monitoring/uptime/` timer + `.github/workflows/uptime-probe.yml`; GAP-10
   `network/sepolia/bootnode.json` + `lib/network-record.mjs` (`SHADE_TREE_NETWORK=<name>`); GAP-12 `shade-tree exit-gateway` /
-  `withdraw-gateway` / `gateway-status` (`group/exit-gateway.mjs`). Original text: `docs/GO-LIVE.md` (loop-34) is the ordered
+  `withdraw-gateway` / `gateway-status` (`group/exit-gateway.mjs`). Original text: `docs/history/GO-LIVE.md` (loop-34) is the ordered
   runbook for T-DEPLOY-1/2; its "Gaps found" section lists what the repo lacks. Autonomous ones: deploy +
   record `GatewayRegistry` on Sepolia in `network/sepolia/contracts.json` (GAP-2); `SHADE_TREE_ENABLE_POW` toggle in
   `bootnode/deploy/bootstrap.sh` (GAP-3); a first-class `shade-tree identity` command emitting the Rust
@@ -303,13 +303,13 @@ slash, stake lifecycle) gets negative and concurrent cases, not just a positive 
 - [x] **T-DOC-4 (P2) SECURITY.md** DONE (loop-9): `SECURITY.md` (unaudited/testnet status, in-scope vs known residuals, GitHub private-advisory reporting) + `CONTRIBUTING.md` (test commands, house conventions, the trust-model invariants a contributor must not break, gate ordering).
 - [x] **T-DOC-5 (P2) README polish pass.** DONE (loop-10): skimmable what/why/how lede, pruned the stale "deployed and verified live" overclaim to match pre-ship reality, reworked Run-it around the `shade-tree` CLI, and a full Docs index linking every doc that now exists.
 - [x] **T-DOC-8 (P1, added loop-34) Docs reconciliation pass.** DONE 2026-08-17 (PR #10; CLI.md via #9, PoW paragraphs via #8). Original text: The GO-LIVE audit found docs that
-  contradict the code or each other: `network/sepolia/README.md:10-15` + `docs/DEPLOYMENT.md:125` cite the
-  superseded StakedReputationSet address (`contracts.json` has the rln-v3 one); `docs/DEPLOYMENT.md` PoW
+  contradict the code or each other: `network/sepolia/README.md:10-15` + `docs/history/DEPLOYMENT.md:125` cite the
+  superseded StakedReputationSet address (`contracts.json` has the rln-v3 one); `docs/history/DEPLOYMENT.md` PoW
   mismatch vs `bootstrap.sh` (PoW unconditional); `docs/INCIDENT.md:40,104,286,307-310` say bootnode
   persistence (T-DEV-4) and T-FEAT-12 are unbuilt (both shipped); `docs/OPERATOR.md:185` + `docs/TOR-HARDENING.md:128-131`
   say no backup tooling (`shade-tree backup/restore` shipped); `docs/CLI.md` omits `join`/`backup`/`restore`;
   `docs/post/RUN-A-GATEWAY.md:28` fetches bootstrap.sh from `main` while everything else pins the branch.
-  Also: `docs/JOIN.md:26,34`, `scripts/run-client.sh:23-25`, `scripts/join.sh:28`, `docs/DEPLOYMENT.md`
+  Also: `docs/JOIN.md:26,34`, `scripts/run-client.sh:23-25`, `scripts/join.sh:28`, `docs/history/DEPLOYMENT.md`
   round-trip table, `network/sepolia/README.md` fleet table and `directory.json` notes print existing-gateway
   IPs/onions — decide per file whether that is intended (member-facing) or should be scrubbed.
   *Accept:* every line above fixed or explicitly kept with a reason; ROADMAP.md §0 "documentation
@@ -653,7 +653,7 @@ slash, stake lifecycle) gets negative and concurrent cases, not just a positive 
   (`gateway/gateway.mjs:initRoots`, `lib/root-provider.mjs:CompositeRootProvider`), routed slasher, floor WARN, client leaf
   discovery, `shade-tree leaves` Rust bridge. LIVE: registrar on box-1; x402 (tier 8) and MPP (tier 32) purchases from fresh
   zero-ETH buyers settled + inserted on Sepolia; both buyers then egressed through the fleet with only their bought leaf
-  (`docs/GO-LIVE-LOG-2026-08-17.md` "(payments)" + "(payments, later)"). Settle asset today = self-deployed EIP-3009 test
+  (`docs/history/GO-LIVE-LOG-2026-08-17.md` "(payments)" + "(payments, later)"). Settle asset today = self-deployed EIP-3009 test
   token (`0xCe0C9F88…a3A8`; Circle's Sepolia USDC faucet is captcha-gated) — real USDC is a one-env swap. Known limits:
   buyer→operator transfer + tier bucket public on chain (Layer-0 hop is the buyer's choice), operator is its own x402
   facilitator, no leaf expiry (subscription semantics), no insert batching/dwell yet. Original spec: Wire the anonymous-payment design (`docs/PAYMENTS.md`:
@@ -1062,9 +1062,9 @@ Append one line per completed task: `- YYYY-MM-DD  T-XXX-n  <what shipped>  (<co
   (main got the 2026-08-13 "roadmap for gateway discovery, payment interop, and zkAPI" rewrite of
   docs/ROADMAP.md), and GitHub does not run pull_request workflows without a merge ref. Merged main: the new
   network roadmap is canonical `docs/ROADMAP.md` (+ an "Implementation status" map of what this branch built
-  against its sections), the milestone design notes moved to `docs/ROADMAP-v1.md` (anchors intact; ADRs/docs
+  against its sections), the milestone design notes moved to `docs/history/ROADMAP-v1.md` (anchors intact; ADRs/docs
   repointed). CI now runs on the PR. Fan-out (2 agents, disjoint files): T-HARD-1 autonomous half (CEREMONY.md
-  + zk-artifacts lock + selftest + regen script) and `docs/GO-LIVE.md` (phased T-DEPLOY-1/2 runbook with
+  + zk-artifacts lock + selftest + regen script) and `docs/history/GO-LIVE.md` (phased T-DEPLOY-1/2 runbook with
   [HUMAN]/[FUNDS] markers, 12 GAPs, doc contradictions). Filed T-HARD-8, T-DEPLOY-5, T-DOC-8. Retired the
   throwaway `ci-probe` branch used to prove Actions worked.
 - 2026-08-15  loop-34b  CI on PR #5 driven to fully green (7/7: lint, supply-chain audit, test node 20/22/24,
@@ -1080,11 +1080,11 @@ Append one line per completed task: `- YYYY-MM-DD  T-XXX-n  <what shipped>  (<co
   T-HARD-4 (found + fixed a one-connection gateway crash), #13 T-HARD-8. Orchestrator: `GatewayRegistry` broadcast on
   Sepolia (`0x94ECeD0C…A868`, block 11509783) and recorded; issue #6 written (why the ceremony is needed). CI green on
   every merge (GitHub API 503-flaky all day; two pull_request events were dropped and re-triggered). T-DEPLOY-1/2
-  go-live in flight (`docs/GO-LIVE.md`; droplet-1 = the idle June PoC box, droplet-2 = new agent-devops box in another
+  go-live in flight (`docs/history/GO-LIVE.md`; droplet-1 = the idle June PoC box, droplet-2 = new agent-devops box in another
   DO region).
 - 2026-08-17  ship-day (loop-35b)  T-DEPLOY-1 LIVE (PR #38): bootnode + gateway-1 on the idle June box, laptop JS + Rust
   clients egress through the fleet, signed directory verified, records in `network/sepolia/{bootnode,directory-bootnode}.json`,
-  go-live log `docs/GO-LIVE-LOG-2026-08-17.md`; found Node-20 SIGSYS under the hardened unit (→ Node ≥ 24). T-DEPLOY-2 BLOCKED
+  go-live log `docs/history/GO-LIVE-LOG-2026-08-17.md`; found Node-20 SIGSYS under the hardened unit (→ Node ≥ 24). T-DEPLOY-2 BLOCKED
   on the DO API token (box `shade-tree-gw-04` staged in agent-devops tfvars, commented). T-FEAT-8 shipped over the existing circuit
   (PR #39, ADR 0006; tier = private userMessageLimit). T-DEV-9b shipped (PR #40): Helios sidecar anchor, rejection proven by
   tests, end-to-end verified live on Sepolia; filed T-DEV-9c (redeploy StakedReputationSet with the on-chain tree, bundle
