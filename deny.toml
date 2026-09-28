@@ -46,6 +46,15 @@ allow = [
   "Unlicense",
   "CDLA-Permissive-2.0",
 ]
+# Arti's onion-service proof of work (hs-pow-full, OPS-10) uses Tor's equix and hashx, which are
+# LGPL-3.0-only. Allowed for these two crates only, never globally: this repository is MIT and its
+# complete source is public, so anyone can rebuild the binary against a modified equix/hashx,
+# which is what LGPL-3.0 section 4 asks of a statically linked work. THIRD-PARTY-NOTICES.md ships
+# with every release.
+exceptions = [
+  { crate = "equix", allow = ["LGPL-3.0-only"] },
+  { crate = "hashx", allow = ["LGPL-3.0-only"] },
+]
 
 [bans]
 multiple-versions = "allow"
