@@ -6,7 +6,22 @@
     "node": ">=20"
   },
   "type": "module",
+  "//imports": "Wire-code crypto primitives: node:crypto in Node, @noble in browser bundles (lib/crypto-*.mjs).",
+  "imports": {
+    "#crypto": {
+      "browser": "./lib/crypto-browser.mjs",
+      "default": "./lib/crypto-node.mjs"
+    }
+  },
+  "//browser": "Bundlers only: lib/directory.mjs loadDirectory lazily imports these in Node; a browser bundle never reaches it.",
+  "browser": {
+    "node:fs/promises": false,
+    "node:path": false
+  },
   "private": true,
+  "workspaces": [
+    "packages/sdk"
+  ],
   "bin": {
     "shade-tree": "bin/shade-tree.mjs"
   },
@@ -61,6 +76,8 @@
     "mutation:test": "stryker run"
   },
   "dependencies": {
+    "@noble/curves": "1.2.0",
+    "@noble/hashes": "1.3.2",
     "ethers": "^6.17.0",
     "js-sha3": "^0.13.0",
     "poseidon-lite": "^0.3.0",

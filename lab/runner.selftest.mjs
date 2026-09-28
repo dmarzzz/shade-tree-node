@@ -82,4 +82,23 @@ try {
   await once(server, "close");
 }
 
+// The production factory is the SDK client; its ShadeNet codes reach the page as UPPER_SNAKE.
+{
+  const { ShadeNetError } = await import("@shadenet/sdk");
+  const failing = createLabRunner({
+    token,
+    cooldownMs: 0,
+    clientFactory: () => ({ async fetch() { throw new ShadeNetError("BudgetExhausted", "spent", { retryAfterMs: 5 }); } }),
+  });
+  failing.listen(0, "127.0.0.1");
+  await once(failing, "listening");
+  try {
+    const res = await fetch(`http://127.0.0.1:${failing.address().port}/v1/run`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: "{}" });
+    ok(/"code":"BUDGET_EXHAUSTED"/.test(await res.text()), "SDK error codes stream as UPPER_SNAKE public codes");
+  } finally {
+    failing.close();
+    await once(failing, "close");
+  }
+}
+
 console.log(`\n${checks} lab runner checks passed`);
