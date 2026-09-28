@@ -3,6 +3,8 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { AbiCoder, Interface, solidityPackedKeccak256 } from "ethers";
+import { groth16 } from "snarkjs";
 
 async function openHomepage(page) {
   await page.goto("/", { waitUntil: "networkidle" });
@@ -110,8 +112,13 @@ async function mockWallet(page, overrides = {}) {
       async request({ method, params = [] }) {
         calls.push({ method, params });
         if (method in fixed) return fixed[method];
+        if (method === "eth_getLogs") return [];
         if (method === "eth_call") {
           const data = params[0]?.data || "";
+          const state = window.__memberState || {};
+          if (data.startsWith("0x82afd23b") && state.active) return `0x${"0".repeat(63)}1`;
+          if (data.startsWith("0xd57b50e7") && state.limit) return `0x${BigInt(state.limit).toString(16).padStart(64, "0")}`;
+          if (data.startsWith("0xde259775")) return `0x${BigInt(state.withdrawableAt || 0).toString(16).padStart(64, "0")}`;
           if (data.startsWith("0xe0b91f92")) {
             const limit = BigInt(`0x${data.slice(10)}`);
             return `0x${(limit * 100000000000000000n).toString(16).padStart(64, "0")}`;
@@ -222,6 +229,49 @@ test("an imported identity can check status but cannot stake again", async ({ pa
   await page.getByRole("button", { name: "check status through my wallet" }).click();
   await expect(page.locator("[data-member-state]")).toHaveText(/Not registered/);
 });
+
+const VECTOR_IDENTITY = {
+  identitySecret: "619880168657502627082950702222527535803368023538932999730878823680368560389",
+  leaf: "15422591461559048085568001683323977812416390282127809084852072421595506429792",
+  limit: 1,
+};
+
+for (const [action, memberState, button, selector] of [
+  ["exit", { active: true, limit: 1 }, "start exit", "0x63199902"],
+  ["withdraw", { active: false, limit: 1, withdrawableAt: 1 }, "withdraw bond", "0x62b2b5f0"],
+]) {
+  test(`Get access proves ${action} in the tab and sends it`, async ({ page }) => {
+    test.slow();
+    await mockWallet(page);
+    await page.addInitScript((state) => { window.__memberState = state; }, memberState);
+    await page.goto("/stake/", { waitUntil: "networkidle" });
+    await page.locator("[data-identity-file]").setInputFiles({ name: "identity.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(VECTOR_IDENTITY)) });
+    await page.getByRole("button", { name: "connect wallet" }).first().click();
+    if (action === "withdraw") await page.locator("[data-withdraw-to]").fill("0x2000000000000000000000000000000000000002");
+    await page.getByRole("button", { name: button }).click();
+    await expect(page.locator("[data-status]")).toHaveText(action === "exit" ? /Exit started/ : /Withdrawn/, { timeout: 90_000 });
+    const sent = await page.evaluate(() => window.__walletCalls.find((call) => call.method === "eth_sendTransaction"));
+    expect(sent.params[0].data.startsWith(selector)).toBe(true);
+    expect(sent.params[0].value).toBe("0x0");
+    // The bytes the contract would see must verify under the withdraw verification key.
+    const iface = new Interface(["function initiateExit(uint256 commitment, bytes proof)", "function withdraw(uint256 commitment, address recipient, bytes proof)"]);
+    const args = iface.parseTransaction({ data: sent.params[0].data }).args;
+    const [a, b, c, idc] = AbiCoder.defaultAbiCoder().decode(["uint256[2]", "uint256[2][2]", "uint256[2]", "uint256"], args.proof);
+    const context = action === "exit"
+      ? solidityPackedKeccak256(["string", "uint256"], ["SHADE_TREE_EXIT", BigInt(VECTOR_IDENTITY.leaf)])
+      : solidityPackedKeccak256(["string", "uint256", "address"], ["SHADE_TREE_WITHDRAW", BigInt(VECTOR_IDENTITY.leaf), args.recipient]);
+    const FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+    const vkey = JSON.parse(readFileSync(new URL("../../circuits/rln/withdraw_verification_key.json", import.meta.url), "utf8"));
+    const proof = {
+      pi_a: [a[0].toString(), a[1].toString(), "1"],
+      pi_b: [[b[0][1].toString(), b[0][0].toString()], [b[1][1].toString(), b[1][0].toString()], ["1", "0"]],
+      pi_c: [c[0].toString(), c[1].toString(), "1"],
+      protocol: "groth16",
+      curve: "bn128",
+    };
+    expect(await groth16.verify(vkey, [idc.toString(), (BigInt(context) % FIELD).toString()], proof)).toBe(true);
+  });
+}
 
 test("Get access sections match their approved visual baselines", async ({ page }) => {
   await page.goto("/stake/", { waitUntil: "networkidle" });

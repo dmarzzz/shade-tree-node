@@ -10,6 +10,8 @@ const WEI_PER_ETH = 10n ** 18n;
 const MIB = 1024 * 1024;
 
 export const NETWORK = deployment.network;
+// The raw record, for the SDK (same source of truth).
+export const NETWORK_RECORD = deployment;
 export const CHAIN_ID = BigInt(staked.chainId);
 export const CONTRACT = staked.contract;
 export const RPC_URL = staked.rpcUrl;

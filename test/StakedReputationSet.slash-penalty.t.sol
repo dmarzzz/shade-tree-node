@@ -58,7 +58,8 @@ contract StakedReputationSetSlashPenaltyTest is Cheats {
             IWithdrawVerifier(address(verifier)),
             ICommitmentHasher(address(hasher)),
             new uint256[](0),
-            new uint256[](0)
+            new uint256[](0),
+            10
         );
         uint256 idc = hasher.identityCommitmentOf(SECRET);
         vm.deal(MEMBER, amount);
@@ -103,6 +104,48 @@ contract StakedReputationSetSlashPenaltyTest is Cheats {
         vm.expectRevert(StakedReputationSet.NotMember.selector);
         set.withdraw(leaf, MEMBER, abi.encode(SECRET));
         assertEq(address(0).balance, burned, "competing slash cannot change the first burn");
+    }
+
+    // ---- the slash split is economics config (economics.json slash.rewardDivisor) ----------
+
+    function _newSet(uint256 amount, uint256 divisor) internal returns (StakedReputationSet set) {
+        set = new StakedReputationSet(
+            amount,
+            300,
+            270,
+            IWithdrawVerifier(address(verifier)),
+            ICommitmentHasher(address(hasher)),
+            new uint256[](0),
+            new uint256[](0),
+            divisor
+        );
+    }
+
+    function test_SlashSplit_OutOfBoundsDivisorRejected() public {
+        vm.expectRevert(StakedReputationSet.BadSlashSplit.selector);
+        _newSet(1 ether, 0);
+        vm.expectRevert(StakedReputationSet.BadSlashSplit.selector);
+        _newSet(1 ether, 1); // would pay the whole bond back to a self-slasher
+        vm.expectRevert(StakedReputationSet.BadSlashSplit.selector);
+        _newSet(1 ether, 1001);
+    }
+
+    /// For ANY admitted divisor and bond: the bounty is floor(bond / divisor), the rest burns,
+    /// and a self-slasher never recovers more than half.
+    function testFuzz_SlashSplit_BurnsAtLeastHalf(uint256 rawAmount, uint256 rawDivisor) public {
+        uint256 amount = rawAmount == 0 ? 1 : rawAmount;
+        uint256 divisor = 2 + (rawDivisor % 999);
+        StakedReputationSet set = _newSet(amount, divisor);
+        assertEq(set.SLASH_REWARD_DIVISOR(), divisor);
+        uint256 idc = hasher.identityCommitmentOf(SECRET);
+        vm.deal(MEMBER, amount);
+        vm.prank(MEMBER);
+        set.registerIdentity{value: amount}(idc, 8);
+        vm.prank(MEMBER);
+        set.slash(leaf, SECRET, 8, MEMBER);
+        assertEq(MEMBER.balance, amount / divisor, "bounty == floor(bond / divisor)");
+        assertEq(address(0).balance, amount - amount / divisor, "the rest is burned");
+        assertTrue(address(0).balance >= MEMBER.balance, "at least half is always burned");
     }
 
     function test_TinyBondsBurnCompletelyWithoutCallingZeroRewardReceiver() public {

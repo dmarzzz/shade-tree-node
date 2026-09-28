@@ -117,10 +117,14 @@ contract StakedReputationSet {
     bytes public constant EXIT_TAG = "SHADENET_EXIT";
     bytes public constant WITHDRAW_TAG = "SHADENET_WITHDRAW";
 
-    /// Slash economics v1: floor(bond / 10) is the maximum caller-directed reward.
-    /// All remaining wei go to address(0). Even a member slashing itself loses >=90%.
-    /// This is an ETH sink transfer, not Ethereum's protocol-level base-fee burn.
-    uint256 public constant SLASH_REWARD_DIVISOR = 10;
+    /// Slash economics: floor(bond / SLASH_REWARD_DIVISOR) is the maximum caller-directed reward
+    /// and every remaining wei goes to address(0). Set once at construction from the network's
+    /// economics.json (10 = 90% burn / 10% bounty) and bounded to [MIN, MAX], so even a member
+    /// slashing itself always loses at least half. This is an ETH sink transfer, not Ethereum's
+    /// protocol-level base-fee burn.
+    uint256 public immutable SLASH_REWARD_DIVISOR;
+    uint256 public constant MIN_SLASH_REWARD_DIVISOR = 2;
+    uint256 public constant MAX_SLASH_REWARD_DIVISOR = 1000;
     address public constant SLASH_BURN_ADDRESS = address(0);
 
     IWithdrawVerifier public immutable withdrawVerifier;
@@ -202,6 +206,7 @@ contract StakedReputationSet {
     error BadCommitment();
     error BadLimit();
     error BadTierTable();
+    error BadSlashSplit();
     error UnbondingTooShort();
     error AlreadyMember();
     error NotMember();
@@ -221,6 +226,8 @@ contract StakedReputationSet {
     ///                     [1, MAX_LIMIT], distinct, != DEFAULT_LIMIT, in ascending order.
     /// @param extraBonds  the fixed bond of each extra tier (same length, each nonzero).
     ///                     Empty arrays = the pre-tier single-tier set (limit 8 only).
+    /// @param slashRewardDivisor the bounty is floor(bond / this); the rest is burned. In
+    ///                     [MIN_SLASH_REWARD_DIVISOR, MAX_SLASH_REWARD_DIVISOR].
     constructor(
         uint256 bond,
         uint256 unbonding,
@@ -228,9 +235,14 @@ contract StakedReputationSet {
         IWithdrawVerifier _withdrawVerifier,
         ICommitmentHasher _hasher,
         uint256[] memory extraLimits,
-        uint256[] memory extraBonds
+        uint256[] memory extraBonds,
+        uint256 slashRewardDivisor
     ) {
         if (bond == 0) revert BadBond();
+        if (slashRewardDivisor < MIN_SLASH_REWARD_DIVISOR || slashRewardDivisor > MAX_SLASH_REWARD_DIVISOR) {
+            revert BadSlashSplit();
+        }
+        SLASH_REWARD_DIVISOR = slashRewardDivisor;
         if (unbonding < minUnbonding) revert UnbondingTooShort();
         BOND = bond;
         UNBONDING = unbonding;

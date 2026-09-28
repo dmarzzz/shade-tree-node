@@ -27,7 +27,8 @@
 //   - EIP-712 signature recovers to `from` over the TOKEN's domain (probed at boot: on-chain
 //     DOMAIN_SEPARATOR() must equal our computed one, else refuse to start)
 //   - authorizationState(from, nonce) == false on chain (unused nonce), balanceOf(from) >= value
-//   - the commitment is not already an active leaf (never take money for a leaf we can't insert)
+//   - the commitment is not already an active leaf, and not burned by a slash (never take money for
+//     a leaf we can't insert)
 //   - eth_call simulation of transferWithAuthorization succeeds
 // Then, serialized on the operator key: settle tx -> wait 1 confirmation -> insert tx -> wait.
 //
@@ -94,7 +95,8 @@ const metrics = makeRegistry();
 
 // BN254 scalar field: a commitment (Poseidon output) is a field element.
 const FIELD_P = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-export const isCommitment = (v) => isUintString(v) && BigInt(v) < FIELD_P;
+// Nonzero canonical field element: 0 is the tree's empty-slot sentinel (audit 2.1.3).
+export const isCommitment = (v) => isUintString(v) && BigInt(v) > 0n && BigInt(v) < FIELD_P;
 
 // The PaidAccessSet surface the registrar uses (contracts/PaidAccessSet.sol, T-FEAT-7 1/3).
 export const PAID_ACCESS_SET_ABI = Object.freeze([
@@ -102,6 +104,7 @@ export const PAID_ACCESS_SET_ABI = Object.freeze([
   "function insertBatch(uint256[] commitments, uint256[] limits)",
   "function currentRoot() view returns (uint256)",
   "function limitOf(uint256 commitment) view returns (uint256)",
+  "function burned(uint256 commitment) view returns (bool)",
   "function leafCount() view returns (uint256)",
   "function allowedLimits() view returns (uint256[])",
   "function operator() view returns (address)",
@@ -130,7 +133,7 @@ const PAYMENT_REASONS = new Set([
   "malformed-credential", "method-unsupported", "invalid-challenge", "payment-expired",
   "verification-failed", "bad-commitment", "nonce-used", "in-progress", "insert-failed",
   "busy", "not-yet-valid", "expired", "bad-signature", "rpc-error", "insufficient_funds",
-  "already-member", "settle-failed", "internal-error", "other",
+  "already-member", "burned-commitment", "settle-failed", "internal-error", "other",
 ]);
 
 export function paymentMetricLabels({ protocol = "unknown", result = "failed", reason = null } = {}) {
@@ -407,7 +410,7 @@ export function makeEngine({ offer, token, set, wallet, provider, store, confirm
   };
 
   async function verifyAndSettle({ protocol, limit, commitment, authorization: auth, signature, meta = {} }) {
-    if (!isCommitment(commitment)) return fail(400, "bad-commitment", "commitment must be a decimal field element");
+    if (!isCommitment(commitment)) return fail(400, "bad-commitment", "commitment must be a nonzero decimal field element");
     if (!priceOf(offer, limit)) return fail(400, "unknown-limit", `tier ${limit} is not sold here (${tierList(offer).join(", ")})`);
     const key = `${offer.asset}:${auth.from}:${auth.nonce}`.toLowerCase();
     const existing = store.get(offer.asset, auth.from, auth.nonce);
@@ -447,15 +450,18 @@ export function makeEngine({ offer, token, set, wallet, provider, store, confirm
     const signer = recoverAuthorization(domain(), auth, signature);
     if (!signer || !sameAddress(signer, auth.from)) return fail(402, "bad-signature", "signature does not recover to authorization.from");
     // On-chain state: unused nonce, funded payer, insertable commitment.
-    let used, bal, active;
+    let used, bal, active, burned;
     try {
-      [used, bal, active] = await Promise.all([token.authorizationState(auth.from, auth.nonce), token.balanceOf(auth.from), set.limitOf(commitment)]);
+      [used, bal, active, burned] = await Promise.all([token.authorizationState(auth.from, auth.nonce), token.balanceOf(auth.from), set.limitOf(commitment), set.burned(commitment)]);
     } catch (e) {
       return fail(502, "rpc-error", "chain read failed: " + (e.shortMessage || e.message));
     }
     if (used) return fail(402, "nonce-used", "authorization nonce already used on chain");
     if (bal < BigInt(auth.value)) return fail(402, "insufficient_funds", "payer balance below the price");
     if (active !== 0n) return fail(409, "already-member", "this commitment is already an active leaf of the paid set");
+    // A slashed identity's leaves are burned and PaidAccessSet.insert would revert after payment
+    // (audit 2.3.3 / #113): refuse BEFORE settlement so no money is taken for a leaf we can't insert.
+    if (burned) return fail(409, "burned-commitment", "this commitment belongs to a slashed identity and can never be admitted");
 
     const order = existing || { asset: offer.asset, from: ethers.getAddress(auth.from), nonce: auth.nonce.toLowerCase(), commitment, limit: Number(limit), protocol, createdAt: now() };
     order.protocol = protocol; order.meta = { ...(order.meta || {}), ...meta };
