@@ -247,7 +247,28 @@ async function main() {
     await rm(work, { recursive: true, force: true });
   }
 
-  console.log(`\n${failures === 0 ? "PASS" : "FAIL"}: bootnode federation selftest (${failures} failure${failures === 1 ? "" : "s"})`);
+  
+// OPS-9: the default fetchers dial the configured Tor SOCKS, not a hard-coded 9250.
+{
+  const net = await import("node:net");
+  let hits = 0;
+  const sock = net.createServer((c) => { hits++; c.destroy(); });
+  await new Promise((r) => sock.listen(0, "127.0.0.1", r));
+  const { port } = sock.address();
+  const warns = [];
+  const fed = makeFederation({
+    registry: { maxEntries: () => 10, admitGossip: async () => ({ ok: false }) },
+    peers: ["a".repeat(56) + ".onion"],
+    tor: { torHost: "127.0.0.1", torPort: port },
+    log: { info() {}, warn: (m, f) => warns.push([m, f]) },
+  });
+  const res = await fed.pullAll();
+  sock.close();
+  if (!(hits >= 1)) throw new Error("federation did not dial the configured Tor port");
+  if (!(res.errors >= 1 && warns.some(([m, f]) => m === "federation peer unreachable" && !/[a-z2-7]{56}\.onion/.test(f.error)))) throw new Error("unreachable peer not warned (onion-free)");
+  console.log("  ok   federation dials SHADE_TREE_TOR_PORT and warns on an unreachable peer");
+}
+console.log(`\n${failures === 0 ? "PASS" : "FAIL"}: bootnode federation selftest (${failures} failure${failures === 1 ? "" : "s"})`);
   process.exit(failures === 0 ? 0 : 1);
 }
 
