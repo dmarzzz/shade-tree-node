@@ -3,7 +3,7 @@
 const stages = ["discover", "select", "prove", "dial", "gate", "egress"];
 const phaseToStage = { canopy: "discover", select: "select", prove: "prove", dial: "dial", gate: "gate", egress: "egress" };
 const stageCopy = {
-  discover: "Fetching the Elder Tree's signed Canopy through Tor, then checking its pinned signer.",
+  discover: "Fetching the Elder Tree's signed canopy directory through Tor, then checking its pinned signer.",
   select: "Filtering the verified Grove for an invited-capable Protocol v4 Shade Tree node.",
   prove: "Minting one target-bound RLN Groth16 membership proof with a fresh epoch slot.",
   dial: "Opening a Tor circuit to the selected Shade Tree node's onion service.",
@@ -118,7 +118,7 @@ function renderProof(event) {
 }
 
 function eventMessage(event) {
-  if (event.phase === "canopy" && event.status === "query") return "Querying the Elder Tree for a fresh signed Canopy over Tor.";
+  if (event.phase === "canopy" && event.status === "query") return "Querying the Elder Tree for a fresh signed canopy directory over Tor.";
   if (event.phase === "canopy" && event.status === "verified") return `Pinned signature verified. ${event.count ?? "The"} live Shade Tree nodes are in this Canopy.`;
   if (event.phase === "canopy" && event.status === "cache") return `Fresh discovery was unavailable; using a previously verified ${event.count ?? ""}-node Canopy.`;
   if (event.phase === "select" && event.status === "done") return `${event.candidates?.length ?? 0} invited-capable nodes passed local selection; the first is now being tried.`;
