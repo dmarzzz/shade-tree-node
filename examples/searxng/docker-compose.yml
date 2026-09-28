@@ -1,0 +1,65 @@
+# SearXNG with its reputation-blocked engines routed through ShadeNet.
+#
+#   shadenet init --dir ./shadenet --offline          # identity + token for this stack
+#   shadenet register-member --identity ./shadenet/identity.json --key-file funded.key
+#   SHADENET_UID=$(id -u) SHADENET_GID=$(id -g) docker compose up -d
+#   open http://127.0.0.1:8080
+#
+# SearXNG shares the shadenet container's network namespace, so the proxy stays on loopback and
+# SearXNG's own port is published from the shadenet service. See README.md.
+services:
+  shadenet:
+    image: ${SHADENET_IMAGE:-ghcr.io/dmarzzz/shadenet:latest}
+    user: "${SHADENET_UID:-1000}:${SHADENET_GID:-1000}"
+    command: ["proxy", "--listen", "127.0.0.1:8118"]
+    environment:
+      SHADENET_NETWORK: ${SHADENET_NETWORK:-sepolia}
+      SHADENET_IDENTITY: /config/identity.json
+      SHADENET_PROXY_TOKEN_FILE: /config/proxy-token
+      # RLN slot state must survive restarts: a reset inside an epoch would reuse a nullifier.
+      XDG_STATE_HOME: /state
+      XDG_CACHE_HOME: /state/cache
+      XDG_CONFIG_HOME: /nonexistent
+      HOME: /state
+      SHADENET_LOG_FORMAT: json
+    volumes:
+      - ./shadenet:/config:ro
+      - ./state:/state
+    ports:
+      - "127.0.0.1:8080:8080" # SearXNG's port; SearXNG lives in this network namespace
+    restart: unless-stopped
+
+  # Renders the proxy token and a fresh secret into SearXNG's settings once per start.
+  searxng-settings:
+    image: busybox:1.37
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        token="$$(tr -d '\r\n' < /config/proxy-token)"
+        secret="$$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+        sed -e "s/__SHADENET_TOKEN__/$$token/" -e "s/__SECRET_KEY__/$$secret/" \
+          /template/settings.yml > /etc/searxng/settings.yml
+        chmod 0644 /etc/searxng/settings.yml
+    volumes:
+      - ./shadenet:/config:ro
+      - ./settings.yml:/template/settings.yml:ro
+      - searxng-etc:/etc/searxng
+
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
+    network_mode: "service:shadenet"
+    depends_on:
+      searxng-settings:
+        condition: service_completed_successfully
+      shadenet:
+        condition: service_started
+    environment:
+      SEARXNG_BASE_URL: http://127.0.0.1:8080/
+    volumes:
+      - searxng-etc:/etc/searxng
+    restart: unless-stopped
+
+volumes:
+  searxng-etc: {}

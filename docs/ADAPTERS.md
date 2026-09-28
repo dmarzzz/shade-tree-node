@@ -1,153 +1,168 @@
-# Adapters: routing a tool or an agent through the canopy
+# Adapters: routing tools and agents through ShadeNet
 
-This closes the loop back to the project's origin use case. A SearXNG instance run over a
-raw Tor exit was blocked by many destinations (the README ["Not done, and why it
-matters"](OVERVIEW.md#not-done-and-why-it-matters) and
-[`exit-blocking-benchmark.md`](exit-blocking-benchmark.md)). An adapter points that same
-SearXNG instance, an AI agent, or another tool at a proof-gated node IP.
+Every recipe here uses the local `shadenet` proxy or the `shadenet mcp` server,
+both from the one `shadenet` binary. Set it up first with the
+[agent guide](AGENT.md) (`shadenet init`, stake, `shadenet proxy`).
 
-Public docs call the local protocol client the **Proxy**, the egress gateway a **Shade Tree
-node**, and the discovery bootnode the **Elder Tree**. Source paths, environment variables,
-and flags retain `client`, `gateway`, and `bootnode` where compatibility matters.
+Everything that follows assumes:
 
-## Install for an agent
+- the proxy runs at `127.0.0.1:8118`;
+- its token is in `~/.config/shadenet/proxy-token`;
+- the proxy user name is `shadenet` (`shade-tree` is also accepted for one release).
 
-Install the current CLI directly from GitHub:
-
-```bash
-npm install --global git+https://github.com/dmarzzz/shade-tree-node.git
+```sh
+TOKEN="$(cat ~/.config/shadenet/proxy-token)"
+PROXY="http://shadenet:$TOKEN@127.0.0.1:8118"
 ```
 
-This is not an npm registry release. You still need Tor and a current access
-profile from a v4 canopy operator. Start with the short [agent guide](AGENT.md).
-Use a repository checkout for SDK development or the bundled Tor helper.
+Two protocol facts shape every adapter:
 
-Stand up a canopy first ([`QUICKSTART.md`](QUICKSTART.md)): an Elder Tree, at least one Shade
-Tree node, and a local Tor SOCKS port. Then pick a style.
+- **HTTPS on 443 only.** The proxy speaks HTTP CONNECT and nodes egress to port
+  443. TLS runs end to end to the destination. Plain `http://` URLs and other
+  ports are refused locally with `403 port_not_allowed` before a slot is spent.
+- **One tunnel per new connection.** Each CONNECT spends one RLN slot of a small
+  per-epoch budget ([budget arithmetic](ERRORS.md#budget-arithmetic)). Reuse
+  connections (keep-alive, HTTP/2) and route only the traffic that needs it.
 
-| You have | Use | Why |
+## curl
+
+```sh
+curl -x "$PROXY" https://api.ipify.org?format=json   # prints the node's IP, not yours
+```
+
+Or through `run`, which also keeps the token out of your shell's environment:
+
+```sh
+shadenet run -- curl -s https://api.ipify.org?format=json
+```
+
+A refusal is a JSON body and an `X-ShadeNet-Error` header; `curl -i -x …`
+shows them. See [ERRORS.md](ERRORS.md).
+
+## Python (httpx, requests)
+
+```python
+import os, httpx
+
+token = open(os.path.expanduser("~/.config/shadenet/proxy-token")).read().strip()
+proxy = f"http://shadenet:{token}@127.0.0.1:8118"
+with httpx.Client(proxy=proxy, http2=True, timeout=60) as client:   # one tunnel, many requests
+    print(client.get("https://api.ipify.org?format=json").json())
+```
+
+`requests` takes `proxies={"https": proxy}`. Both honour `HTTPS_PROXY`, so
+`shadenet run -- python agent.py` works without code changes. A runnable
+version is [`examples/python-httpx.py`](../examples/python-httpx.py).
+
+## Hermes
+
+Two options, both deployed by the `shadenet` role in `agent-devops`:
+
+- **MCP (recommended).** Hermes keeps its normal network and calls
+  `shadenet_fetch` when a site blocks Tor or datacenter IPs:
+
+  ```sh
+  hermes mcp add shadenet --command shadenet --args mcp
+  ```
+
+  Add `--env SHADENET_SEARXNG_URL=http://127.0.0.1:8080` to expose
+  `shadenet_search` too. The skill file in
+  [`examples/hermes/SKILL.md`](../examples/hermes/SKILL.md) tells the model
+  when to use it.
+
+- **Everything through ShadeNet.** Keep the model endpoint out:
+
+  ```sh
+  shadenet run --no-proxy api.openai.com,openrouter.ai -- hermes gateway
+  ```
+
+## Claude Code, Codex and other MCP clients
+
+```sh
+claude mcp add shadenet -- shadenet mcp
+```
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.shadenet]
+command = "shadenet"
+args = ["mcp"]
+```
+
+The OpenAI Agents SDK (`MCPServerStdio(params={"command": "shadenet", "args":
+["mcp"]})`) and the LangChain MCP adapters use the same stdio command.
+
+The tools:
+
+| Tool | Arguments | Returns |
 |---|---|---|
-| A tool that honors an HTTP proxy (SearXNG, `curl`, most HTTP libs) | **Proxy style**: run `shade-tree proxy`, point the tool at `http://127.0.0.1:8888` | No code change; the Proxy proves and selects a node for every connection |
-| Your own code doing many requests (an agent) | **Library style**: call `ShadeTreeClient` directly | One proof per tunnel, no extra Proxy process, direct access to the node selected |
+| `shadenet_fetch` | `url` (https), `method`, `headers`, `body`, `max_bytes` | `status`, `headers`, `body` (text, or base64 with `bodyEncoding`), `gateway`, `epoch`, `truncated` |
+| `shadenet_status` | none | the [status object](../specs/local-api.openapi.yaml) |
+| `shadenet_search` | `query`, `engines`, `categories`, `max_results` | `results` with `title`, `url`, `content`, `engine` |
 
-Both mint a fresh RLN proof and select a node per CONNECT tunnel. Selection can return the
-same node again. Both have the protocol boundaries described below. The Proxy is the library
-behind an HTTP-CONNECT front end (`client/shim.mjs` over
-`client/shade-tree-client.mjs`).
+Failures come back with `isError: true` and `{"error": {"code", "message",
+"retryAfterSeconds"}}` so the model can wait out a spent budget instead of
+retrying blindly.
 
-The live Rust binary offers the same loopback CONNECT boundary on port `8118`
-with Arti embedded, so a client-side Tor daemon is unnecessary. It is the
-self-contained sidecar choice for Rust services and agents in any language; see
-[Clients, Option C](CLIENTS.md#option-c-self-contained-rust-proxy-embedded-arti).
-The in-process Rust library remains roadmap work.
+## SearXNG
 
-## Shared env
+SearXNG fans one query out to many engines. Route only the engines that block
+Tor or datacenter IPs through ShadeNet; the rest stay on their usual network.
+A complete Docker Compose recipe is in
+[`examples/searxng/`](../examples/searxng/): the `shadenet` proxy container and
+SearXNG share one network namespace, so the proxy never listens beyond loopback.
 
-Both styles read the same environment (each maps 1:1 to a `shade-tree proxy` flag; see
-[`CONFIG.md`](CONFIG.md)):
-
-| Env | Flag | What |
-|---|---|---|
-| `SHADE_TREE_SECRET` | `--secret` | An enrolled member secret (`shade-tree enroll`). Required. |
-| `SHADE_TREE_BOOTNODE_ONION` | `--bootnode` | The Elder Tree's Tor v3 onion. The Proxy pulls its signed canopy directory over Tor and selects a node per tunnel. |
-| `SHADE_TREE_DIR_SIGNER` | `--dir-signer` | The Elder Tree's pinned signer pubkey. The Canopy is rejected unless it verifies against this. |
-| `SHADE_TREE_TOR_PORT` | `--tor-port` | Local Tor SOCKS port. Optional; default `9250` (the bundled `scripts/start-tor-client.sh` runs `9260`). |
-
-Static-file discovery (`SHADE_TREE_DIRECTORY` + `SHADE_TREE_DIR_SIGNER`, no Elder Tree) also works; see
-[`CONFIG.md`](CONFIG.md). `SHADE_TREE_BOOTNODE_ONION` wins if both are set.
-
-## Style 1: HTTP proxy (SearXNG, curl, any proxy-honoring tool)
-
-Run the Proxy. It binds `127.0.0.1:8888` (override with `SHADE_TREE_SHIM_PORT`):
-
-```bash
-read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
-```
-
-Paste the member secret at the hidden prompt, then run:
-
-```bash
-shade-tree proxy \
-  --bootnode <elder-onion> \
-  --dir-signer <elder-signer-pubkey>
-```
-
-Then point any tool at it. Generic form:
-
-```bash
-http_proxy=http://127.0.0.1:8888 https_proxy=http://127.0.0.1:8888 \
-  curl https://api.ipify.org?format=json
-# or explicitly:
-curl -x http://127.0.0.1:8888 https://api.ipify.org?format=json
-```
-
-The IP returned is the node's, not the Proxy host's.
-
-### Important: HTTPS / `:443` only
-
-The Proxy implements HTTP **CONNECT** only, and a node egresses **TCP CONNECT to `:443`
-only** (TLS stays end-to-end to the target; the node relays ciphertext). So every target
-you route through it must be reachable over HTTPS. Plain-`http://` egress is not tunneled.
-For SearXNG this is fine (its default engines use HTTPS), but scope or disable any
-HTTP-only engine.
-
-### SearXNG `settings.yml`
-
-SearXNG routes engine fetches through the proxies under `outgoing.proxies` (httpx-style).
-The value is the Proxy:
+The settings that matter (keys verified against SearXNG's
+`searx/network/network.py`):
 
 ```yaml
-# searxng settings.yml
+use_default_settings: true
 outgoing:
-  request_timeout: 6.0        # onion + proof adds latency; give engines room
-  proxies:
-    all://:
-      - http://127.0.0.1:8888
+  request_timeout: 8.0      # a cold tunnel is canopy + proof + onion rendezvous
+  max_request_timeout: 30.0
+  networks:
+    shadenet:
+      proxies:
+        all://:
+          - http://shadenet:__SHADENET_TOKEN__@127.0.0.1:8118
+      enable_http: false          # nodes egress 443 only; never burn a slot on http://
+      retries: 0                  # a retry is another tunnel
+      keepalive_expiry: 55.0      # reuse the tunnel within the 60 s epoch
+      max_keepalive_connections: 4
+engines:
+  - name: google
+    network: shadenet
+  - name: bing
+    network: shadenet
 ```
 
-Config-key confidence:
+`settings.yml` cannot read environment variables, so the recipe renders the
+token into it at start-up and keeps the file private.
 
-- **Confident** (verified against SearXNG's official
-  [`settings_outgoing`](https://docs.searxng.org/admin/settings/settings_outgoing.html) docs):
-  the top-level key is `outgoing.proxies`; values are httpx mount patterns, and the documented
-  example uses the `all://` key with a **list** of proxy URLs, with plain `http://host:port`
-  proxy URLs accepted. An HTTP-CONNECT Proxy like this one is a valid value.
-- **Verify against your SearXNG version**: whether your build also accepts the shorthand
-  `http:` / `https:` keys (older/alternate form) instead of the httpx `all://` /
-  `https://` mount keys. If you want to scope to HTTPS only (matching the `:443`-only node),
-  use `https://:` in place of `all://:`; confirm your version parses it before relying on it.
+## Rust
 
-If SearXNG runs in Docker, `127.0.0.1` is the container's own loopback, not the host; run
-the Proxy inside the same network namespace or point the tool at the Proxy's reachable
-address. See [`docker/README.md`](../docker/README.md) for the bundled compose wiring.
-
-## Style 2: library (`ShadeTreeClient`, for an agent)
-
-For your own code doing many requests, skip the Proxy process and call the client library directly. It is
-dependency-free beyond the repo itself:
-
-```js
-import { ShadeTreeClient, cleanUp } from "./client/shade-tree-client.mjs";
-
-const shadeTree = new ShadeTreeClient();                        // reads the shared env above
-const res = await shadeTree.fetch("https://api.ipify.org?format=json");
-console.log(JSON.parse(res.body).ip, "via", res.gateway.onion);   // node onion; field keeps its wire name
-cleanUp();                                           // stop snarkjs workers on exit
+```rust
+let client = std::sync::Arc::new(shadenet::Client::new(
+    shadenet::Config::builder().identity_file("identity.json").build()?,
+)?);
+client.spawn_canopy_refresh();
+let response = client.fetch(shadenet::FetchRequest::get("https://example.com/")).await?;
+let tunnel = client.connect("example.com:443").await?;   // or a raw stream for your own TLS
 ```
 
-`shadeTree.connect("host:443")` is the lower-level form: a raw duplex tunnel to the target for
-your own TLS/protocol. `shadeTree.fetch()` is HTTPS-only for the same `:443` reason as above.
+Runnable examples: [`crates/shadenet/examples`](../crates/shadenet/examples)
+(`cargo run -p shadenet --example fetch -- https://example.com/`).
 
-The integration example is [`examples/agent-egress.mjs`](../examples/agent-egress.mjs). It
-parses without a canopy, but a fetch requires current v4 admission and discovery values from
-an operator. The retired Sepolia records are not a connection profile.
+## JavaScript
+
+Use the JavaScript SDK ([SDK.md](SDK.md)) in Node or the browser, or point any
+Node HTTP client at the proxy (`undici`'s `ProxyAgent`, or
+`NODE_USE_ENV_PROXY=1` with `shadenet run`).
 
 ## Privacy note
 
-Whichever style: **each CONNECT tunnel runs selection and carries a fresh RLN proof.**
-Selection may choose the same node again. The proof has a per-tunnel nullifier (reusing
-one nullifier on a second distinct signal is a provable over-spend), so proof transcripts do
-not expose a stable member identifier. The onion transport keeps the Proxy's source IP out of
-the node application connection, and TLS keeps application content encrypted end to end. The
-serving node still sees the destination, timing, lifetime, and traffic volume, which may
-correlate tunnels.
+Each tunnel carries a fresh RLN proof and a per-tunnel nullifier, so proofs do
+not expose a stable member identifier. Tor keeps your IP from the node, and TLS
+keeps content from it. The node still sees the destination, timing, duration and
+volume of each tunnel, which can correlate tunnels that happen close together,
+such as one SearXNG query's engine fan-out.
