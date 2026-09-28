@@ -2,6 +2,10 @@
 HiddenServiceDir /var/lib/tor/shade-tree-bootnode
 HiddenServicePort 80 127.0.0.1:8877
 HiddenServicePoWDefensesEnabled 0
+HiddenServiceMaxStreams 32
+HiddenServiceMaxStreamsCloseCircuit 1
 HiddenServiceDir /var/lib/tor/shade-tree-gateway
 HiddenServicePort 80 127.0.0.1:8443
 HiddenServicePoWDefensesEnabled 0
+HiddenServiceMaxStreams 32
+HiddenServiceMaxStreamsCloseCircuit 1

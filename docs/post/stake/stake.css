@@ -507,6 +507,27 @@
   line-height: 1.65;
 }
 
+.leave-actions {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 28rem;
+  margin: 1rem 0;
+}
+
+.leave-actions label {
+  color: rgba(215, 227, 217, 0.58);
+  font-size: 0.76rem;
+}
+
+.leave-actions input {
+  min-height: 2.75rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid rgba(215, 227, 217, 0.2);
+  background: #050b08;
+  color: var(--mist);
+  font: 0.86rem var(--mono);
+}
+
 .stake-faq details {
   max-width: 48rem;
   border-bottom: 1px solid rgba(215, 227, 217, 0.14);

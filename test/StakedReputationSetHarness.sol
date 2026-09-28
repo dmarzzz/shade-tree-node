@@ -17,7 +17,7 @@ contract StakedReputationSetHarness is StakedReputationSet {
         ICommitmentHasher _hasher,
         uint256[] memory extraLimits,
         uint256[] memory extraBonds
-    ) StakedReputationSet(bond, unbonding, minUnbonding, _withdrawVerifier, _hasher, extraLimits, extraBonds) {}
+    ) StakedReputationSet(bond, unbonding, minUnbonding, _withdrawVerifier, _hasher, extraLimits, extraBonds, 10) {}
 
     function register(uint256 commitment, uint256 limit) public payable {
         _admit(commitment, limit);
