@@ -43,37 +43,30 @@ fn now_secs() -> u64 {
     now_ms() / 1000
 }
 
-/// Loaded identity material. The secret is zeroized when dropped.
-struct IdentityMaterial {
-    secret: Zeroizing<String>,
-    leaf: String,
-    limit: Option<u64>,
-}
+use crate::identity::IdentityMaterial;
 
-#[derive(Deserialize)]
-struct IdentityFile {
-    #[serde(rename = "identitySecret")]
-    identity_secret: String,
-    leaf: String,
-    #[serde(default)]
-    limit: Option<u64>,
-}
-
-fn load_identity(identity: &Identity) -> Result<IdentityMaterial, Error> {
+fn load_identity(
+    identity: &Identity,
+    passphrase: Option<&Zeroizing<String>>,
+) -> Result<IdentityMaterial, Error> {
     match identity {
         Identity::File(path) => {
-            let raw =
-                Zeroizing::new(std::fs::read_to_string(path).map_err(|e| {
-                    Error::Config(format!("read identity {}: {e}", path.display()))
-                })?);
-            let file: IdentityFile = serde_json::from_str(&raw).map_err(|e| {
-                Error::Config(format!("identity {} is not valid: {e}", path.display()))
+            let public = crate::identity::read_public(path)?;
+            if public.encrypted && passphrase.is_none() {
+                // Status and admission checks need only the public leaf. Tunnels need the secret
+                // and fail with a clear message (see `locked_identity`).
+                validate_leaf(&public.leaf)?;
+                return Ok(IdentityMaterial {
+                    secret: Zeroizing::new(String::new()),
+                    leaf: public.leaf,
+                    limit: public.limit,
+                });
+            }
+            let material = crate::identity::load(path, || {
+                passphrase
+                    .cloned()
+                    .ok_or_else(|| Error::Config("identity passphrase missing".into()))
             })?;
-            let material = IdentityMaterial {
-                secret: Zeroizing::new(file.identity_secret),
-                leaf: file.leaf,
-                limit: file.limit,
-            };
             validate_leaf(&material.leaf)?;
             Ok(material)
         }
@@ -304,7 +297,11 @@ impl Client {
                 )));
             }
         }
-        let identity = config.identity.as_ref().map(load_identity).transpose()?;
+        let identity = config
+            .identity
+            .as_ref()
+            .map(|identity| load_identity(identity, config.passphrase.as_ref()))
+            .transpose()?;
         let health_path = health_path(&config);
         let cache = health::load(health_path.as_deref());
         Ok(Self {
@@ -1048,6 +1045,11 @@ impl Client {
             .identity
             .as_ref()
             .ok_or_else(|| Error::Config("no identity configured".into()))?;
+        if identity.secret.is_empty() {
+            return Err(Error::Config(
+                "the identity is passphrase-protected and was loaded without its passphrase; set SHADENET_PASSPHRASE_FILE".into(),
+            ));
+        }
         let (gateways, advertised, demo) = self.candidates(port).await?;
         let (members, _set) = self.admitted_members(&identity.leaf, demo.as_ref()).await?;
         let limit = self.tier();

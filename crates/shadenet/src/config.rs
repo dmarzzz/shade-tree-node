@@ -80,7 +80,7 @@ pub enum Slots {
 }
 
 /// Everything a [`crate::Client`] needs.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub network: Network,
     pub discovery: Discovery,
@@ -120,6 +120,26 @@ pub struct Config {
     pub nonce: Option<String>,
     /// Session tickets (#103): off until the economics pass turns them on.
     pub session_tickets: bool,
+    /// Passphrase for an encrypted identity file. Never printed by `Debug`.
+    pub passphrase: Option<Zeroizing<String>>,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("network", &self.network.name)
+            .field("discovery", &self.discovery)
+            .field("identity", &self.identity)
+            .field("members", &self.members)
+            .field("leaf_source", &self.leaf_source)
+            .field("limit", &self.limit)
+            .field("slots", &self.slots)
+            .field(
+                "passphrase",
+                &self.passphrase.as_ref().map(|_| "<redacted>"),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl Config {
@@ -196,6 +216,7 @@ impl Default for ConfigBuilder {
                 tor_directories: default_tor_directories(),
                 nonce: None,
                 session_tickets: false,
+                passphrase: None,
             },
             network_error,
         }
@@ -253,6 +274,10 @@ impl ConfigBuilder {
     setter!(member_refresh: Duration);
     setter!(tor_directories: Option<(PathBuf, PathBuf)>);
     setter!(nonce: Option<String>);
+    setter!(
+        /// Passphrase for an encrypted identity file.
+        passphrase: Option<Zeroizing<String>>
+    );
     setter!(
         /// Session tickets are a research flag (#103) and off by default.
         session_tickets: bool

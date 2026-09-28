@@ -67,7 +67,6 @@ struct CliOptions {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IdentityInput {
-    #[serde(rename = "identitySecret")]
     identity_secret: String,
     leaf: String,
     limit: Option<u64>,
@@ -277,21 +276,16 @@ fn read_commitment(cli: &CliOptions) -> Result<String, String> {
 }
 
 fn read_identity(path: &Path) -> Result<IdentityInput, String> {
-    let metadata =
-        fs::metadata(path).map_err(|e| format!("read identity {}: {e}", path.display()))?;
-    if !metadata.is_file() {
-        return Err(format!("identity {} is not a file", path.display()));
-    }
-    if metadata.len() > 16 * 1024 {
-        return Err(format!("identity {} exceeds 16 KiB", path.display()));
-    }
-    let bytes =
-        fs::read_to_string(path).map_err(|e| format!("read identity {}: {e}", path.display()))?;
-    serde_json::from_str(&bytes).map_err(|_| {
-        format!(
-            "identity {} is not valid Shade Tree identity JSON",
-            path.display()
-        )
+    // Plaintext or passphrase-protected (shadenet::identity); the passphrase is asked only when
+    // the file is encrypted.
+    let material = shadenet::identity::load(path, || {
+        crate::passphrase::unlock(path).map_err(shadenet::Error::Config)
+    })
+    .map_err(|e| e.to_string())?;
+    Ok(IdentityInput {
+        identity_secret: material.secret.to_string(),
+        leaf: material.leaf.clone(),
+        limit: material.limit,
     })
 }
 

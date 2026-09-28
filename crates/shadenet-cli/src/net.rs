@@ -116,6 +116,20 @@ pub struct NetArgs {
     pub region: Option<String>,
 }
 
+#[cfg(feature = "live")]
+fn unlock_if_encrypted(
+    path: &std::path::Path,
+) -> Result<Option<zeroize::Zeroizing<String>>, String> {
+    crate::passphrase::if_encrypted(path)
+}
+
+#[cfg(not(feature = "live"))]
+fn unlock_if_encrypted(
+    _path: &std::path::Path,
+) -> Result<Option<zeroize::Zeroizing<String>>, String> {
+    Ok(None)
+}
+
 fn env(name: &str) -> Result<Option<String>, String> {
     Ok(shadenet::env::var(name)?.filter(|value| !value.trim().is_empty()))
 }
@@ -184,7 +198,15 @@ impl NetArgs {
 
         // Identity.
         match ctx.identity_path(self.identity.as_ref())? {
-            Some(path) => builder = builder.identity_file(path),
+            Some(path) => {
+                // Asked only when this command opens tunnels; status and doctor read the public leaf.
+                let passphrase = if need_identity {
+                    unlock_if_encrypted(&path)?
+                } else {
+                    None
+                };
+                builder = builder.identity_file(path).passphrase(passphrase);
+            }
             None if need_identity => {
                 return Err(
                     "no identity: pass --identity, set SHADENET_IDENTITY, or run `shadenet init`"
