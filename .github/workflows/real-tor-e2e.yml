@@ -24,7 +24,9 @@ on:
       - "client/**"
       - "lib/**"
       - "group/**"
-      - "rust/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "test/real-tor-e2e-client.mjs"
       - "test/real-tor-e2e-container.sh"
       - "package.json"
@@ -89,4 +91,4 @@ jobs:
           SHADE_TREE_TOR_E2E: "1"
           SHADE_TREE_TOR_DIAL_ATTEMPTS: "5"
           SHADE_TREE_TOR_TIMEOUT_SECS: "300"
-        run: bash rust/shade-tree-rln/interop/egress-tor-run.sh
+        run: bash crates/shadenet-rln/interop/egress-tor-run.sh

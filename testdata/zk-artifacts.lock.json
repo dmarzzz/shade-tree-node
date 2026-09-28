@@ -43,8 +43,8 @@
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "lib/rln.mjs proveForSlot (client)",
-        "rust/shade-tree-rln/src/prover.rs (embedded, live binary)",
-        "rust/shade-tree-rln/src/main.rs (probe)"
+        "crates/shadenet-rln/src/prover.rs (embedded, live binary)",
+        "crates/shadenet-rln/src/main.rs (probe)"
       ]
     },
     "circuits/rln/rln_final.zkey": {
@@ -55,7 +55,7 @@
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "lib/rln.mjs proveForSlot (client)",
-        "rust/shade-tree-rln/src/prover.rs (embedded, live binary)"
+        "crates/shadenet-rln/src/prover.rs (embedded, live binary)"
       ]
     },
     "circuits/rln/verification_key.json": {
@@ -66,8 +66,8 @@
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "lib/rln.mjs verifyEnvelope (gateway)",
-        "rust/shade-tree-rln/src/prover.rs (embedded self-check)",
-        "rust/shade-tree-rln/interop/verify-envelope.mjs"
+        "crates/shadenet-rln/src/prover.rs (embedded self-check)",
+        "crates/shadenet-rln/interop/verify-envelope.mjs"
       ]
     },
     "circuits/rln/Verifier.sol": {
@@ -98,7 +98,7 @@
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "testdata/gen-withdraw-proof.mjs",
-        "rust/shade-tree-rln/src/withdraw.rs (exit-member / withdraw-member)"
+        "crates/shadenet-rln/src/withdraw.rs (exit-member / withdraw-member)"
       ]
     },
     "circuits/rln/withdraw_final.zkey": {
@@ -109,7 +109,7 @@
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "testdata/gen-withdraw-proof.mjs",
-        "rust/shade-tree-rln/src/withdraw.rs"
+        "crates/shadenet-rln/src/withdraw.rs"
       ]
     },
     "circuits/rln/withdraw_verification_key.json": {
@@ -120,7 +120,7 @@
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "testdata/gen-withdraw-proof.mjs (local verify)",
-        "rust/shade-tree-rln/src/withdraw.rs (self-verify)"
+        "crates/shadenet-rln/src/withdraw.rs (self-verify)"
       ]
     },
     "contracts/WithdrawGroth16Verifier.sol": {

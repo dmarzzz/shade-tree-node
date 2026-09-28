@@ -20,7 +20,7 @@ export default [
       "cache/**",
       ".stryker-tmp/**",
       "reports/**",
-      "rust/target/**",
+      "target/**",
       "experiments/**",
       "demo/**",
       "contracts/**",

@@ -55,10 +55,10 @@ an environment fallback is listed below; test injection hooks such as
 | `secret` | `SHADE_TREE_SECRET` | required | Locally held enrolled-member secret. |
 | `onion` | `SHADE_TREE_ONION` | none | Pin one node for each tunnel and skip canopy selection. |
 | `network` | `SHADE_TREE_NETWORK` | `sepolia` when no source is explicit | Select a bundled network discovery record. |
-| `bootnode` | `SHADE_TREE_BOOTNODE_ONION` | current v4 Sepolia Elder | Elder onion used for dynamic signed-Canopy discovery. An explicit value requires its matching `dirSigner`. |
+| `bootnode` | `SHADE_TREE_BOOTNODE_ONION` | current v4 Sepolia Elder | Elder onion used for dynamic signed-directory discovery. An explicit value requires its matching `dirSigner`. |
 | `directory` | `SHADE_TREE_DIRECTORY` | none | Static signed directory path. Requires `dirSigner`. |
 | `dirSigner` | `SHADE_TREE_DIR_SIGNER` | bundled with the default Elder | Pinned directory signer public key. Explicit discovery must supply its matching signer; there is no trust-on-first-use fallback. |
-| `directoryRefreshMs` | `SHADE_TREE_DIRECTORY_REFRESH_MS` | `300000` | Base interval for active signed-Canopy refresh; each poll is jittered ±20%. |
+| `directoryRefreshMs` | `SHADE_TREE_DIRECTORY_REFRESH_MS` | `300000` | Base interval for active signed-directory refresh; each poll is jittered ±20%. |
 | `rotationSpread` | `SHADE_TREE_ROTATION_SPREAD` | `true` | Smooth weighted round-robin for each new tunnel's first gateway. Pass `false` for independent weighted-random choices. |
 | `torHost` | `SHADE_TREE_TOR_HOST` | `127.0.0.1` | Tor SOCKS host. |
 | `torPort` | `SHADE_TREE_TOR_PORT` | `9250` | Tor SOCKS port. The bundled client script uses `9260`. |
@@ -162,7 +162,7 @@ discovery performs a live Elder Tree refresh. It emits `query`, followed by one 
 
 An in-memory refresh-window hit and a static directory read emit no canopy
 event. After the first successful live load, one process-wide unref'd timer polls
-the Elder about every five minutes (±20% jitter). A newer verified Canopy replaces
+the Elder about every five minutes (±20% jitter). A newer verified canopy directory replaces
 the candidate fleet; an invalid, unavailable, or rolled-back response retains the
 last-known-good fleet. Background polls do not invoke a request's callback.
 Canopy events are local callbacks. They carry no onion, target, URL,

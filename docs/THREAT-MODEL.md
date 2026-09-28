@@ -460,7 +460,7 @@ These are documented limitations, not new findings. Cross-referenced to `docs/SH
   captured envelope to peers (each accepts it once), and a member spreading requests across `N`
   gateways gets up to `N`× its intended budget.
 - **Exit-auth verifier — real in the Sepolia rln-v4-tiers set (2026-08-17).** The set
-  (`0xFe48De8b…9d25`), explicitly reused by the live v4 research Grove since 2026-09-03, wires the real Groth16 `WithdrawVerifier` (`contracts/WithdrawVerifier.sol`,
+  (`0xFe48De8b…9d25`), explicitly reused by the live v4 research canopy since 2026-09-03, wires the real Groth16 `WithdrawVerifier` (`contracts/WithdrawVerifier.sol`,
   taking the member's recorded tier); only its VK is still the untrusted dev phase-2 (T-HARD-1),
   and the superseded rln-v3 set (`0xdAE242AE…20FC`, the experiment's earlier slash target) keeps the
   mock.

@@ -60,7 +60,7 @@
     "receiptOnionSig": "fb4b05e23d40ebe8ab9ef00fa413bd295d07e4f5467196a9e9f6a51e5886827fa373eb6cef66a3d71270b27cbf567311e8ef43357bb1005620e7516c042da706"
   },
   "thresholdDirectory": {
-    "_note": "T-FEAT-9 M-of-N threshold-signed directory. ADDITIVE: signers/signatures/threshold are OPTIONAL top-level fields EXCLUDED from canonicalDirectoryBytes exactly like the single-sig signer/signature, so the canonical bytes over this directory are byte-IDENTICAL to canonicalDirectoryBytesHex above (same {version,issued,gateways}). Each signer signs those same canonical bytes with raw ed25519 (RFC 8032 deterministic, so signatures are byte-pinned). Verify rule: >= threshold DISTINCT pinned signers with a valid sig. The Rust client (rust/shade-tree-proto verify_directory) needs a threshold follow-up to consume this. Signer seeds are fixed test-only keys.",
+    "_note": "T-FEAT-9 M-of-N threshold-signed directory. ADDITIVE: signers/signatures/threshold are OPTIONAL top-level fields EXCLUDED from canonicalDirectoryBytes exactly like the single-sig signer/signature, so the canonical bytes over this directory are byte-IDENTICAL to canonicalDirectoryBytesHex above (same {version,issued,gateways}). Each signer signs those same canonical bytes with raw ed25519 (RFC 8032 deterministic, so signatures are byte-pinned). Verify rule: >= threshold DISTINCT pinned signers with a valid sig. The Rust client (crates/shadenet-proto verify_directory) needs a threshold follow-up to consume this. Signer seeds are fixed test-only keys.",
     "version": 1,
     "issued": 1000000,
     "onion": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
@@ -114,7 +114,7 @@
     "noMutualVersion": "no-mutual-version"
   },
   "artifacts": {
-    "_note": "T-HARD-8 ZK artifact-version negotiation. artifactIdOf(circuit, vkeyBytes) = `<circuit>-<sha256(bytes) hex[0:16]>` (lib/zk-artifacts.mjs; Rust shade_tree_proto::artifact_id_of) — the vkey FILE bytes exactly as testdata/zk-artifacts.lock.json hashes them, so an artifact id is literally the lock hash prefix. `sample` pins the id of the utf8 bytes \"hello\" (sha256 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824). `reasons` are the bounded gateway/client reason LABELS (runtime strings append `:<id>` / `:client=..,gateway=..`, not pinned). `capsWithArtifacts` pins canonicalCaps (artifacts sorted, appended after proto) + canonicalCapsBytes + capsSig under the SAME onion key as `capabilities`; the pre-existing `capabilities` vectors are byte-UNCHANGED (artifacts absent => omitted).",
+    "_note": "T-HARD-8 ZK artifact-version negotiation. artifactIdOf(circuit, vkeyBytes) = `<circuit>-<sha256(bytes) hex[0:16]>` (lib/zk-artifacts.mjs; Rust shadenet_proto::artifact_id_of) — the vkey FILE bytes exactly as testdata/zk-artifacts.lock.json hashes them, so an artifact id is literally the lock hash prefix. `sample` pins the id of the utf8 bytes \"hello\" (sha256 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824). `reasons` are the bounded gateway/client reason LABELS (runtime strings append `:<id>` / `:client=..,gateway=..`, not pinned). `capsWithArtifacts` pins canonicalCaps (artifacts sorted, appended after proto) + canonicalCapsBytes + capsSig under the SAME onion key as `capabilities`; the pre-existing `capabilities` vectors are byte-UNCHANGED (artifacts absent => omitted).",
     "sample": {
       "circuit": "rln",
       "inputUtf8": "hello",

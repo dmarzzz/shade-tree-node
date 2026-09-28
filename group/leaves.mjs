@@ -3,7 +3,7 @@
 // file. A StakedReputationSet / PaidAccessSet keeps its tree on chain and in its event log; this
 // rebuilds it exactly as the gateway does (lib/root-provider.mjs reconstructGroup: append at the
 // contract's index, ZERO IN PLACE on slash/exit) and writes the leaf array INCLUDING the in-place
-// zeros, so the Rust tree (rust/shade-tree-rln, same zero value) reproduces the on-chain root.
+// zeros, so the Rust tree (crates/shadenet-rln, same zero value) reproduces the on-chain root.
 //
 // Usage:
 //   shade-tree leaves --contract <addr> [--out <path>] [--rpc-url <url>] [--from-block <hex|dec>]

@@ -46,7 +46,7 @@ const directory = JSON.parse(rfs(dirPath, "utf8"));
 const leaf = deriveCommitment(identitySecretOf(identityFor(secret)));
 
 // Parse gateway metadata from the signed directory notes
-// ("gateway-2 / egress-02 / DO nyc3 167.172.224.177").
+// ("gateway-2 / egress-02").
 const gateways = (directory.gateways || []).map((g) => {
   const parts = (g.note || "").split("/").map((s) => s.trim());
   const ip = ((g.note || "").match(/\d+\.\d+\.\d+\.\d+/) || [])[0] || null;

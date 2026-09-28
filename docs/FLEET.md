@@ -132,7 +132,7 @@ able to graft a hostile address:
    file.
 
 `SHADE_TREE_ONION` still forces a single gateway when a caller genuinely wants a fixed egress IP.
-Without any explicit source, the client fetches the signed Canopy from the bundled Elder and uses
+Without any explicit source, the client fetches the signed canopy directory from the bundled Elder and uses
 the default spread. `SHADE_TREE_ROTATION_SPREAD=0` opts out to a weighted-random first choice.
 
 **Rotation adds no extra proof.** Each new tunnel consumes its own RLN slot and fresh proof. The

@@ -4,7 +4,7 @@
 //     leaf `shade-tree enroll` publishes / the on-chain slash names — and `identitySecret` ==
 //     identitySecretOf(...), so the Rust client is the same member as the JS client;
 //   - the bytes are IDENTICAL to what the interop harness helper
-//     rust/shade-tree-rln/interop/egress-derive.mjs writes (byte-for-byte), so the harness and the
+//     crates/shadenet-rln/interop/egress-derive.mjs writes (byte-for-byte), so the harness and the
 //     command cannot drift;
 //   - secret sourcing: --secret-file > SHADE_TREE_SECRET (router --secret) > ./.secret; no secret => exit 1;
 //   - --out writes mode 0600 (even over a pre-existing 0644 file), stdout stays EMPTY;
@@ -28,7 +28,7 @@ const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { conso
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const CLI = join(ROOT, "bin", "shade-tree.mjs");
-const DERIVE = join(ROOT, "rust", "shade-tree-rln", "interop", "egress-derive.mjs");
+const DERIVE = join(ROOT, "crates", "shadenet-rln", "interop", "egress-derive.mjs");
 
 // A fixed test secret (0x-hex, as `shade-tree enroll` mints). Never a real member.
 const SECRET = "0x" + "5a".repeat(32);

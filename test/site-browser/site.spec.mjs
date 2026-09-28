@@ -79,7 +79,7 @@ test("primary static routes and the branded 404 resolve", async ({ page }) => {
 
   const missing = await page.goto("/__shade_tree_missing_page__", { waitUntil: "domcontentloaded" });
   expect(missing?.status()).toBe(404);
-  await expect(page.getByRole("heading", { name: /This path leaves the grove/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /This path leaves the canopy/i })).toBeVisible();
 });
 
 test("private staking creates a compatible identity and preflights the pinned transaction", async ({ page }) => {
