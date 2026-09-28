@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "network": "sepolia-staging",
+  "status": "placeholder",
+  "decisionRef": "M1 staging rehearsal: small placeholder bonds so the smoke test and rehearsals cost little testnet ETH. Not a pricing decision.",
+  "defaultLimit": 1,
+  "tiers": [
+    { "limit": 1, "bondWei": "1000000000000000" },
+    { "limit": 8, "bondWei": "8000000000000000" }
+  ],
+  "unbondingSeconds": 86400,
+  "slash": { "rewardDivisor": 10 },
+  "sponsorSeats": { "count": 0, "bondWeiEach": null },
+  "sessionTickets": false
+}

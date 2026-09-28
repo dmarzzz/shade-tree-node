@@ -338,7 +338,8 @@ contract StakedReputationSetTiersTest is Cheats {
             abi.encodePacked(
                 type(StakedReputationSet).creationCode,
                 abi.encode(
-                    BOND, UNBONDING, MIN_UNBONDING, IWithdrawVerifier(address(real)), ICommitmentHasher(address(hasher)), limits, bonds
+                    BOND, UNBONDING, MIN_UNBONDING, IWithdrawVerifier(address(real)), ICommitmentHasher(address(hasher)), limits, bonds,
+                    10
                 )
             )
         );
