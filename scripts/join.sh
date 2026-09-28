@@ -24,12 +24,10 @@ elif [ -n "${1:-}" ]; then
   esac
 fi
 
-# Default verification target: the PoC gateway droplet's clearnet IP. This is a
-# RECEIPT, not an endpoint: verify.sh compares the egress IP api.ipify.org observed
-# against it and prints PASS/FAIL. Keep it in sync with the default SHADE_TREE_ONION in
-# scripts/run-client.sh; override (or unset, to skip the assertion) when pointing at
-# a different gateway.
-export SHADE_TREE_EXPECT_IP="${SHADE_TREE_EXPECT_IP:-204.48.28.220}"
+# Optional verification target: the gateway's clearnet IP. This is a RECEIPT, not an
+# endpoint: when set, verify.sh compares the egress IP api.ipify.org observed against it
+# and prints PASS/FAIL. Unset skips the assertion. No default: the PoC droplet is retired.
+export SHADE_TREE_EXPECT_IP="${SHADE_TREE_EXPECT_IP:-}"
 
 echo "joining Shade Tree as a member..."
 bash scripts/run-client.sh

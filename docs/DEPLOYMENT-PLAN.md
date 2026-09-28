@@ -1,6 +1,6 @@
 # Protocol v4 deployment plan
 
-**Status:** disposable v4 research Grove live · production blocked on trusted setup · 2026-08-26
+**Status:** disposable v4 research canopy live · production blocked on trusted setup · 2026-08-26
 
 This is the current rollout boundary. The older `DEPLOYMENT.md`, `GO-LIVE.md`, and legacy
 Sepolia contract/directory files describe the retired pre-v4 fleet. The current disposable v4
@@ -13,7 +13,7 @@ research deployment is recorded separately in
 ```text
 discovery
 
-Shade Tree node -- signed heartbeat --> Elder Tree -- signed Canopy --> Proxy
+Shade Tree node -- signed heartbeat --> Elder Tree -- signed canopy directory --> Proxy
 
 traffic
 
@@ -21,19 +21,19 @@ agent --> Proxy --> Tor --> Shade Tree node --> destination
 ```
 
 The Elder Tree (`bootnode` in source) is a separate control-plane service. It
-signs the Canopy and never carries agent traffic. The Shade Tree node (`gateway`
+signs the canopy directory and never carries agent traffic. The Shade Tree node (`gateway`
 in source) verifies the v4 proof before it opens destination egress.
 
 ## Current inventory
 
-- The Vercel site, Grove page, and signed v1/v2 Data API are deployed from `docs/post`.
+- The Vercel site, canopy page, and signed v1/v2 Data API are deployed from `docs/post`.
 - A dedicated Protocol v4 Elder Tree and three dedicated Shade Tree nodes run on Ubuntu 24.04
   across DigitalOcean New York, San Francisco, and Amsterdam. The provider-visible addresses,
   SSH inventory, OpenTofu state, and private identity backups remain outside this repository.
 - The v4 fleet is invited-only and accepts only the pinned `rln-0b25f824a04da3a8` artifact.
   The artifact is explicitly `untrusted-testnet`; this is disposable research infrastructure,
   not production and not suitable for real funds or sensitive traffic.
-- The Elder's signed Canopy has three fresh Protocol v4 announcements. Signer-pinned probes over
+- The Elder's signed canopy directory has three fresh Protocol v4 announcements. Signer-pinned probes over
   Tor and real HTTPS CONNECT tunnels through all three nodes passed at go-live.
 - The isolated `agent-devops/tofu/environments/shade-tree-v4` state and `deploy/v4` Ansible role
   own reconciliation and teardown. Do not operate the older shared fleet environment.
@@ -53,7 +53,7 @@ in source) verifies the v4 proof before it opens destination egress.
 4. **Complete for the research fleet.** Targets, provider account, regions, sizes, admin CIDR,
    SSH keys, and rollback path were reviewed before deployment. The live inventory is isolated
    from the older fleet state.
-5. **Complete.** The v4 network record contains the Elder onion, pinned Canopy signer,
+5. **Complete.** The v4 network record contains the Elder onion, pinned canopy signer,
    admitted roots, accepted artifact identifiers, and protocol range. Pin an immutable git commit for every
    service. [`deploy/v4/preflight.mjs`](../deploy/v4/preflight.mjs) validates this
    record and recomputes verification-key hashes/content ids before any target is
@@ -78,13 +78,13 @@ identity-backup, rollback, and preflight evidence; none is safe to infer from th
 ## Repeatable rollout order
 
 1. Provision or adopt the Elder Tree target. Generate or restore its onion and
-   Canopy-signing keys, expose only its onion service, and keep health and metrics
+   canopy-signing keys, expose only its onion service, and keep health and metrics
    on loopback.
 2. Provision one isolated Shade Tree node with a dedicated public IP. Keep GPU,
    validator, wallet, metadata, and authenticated RPC surfaces unreachable from
    egress.
 3. Start the proof gate and heartbeat. Confirm the Elder Tree accepts the signed
-   announcement and returns a v4 Canopy containing exactly that node.
+   announcement and returns a v4 canopy directory containing exactly that node.
 4. Publish the Elder onion and signer pin out of band to the test Proxy. Do not
    publish node IPs or a raw per-node observer feed.
 5. Add the actual Elder and node hosts to Ansible inventory in the same change
@@ -94,7 +94,7 @@ identity-backup, rollback, and preflight evidence; none is safe to infer from th
 
 ## Verification
 
-- Elder `/health` and signed Canopy are reachable over Tor and reject tampering.
+- Elder `/health` and signed canopy directory are reachable over Tor and reject tampering.
 - The node is reachable only through its onion and advertises protocol v4.
 - An authorized proof opens one CONNECT tunnel; malformed, stale, wrong-root,
   wrong-artifact, replayed, and unauthorized proofs fail closed.

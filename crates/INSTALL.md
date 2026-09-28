@@ -115,7 +115,7 @@ Get-FileHash .\shade-tree-0.6.0-x86_64-pc-windows-msvc-live.exe -Algorithm SHA25
 
 ## No-Node agent quickstart
 
-For the bundled public Sepolia Grove, create an owner-only identity and let the
+For the bundled public Sepolia canopy, create an owner-only identity and let the
 client validate the secret/leaf/tier tuple before it contacts an RPC:
 
 ```sh
@@ -145,14 +145,14 @@ The gas wallet can differ from the registration payer and withdrawal recipient.
 Losing `identity.json` makes the bond unrecoverable; exposing it gives away use and
 exit authority.
 
-For an invited, paid, or alternate Grove, continue with its operator-supplied
+For an invited, paid, or alternate canopy, continue with its operator-supplied
 parameters.
 
-First ask the Grove operator for:
+First ask the canopy operator for:
 
 - the exact rate tier (`limit`) for the leaf you will admit;
 - an admission path (invited, staked, or paid);
-- the Elder Tree onion and its raw 64-hex Canopy signer, or one pinned node;
+- the Elder Tree onion and its raw 64-hex canopy signer, or one pinned node;
 - the matching membership input after admission.
 
 Generate a new owner-only identity locally. `enroll` writes the secret material
@@ -164,7 +164,7 @@ shade-tree enroll --limit "$SHADE_TREE_LIMIT" --out identity.json > public-leaf.
 ```
 
 Send only `public-leaf.txt` through the operator's admission process. This
-command does **not** add the leaf to a remote Grove, submit an on-chain
+command does **not** add the leaf to a remote canopy, submit an on-chain
 transaction, or change a remote membership set. The optional `--members`
 updates only an explicit local version-2 demo set. Do not continue until the
 operator confirms that the leaf is in the exact member root its nodes use and,
@@ -195,7 +195,7 @@ shade-tree proxy \
   --listen 127.0.0.1:8118
 ```
 
-If the operator gives you a static signed Canopy, replace
+If the operator gives you a static signed canopy directory, replace
 `--bootnode-onion "$SHADE_TREE_BOOTNODE_ONION"` with `--directory
 directory.json`. If the operator gives you one pinned node, replace both
 discovery flags with `--onion "$SHADE_TREE_ONION"`. Staked and paid profiles can replace

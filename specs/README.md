@@ -1,4 +1,4 @@
-# Shade Tree Grove specifications
+# ShadeNet specifications
 
 These files are the canonical, implementation-grounded contracts for Shade Tree
 Grove. Presentation names do not rename wire roles or identifiers.

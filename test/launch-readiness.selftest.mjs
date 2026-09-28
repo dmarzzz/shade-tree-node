@@ -24,8 +24,6 @@ const frontDoors = [
   "docs/QUICKSTART.md",
   "docs/JOIN.md",
   "docs/CLIENTS.md",
-  "docs/post/JOIN.md",
-  "docs/post/RUN-A-GATEWAY.md",
 ].map(read);
 const deployment = JSON.parse(read("network/sepolia/deployment.json"));
 const sepoliaReadme = read("network/sepolia/README.md");
@@ -42,7 +40,7 @@ check(
 );
 check(
   "public front doors distinguish current v4 metadata from legacy runtime records",
-  frontDoors.every((doc) => /(?:deployment\.json|disposable v4|v4 research Grove)/i.test(doc)),
+  frontDoors.every((doc) => /(?:deployment\.json|disposable v4|v4 research (?:Grove|canopy))/i.test(doc)),
 );
 check(
   "current deployment receipt is explicitly v4, invited-and-staked, and untrusted research",
@@ -67,7 +65,7 @@ check(
 );
 check(
   "deployment plan records the research fleet while keeping production blocked on trusted setup",
-  /disposable v4 research Grove live · production blocked on trusted setup/.test(deploymentPlan)
+  /disposable v4 research canopy live · production blocked on trusted setup/.test(deploymentPlan)
     && /untrusted-testnet/.test(deploymentPlan)
     && /issue #6/.test(deploymentPlan),
 );

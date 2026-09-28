@@ -3,7 +3,7 @@
 The proof of concept pinned one gateway. The [fleet directory](FLEET.md) made that a
 *signed static file*. The **Elder Tree**, called the bootnode in code and wire docs,
 makes it live: nodes announce themselves, the bootnode holds live ones for a TTL, and it
-serves the union as a signed directory called the **Canopy**.
+serves the union as a signed directory called the **canopy directory**.
 [`lib/directory.mjs`](../lib/directory.mjs) already knows how to verify that shape. It is the
 dynamic realization of roadmap milestone 3.
 

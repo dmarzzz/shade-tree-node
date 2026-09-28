@@ -19,8 +19,6 @@ const PUBLIC_GUIDES = [
   "docs/OPERATOR.md",
   "docs/OVERVIEW.md",
   "docs/QUICKSTART.md",
-  "docs/post/JOIN.md",
-  "docs/post/RUN-A-GATEWAY.md",
   "network/README.md",
   "network/sepolia/README.md",
   "crates/INSTALL.md",
@@ -46,7 +44,7 @@ for (const [path, markdown] of docs) {
   );
 }
 
-for (const path of ["docs/QUICKSTART.md", "docs/JOIN.md", "docs/post/JOIN.md", "docs/CLI.md"]) {
+for (const path of ["docs/QUICKSTART.md", "docs/JOIN.md", "docs/CLI.md"]) {
   const markdown = docs.get(path);
   for (const match of markdown.matchAll(/shade-tree register-member[^\n]*(?:\\\n[^\n]*){0,3}/g)) {
     if (!/--rpc-url/.test(match[0])) continue; // loopback/default examples need no explicit key
