@@ -135,6 +135,13 @@ contract PaidAccessSet {
     address public operator;
     address public pendingOperator;
 
+    /// Leaves that can never be inserted again (audit 2.3.3). A slash reveals the identity
+    /// secret, so every leaf that identity could open is public and spendable-to-zero by anyone:
+    /// the slash burns the identity's leaf at EVERY admitted tier, not only the slashed one, so the
+    /// same identity cannot come back at another tier. Declared LAST so currentRoot stays at storage
+    /// slot 3 (the light-client path). The registrar reads it before taking payment.
+    mapping(uint256 => bool) public burned;
+
     // ---- events ---------------------------------------------------------------
 
     /// A leaf was admitted after an off-chain settlement; `root` is currentRoot AFTER the
@@ -151,6 +158,7 @@ contract PaidAccessSet {
     error BadHasher();
     error BadBatch();
     error AlreadyInserted();
+    error BurnedCommitment();
     error NotInserted();
     error BadSecret();
     error NotOperator();
@@ -274,8 +282,8 @@ contract PaidAccessSet {
     /// only leaves it derived itself as Poseidon2(idc, limit) from the buyer's identity
     /// commitment, which is what the registrar does. A commitment that is
     /// currently live cannot be inserted again (AlreadyInserted): the leaf already buys an
-    /// ongoing per-epoch budget; a slashed commitment MAY be re-inserted and gets a fresh index
-    /// (the vacated slot is never reused).
+    /// ongoing per-epoch budget. A slashed identity's leaves are burned and never admitted again
+    /// (BurnedCommitment); the vacated slot is never reused.
     function insert(uint256 commitment, uint256 limit) external onlyOperator {
         _insert(commitment, limit);
     }
@@ -293,6 +301,7 @@ contract PaidAccessSet {
     function _insert(uint256 commitment, uint256 limit) internal {
         if (!_allowed[limit]) revert BadLimit();
         if (commitment == 0 || commitment >= FIELD) revert BadCommitment();
+        if (burned[commitment]) revert BurnedCommitment();
         if (leaves[commitment].limit != 0) revert AlreadyInserted();
 
         uint64 index = nextIndex++;
@@ -306,8 +315,9 @@ contract PaidAccessSet {
 
     /// Permissionless, gated by knowledge of the secret (a valid (commitment, secret, limit)
     /// triple only exists after a genuine RLN over-spend, exactly as in the staked set): zero
-    /// the leaf in place so the over-spender's proofs stop verifying against the next root.
-    /// NOTHING IS BURNED OR PAID: no funds are held here, so `receiver` receives nothing (kept
+    /// the leaf in place so the over-spender's proofs stop verifying against the next root, and
+    /// burn the identity's leaf at every admitted tier so it is never re-inserted (audit 2.3.3).
+    /// NO FUNDS ARE BURNED OR PAID: no funds are held here, so `receiver` receives nothing (kept
     /// for call-shape parity with StakedReputationSet.slash so one gateway slasher drives both
     /// sets). Reverts NotInserted (leaf not live), BadLimit (`limit` != the recorded tier),
     /// BadSecret (the secret does not hash to the leaf at that tier), in that order.
@@ -319,6 +329,9 @@ contract PaidAccessSet {
 
         uint64 idx = l.index;
         delete leaves[commitment];
+        for (uint256 i = 0; i < _allowedLimits.length; i++) {
+            burned[hasher.commitmentOf(secret, _allowedLimits[i])] = true;
+        }
         liveCount--;
         _updateLeaf(idx, _zeroes[0]); // zero the leaf in place; refresh currentRoot
         emit Slashed(commitment, limit, idx, currentRoot);

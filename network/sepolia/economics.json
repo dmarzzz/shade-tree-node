@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "network": "sepolia",
+  "status": "placeholder",
+  "decisionRef": "PENDING H2 (Dan): tiers, bond per tier, what a slot buys, unbonding, slash split and the sponsor-seat budget. Values below repeat the v4 public-stake-v1 profile until then.",
+  "defaultLimit": 1,
+  "tiers": [
+    { "limit": 1, "bondWei": "100000000000000000" },
+    { "limit": 8, "bondWei": "800000000000000000" }
+  ],
+  "unbondingSeconds": 86400,
+  "slash": { "rewardDivisor": 10 },
+  "sponsorSeats": { "count": 0, "bondWeiEach": null },
+  "sessionTickets": false
+}

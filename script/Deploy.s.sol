@@ -44,7 +44,8 @@ contract Deploy is Cheats {
             IWithdrawVerifier(address(verifier)),
             ICommitmentHasher(address(hasher)),
             extraLimits,
-            extraBonds
+            extraBonds,
+            10
         );
 
         // Gateway operator stake (optional at the bootnode; deployed so the on-chain path exists).

@@ -40,17 +40,21 @@ function validateRatePolicy(rate, bad, { required }) {
 
 function validateStakedProfile(root, rate, bad) {
   if (!isObject(root) || root.profile !== "public-stake-v1") return;
-  const exactTiers = JSON.stringify(root.tiers) === JSON.stringify([
-    { limit: 1, bondWei: "100000000000000000" },
-    { limit: 8, bondWei: "800000000000000000" },
-  ]);
+  // Economics come from network/<net>/economics.json and are read back from the chain at deploy
+  // (scripts/deploy-contracts.mjs); here the record's shape is checked, not its prices.
+  const limits = Array.isArray(root.tiers) ? root.tiers.map((tier) => tier?.limit) : [];
+  const tiersOk = limits.length > 0 && limits.includes(8)
+    && root.tiers.every((tier, i) => Number.isInteger(tier?.limit) && tier.limit >= 1 && tier.limit <= 65535
+      && /^[1-9][0-9]*$/.test(tier.bondWei || "") && (i === 0 || tier.limit > root.tiers[i - 1].limit));
   if (root.chainId !== 11155111) bad("admission.roots.staked.chainId", "public-stake-v1 is Sepolia-only");
   if (!TX_RE.test(root.deployTx || "")) bad("admission.roots.staked.deployTx", "must pin the deployment transaction");
   if (!isEthAddress(root.hasher)) bad("admission.roots.staked.hasher", "must pin the deployed hasher");
   if (!isEthAddress(root.withdrawVerifier)) bad("admission.roots.staked.withdrawVerifier", "must pin the real exit verifier");
-  if (root.defaultLimit !== 1) bad("admission.roots.staked.defaultLimit", "must be 1");
-  if (!exactTiers) bad("admission.roots.staked.tiers", "must pin tier 1 = 0.1 ETH and tier 8 = 0.8 ETH");
-  if (root.unbondingSeconds !== 86400) bad("admission.roots.staked.unbondingSeconds", "must be 86400");
+  if (!limits.includes(root.defaultLimit)) bad("admission.roots.staked.defaultLimit", "must be one of the admitted tiers");
+  if (!tiersOk) bad("admission.roots.staked.tiers", "must be ascending { limit, bondWei } entries that include tier 8");
+  if (root.slashRewardDivisor !== undefined && !(Number.isInteger(root.slashRewardDivisor) && root.slashRewardDivisor >= 2 && root.slashRewardDivisor <= 1000)) {
+    bad("admission.roots.staked.slashRewardDivisor", "must be an integer in 2..1000");
+  }
   if (rate?.crossGateway !== "best-effort-fleet-tally") bad("ratePolicy.crossGateway", "public-stake-v1 requires best-effort fleet tallying");
   const derived = isPosInt(rate?.rootFreshnessSeconds) && isPosInt(rate?.epochSeconds) && isPosInt(rate?.slashConfirmationSeconds)
     ? rate.rootFreshnessSeconds + rate.epochSeconds + rate.slashConfirmationSeconds
@@ -374,10 +378,20 @@ export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall
       }
     }
 
+    // Every expected value comes from the record (which scripts/deploy-contracts.mjs wrote from
+    // network/<net>/economics.json); the chain must match it exactly.
+    const tiers = Array.isArray(root.tiers) ? root.tiers : [];
+    const tier8 = tiers.find((tier) => tier.limit === 8);
+    const extra = tiers.filter((tier) => tier.limit !== 8);
+    const divisor = BigInt(root.slashRewardDivisor ?? 10);
     const tx = await call("eth_getTransactionByHash", [root.deployTx]);
     const constructorArgs = AbiCoder.defaultAbiCoder().encode(
-      ["uint256", "uint256", "uint256", "address", "address", "uint256[]", "uint256[]"],
-      [800_000_000_000_000_000n, 86_400n, 3_720n, root.withdrawVerifier, root.hasher, [1n], [100_000_000_000_000_000n]],
+      ["uint256", "uint256", "uint256", "address", "address", "uint256[]", "uint256[]", "uint256"],
+      [
+        BigInt(tier8?.bondWei ?? 0), BigInt(root.unbondingSeconds), BigInt(root.minUnbondingSeconds),
+        root.withdrawVerifier, root.hasher,
+        extra.map((tier) => BigInt(tier.limit)), extra.map((tier) => BigInt(tier.bondWei)), divisor,
+      ],
     ).slice(2).toLowerCase();
     const input = String(tx?.input || tx?.data || "").toLowerCase();
     if (!tx || tx.to != null || !input.endsWith(constructorArgs)) {
@@ -389,6 +403,7 @@ export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall
       "function UNBONDING() view returns (uint256)",
       "function bondFor(uint256) view returns (uint256)",
       "function allowedLimits() view returns (uint256[])",
+      "function SLASH_REWARD_DIVISOR() view returns (uint256)",
       "function hasher() view returns (address)",
       "function withdrawVerifier() view returns (address)",
       "function groth16() view returns (address)",
@@ -397,12 +412,14 @@ export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall
       const result = await call("eth_call", [{ to: root.contract, data: iface.encodeFunctionData(name, args) }, "latest"]);
       return iface.decodeFunctionResult(name, result);
     };
-    if ((await view("BOND"))[0] !== 800_000_000_000_000_000n) bad("onchain.BOND", "must equal the tier-8 bond (0.8 ETH)");
-    if ((await view("bondFor", [1]))[0] !== 100_000_000_000_000_000n) bad("onchain.bondFor(1)", "must equal 0.1 ETH");
-    if ((await view("bondFor", [8]))[0] !== 800_000_000_000_000_000n) bad("onchain.bondFor(8)", "must equal 0.8 ETH");
+    if ((await view("BOND"))[0] !== BigInt(tier8?.bondWei ?? -1)) bad("onchain.BOND", "must equal the recorded tier-8 bond");
+    for (const tier of tiers) {
+      if ((await view("bondFor", [tier.limit]))[0] !== BigInt(tier.bondWei)) bad(`onchain.bondFor(${tier.limit})`, `must equal the recorded ${tier.bondWei} wei`);
+    }
     const limits = Array.from((await view("allowedLimits"))[0], Number);
-    if (limits.join(",") !== "1,8") bad("onchain.allowedLimits", "must equal [1,8]");
-    if ((await view("UNBONDING"))[0] !== 86_400n) bad("onchain.UNBONDING", "must equal 86400 seconds");
+    if (limits.join(",") !== tiers.map((tier) => tier.limit).join(",")) bad("onchain.allowedLimits", "must equal the recorded tier limits");
+    if ((await view("UNBONDING"))[0] !== BigInt(root.unbondingSeconds)) bad("onchain.UNBONDING", "must equal the recorded unbonding");
+    if ((await view("SLASH_REWARD_DIVISOR"))[0] !== divisor) bad("onchain.SLASH_REWARD_DIVISOR", "must equal the recorded slash split");
     if (String((await view("hasher"))[0]).toLowerCase() !== root.hasher.toLowerCase()) bad("onchain.hasher", "does not match the record");
     if (String((await view("withdrawVerifier"))[0]).toLowerCase() !== root.withdrawVerifier.toLowerCase()) bad("onchain.withdrawVerifier", "does not match the record");
     const wrapperCall = async (name) => {

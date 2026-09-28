@@ -45,7 +45,8 @@ contract StakedReputationSetTest is Cheats {
             IWithdrawVerifier(address(verifier)),
             ICommitmentHasher(address(hasher)),
             new uint256[](0),
-            new uint256[](0)
+            new uint256[](0),
+            10
         );
         commitA = hasher.commitmentOf(SECRET_A);
         commitB = hasher.commitmentOf(SECRET_B);
@@ -71,7 +72,8 @@ contract StakedReputationSetTest is Cheats {
             IWithdrawVerifier(address(verifier)),
             ICommitmentHasher(address(hasher)),
             new uint256[](0),
-            new uint256[](0)
+            new uint256[](0),
+            10
         );
     }
 
@@ -84,7 +86,8 @@ contract StakedReputationSetTest is Cheats {
             IWithdrawVerifier(address(verifier)),
             ICommitmentHasher(address(hasher)),
             new uint256[](0),
-            new uint256[](0)
+            new uint256[](0),
+            10
         );
     }
 
