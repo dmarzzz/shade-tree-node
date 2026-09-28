@@ -138,8 +138,8 @@
     "testdata/withdraw-proof.json": {
       "circuit": "withdraw",
       "role": "exit-auth proof fixture bound to withdraw_verification_key.json (regenerate: node testdata/gen-withdraw-proof.mjs)",
-      "sha256": "9d6cfe034487bcf02c2edd7c5d94ec6f696214bf44579dab7b0587842fcc1a5b",
-      "bytes": 3492,
+      "sha256": "a708eb11f11f37f4bc04d5e628a7a2b90d3b49d7dcc402da9f018d4f6b206591",
+      "bytes": 3580,
       "provenance": "dev-testnet-untrusted",
       "loadedBy": [
         "test/WithdrawVerifier.t.sol",

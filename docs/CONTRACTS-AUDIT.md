@@ -237,16 +237,14 @@ recovery path), which is the accepted single-key limitation (section 3).
   proof-of-knowledge bound to the action + recipient — but its VK is still the untrusted dev
   phase-2 (T-HARD-1): trustworthy for testnet only. The mock remains only in
   `script/Deploy.s.sol` (anvil demo, `scripts/demo-e2e.mjs`).
-- **The tier a leaf is staked at is DECLARED, not proven.** `register(commitment, limit)`
-  cannot look inside `commitment`; it prices and records the tier the registrant names. A
-  member whose leaf was built at limit X but who declares Y != X gets a leaf the contract can
-  never slash (`hasher.commitmentOf(secret, Y) != leaf` => `BadSecret`) — but ALSO one it can
-  never exit or withdraw (the verifier ties the proof to the leaf at the RECORDED limit Y), so
-  the bond is locked forever, i.e. forfeited without a slash tx. The gateway still enforces the
-  leaf's REAL budget X (the circuit does, not the contract), so the mismatch never buys extra
-  requests: an over-spend is still dropped `over-spend-slashed`; only the on-chain burn degrades
-  to a permanent lock. Documented in `docs/ONCHAIN.md` "Tiers on chain"; a leaf-tier proof at
-  registration is a possible follow-up, not a soundness gap.
+- **The tier a leaf is staked at was DECLARED, not proven (fixed for ShadeNet).** In the v4
+  contracts `register(commitment, limit)` could not look inside `commitment`. The earlier text
+  here called a mismatch harmless; the internal audit (2.1.4) showed it is not: a leaf built at
+  a HIGH limit X and registered at a cheaper tier Y gets X slots per epoch (the circuit enforces
+  X) for Y's bond, and is unslashable at Y. The ShadeNet set replaces `register` with
+  `registerIdentity(identityCommitment, limit)`, which derives the leaf
+  `Poseidon2(idc, limit)` on chain (launch decision D2, option A; no circuit change). Tests:
+  `test/StakedReputationSet.identity.t.sol`.
 - **ZK artifacts come from an untrusted ceremony.** `circuits/rln/` was built with a local,
   untrusted phase-2 (two hard-coded entropy contributions + a fixed beacon;
   `circuits/rln/ARTIFACTS.md` "Trust / honesty note"). Fine for testnet. A real deployment
@@ -260,8 +258,11 @@ recovery path), which is the accepted single-key limitation (section 3).
   two-step accept, no timelock). A DAO / timelock / fraud-proof verifier is a future drop-in
   (`StakedReputationSet` has no owner at all, so only the registry carries this risk).
 - **Re-registration allowed.** A withdrawn or slashed commitment is `delete`d, so it can be
-  re-registered (`test_ReRegister_AfterSlash`). Harmless for an append-only tree and a
-  slashed secret is already public; add a burned-commitment set to forbid it outright.
+  re-registered (`test_ReRegister_AfterSlash`) at a new leaf index. In the v4 contracts an
+  exit proof captured before withdrawal could be replayed against the re-registered stake
+  (internal audit 2.2.1); the ShadeNet contexts bind the chain id, the set address and the leaf
+  index, so it cannot (`test/WithdrawVerifier.t.sol` replay tests). Add a burned-commitment set
+  to forbid re-registration outright.
 - **`PaidAccessSet` admission is an operator attestation.** Whether a leaf was PAID for is
   decided off chain (402 rail + registrar); the contract records only that the operator inserted
   it. A dishonest or compromised operator key can insert unpaid leaves (griefing the anonymity

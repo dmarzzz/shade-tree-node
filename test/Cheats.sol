@@ -35,11 +35,23 @@ interface Vm {
     function setEnv(string calldata, string calldata) external;
     function readFile(string calldata) external view returns (string memory);
     function parseJsonBytes(string calldata, string calldata) external pure returns (bytes memory);
+    function parseJsonAddress(string calldata, string calldata) external pure returns (address);
+    function parseJsonUint(string calldata, string calldata) external pure returns (uint256);
+    function etch(address, bytes calldata) external;
 }
 
 /// Base with the cheatcode handle + just-enough assertions.
 contract Cheats {
     Vm internal constant vm = Vm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+
+    /// Run `initcode` as a constructor AT `where` (forge-std's deployCodeTo, inlined): lets a
+    /// test put a contract at the fixed address a committed proof fixture is bound to.
+    function deployAt(address where, bytes memory initcode) internal {
+        vm.etch(where, initcode);
+        (bool ok, bytes memory runtime) = where.call("");
+        require(ok, "deployAt: constructor reverted");
+        vm.etch(where, runtime);
+    }
 
     function assertTrue(bool c) internal pure {
         require(c, "assertTrue: false");

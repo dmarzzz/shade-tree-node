@@ -22,7 +22,9 @@ Two pieces are abstracted behind interfaces (both have real implementations in t
 
 **Reputation tiers on chain (T-FEAT-8b, rln-v4-tiers).** A tier is the leaf's private
 `userMessageLimit` (`docs/adr/0006-reputation-tiers.md`). The set records it:
-`register(commitment, limit)` requires `bondFor(limit)` from an immutable constructor table
+`registerIdentity(identityCommitment, limit)` derives the leaf `Poseidon2(idc, limit)` on chain
+(so the tier is proven, not declared; launch audit 2.1.4) and requires `bondFor(limit)` from an
+immutable constructor table
 (`extraLimits[]` / `extraBonds[]`, default tier `8 => BOND` always present, no owner /
 setter), `limitOf(commitment)` / `allowedLimits()` are the views,
 `slash(commitment, secret, limit, receiver)` recomputes the leaf at the claimed limit
@@ -74,8 +76,10 @@ tree's root with the staked set's. `docs/ONCHAIN.md` "Paid access set", deploy
   margin); the constructor enforces a caller-supplied `minUnbonding` lower bound, but
   pinning the actual value to the gateway's live epoch parameters is an operator step.
 - A withdrawn or slashed commitment can be re-registered (it is `delete`d, so it no
-  longer `_exists`). Harmless for an append-only tree, and a slashed commitment's
-  secret is already public so re-registering it buys nothing; add a burned-commitment
+  longer `_exists`) and gets a fresh leaf index. Exit and withdraw proofs bind that index,
+  the chain id and the set address (launch audit 2.2.1), so a proof captured from the old
+  stake does not authorize the new one. A slashed identity's secret is public, so anyone
+  can re-register it and later exit it; that only costs them a bond. Add a burned-commitment
   set if you want to forbid it outright.
 - No reentrancy guard is strictly needed (state is deleted before the external payout
   and there are no post-transfer reads), but add one before mainnet as defense in depth.

@@ -50,8 +50,21 @@ pragma solidity ^0.8.24;
 // governance key — the set stays permissionless and un-upgradeable), and
 // `slash(commitment, secret, limit, receiver)` recomputes the leaf at the CLAIMED limit through
 // the tiered hasher, so a tier-32 leaf slashes only with limit 32 and burns the tier-32 bond.
-// The one-argument `register(commitment)` / three-argument `slash(..)` overloads are the
-// DEFAULT_LIMIT (= 8, the pre-tier K) path. Both slash overloads enforce the same burn.
+// The three-argument `slash(..)` overload is the DEFAULT_LIMIT (= 8, the pre-tier K) path. Both
+// slash overloads enforce the same burn.
+//
+// Launch audit fixes (ShadeNet M1, internal audit #113):
+//   2.1.2 / 2.1.3  a registered identity commitment must be a nonzero canonical field element,
+//                  so no leaf aliases another mod p and none collides with the zero sentinel.
+//   2.1.4 / 2.3.2  the tier is PROVEN, not declared: `registerIdentity(idc, limit)` takes the
+//                  identity commitment Poseidon1(secret) and the contract derives the leaf
+//                  Poseidon2(idc, limit) itself (launch decision D2, option A). A leaf at a
+//                  cheaper tier than its RLN limit can no longer be registered. The old
+//                  leaf-taking `register(..)` overloads are removed so a stale client can't
+//                  post a bond against a leaf nobody can open.
+//   2.2.1          exit and withdraw contexts bind the chain id, this contract's address and
+//                  the member's leaf index, so an authorization can't be replayed on another
+//                  deployment, another chain or after the same identity re-registers.
 // The exit-auth verifier receives the recorded limit so a real Groth16 exit proof ties the
 // revealed identity commitment to the leaf at that member's tier (contracts/WithdrawVerifier.sol).
 
@@ -73,10 +86,13 @@ interface IWithdrawVerifier {
 /// Recomputes the RLN rate commitment (the tree leaf) from a revealed secret and a tier
 /// limit, so `slash` can check that a reconstructed secret really belongs to the leaf it
 /// claims (R3): commitment == Poseidon2(Poseidon1(secret), limit). The one-argument form is
-/// the DEFAULT_LIMIT (8) leaf, byte-equivalent to the pre-tier hasher.
+/// the DEFAULT_LIMIT (8) leaf, byte-equivalent to the pre-tier hasher. `rateCommitmentOf`
+/// derives the leaf from an identity commitment at registration (audit 2.1.4, option A).
 interface ICommitmentHasher {
     function commitmentOf(uint256 secret) external view returns (uint256);
     function commitmentOf(uint256 secret, uint256 limit) external view returns (uint256);
+    function identityCommitmentOf(uint256 secret) external view returns (uint256);
+    function rateCommitmentOf(uint256 identityCommitment, uint256 limit) external view returns (uint256);
 }
 
 contract StakedReputationSet {
@@ -91,6 +107,15 @@ contract StakedReputationSet {
     /// App-level upper bound on a tier limit: the circuit range-checks messageId with
     /// LessThan(16), which is NOT sound for a limit >= 2^16 (lib/rln.mjs MAX_LIMIT).
     uint256 public constant MAX_LIMIT = 65535;
+
+    /// BN254 scalar field. A registered identity commitment must lie in [1, FIELD) (2.1.2/2.1.3).
+    uint256 public constant FIELD =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
+    /// Domain tags of the exit and withdraw proof contexts (fresh in the ShadeNet deploy; the
+    /// v4 set used "SHADE_TREE_EXIT" / "SHADE_TREE_WITHDRAW" without chain/address/index).
+    bytes public constant EXIT_TAG = "SHADENET_EXIT";
+    bytes public constant WITHDRAW_TAG = "SHADENET_WITHDRAW";
 
     /// Slash economics v1: floor(bond / 10) is the maximum caller-directed reward.
     /// All remaining wei go to address(0). Even a member slashing itself loses >=90%.
@@ -174,6 +199,7 @@ contract StakedReputationSet {
     event SlashPayout(uint256 indexed commitment, address indexed receiver, uint256 burned, uint256 reward);
 
     error BadBond();
+    error BadCommitment();
     error BadLimit();
     error BadTierTable();
     error UnbondingTooShort();
@@ -307,18 +333,32 @@ contract StakedReputationSet {
 
     // ---- register (R1) --------------------------------------------------------
 
-    /// Permissionless. Post the tier's bond for a commitment. The commitment's secret is
-    /// generated locally by the member and never revealed here, so registering
-    /// reveals nothing but a pseudonymous leaf, its tier, and that tier's fixed stake
-    /// amount. Fund this from a Layer-0 shielded (e.g. Railgun) fresh address for max
-    /// anonymity. `limit` MUST be the userMessageLimit the leaf was derived with, else the
-    /// member's proofs open a leaf the contract cannot slash at this tier and its exit
-    /// proofs fail; the contract cannot see inside the leaf, so it trusts the declared tier
-    /// exactly as far as the bond it prices (docs/ONCHAIN.md "Tiers on chain").
-    function register(uint256 commitment, uint256 limit) public payable {
+    /// Permissionless. Post the tier's bond for an identity. The member passes its identity
+    /// commitment `idc = Poseidon1(identitySecret)` and the contract derives the membership
+    /// leaf `Poseidon2(idc, limit)` itself, so the tier the bond pays for is the tier the
+    /// member's RLN proofs are limited to (audit 2.1.4: a declared tier could under-price a
+    /// high-limit leaf and make it unslashable). The secret is never revealed here: the
+    /// leaf, the idc and the tier are public, as the leaf and tier already were. The exit
+    /// proof reveals the same idc, so use one identity per stake (audit 2.3.1). Fund this
+    /// from a fresh address for anonymity.
+    function registerIdentity(uint256 identityCommitment, uint256 limit)
+        external
+        payable
+        returns (uint256 commitment)
+    {
+        if (_bondOf[limit] == 0) revert BadLimit();
+        if (identityCommitment == 0 || identityCommitment >= FIELD) revert BadCommitment();
+        commitment = hasher.rateCommitmentOf(identityCommitment, limit);
+        _admit(commitment, limit);
+    }
+
+    /// Append `commitment` at tier `limit` for exactly that tier's bond. Only reachable through
+    /// `registerIdentity`, which derived the leaf; the leaf check is belt-and-braces.
+    function _admit(uint256 commitment, uint256 limit) internal {
         uint256 bond = _bondOf[limit];
         if (bond == 0) revert BadLimit();
         if (msg.value != bond) revert BadBond();
+        if (commitment == 0 || commitment >= FIELD) revert BadCommitment();
         if (_exists(commitment)) revert AlreadyMember();
 
         uint64 index = nextIndex++;
@@ -328,9 +368,23 @@ contract StakedReputationSet {
         _updateLeaf(index, commitment); // append the leaf; refresh currentRoot
     }
 
-    /// The pre-tier entry point: register at DEFAULT_LIMIT for exactly BOND.
-    function register(uint256 commitment) external payable {
-        register(commitment, DEFAULT_LIMIT);
+    // ---- proof contexts (audit 2.2.1) -----------------------------------------
+
+    /// The context an exit proof for `commitment` must bind: the tag, the chain, this
+    /// contract and the member's current leaf index. 0 if `commitment` holds no bond.
+    function exitContext(uint256 commitment) public view returns (bytes32) {
+        Member storage m = members[commitment];
+        if (m.bond == 0) return bytes32(0);
+        return keccak256(abi.encodePacked(EXIT_TAG, block.chainid, address(this), commitment, uint256(m.index)));
+    }
+
+    /// The context a withdraw proof for `commitment` paying `recipient` must bind.
+    function withdrawContext(uint256 commitment, address recipient) public view returns (bytes32) {
+        Member storage m = members[commitment];
+        if (m.bond == 0) return bytes32(0);
+        return keccak256(
+            abi.encodePacked(WITHDRAW_TAG, block.chainid, address(this), commitment, uint256(m.index), recipient)
+        );
     }
 
     // ---- exit + withdraw (R2, R4) --------------------------------------------
@@ -344,7 +398,7 @@ contract StakedReputationSet {
         if (m.bond == 0) revert NotMember();
         if (m.exitInitiatedAt != 0) revert AlreadyExiting();
 
-        bytes32 context = keccak256(abi.encodePacked("SHADE_TREE_EXIT", commitment));
+        bytes32 context = exitContext(commitment);
         if (!withdrawVerifier.verify(commitment, uint256(m.limit), context, proof)) revert BadProof();
 
         m.exitInitiatedAt = uint64(block.timestamp);
@@ -363,7 +417,7 @@ contract StakedReputationSet {
         if (m.exitInitiatedAt == 0) revert NotExiting();
         if (block.timestamp < uint256(m.exitInitiatedAt) + UNBONDING) revert StillBonded();
 
-        bytes32 context = keccak256(abi.encodePacked("SHADE_TREE_WITHDRAW", commitment, recipient));
+        bytes32 context = withdrawContext(commitment, recipient);
         if (!withdrawVerifier.verify(commitment, uint256(m.limit), context, proof)) revert BadProof();
 
         uint256 amount = m.bond;
