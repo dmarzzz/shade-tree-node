@@ -1,7 +1,7 @@
 //! Native, Node-free member enrollment for the Rust client.
 //!
 //! Enrollment has two deliberately separate outputs:
-//! - the private identity file, written owner-only and consumed by `shade-tree egress`;
+//! - the private identity file, written owner-only and consumed by `shadenet egress` and `shadenet proxy`;
 //! - the public RLN rate commitment (`leaf`), printed on stdout for an operator or
 //!   optionally inserted into a local version-2 `members.json` demo set.
 //!
@@ -35,9 +35,9 @@ fn windows_path_has_alternate_stream(path_units: &[u16]) -> bool {
     })
 }
 
-const HELP: &str = r#"shade-tree enroll — generate a private Rust identity and public enrollment leaf
+const HELP: &str = r#"shadenet enroll — generate a private Rust identity and public enrollment leaf
 
-usage: shade-tree enroll [--limit N] [--out identity.json]
+usage: shadenet enroll [--limit N] [--out identity.json]
                          [--members members.json]
 
 The identity file is secret bearer material and is created owner-only (mode
@@ -536,7 +536,7 @@ pub fn cmd_enroll(args: &[String]) -> ExitCode {
         Ok((leaf, count)) => {
             println!("{leaf}");
             eprintln!(
-                "shade-tree enroll — wrote owner-only private identity {} (tier {})",
+                "shadenet enroll — wrote owner-only private identity {} (tier {})",
                 options.out.display(),
                 options.limit
             );
@@ -549,7 +549,7 @@ pub fn cmd_enroll(args: &[String]) -> ExitCode {
                 );
             } else {
                 eprintln!(
-                    "  stake it with `shade-tree register-member --identity {}`, or submit the stdout leaf to your Grove operator; no local member set was changed",
+                    "  stake it with `shadenet register-member --identity {}`, or submit the stdout leaf to your canopy operator; no local member set was changed",
                     options.out.display()
                 );
             }
@@ -565,7 +565,7 @@ pub fn cmd_enroll(args: &[String]) -> ExitCode {
 pub fn cmd_proxy_token(args: &[String]) -> ExitCode {
     if matches!(args, [arg] if arg == "--help" || arg == "-h") {
         println!(
-            "shade-tree proxy-token — print a fresh URL-safe proxy authentication token\n\nusage: shade-tree proxy-token"
+            "shadenet proxy-token — print a fresh URL-safe proxy authentication token\n\nusage: shadenet proxy-token"
         );
         return ExitCode::SUCCESS;
     }

@@ -238,7 +238,7 @@ pub fn build_envelope(input: &EnvelopeInput) -> Result<BuiltEnvelope, String> {
                 {
                     return Err(
                         "no --circuits dir and this build has no embedded artifacts \
-                                (build shade-tree-client with --features live)"
+                                (build shadenet-cli with --features live)"
                             .into(),
                     );
                 }

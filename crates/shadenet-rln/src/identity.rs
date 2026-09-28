@@ -1,4 +1,4 @@
-//! Native Semaphore-v3 identity derivation used by the Shade Tree Rust client.
+//! Native Semaphore-v3 identity derivation used by the ShadeNet Rust client.
 //!
 //! This ports `lib/rln.mjs identityFor` and `lib/identity-file.mjs` exactly:
 //! normalize the application secret into the BN254 scalar field, seed Semaphore

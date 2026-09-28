@@ -120,7 +120,7 @@ pub fn check_against_lock(
 }
 
 /// Verify the artifacts `include_bytes!`'d into THIS binary against the lock embedded with
-/// them. Called at `shade-tree egress` startup (embedded path); a mismatch is a hard, named error.
+/// them. Called before the first proof (embedded path); a mismatch is a hard, named error.
 #[cfg(feature = "embedded-artifacts")]
 pub fn verify_embedded() -> Result<ArtifactCheck, String> {
     let e = crate::prover::embedded_bytes();
