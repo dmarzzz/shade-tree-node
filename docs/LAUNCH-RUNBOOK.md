@@ -135,6 +135,13 @@ Rerun the smoke with `--resume` after 24 h for the withdraw.
 The deploy writes `network/sepolia/deployment.json` (new set, `registerInput:
 "identityCommitment"`, your tiers) and `network/sepolia/contracts-deploy.json` (audit trail).
 
+Then record the canopy that will serve it (the Elders keep their onions; the commit is the
+release the fleet rolls to in step 4):
+
+```sh
+node scripts/record-canopy.mjs --network sepolia --commit <release commit> --elders-from sepolia-staging
+```
+
 **3. Retire the v4 set in the records.** In `network/sepolia/contracts.json` add
 `0xEB67Abf066c11D78856BccC63476ed14d51e4275` to the retired history with the date. It holds no
 members or funds. Rebuild what reads the record and commit it all in one PR:
