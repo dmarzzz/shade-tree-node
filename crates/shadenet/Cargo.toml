@@ -20,6 +20,7 @@ live = [
     "dep:arti-client",
     "dep:tor-rtcompat",
     "dep:tokio",
+    "dep:futures",
     "dep:reqwest",
     "dep:num-bigint",
     "dep:base64",
@@ -53,6 +54,7 @@ shadenet-rln = { path = "../shadenet-rln", optional = true }
 arti-client = { version = "0.46", default-features = false, features = ["tokio", "rustls", "onion-service-client", "static-sqlite"], optional = true }
 tor-rtcompat = { version = "0.46", default-features = false, features = ["tokio", "rustls"], optional = true }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time"], optional = true }
+futures = { version = "0.3", default-features = false, features = ["std"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
 num-bigint = { version = "0.4", optional = true }
 base64 = { version = "0.23", optional = true }

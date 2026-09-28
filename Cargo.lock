@@ -5618,6 +5618,7 @@ version = "0.6.0"
 dependencies = [
  "arti-client",
  "base64 0.23.1",
+ "futures",
  "getrandom 0.4.3",
  "hex",
  "http",

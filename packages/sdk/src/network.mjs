@@ -32,6 +32,14 @@ function stakedProfile(record) {
   });
 }
 
+function elders(record) {
+  const list = Array.isArray(record?.elders) && record.elders.length ? record.elders : record?.elder ? [record.elder] : [];
+  const seen = new Set();
+  return Object.freeze(list
+    .filter((e) => e && typeof e.onion === "string" && !seen.has(e.onion) && seen.add(e.onion))
+    .map((e) => Object.freeze({ onion: e.onion, canopySigner: e.canopySigner })));
+}
+
 // resolveNetwork("sepolia") or resolveNetwork(recordObject) -> a frozen view the rest of the SDK reads.
 export function resolveNetwork(nameOrRecord = "sepolia") {
   const record = typeof nameOrRecord === "string" ? BUNDLED[nameOrRecord] : nameOrRecord;
@@ -44,7 +52,9 @@ export function resolveNetwork(nameOrRecord = "sepolia") {
     record,
     protocol: record.protocol,
     ratePolicy: record.ratePolicy,
-    elder: record.elder ? Object.freeze({ onion: record.elder.onion, canopySigner: record.elder.canopySigner }) : null,
+    elder: elders(record)[0] ?? null,
+    // Every Elder Tree (schemaVersion 2 `elders[]`; a v1 record has one). Each signs its own canopy.
+    elders: elders(record),
     staked: stakedProfile(record),
     trust: record.security?.proofArtifacts ?? null,
   });

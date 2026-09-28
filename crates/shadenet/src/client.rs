@@ -116,6 +116,50 @@ struct CanopySnapshot {
     fresh_error: Option<String>,
 }
 
+/// One place a signed canopy comes from.
+#[derive(Clone, Debug)]
+enum CanopySource {
+    Elder { onion: String, signers: String },
+    File { path: PathBuf, signers: String },
+}
+
+impl CanopySource {
+    fn signers(&self) -> &str {
+        match self {
+            Self::Elder { signers, .. } | Self::File { signers, .. } => signers,
+        }
+    }
+    fn label(&self) -> String {
+        match self {
+            Self::Elder { onion, .. } => format!("Elder Tree {}", &onion[..onion.len().min(16)]),
+            Self::File { path, .. } => path.display().to_string(),
+        }
+    }
+}
+
+/// Union of verified canopies: every node listed by any verified directory, once. When two
+/// directories list the same node, the entry from the more recently issued directory wins. The
+/// result carries the newest `issued`; it is never re-verified as a whole (each part already was).
+fn merge_canopies(mut outcomes: Vec<dircache::LoadOutcome>) -> (Directory, Option<DemoAdvert>) {
+    outcomes.sort_by_key(|outcome| std::cmp::Reverse(outcome.dir.issued));
+    let mut iter = outcomes.into_iter();
+    let first = iter.next().expect("at least one verified canopy");
+    let mut dir = first.dir;
+    let mut demo = first.demo;
+    let mut seen: HashSet<String> = dir.gateways.iter().map(|g| g.onion.clone()).collect();
+    for outcome in iter {
+        if demo.is_none() {
+            demo = outcome.demo;
+        }
+        for gateway in outcome.dir.gateways {
+            if seen.insert(gateway.onion.clone()) {
+                dir.gateways.push(gateway);
+            }
+        }
+    }
+    (dir, demo)
+}
+
 #[derive(Clone)]
 struct MemberSnapshot {
     set: Arc<DiscoveredMembers>,
@@ -223,6 +267,8 @@ pub struct Client {
     identity: Option<IdentityMaterial>,
     transport: transport::Client,
     canopy: Mutex<Option<CanopySnapshot>>,
+    /// Highest `issued` accepted per canopy source (keyed by its signer set).
+    canopy_floors: StdMutex<std::collections::HashMap<String, u64>>,
     members: Mutex<BTreeMap<MemberKey, MemberSnapshot>>,
     health: StdMutex<(HealthCache, HashSet<String>)>,
     rotation: StdMutex<SmoothWeightedState>,
@@ -267,6 +313,7 @@ impl Client {
             identity,
             transport,
             canopy: Mutex::new(None),
+            canopy_floors: StdMutex::new(std::collections::HashMap::new()),
             members: Mutex::new(BTreeMap::new()),
             health: StdMutex::new((cache, HashSet::new())),
             rotation: StdMutex::new(SmoothWeightedState::default()),
@@ -388,35 +435,59 @@ impl Client {
 
     // ---------------------------------------------------------------- canopy
 
-    fn signers(&self) -> Option<String> {
+    /// Where canopies come from: every Elder Tree of the network, one named Elder, or a file.
+    fn sources(&self) -> Vec<CanopySource> {
         match &self.config.discovery {
-            Discovery::Network => Some(self.config.network.deployment.canopy_signer.clone()),
-            Discovery::ElderTree { signers, .. } | Discovery::CanopyFile { signers, .. } => {
-                Some(signers.clone())
-            }
-            Discovery::Onions(_) | Discovery::PlainTcp(_) => None,
+            Discovery::Network => self
+                .config
+                .network
+                .deployment
+                .elders
+                .iter()
+                .map(|elder| CanopySource::Elder {
+                    onion: elder.onion.clone(),
+                    signers: elder.canopy_signer.clone(),
+                })
+                .collect(),
+            Discovery::ElderTree { onion, signers } => vec![CanopySource::Elder {
+                onion: onion.clone(),
+                signers: signers.clone(),
+            }],
+            Discovery::CanopyFile { path, signers } => vec![CanopySource::File {
+                path: path.clone(),
+                signers: signers.clone(),
+            }],
+            Discovery::Onions(_) | Discovery::PlainTcp(_) => Vec::new(),
         }
     }
 
-    fn canopy_cache_path(&self) -> Option<PathBuf> {
+    fn signers(&self) -> Option<String> {
+        let sources = self.sources();
+        (!sources.is_empty()).then(|| {
+            sources
+                .iter()
+                .map(|source| source.signers().to_string())
+                .collect::<Vec<_>>()
+                .join(";")
+        })
+    }
+
+    fn canopy_cache_path(&self, source: &CanopySource, only: bool) -> Option<PathBuf> {
         if let Some(path) = &self.config.canopy_cache {
-            return Some(path.clone());
+            // An explicit file holds one canopy; with several Elders it holds the first one's.
+            return only.then(|| path.clone());
         }
-        let signers = self.signers()?;
         let dir = self.config.cache_dir.as_ref()?;
-        // One file per pinned signer set, so switching networks never trips the rollback floor.
-        let digest = <sha2::Sha256 as sha2::Digest>::digest(signers.as_bytes());
+        // One file per pinned signer set, so switching networks or Elders never trips a rollback
+        // floor that belongs to another directory.
+        let digest = <sha2::Sha256 as sha2::Digest>::digest(source.signers().as_bytes());
         Some(dir.join(format!("canopy-{}.json", &hex::encode(digest)[..16])))
     }
 
-    async fn fetch_canopy_raw(&self) -> Result<String, String> {
-        match &self.config.discovery {
-            Discovery::Network => {
-                let onion = self.config.network.deployment.elder_onion.clone();
-                self.fetch_over_tor(&onion).await
-            }
-            Discovery::ElderTree { onion, .. } => self.fetch_over_tor(onion).await,
-            Discovery::CanopyFile { path, .. } => {
+    async fn fetch_canopy_raw(&self, source: &CanopySource) -> Result<String, String> {
+        match source {
+            CanopySource::Elder { onion, .. } => self.fetch_over_tor(onion).await,
+            CanopySource::File { path, .. } => {
                 let path = path.clone();
                 tokio::task::spawn_blocking(move || {
                     std::fs::read_to_string(&path)
@@ -424,9 +495,6 @@ impl Client {
                 })
                 .await
                 .map_err(|e| e.to_string())?
-            }
-            Discovery::Onions(_) | Discovery::PlainTcp(_) => {
-                Err("this discovery mode has no canopy".into())
             }
         }
     }
@@ -476,81 +544,105 @@ impl Client {
         .map_err(|_| format!("Elder Tree exchange timed out after {}s", timeout.as_secs()))?
     }
 
-    /// Fetch, verify and install a fresh canopy. On failure the current (or last-known-good)
-    /// canopy stays in use and the error is returned.
+    /// Fetch every canopy source concurrently, verify each against its own signer, and install
+    /// the union of the verified directories. A source that fails falls back to its own
+    /// last-known-good copy; the refresh fails only when no source yields a verified canopy.
     pub async fn refresh_canopy(&self) -> Result<(), Error> {
-        let Some(signers) = self.signers() else {
+        let sources = self.sources();
+        if sources.is_empty() {
             return Ok(());
-        };
+        }
         self.counters
             .canopy_refreshes
             .fetch_add(1, Ordering::Relaxed);
-        let fresh = self.fetch_canopy_raw().await;
-        let cache_path = self.canopy_cache_path();
-        let max_age = self.config.max_age;
-        let outcome = tokio::task::spawn_blocking(move || {
-            dircache::resolve_directory(fresh, cache_path.as_deref(), &signers, max_age, now_ms())
-        })
-        .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
-        let mut guard = self.canopy.lock().await;
-        match outcome {
-            Ok(outcome) => {
-                // In-memory rollback floor, for the case where no LKG file is configured.
-                if let Some(current) = guard.as_ref() {
-                    if outcome.dir.issued < current.dir.issued {
-                        self.counters
-                            .canopy_refresh_failures
-                            .fetch_add(1, Ordering::Relaxed);
-                        return Err(Error::Canopy(format!(
-                            "canopy rollback rejected: issued {} < in-use {}",
-                            outcome.dir.issued, current.dir.issued
-                        )));
+        let only = sources.len() == 1;
+        let fetches = sources.iter().map(|source| async move {
+            let fresh = self.fetch_canopy_raw(source).await;
+            let cache_path = self.canopy_cache_path(source, only);
+            let signers = source.signers().to_string();
+            let max_age = self.config.max_age;
+            let outcome = tokio::task::spawn_blocking(move || {
+                dircache::resolve_directory(
+                    fresh,
+                    cache_path.as_deref(),
+                    &signers,
+                    max_age,
+                    now_ms(),
+                )
+            })
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|result| result);
+            (source.label(), source.signers().to_string(), outcome)
+        });
+        let results = futures::future::join_all(fetches).await;
+
+        let mut accepted = Vec::new();
+        let mut errors = Vec::new();
+        {
+            let mut floors = self.canopy_floors.lock().unwrap_or_else(|p| p.into_inner());
+            for (label, signers, outcome) in results {
+                match outcome {
+                    Ok(outcome) => {
+                        // In-memory rollback floor per source, for when no LKG file is configured.
+                        let floor = floors.get(&signers).copied().unwrap_or(0);
+                        if outcome.dir.issued < floor {
+                            errors.push(format!(
+                                "{label}: canopy rollback rejected: issued {} < in-use {floor}",
+                                outcome.dir.issued
+                            ));
+                            continue;
+                        }
+                        floors.insert(signers, outcome.dir.issued);
+                        if outcome.source == dircache::Source::Cache {
+                            errors.push(format!(
+                                "{label}: {}",
+                                outcome
+                                    .fresh_error
+                                    .clone()
+                                    .unwrap_or_else(|| "fresh unavailable".into())
+                            ));
+                        }
+                        accepted.push(outcome);
                     }
+                    Err(error) => errors.push(format!("{label}: {error}")),
                 }
-                let from_cache = outcome.source == dircache::Source::Cache;
-                if from_cache {
-                    self.counters
-                        .canopy_refresh_failures
-                        .fetch_add(1, Ordering::Relaxed);
-                    tracing::warn!(
-                        reason = outcome
-                            .fresh_error
-                            .as_deref()
-                            .unwrap_or("fresh unavailable"),
-                        "using last-known-good canopy"
-                    );
-                }
-                if let Ok(mut health) = self.health.lock() {
-                    health.1 = outcome
-                        .dir
-                        .gateways
-                        .iter()
-                        .map(|g| g.onion.clone())
-                        .collect();
-                }
-                tracing::info!(
-                    nodes = outcome.dir.gateways.len(),
-                    issued = outcome.dir.issued,
-                    from_cache,
-                    "canopy verified"
-                );
-                *guard = Some(CanopySnapshot {
-                    dir: outcome.dir,
-                    demo: outcome.demo,
-                    fetched_at: Instant::now(),
-                    from_cache,
-                    fresh_error: outcome.fresh_error,
-                });
-                Ok(())
-            }
-            Err(error) => {
-                self.counters
-                    .canopy_refresh_failures
-                    .fetch_add(1, Ordering::Relaxed);
-                Err(Error::Canopy(error))
             }
         }
+        if accepted.is_empty() {
+            self.counters
+                .canopy_refresh_failures
+                .fetch_add(1, Ordering::Relaxed);
+            return Err(Error::Canopy(errors.join("; ")));
+        }
+        let from_cache = accepted
+            .iter()
+            .all(|outcome| outcome.source == dircache::Source::Cache);
+        if !errors.is_empty() {
+            self.counters
+                .canopy_refresh_failures
+                .fetch_add(1, Ordering::Relaxed);
+            tracing::warn!(problems = %errors.join("; "), "some canopy sources fell back or failed");
+        }
+        let (dir, demo) = merge_canopies(accepted);
+        if let Ok(mut health) = self.health.lock() {
+            health.1 = dir.gateways.iter().map(|g| g.onion.clone()).collect();
+        }
+        tracing::info!(
+            nodes = dir.gateways.len(),
+            issued = dir.issued,
+            sources = sources.len(),
+            from_cache,
+            "canopy verified"
+        );
+        *self.canopy.lock().await = Some(CanopySnapshot {
+            dir,
+            demo,
+            fetched_at: Instant::now(),
+            from_cache,
+            fresh_error: (!errors.is_empty()).then(|| errors.join("; ")),
+        });
+        Ok(())
     }
 
     async fn canopy_snapshot(&self) -> Result<CanopySnapshot, Error> {
@@ -1278,6 +1370,49 @@ mod tests {
         );
         assert_eq!(parse_onion_addr("abc", 80).unwrap(), ("abc".into(), 80));
         assert!(parse_onion_addr(".onion", 80).is_err());
+    }
+
+    fn outcome(issued: u64, onions: &[&str]) -> dircache::LoadOutcome {
+        dircache::LoadOutcome {
+            dir: Directory {
+                version: 1,
+                issued,
+                gateways: onions
+                    .iter()
+                    .map(|onion| shadenet_proto::GatewayEntry {
+                        onion: onion.to_string(),
+                        pubkey: String::new(),
+                        weight: if issued > 100 { 7 } else { 1 },
+                        health: "up".into(),
+                        operator: None,
+                        staked: None,
+                        caps: None,
+                        caps_sig: None,
+                    })
+                    .collect(),
+                signer: None,
+                signature: None,
+                signers: None,
+                signatures: None,
+                threshold: None,
+            },
+            demo: None,
+            source: dircache::Source::Fresh,
+            fresh_error: None,
+        }
+    }
+
+    #[test]
+    fn canopies_merge_into_a_union_and_the_newest_entry_wins() {
+        let (dir, _) = merge_canopies(vec![
+            outcome(100, &["a.onion", "b.onion"]),
+            outcome(200, &["b.onion", "c.onion"]),
+        ]);
+        let onions: Vec<_> = dir.gateways.iter().map(|g| g.onion.as_str()).collect();
+        assert_eq!(onions, vec!["b.onion", "c.onion", "a.onion"]);
+        assert_eq!(dir.issued, 200);
+        // The shared node comes from the newer directory.
+        assert_eq!(dir.gateways[0].weight, 7);
     }
 
     #[test]
