@@ -34,7 +34,7 @@ function cargoManifests(dir, found = []) {
 
 function cargoPackageVersion(contents, path) {
   const packageBlock = contents.match(/(?:^|\n)\[package\][ \t]*\n([\s\S]*?)(?=\n\[[^\n]+\]|$)/);
-  if (!packageBlock) return null; // The rust/Cargo.toml workspace root is not a crate.
+  if (!packageBlock) return null; // The Cargo.toml workspace root is not a crate.
   const version = packageBlock[1].match(/^[ \t]*version[ \t]*=[ \t]*"([^"]+)"[ \t]*$/m);
   if (!version) fail(`${path}: [package] must declare an explicit string version`);
   return version[1];
@@ -51,13 +51,13 @@ export function validateVersions(root, tag) {
   }
 
   const crateVersions = [];
-  for (const manifest of cargoManifests(join(root, "rust"))) {
+  for (const manifest of cargoManifests(join(root, "crates"))) {
     const rel = relative(root, manifest);
     const version = cargoPackageVersion(readFileSync(manifest, "utf8"), rel);
     if (version === null) continue;
     crateVersions.push([rel, version]);
   }
-  if (crateVersions.length === 0) fail("no Rust crate manifests found under rust/");
+  if (crateVersions.length === 0) fail("no Rust crate manifests found under crates/");
 
   const mismatches = crateVersions.filter(([, version]) => version !== tagVersion);
   if (mismatches.length > 0) {

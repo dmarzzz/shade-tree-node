@@ -1,0 +1,74 @@
+[package]
+name = "shadenet-rln"
+version = "0.6.0"
+edition = "2021"
+license = "MIT"
+description = "Shade Tree RLN interop probe (T-RUST-2b RLN-INTEROP): generate an RLN Groth16 envelope proof in Rust against the repo's circom-rln artifacts, cross-verified by the rlnjs reference (lib/rln.mjs verifyEnvelope)."
+publish = false
+
+# NOTE: this crate has a heavy dep tree (ark-circom pulls wasmer). It is a parent-
+# workspace MEMBER but is deliberately excluded from `default-members` (see
+# Cargo.toml), so the everyday `cargo build` / `cargo test` over
+# shadenet-proto + shade-tree-client stay fast and never compile wasmer. Build this crate
+# explicitly with `cargo build -p shadenet-rln`.
+
+[features]
+# `embedded-artifacts` (T-RUST-4): `include_bytes!` the repo's circom-rln artifacts
+# (rln.wasm + rln_final.zkey + verification_key.json) straight into the binary, so a
+# released `live` client proves WITHOUT any external circuit files (call `build_envelope`
+# with `circuits_dir: None`). OFF by default so the standalone probe / tree bins and the
+# everyday shadenet-rln build do NOT bloat by ~8MB; `shadenet-cli`'s `live` feature turns it on.
+embedded-artifacts = []
+
+[lib]
+name = "shadenet_rln"
+path = "src/lib.rs"
+
+[[bin]]
+name = "shadenet-rln-probe"
+path = "src/main.rs"
+
+# T-RUST-2c: native Rust merkle root/path emitter (rlnjs Semaphore-v3 parity), so the
+# harness can feed a RUST-computed root+path into the prover instead of the JS fixture.
+[[bin]]
+name = "shadenet-rln-tree"
+path = "src/bin/tree.rs"
+
+[dependencies]
+# Reuse the trust-critical, conformance-gated request-signal + signal-hash from the
+# JS-reference port so the Rust side OWNS the target binding (x = H(signal)).
+shadenet-proto = { path = "../shadenet-proto" }
+
+# T-RUST-2c native merkle tree (rlnjs Semaphore-v3 parity):
+#   - light-poseidon: circomlib-compatible Poseidon (BN254, arity 2) == poseidon-lite.
+#   - sha3: Keccak256 for the Semaphore group zero value (keccak(be32(id)) >> 8).
+light-poseidon = "0.4"
+sha3 = "0.12"
+# T-HARD-8 runtime lock check (src/artifacts.rs): sha256 of the embedded wasm/zkey/vkey vs
+# testdata/zk-artifacts.lock.json. Both already in the tree (shadenet-proto/ed25519-dalek pull
+# sha2; hex is a workspace-wide dep), so no new transitive dependency.
+sha2 = "0.11"
+hex = "0.4"
+
+# ark-circom 0.5 == ark 0.5 (same as zerokit rln 3.0.0). It gives us exactly what we
+# need for byte-compatible interop against the REPO's own artifacts:
+#   - read_zkey(rln_final.zkey) -> (ProvingKey<Bn254>, ConstraintMatrices<Fr>)
+#   - WitnessCalculator(rln.wasm) -> full witness (SAME circom compile as the zkey,
+#     so no witness-graph / wire-order mismatch risk),
+#   - CircomReduction (the snarkjs-compatible QAP reduction).
+ark-circom = "0.5"
+ark-groth16 = { version = "0.5", default-features = false }
+ark-bn254 = "0.5"
+ark-ff = "0.5"
+ark-ec = "0.5"
+ark-serialize = "0.5"
+ark-std = "0.5"
+ark-relations = "0.5"
+wasmer = "4"
+# ark-circom's WitnessCalculator runs on wasmer-wasix, whose virtual-fs needs a
+# Tokio reactor in context to open the wasm's host FS. A runtime guard around the
+# witness call satisfies it (probe-only; the release client would embed its own).
+tokio = { version = "1", features = ["full"] }
+num-bigint = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

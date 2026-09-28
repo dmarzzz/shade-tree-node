@@ -1,6 +1,6 @@
 // identity — export THIS member's identity file for the Rust client (`shade-tree egress --identity`).
 //
-// The Rust `shade-tree egress` (rust/shade-tree-client, `--features live`) does not read SHADE_TREE_SECRET; it
+// The Rust `shade-tree egress` (crates/shadenet-cli, `--features live`) does not read SHADE_TREE_SECRET; it
 // takes the derived Semaphore-v3 identitySecret and the RLN rateCommitment leaf as a JSON file:
 //
 //   { "identitySecret": "<dec>", "leaf": "<dec>" }

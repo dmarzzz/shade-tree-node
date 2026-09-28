@@ -1239,8 +1239,8 @@ client/session-pool.mjs
   lifecycle, draining, fallback
 ```
 
-Rust mirrors the pure ticket functions in `shade-tree-proto`, puts HTTP/2 transport and
-pooling in `shade-tree-egress`, and keeps CLI policy in `shade-tree-client`.
+Rust mirrors the pure ticket functions in `shadenet-proto`, puts HTTP/2 transport and
+pooling in `shadenet-egress`, and keeps CLI policy in `shade-tree-client`.
 
 Use shared JSON/conformance vectors for:
 
@@ -1600,7 +1600,7 @@ These are intended to become independently reviewable engineering tickets.
 
 **Scope**
 
-- add HTTP/2 client support to `shade-tree-egress`;
+- add HTTP/2 client support to `shadenet-egress`;
 - implement session lifecycle, ticket allocation, and child stream adapter;
 - integrate the Rust loopback Proxy and `run` path;
 - consume shared vectors and acceptance fixtures.

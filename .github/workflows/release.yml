@@ -15,7 +15,7 @@ name: release
 #     macOS, and Windows use cargo directly; Linux musl uses cargo-zigbuild only for the libc/linker
 #     boundary. In particular, aarch64 live builds run on GitHub's arm64 Linux runner rather than
 #     cross-compiling wasmer from x86_64. The RLN circuit artifacts are `include_bytes!`'d in
-#     (shade-tree-rln `embedded-artifacts` feature, enabled by `shade-tree-client`'s `live`), so the
+#     (shadenet-rln `embedded-artifacts` feature, enabled by `shadenet-cli`'s `live`), so the
 #     `live` binary is self-contained — no external circuit files are needed to egress.
 #
 # TESTNET-ONLY artifacts: the embedded ZK artifacts are from an UNTRUSTED testnet ceremony
@@ -24,7 +24,7 @@ name: release
 # ARTIFACT LOCK GATE (T-HARD-8): `lock-check` runs test/zk-artifacts.selftest.mjs on the tagged
 # commit and BOTH build jobs depend on it, so a tag can never package a `live` binary whose
 # embedded circuits/rln/* drift from testdata/zk-artifacts.lock.json (the binary also re-checks
-# its embedded bytes against the embedded lock at `egress` startup — rust/shade-tree-rln/src/artifacts.rs).
+# its embedded bytes against the embedded lock at `egress` startup — crates/shadenet-rln/src/artifacts.rs).
 #
 # Assets are named `shade-tree-<version>-<target>` (default) and `shade-tree-<version>-<target>-live`
 # (live), each with a `.sha256`. Symbols are stripped by `[profile.release]` (strip = true).
@@ -36,7 +36,7 @@ name: release
 #     shade-tree-client's `live` now turns on `arti-client/static-sqlite` (bundled amalgamation),
 #     which also drops the libsqlite3 dynamic dep from the linux/macos live binaries.
 #   - live linux x64: wasmer-vm 4 references `__rust_probestack`, which rustc >= 1.89 no
-#     longer exports -> shade-tree-rln/src/prover.rs carries the compiler-builtins definition.
+#     longer exports -> shadenet-rln/src/prover.rs carries the compiler-builtins definition.
 
 on:
   push:
@@ -172,18 +172,16 @@ jobs:
       - name: Build (cross via zigbuild)
         if: ${{ matrix.cross }}
         shell: bash
-        working-directory: rust
         env:
           RELEASE_TARGET: ${{ matrix.target }}
-        run: cargo zigbuild --release -p shade-tree-client --target "$RELEASE_TARGET"
+        run: cargo zigbuild --release -p shadenet-cli --target "$RELEASE_TARGET"
 
       - name: Build (native)
         if: ${{ !matrix.cross }}
         shell: bash
-        working-directory: rust
         env:
           RELEASE_TARGET: ${{ matrix.target }}
-        run: cargo build --release -p shade-tree-client --target "$RELEASE_TARGET"
+        run: cargo build --release -p shadenet-cli --target "$RELEASE_TARGET"
 
       - name: Package
         id: package
@@ -194,7 +192,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
         run: |
           mkdir -p dist
-          BIN="rust/target/$RELEASE_TARGET/release/shade-tree$RELEASE_EXT"
+          BIN="target/$RELEASE_TARGET/release/shade-tree$RELEASE_EXT"
           OUT="shade-tree-$RELEASE_VERSION-$RELEASE_TARGET$RELEASE_EXT"
           cp "$BIN" "dist/$OUT"
           # sha256sum on linux + windows(git-bash); shasum -a 256 on macOS (no sha256sum there).
@@ -283,25 +281,22 @@ jobs:
       - name: Build live (native, embedded artifacts)
         if: ${{ matrix.builder == 'native' }}
         shell: bash
-        working-directory: rust
         env:
           RELEASE_TARGET: ${{ matrix.target }}
-        run: cargo build --release -p shade-tree-client --features live --target "$RELEASE_TARGET"
+        run: cargo build --release -p shadenet-cli --features live --target "$RELEASE_TARGET"
 
       - name: Build live (musl via zigbuild, embedded artifacts)
         if: ${{ matrix.builder == 'zig' }}
         shell: bash
-        working-directory: rust
         env:
           RELEASE_TARGET: ${{ matrix.target }}
-        run: cargo zigbuild --release -p shade-tree-client --features live --target "$RELEASE_TARGET"
+        run: cargo zigbuild --release -p shadenet-cli --features live --target "$RELEASE_TARGET"
 
       # Every live target uses a runner with the same CPU architecture, and the
       # musl assets are executable on their Linux builders. Catch a stale/default
       # CLI before packaging (notably a binary missing the npm-free agent surface).
       - name: Smoke-check live agent commands
         shell: bash
-        working-directory: rust
         env:
           RELEASE_EXT: ${{ matrix.ext }}
           RELEASE_TARGET: ${{ matrix.target }}
@@ -324,7 +319,7 @@ jobs:
           RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
         run: |
           mkdir -p dist
-          BIN="rust/target/$RELEASE_TARGET/release/shade-tree$RELEASE_EXT"
+          BIN="target/$RELEASE_TARGET/release/shade-tree$RELEASE_EXT"
           OUT="shade-tree-$RELEASE_VERSION-$RELEASE_TARGET-live$RELEASE_EXT"
           cp "$BIN" "dist/$OUT"
           # sha256sum on linux + windows(git-bash); shasum -a 256 on macOS (no sha256sum there).

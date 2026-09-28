@@ -18,8 +18,8 @@ assert.match(workflow, /actions\/setup-node@[0-9a-f]{40}/, "Node action is commi
 assert.match(workflow, /actions\/setup-python@[0-9a-f]{40}/, "Python action is commit-pinned");
 assert.match(workflow, /HERMES_COMMIT: [0-9a-f]{40}/, "Hermes source is commit-pinned");
 assert.match(workflow, /git\+https:\/\/github\.com\/NousResearch\/hermes-agent\.git@\$HERMES_COMMIT/);
-assert.match(workflow, /cargo build --locked --manifest-path rust\/Cargo\.toml -p shade-tree-client --features live/, "builds the embedded-Arti Rust Proxy");
-assert.match(workflow, /HERMES_E2E_RUST_BIN: \$\{\{ github\.workspace \}\}\/rust\/target\/debug\/shade-tree/, "passes the exact live binary to the harness");
+assert.match(workflow, /cargo build --locked --manifest-path Cargo\.toml -p shadenet-cli --features live/, "builds the embedded-Arti Rust Proxy");
+assert.match(workflow, /HERMES_E2E_RUST_BIN: \$\{\{ github\.workspace \}\}\/target\/debug\/shade-tree/, "passes the exact live binary to the harness");
 assert.match(workflow, /node test\/hermes-openai-stub\.mjs/, "starts the deterministic model stub");
 assert.match(workflow, /CUSTOM_BASE_URL: http:\/\/127\.0\.0\.1:18080\/v1/, "model stays on loopback");
 assert.match(workflow, /npm run test:hermes/, "runs the real live harness");

@@ -20,7 +20,7 @@ proof per tunnel. The JavaScript library and Proxy share the same hardened core
 (`client/shade-tree-client.mjs`): one proof per logical tunnel, deterministic across gateway
 failover (same signal → same share), plus slot + gateway rotation. The Rust live binary is
 wire-compatible, shares the same default-on slot-state format, and exposes one reusable
-`shade-tree-egress` implementation to both its CLI and Rust callers.
+`shadenet-egress` implementation to both its CLI and Rust callers.
 
 ## Option A: library (`ShadeTreeClient`)
 
@@ -140,8 +140,7 @@ HTTP CONNECT proxy without installing a client-side Tor daemon. The binary
 contains Arti, the RLN prover, and the locked proof artifacts:
 
 ```bash
-cd rust
-cargo build --release -p shade-tree-client --features live
+cargo build --release -p shadenet-cli --features live
 
 (umask 077; set -C; ./target/release/shade-tree proxy-token > proxy-token.txt)
 IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
@@ -179,7 +178,7 @@ fail-closed preflight and process-scoped proxy variables:
 shade-tree run --proxy http://127.0.0.1:8118 -- your-agent
 ```
 
-## Option D: in-process Rust client (`shade-tree-egress`)
+## Option D: in-process Rust client (`shadenet-egress`)
 
 Rust services that own their networking can use the same async client behind
 the live binary through a Git or path dependency. The workspace crate is not

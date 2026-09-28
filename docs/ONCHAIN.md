@@ -472,7 +472,7 @@ redeploy (`network/sepolia/contracts.json`, release `rln-v4-tiers`,
    circuit's `LessThan(16)` soundness bound; `BadLimit` outside), and the one-argument
    `commitmentOf(secret)` stays the byte-equivalent `K = 8` leaf. `ICommitmentHasher` declares
    both overloads. Goldens: `test/StakedReputationSet.tiers.t.sol` vs `lib/tiers.selftest.mjs`
-   / `rust/shade-tree-rln/tests/tree_parity.rs`.
+   / `crates/shadenet-rln/tests/tree_parity.rs`.
 2. **Stake -> tier at admission.** `register(commitment, limit)` requires
    `msg.value == bondFor(limit)` from a **fixed, small tier table set in the constructor**
    (`extraLimits[]` / `extraBonds[]`; the default tier `8 => BOND` is always present; Sepolia:

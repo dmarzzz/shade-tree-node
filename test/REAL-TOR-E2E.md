@@ -21,7 +21,7 @@ shipped code.
 | `test/real-tor-e2e-container.sh` | **CI/authoritative** runner. Boots the systemd-container fleet via `bootnode/deploy/bootstrap.sh` (real onions), points the gateway root at a derived member + restarts it, then runs the same client egress over the container's Tor SOCKS against the published gateway onion. |
 | `.github/workflows/real-tor-e2e.yml` | CI job wrapping the container runner. |
 
-The single-member derivation reuses `rust/shade-tree-rln/interop/egress-derive.mjs`; the log-readiness
+The single-member derivation reuses `crates/shadenet-rln/interop/egress-derive.mjs`; the log-readiness
 polling reuses `interop/wait-log.mjs`. The gateway's default `*:443` egress policy is satisfied by
 using a `:443` sink in CI (no unit edit); the local harness uses a `127.0.0.1:9443` sink with
 `SHADE_TREE_EGRESS_ALLOW` set for it.

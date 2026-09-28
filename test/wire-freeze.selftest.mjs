@@ -31,28 +31,28 @@ const FROZEN = [
   // keccak contexts compiled into the deployed Sepolia StakedReputationSet (0xEB67…4275) and
   // bound into the withdraw proof. A fresh deploy (M1, CHAIN-4) is the one place these may move.
   ['"SHADE_TREE_EXIT"', [
-    "contracts/StakedReputationSet.sol", "rust/shade-tree-client/src/member.rs",
+    "contracts/StakedReputationSet.sol", "crates/shadenet-cli/src/member.rs",
     "testdata/gen-withdraw-proof.mjs", "test/StakedReputationSet.tiers.t.sol", "test/WithdrawVerifier.t.sol",
   ]],
   ['"SHADE_TREE_WITHDRAW"', [
-    "contracts/StakedReputationSet.sol", "rust/shade-tree-client/src/member.rs",
+    "contracts/StakedReputationSet.sol", "crates/shadenet-cli/src/member.rs",
     "testdata/gen-withdraw-proof.mjs", "test/WithdrawVerifier.t.sol",
   ]],
   // RLN request signal: its hash is the circuit's public x.
   ["shade-tree:v4\\n", [
-    "lib/rln.mjs", "rust/shade-tree-proto/src/lib.rs", "rust/shade-tree-proto/tests/conformance.rs",
+    "lib/rln.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
     "testdata/vectors.json",
   ]],
   // Onion-signed and personal_sign domains.
   ["Shade Tree gateway capabilities v1\\n", [
-    "lib/directory.mjs", "rust/shade-tree-proto/src/lib.rs", "rust/shade-tree-proto/tests/conformance.rs",
+    "lib/directory.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
     "testdata/vectors.json",
   ]],
   ["Shade Tree gateway operator authorization\\nonion=", [
-    "bootnode/announce.mjs", "rust/shade-tree-proto/src/lib.rs", "testdata/vectors.json",
+    "bootnode/announce.mjs", "crates/shadenet-proto/src/lib.rs", "testdata/vectors.json",
   ]],
   ["Shade Tree egress success receipt v1\\n", [
-    "lib/receipt.mjs", "rust/shade-tree-proto/src/lib.rs", "testdata/vectors.json",
+    "lib/receipt.mjs", "crates/shadenet-proto/src/lib.rs", "testdata/vectors.json",
   ]],
   ["RGOE gateway capabilities v1\\n", ["lib/directory.mjs"]],
   // HKDF info for member subkeys: changing it changes every derived secret and leaf.
@@ -60,12 +60,12 @@ const FROZEN = [
   // Rate-policy scope inside onion-signed caps and the bundled network record.
   ['"grove-v4"', [
     "lib/directory.mjs", "lib/network-record.mjs", "bootnode/heartbeat.mjs", "client/shade-tree-client.mjs",
-    "deploy/v4/preflight.mjs", "rust/shade-tree-client/src/dircache.rs",
+    "deploy/v4/preflight.mjs", "crates/shadenet-cli/src/dircache.rs",
   ]],
   ['"scope": "grove-v4"', ["network/sepolia/deployment.json"]],
   // Signed caps `admits` values, in anonymity order.
   ['["invited", "staked", "paid"]', [
-    "lib/directory.mjs", "lib/admission.mjs", "deploy/v4/preflight.mjs", "rust/shade-tree-proto/src/lib.rs",
+    "lib/directory.mjs", "lib/admission.mjs", "deploy/v4/preflight.mjs", "crates/shadenet-proto/src/lib.rs",
   ]],
   // Ed25519-signed public snapshot schemas and the pinned attestation key id.
   ['"shade-tree-public-grove-v1"', [

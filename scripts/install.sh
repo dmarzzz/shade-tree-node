@@ -52,7 +52,7 @@ environment:
   SHADE_TREE_RELEASE_BASE=URL   https:// release base (local schemes are test-only)
 
 Prefer to inspect before running? Download the script, read it, then `sh install.sh`.
-Windows: works from Git Bash or MSYS2 (x86_64 only); see rust/INSTALL.md for PowerShell.
+Windows: works from Git Bash or MSYS2 (x86_64 only); see crates/INSTALL.md for PowerShell.
 EOF
 }
 
@@ -194,7 +194,7 @@ else
   case "$ARCH" in
     x86_64|amd64) ARCH=x86_64 ;;
     aarch64|arm64) ARCH=aarch64 ;;
-    *) die "unsupported CPU architecture '$ARCH' (releases cover x86_64 and aarch64); see rust/INSTALL.md to build from source" ;;
+    *) die "unsupported CPU architecture '$ARCH' (releases cover x86_64 and aarch64); see crates/INSTALL.md to build from source" ;;
   esac
   case "$OS" in
     Darwin)
@@ -214,9 +214,9 @@ else
       TARGET="$ARCH-unknown-linux-$LIBC" ;;
     MINGW*|MSYS*|CYGWIN*|Windows_NT)
       # Git Bash / MSYS2 give a POSIX sh with curl and sha256sum; the asset is the MSVC .exe.
-      [ "$ARCH" = x86_64 ] || die "Windows releases cover x86_64 only (got '$ARCH'); see rust/INSTALL.md"
+      [ "$ARCH" = x86_64 ] || die "Windows releases cover x86_64 only (got '$ARCH'); see crates/INSTALL.md"
       TARGET="x86_64-pc-windows-msvc" ;;
-    *) die "unsupported OS '$OS' (releases cover Linux, macOS, and Windows); see rust/INSTALL.md to build from source" ;;
+    *) die "unsupported OS '$OS' (releases cover Linux, macOS, and Windows); see crates/INSTALL.md to build from source" ;;
   esac
   say "target: $TARGET (detected)"
 fi
@@ -321,7 +321,7 @@ else
       say "note: no -live asset for $TARGET in $TAG ($FETCH_WHAT not found);"
       say "      installing the verifier-only binary from that release"
       if [ "$TARGET" = x86_64-apple-darwin ]; then
-        say "      (Intel macOS cannot use this release for live tunneling; see rust/INSTALL.md)"
+        say "      (Intel macOS cannot use this release for live tunneling; see crates/INSTALL.md)"
       fi
       LIVE=0
       select_asset
@@ -337,9 +337,9 @@ else
       fi
     elif [ "$LIVE" = 1 ]; then
       if [ "$TARGET" = x86_64-apple-darwin ]; then
-        die "no -live asset for $TARGET in $TAG ($FETCH_WHAT not found); Intel macOS releases may be verifier-only. Set SHADE_TREE_LIVE=0 or see rust/INSTALL.md"
+        die "no -live asset for $TARGET in $TAG ($FETCH_WHAT not found); Intel macOS releases may be verifier-only. Set SHADE_TREE_LIVE=0 or see crates/INSTALL.md"
       fi
-      die "no -live asset for $TARGET in $TAG ($FETCH_WHAT not found). Set SHADE_TREE_LIVE=0 for the verifier-only build or see rust/INSTALL.md"
+      die "no -live asset for $TARGET in $TAG ($FETCH_WHAT not found). Set SHADE_TREE_LIVE=0 for the verifier-only build or see crates/INSTALL.md"
     else
       die "release asset $FETCH_WHAT not found (wrong SHADE_TREE_VERSION or SHADE_TREE_TARGET?)"
     fi
@@ -429,7 +429,7 @@ say ""
 say "warning: Shade Tree is a research preview with testnet-only, unaudited RLN setup artifacts;"
 say "         do not use it as a production anonymity or security boundary."
 say "note: the checksum establishes transfer integrity, not publisher provenance;"
-say "      verify the GitHub build attestation when provenance matters (rust/INSTALL.md)."
+say "      verify the GitHub build attestation when provenance matters (crates/INSTALL.md)."
 say ""
 say "next:"
 say "  $QDEST --help"
@@ -440,7 +440,7 @@ if [ "$LIVE" = 1 ]; then
   say "  # After admission, use the operator's member set, Elder onion, and signer pin:"
   say "  $QDEST proxy --bootnode-onion <elder.onion> --signer <canopy-signer-hex> \\"
   say "    --identity identity.json --members members.json --listen 127.0.0.1:8118"
-  say "  # Slot allocation is automatic and safely coordinated by default; see rust/INSTALL.md."
+  say "  # Slot allocation is automatic and safely coordinated by default; see crates/INSTALL.md."
 else
   say "  $QDEST verify-directory directory.json --signer <canopy-signer-hex>"
   say "  (tunneling needs a -live build, which is not published for Intel macOS)"

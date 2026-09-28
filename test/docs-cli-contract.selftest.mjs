@@ -23,7 +23,7 @@ const PUBLIC_GUIDES = [
   "docs/post/RUN-A-GATEWAY.md",
   "network/README.md",
   "network/sepolia/README.md",
-  "rust/INSTALL.md",
+  "crates/INSTALL.md",
 ];
 
 const docs = new Map(await Promise.all(PUBLIC_GUIDES.map(async (path) => [
@@ -60,7 +60,7 @@ const overview = docs.get("docs/OVERVIEW.md");
 assert.match(overview, new RegExp(`shade-tree-${pkg.version.replaceAll(".", "\\.")}-<target>-live`), "OVERVIEW uses the current Rust release asset name");
 assert.doesNotMatch(overview, /shade-tree-0\.1\.1-/, "OVERVIEW contains no stale v0.1.1 asset name");
 
-for (const path of ["docs/OVERVIEW.md", "rust/INSTALL.md"]) {
+for (const path of ["docs/OVERVIEW.md", "crates/INSTALL.md"]) {
   const identityCommands = docs
     .get(path)
     .split("\n")

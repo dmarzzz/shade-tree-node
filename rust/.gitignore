@@ -1,6 +1,0 @@
-/target
-**/*.rs.bk
-Cargo.lock.orig
-
-# Ignore nested per-crate target dirs too (not just the workspace root)
-**/target/
