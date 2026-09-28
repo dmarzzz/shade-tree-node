@@ -236,7 +236,7 @@ recovery path), which is the accepted single-key limitation (section 3).
   `withdrawGroth16Verifier`), so on chain exit / withdraw authorization is a genuine
   proof-of-knowledge bound to the action + recipient — but its VK is still the untrusted dev
   phase-2 (T-HARD-1): trustworthy for testnet only. The mock remains only in
-  `script/Deploy.s.sol` (anvil demo, `scripts/demo-e2e.mjs`).
+  `contracts/script/DeployRegistry.s.sol` with its defaults (anvil demo, `scripts/demo-e2e.mjs`).
 - **The tier a leaf is staked at was DECLARED, not proven (fixed for ShadeNet).** In the v4
   contracts `register(commitment, limit)` could not look inside `commitment`. The earlier text
   here called a mismatch harmless; the internal audit (2.1.4) showed it is not: a leaf built at

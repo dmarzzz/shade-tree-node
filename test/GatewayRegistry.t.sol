@@ -5,7 +5,7 @@ import {Cheats} from "./Cheats.sol";
 import {GatewayRegistry} from "../contracts/GatewayRegistry.sol";
 
 contract GatewayRegistryTest is Cheats {
-    // Demo params, matching script/Deploy.s.sol.
+    // Demo params, matching the local anvil demo.
     uint256 constant BOND = 0.01 ether;
     uint256 constant UNBONDING = 300;
     uint256 constant MIN_UNBONDING = 270;

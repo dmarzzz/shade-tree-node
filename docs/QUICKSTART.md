@@ -230,7 +230,8 @@ To source membership from the on-chain `StakedReputationSet` and require staked 
 ```bash
 # deploy locally
 anvil &
-forge script script/Deploy.s.sol:Deploy --rpc-url http://127.0.0.1:8545 --broadcast \
+SHADE_TREE_TIER_LIMITS=32 SHADE_TREE_TIER_BONDS_WEI=40000000000000000 \
+  forge script contracts/script/DeployRegistry.s.sol:DeployRegistry --rpc-url http://127.0.0.1:8545 --broadcast \
   --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
 shade-tree register-member <identity-commitment> --limit 8 # stake a tier-8 member; `enroll` prints its identity commitment

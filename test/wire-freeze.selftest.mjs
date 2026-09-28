@@ -57,8 +57,6 @@ const FROZEN = [
     "lib/receipt.mjs", "crates/shadenet-proto/src/lib.rs", "testdata/vectors.json",
   ]],
   ["RGOE gateway capabilities v1\\n", ["lib/directory.mjs"]],
-  // HKDF info for member subkeys: changing it changes every derived secret and leaf.
-  ['"shade-tree-subkey:v1"', ["lib/subkeys.mjs"]],
   // Rate-policy scope inside onion-signed caps and the bundled network record.
   ['"grove-v4"', [
     "lib/directory.mjs", "lib/network-record.mjs", "bootnode/heartbeat.mjs", "client/shade-tree-client.mjs",

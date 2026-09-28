@@ -19,7 +19,7 @@
 // == that same leaf. The v2 two-view split (Semaphore identity Group + a separate
 // Poseidon(secret) on-chain leaf) is GONE.
 //
-// Prereqs: anvil running + `forge script script/Deploy.s.sol:Deploy` done (deployed.local.json).
+// Prereqs: anvil running + `forge script contracts/script/DeployRegistry.s.sol:DeployRegistry` done (deployed.local.json).
 // Run:  node scripts/demo-e2e.mjs   (proving is ~0.4s/proof, so this takes ~15-30s)
 
 import { readFileSync } from "node:fs";

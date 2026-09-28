@@ -53,8 +53,8 @@ The rest of this page documents the underlying script and the v4 history.
 Script: [`contracts/script/DeployRegistry.s.sol`](../contracts/script/DeployRegistry.s.sol)
 (`DeployRegistry`). It deploys `GatewayRegistry` and, unless disabled, `StakedReputationSet`
 + its verifier/hasher, logs every address, and writes them to a JSON record the gateway/lib
-read. It is the production-oriented sibling of `script/Deploy.s.sol` (the local demo-stack
-deployer): every constructor arg comes from an env var, and the ZK verifier/hasher are taken
+read. The same script deploys the local anvil demo stack with its defaults: every
+constructor arg comes from an env var, and the ZK verifier/hasher are taken
 as **addresses** so a real pre-deployed RLN/Groth16 verifier can be wired in.
 
 > **Broadcasting is out of scope for this repo.** This repo ships and *simulates* the deploy

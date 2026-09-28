@@ -8,7 +8,7 @@ cache_path = "cache"
 solc_version = "0.8.24"
 optimizer = true
 optimizer_runs = 200
-# Deploy.s.sol writes contracts/deployed.local.json; allow read-write on the repo root.
+# DeployRegistry.s.sol writes contracts/deployed.local.json; allow read-write on the repo root.
 fs_permissions = [{ access = "read-write", path = "./" }]
 
 [rpc_endpoints]

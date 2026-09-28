@@ -94,6 +94,6 @@ ONCHAIN.md (we target Ethereum L1, not an L2). A Foundry or Hardhat script shoul
 3. point the gateway/shim at it via `SHADE_TREE_GROUP_CONTRACT` / `SHADE_TREE_RPC_URL` /
    `SHADE_TREE_GROUP_ID`.
 
-Foundry: `script/Deploy.s.sol` (local anvil demo stack, tiers {8, 32}) and
-`contracts/script/DeployRegistry.s.sol` (the persistent env-parameterised deployer,
+Foundry: `contracts/script/DeployRegistry.s.sol` (one env-parameterised deployer for a local
+anvil demo and persistent testnets,
 `docs/ONCHAIN-DEPLOY.md`; `SHADE_TREE_TIER_LIMITS` / `SHADE_TREE_TIER_BONDS_WEI` for the tier table).

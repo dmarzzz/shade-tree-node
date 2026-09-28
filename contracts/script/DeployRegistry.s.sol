@@ -18,8 +18,9 @@ import {WithdrawVerifier} from "../WithdrawVerifier.sol";
 /// L2 by changing only `--rpc-url` and the env. It logs each deployed address and records
 /// them to a JSON file the gateway/lib read (`contracts/deployed.local.json` by default).
 ///
-/// This differs from `script/Deploy.s.sol` (the local demo-stack deployer) in two ways
-/// that matter for a persistent testnet/L2 deployment:
+/// It also serves the local anvil demo (defaults: Mock verifier, tier 8; add tier 32 with
+/// SHADE_TREE_TIER_LIMITS=32 SHADE_TREE_TIER_BONDS_WEI=40000000000000000). Two properties matter
+/// for a persistent testnet/L2 deployment:
 ///   1. It takes the ZK verifier + commitment hasher as ADDRESSES from env, so a real
 ///      pre-deployed RLN/Groth16 verifier can be wired in. It falls back to deploying the
 ///      in-repo Mock verifier/hasher ONLY when those env vars are unset, and shouts a
