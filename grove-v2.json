@@ -1,0 +1,218 @@
+{
+  "schema": "shade-tree-public-grove-v2",
+  "network": "sepolia",
+  "observedAt": "2026-09-29T00:45:00.000Z",
+  "source": {
+    "bootnodeReachable": true,
+    "directoryVerified": true,
+    "definition": "announced-within-ttl",
+    "cadenceMinutes": 15
+  },
+  "nodes": {
+    "announced": 3
+  },
+  "growth": {
+    "windowHours": 24,
+    "announcedNodeHours": 30,
+    "samples": 39
+  },
+  "privacy": {
+    "identities": false,
+    "locations": false,
+    "traffic": false,
+    "stablePositions": false,
+    "futureSharedStatsMinReportingNodes": 5
+  },
+  "history": [
+    {
+      "at": "2026-09-27T00:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-27T05:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-27T10:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-27T19:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-27T22:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T05:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T12:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T15:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T15:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T15:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T16:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T16:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T16:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T16:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T17:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T17:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T17:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T17:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T18:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T18:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T18:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T18:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T19:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T19:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T19:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T20:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T20:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T20:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T21:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T21:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T21:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T22:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T22:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T22:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T23:15:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-28T23:45:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-29T00:00:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-29T00:30:00.000Z",
+      "announced": 3
+    },
+    {
+      "at": "2026-09-29T00:45:00.000Z",
+      "announced": 3
+    }
+  ],
+  "relay": {
+    "definition": "payload-bytes-relayed",
+    "unit": "bytes",
+    "generatedAt": "2026-09-29T00:45:00.000Z",
+    "delayHours": 6,
+    "minimumCohort": 5,
+    "rounding": {
+      "method": "ceiling",
+      "bucketBytes": "1073741824"
+    },
+    "windows": {
+      "sixHour": {
+        "status": "suppressed",
+        "windowHours": 6,
+        "windowStart": "2026-09-28T12:00:00.000Z",
+        "windowEnd": "2026-09-28T18:00:00.000Z",
+        "reportingNodes": 0,
+        "suppressionReason": "unavailable"
+      },
+      "twentyFourHour": {
+        "status": "suppressed",
+        "windowHours": 24,
+        "windowStart": "2026-09-27T18:00:00.000Z",
+        "windowEnd": "2026-09-28T18:00:00.000Z",
+        "reportingNodes": 0,
+        "suppressionReason": "unavailable"
+      }
+    }
+  },
+  "attestation": {
+    "algorithm": "Ed25519",
+    "keyId": "grove-2026-08",
+    "signature": "uXWdDpJFLxMwoUeKRF5sPk7Vg2k4pY4ct15T4AkYtDcfx4ez8wdjYfK5f39Rg9jTzAk3nTGY1dF9dXnPPAs9Dw=="
+  }
+}
