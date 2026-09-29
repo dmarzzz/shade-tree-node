@@ -337,6 +337,8 @@ jobs:
           [[ "$TOKEN" =~ ^[0-9a-f]{64}$ ]]
           NEW="target/$RELEASE_TARGET/release/shadenet$RELEASE_EXT"
           if [ -f "$NEW" ]; then "$NEW" --help >/dev/null; fi
+          # The binary names the commit it was built from (launch gate).
+          "$BIN" --version | grep -Fq "(commit ${GITHUB_SHA:0:12})"
 
       - name: Sign and notarize (macOS)
         if: ${{ runner.os == 'macOS' }}
