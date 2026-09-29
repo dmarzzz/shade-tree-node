@@ -179,7 +179,7 @@ loopback backends (8877 / 8443) to the internet.
 
 `bootstrap.sh` runs `--admission open` by default. To require a gateway stake:
 
-1. Deploy `GatewayRegistry` (see `script/Deploy.s.sol`) and set `SHADE_TREE_GATEWAY_REGISTRY` +
+1. Deploy `GatewayRegistry` (see `contracts/script/DeployRegistry.s.sol`) and set `SHADE_TREE_GATEWAY_REGISTRY` +
    `SHADE_TREE_RPC_URL` + `SHADE_TREE_STAKE_MODE=onchain` on the `shade-tree-bootnode` unit; set
    `SHADE_TREE_BOOTNODE_ADMISSION=stake`.
 2. Stake the gateway operator: `shade-tree register-gateway` with the operator key funded on that

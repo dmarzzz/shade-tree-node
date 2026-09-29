@@ -1,3 +1,3 @@
-# Local anvil deployment addresses written by script/Deploy.s.sol — machine-specific,
+# Local anvil deployment addresses written by contracts/script/DeployRegistry.s.sol — machine-specific,
 # never committed. The gateway/lib read this to find the deployed contracts.
 deployed.local.json
