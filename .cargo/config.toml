@@ -1,0 +1,7 @@
+# Intel Mac `live` builds (RUST-13). ark-circom 0.5 is also built as a cdylib, and wasmer-vm 4
+# inside it references `__rust_probestack`, which rustc >= 1.89 no longer exports. ELF linkers
+# leave that undefined in a shared object; ld64 refuses. Let ld64 leave exactly that one symbol
+# for load time: the dylib is never loaded, and the `shadenet` binary defines it itself
+# (crates/shadenet-rln/src/prover.rs, the probestack shim).
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-U,___rust_probestack"]
