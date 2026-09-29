@@ -42,7 +42,10 @@ function run(...args) {
 write("package.json", '{"name":"fixture","version":"1.2.3"}\n');
 write("Cargo.toml", '[workspace]\nmembers = ["one", "nested/two"]\n');
 write("crates/one/Cargo.toml", '[package]\nname = "one"\nversion = "1.2.3"\n');
-write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n');
+write(
+  "crates/nested/two/Cargo.toml",
+  '[package]\nname = "two"\nversion = "1.2.3"\n\n[dependencies]\none = { path = "../../one", version = "1.2.3" }\n',
+);
 write(
   "CHANGELOG.md",
   "# Changelog\n\n## 1.2.3 — Fixture\n\nResearch preview.\n\n### Added\n\n- A release gate.\n\n## 1.2.2\n\n- Earlier.\n",
@@ -85,6 +88,16 @@ write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.2
 const wrongCrate = run("--tag", "v1.2.3", "--main-ref", "main");
 assert.notEqual(wrongCrate.status, 0);
 assert.match(wrongCrate.stderr, /crates\/nested\/two\/Cargo\.toml: 1\.2\.2/);
+write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n');
+
+write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n\n[dependencies]\none = { path = "../../one" }\n');
+const unversionedDep = run("--tag", "v1.2.3", "--main-ref", "main");
+assert.notEqual(unversionedDep.status, 0);
+assert.match(unversionedDep.stderr, /path dependency one has no version requirement/);
+write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n\n[dependencies]\none = { path = "../../one", version = "1.2.2" }\n');
+const staleDep = run("--tag", "v1.2.3", "--main-ref", "main");
+assert.notEqual(staleDep.status, 0);
+assert.match(staleDep.stderr, /path dependency one requires 1\.2\.2/);
 write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.3"\n');
 
 git("switch", "--detach");

@@ -59,6 +59,23 @@ export function validateVersions(root, tag) {
   }
   if (crateVersions.length === 0) fail("no Rust crate manifests found under crates/");
 
+  // Internal path dependencies need a version requirement to package for crates.io, and it
+  // must be the release version so the published crates resolve to each other.
+  const depProblems = [];
+  for (const manifest of cargoManifests(join(root, "crates"))) {
+    const rel = relative(root, manifest);
+    for (const line of readFileSync(manifest, "utf8").split("\n")) {
+      const dep = line.match(/^[ \t]*([A-Za-z0-9_-]+)[ \t]*=[ \t]*\{([^}]*\bpath[ \t]*=[^}]*)\}/);
+      if (!dep) continue;
+      const version = dep[2].match(/\bversion[ \t]*=[ \t]*"=?([^"]+)"/);
+      if (!version) depProblems.push(`  ${rel}: path dependency ${dep[1]} has no version requirement`);
+      else if (version[1] !== tagVersion) depProblems.push(`  ${rel}: path dependency ${dep[1]} requires ${version[1]}`);
+    }
+  }
+  if (depProblems.length > 0) {
+    fail(`tag ${tag} does not match every internal Rust dependency:\n${depProblems.join("\n")}`);
+  }
+
   const mismatches = crateVersions.filter(([, version]) => version !== tagVersion);
   if (mismatches.length > 0) {
     fail(
