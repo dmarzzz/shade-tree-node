@@ -48,6 +48,11 @@ try {
   ok(!/No canopy is recorded yet/.test(rec.note), "the pending note is replaced");
   ok(rec.admission.roots.staked.contract === JSON.parse(before).admission.roots.staked.contract, "the contracts half is untouched");
 
+  const OTHER = "d".repeat(40);
+  main(["--network", "sepolia-staging", "--commit", OTHER, "--elder", `${A}=${SA}`], quiet);
+  const repinned = JSON.parse(readFileSync(join(root, "sepolia-staging", "deployment.json"), "utf8"));
+  ok((repinned.note.match(/Canopy:/g) || []).length === 1 && repinned.note.includes(OTHER.slice(0, 12)), "a re-pin replaces the canopy sentence");
+
   main(["--network", "sepolia-staging", "--commit", COMMIT, "--elders-from", "sepolia"], quiet);
   const copied = JSON.parse(readFileSync(join(root, "sepolia-staging", "deployment.json"), "utf8"));
   const source = JSON.parse(readFileSync(join(root, "sepolia", "deployment.json"), "utf8"));

@@ -77,7 +77,10 @@ export function withCanopy(record, { commit, elders, status }) {
     services: Object.fromEntries(Object.entries(record.services).map(([name, service]) => [name, { ...service, commit }])),
     elder: full[0],
     elders: full,
-    note: String(record.note || "").replace(/ ?No canopy is recorded yet\.?/, "").trim()
+    note: String(record.note || "")
+      .replace(/ ?No canopy is recorded yet\.?/, "")
+      .replace(/ ?Canopy: \d+ Elder Trees? at [0-9a-f]{12}, recorded by scripts\/record-canopy\.mjs\./g, "")
+      .trim()
       + ` Canopy: ${full.length} Elder Tree${full.length === 1 ? "" : "s"} at ${commit.slice(0, 12)}, recorded by scripts/record-canopy.mjs.`,
   };
   // Both validators: the client's discovery rules and the fleet's full preflight (live).
