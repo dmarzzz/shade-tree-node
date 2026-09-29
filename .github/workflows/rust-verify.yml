@@ -105,3 +105,11 @@ jobs:
 
       - name: Rust Proxy 8 concurrent tunnels + structured 429 + status endpoint (blocking)
         run: bash crates/shadenet-rln/interop/proxy-concurrency-run.sh
+
+      - name: Install Foundry (Anvil + forge for the member lifecycle)
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: stable
+
+      - name: Rust member lifecycle on the real contracts (register, exit, withdraw) (blocking)
+        run: bash crates/shadenet-rln/interop/member-lifecycle-run.sh

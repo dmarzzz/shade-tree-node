@@ -13,8 +13,6 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 pub mod config_file;
 #[cfg(feature = "live")]
 mod enroll;
-#[cfg(all(test, feature = "live"))]
-mod eth_parity;
 #[cfg(feature = "live")]
 mod live;
 #[cfg(feature = "live")]
