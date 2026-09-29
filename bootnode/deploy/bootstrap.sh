@@ -1114,6 +1114,13 @@ if [ "$WITH_GATEWAY" = "1" ] && systemctl is-active --quiet shade-tree-gateway; 
 else
   GATEWAY_WAS_ACTIVE=0
 fi
+# Same for the Elder: a re-run that moves SHADE_TREE_REF (a fleet roll) must restart it onto the
+# new checkout, or it keeps serving the old code with the new unit on disk.
+if [ "$WITH_BOOTNODE" = "1" ] && systemctl is-active --quiet shade-tree-bootnode; then
+  BOOTNODE_WAS_ACTIVE=1
+else
+  BOOTNODE_WAS_ACTIVE=0
+fi
 UNITS=""
 log "journald caps + credentials"
 install -d -m 0755 /etc/systemd/journald.conf.d
@@ -1150,8 +1157,13 @@ systemctl daemon-reload
 # shellcheck disable=SC2086
 if ! systemctl enable --now $UNITS >/dev/null 2>&1; then
   systemctl restart $UNITS
-elif [ "$WITH_GATEWAY" = "1" ] && [ "$GATEWAY_WAS_ACTIVE" = "1" ]; then
-  systemctl restart shade-tree-gateway
+else
+  if [ "$WITH_GATEWAY" = "1" ] && [ "$GATEWAY_WAS_ACTIVE" = "1" ]; then
+    systemctl restart shade-tree-gateway
+  fi
+  if [ "$WITH_BOOTNODE" = "1" ] && [ "$BOOTNODE_WAS_ACTIVE" = "1" ]; then
+    systemctl restart shade-tree-bootnode
+  fi
 fi
 
 if [ "$WITH_GATEWAY" = "1" ]; then
