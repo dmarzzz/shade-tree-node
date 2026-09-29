@@ -32,6 +32,15 @@ pub(crate) use live::compat::*;
 pub(crate) use net::NetArgs;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The source commit this binary was built from (12 hex digits, or "unknown"); see build.rs.
+pub const COMMIT: &str = env!("SHADENET_COMMIT");
+/// `0.6.0 (commit 0123456789ab)`: what `--version` and `shadenet version` print.
+pub const LONG_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (commit ",
+    env!("SHADENET_COMMIT"),
+    ")"
+);
 
 /// Exit code for usage and configuration errors.
 pub(crate) const EXIT_USAGE: u8 = 2;
@@ -39,7 +48,7 @@ pub(crate) const EXIT_USAGE: u8 = 2;
 #[derive(Parser, Debug)]
 #[command(
     name = "shadenet",
-    version,
+    version = LONG_VERSION,
     about = "ShadeNet: proof-gated anonymous egress for agents (research preview)",
     long_about = "ShadeNet: proof-gated anonymous egress for agents (research preview).\n\n\
         A local proxy proves RLN membership in zero knowledge and a Shade Tree node, a Tor onion \
@@ -436,7 +445,7 @@ fn not_live(name: &str) -> ExitCode {
 fn dispatch(command: Command, ctx: &net::Context) -> ExitCode {
     match command {
         Command::Version => {
-            println!("shadenet {VERSION}");
+            println!("shadenet {LONG_VERSION}");
             ExitCode::SUCCESS
         }
         Command::VerifyDirectory(args) => offline::verify_directory(args),
@@ -489,6 +498,16 @@ mod tests {
     #[test]
     fn cli_definition_is_consistent() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn version_names_the_commit() {
+        assert!(
+            COMMIT == "unknown"
+                || (COMMIT.len() == 12 && COMMIT.chars().all(|c| c.is_ascii_hexdigit()))
+        );
+        assert_eq!(LONG_VERSION, format!("{VERSION} (commit {COMMIT})"));
+        assert_eq!(Cli::command().get_version(), Some(LONG_VERSION));
     }
 
     #[test]
