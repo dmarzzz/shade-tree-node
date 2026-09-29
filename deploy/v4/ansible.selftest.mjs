@@ -33,7 +33,9 @@ ok(/onion-identity\.mjs[\s\S]*derive/.test(TASKS) && /canopySigner/.test(TASKS),
 ok(/membersSha256/.test(TASKS) && /checksum_algorithm: sha256/.test(TASKS), "invited member bytes must match the reviewed root hash");
 ok(/shade_tree_slash_key is match/.test(TASKS) && /shade_tree_gateway_operator_key is match/.test(TASKS), "on-chain private keys are syntactically required before mutation");
 ok(/no_log: true/g.test(TASKS) && (TASKS.match(/no_log: true/g) || []).length >= 8, "secret-bearing validation, copies, templates, and bootstrap are redacted");
-ok(/SHADE_TREE_SLASH_KEY/.test(GATEWAY_SECRET) && /SHADE_TREE_SLASH_CONTRACT/.test(GATEWAY_SECRET), "node drop-in binds slashing authorization to the recorded root");
+ok(!/SHADE_TREE_SLASH_KEY=/.test(GATEWAY_SECRET) && /SHADE_TREE_SLASH_CONTRACT/.test(GATEWAY_SECRET), "node drop-in binds the recorded slash contract and carries no key");
+ok(/dest: \/etc\/credstore\/SHADE_TREE_SLASH_KEY/.test(TASKS) && /dest: \/etc\/credstore\/SHADE_TREE_GW_OPERATOR_KEY/.test(TASKS), "role secrets are systemd credentials (OPS-12)");
+ok(!/Environment=SHADE_TREE_(SLASH_KEY|GW_OPERATOR_KEY)=/.test(TASKS), "no role secret is rendered into Environment=");
 ok(/SHADE_TREE_STAKE_MODE=onchain/.test(ELDER_STAKE) && /SHADE_TREE_GATEWAY_REGISTRY/.test(ELDER_STAKE), "stake-gated Elder uses an explicit on-chain registry");
 
 console.log("host hardening and idempotence:");
