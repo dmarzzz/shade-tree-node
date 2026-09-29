@@ -466,7 +466,7 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker buildx build --platform linux/amd64,linux/arm64 --push \
             -f docker/shadenet.Dockerfile --build-arg VERSION="$RELEASE_VERSION" \
-            -t "$image:$RELEASE_VERSION" -t "$image:latest" \
+            -t "$image:$RELEASE_VERSION" $([[ "$RELEASE_VERSION" == *-* ]] || echo "-t $image:latest") \
             --metadata-file "$RUNNER_TEMP/image.json" .
           echo "name=$image" >> "$GITHUB_OUTPUT"
           echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/image.json")" >> "$GITHUB_OUTPUT"
@@ -557,3 +557,38 @@ jobs:
         with:
           body_path: release-metadata/release-notes.md
           files: dist/*
+          # v1.2.3-rc.1 and the like are prereleases and never become "Latest".
+          prerelease: ${{ contains(needs.set-version.outputs.version, '-') }}
+          make_latest: ${{ !contains(needs.set-version.outputs.version, '-') }}
+
+      # Homebrew tap: with a HOMEBREW_TAP_TOKEN secret (fine-grained, contents:write on
+      # dmarzzz/homebrew-shadenet only), a final release commits its formula to the tap.
+      # Without the secret, or for a prerelease, this prints a notice and does nothing.
+      - name: Update the Homebrew tap
+        shell: bash
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+          TAP_REPO: ${{ github.repository_owner }}/homebrew-shadenet
+        run: |
+          if [[ -z "$HOMEBREW_TAP_TOKEN" ]]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN unset: copy dist/shadenet.rb to ${TAP_REPO} Formula/ by hand"
+            exit 0
+          fi
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            echo "::notice::prerelease ${RELEASE_VERSION}: the tap keeps the last final release"
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Formula
+          cp dist/shadenet.rb tap/Formula/shadenet.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/shadenet.rb
+          if git diff --cached --quiet; then
+            echo "tap already has shadenet ${RELEASE_VERSION}"
+            exit 0
+          fi
+          git commit -m "shadenet ${RELEASE_VERSION}"
+          git push origin HEAD

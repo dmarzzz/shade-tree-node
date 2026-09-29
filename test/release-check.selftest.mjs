@@ -12,6 +12,10 @@ const workflow = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8
 
 assert.match(workflow, /fetch-depth: 0/, "release ancestry check receives full git history");
 assert.match(workflow, /node scripts\/release-check\.mjs/, "tag workflow runs the locally tested release gate");
+assert.match(workflow, /prerelease: \$\{\{ contains\(needs\.set-version\.outputs\.version, '-'\) \}\}/, "hyphenated versions publish as prereleases");
+assert.match(workflow, /make_latest: \$\{\{ !contains/, "a prerelease never becomes Latest");
+assert.match(workflow, /\*-\* \]\] \|\| echo "-t \$image:latest"/, "a prerelease image gets no :latest");
+assert.match(workflow, /HOMEBREW_TAP_TOKEN unset/, "the tap update is a notice without its secret");
 assert.match(workflow, /needs: \[set-version, default, live\]/, "publication waits for metadata and every binary build");
 assert.match(workflow, /body_path: release-metadata\/release-notes\.md/, "publication uses validated changelog notes");
 assert.match(workflow, /Revalidate the remote tag before publication/, "publication rechecks the mutable remote tag");
