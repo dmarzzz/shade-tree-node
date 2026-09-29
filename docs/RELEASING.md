@@ -34,6 +34,10 @@ workspace and fails only when a package that opts into publishing can't pass
    - `ghcr.io/dmarzzz/shadenet:<version>` and `:latest`, built from the musl live
      binaries, with its own provenance attestation
 
+   A version with a hyphen (`v0.7.0-rc.1`) is a prerelease: the GitHub Release is marked
+   prerelease and never "Latest", the image gets no `:latest`, and the Homebrew tap is left
+   on the last final release.
+
 ## Verify a download
 
 ```sh
@@ -51,7 +55,7 @@ are otherwise verified the same way.
 |---|---|---|
 | `APPLE_CERT_P12_BASE64`, `APPLE_CERT_PASSWORD`, `APPLE_SIGNING_IDENTITY` | repository secrets | Developer ID signing |
 | `APPLE_NOTARY_KEY_P8_BASE64`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER_ID` | repository secrets | notarization (App Store Connect API key) |
-| `dmarzzz/homebrew-shadenet` tap repository | GitHub | `brew install dmarzzz/shadenet/shadenet`; copy each release's `shadenet.rb` to `Formula/` |
+| `dmarzzz/homebrew-shadenet` tap repository + `HOMEBREW_TAP_TOKEN` (fine-grained, contents:write on the tap only) | GitHub + repository secret | `brew install dmarzzz/shadenet/shadenet`; each final release commits its `shadenet.rb` to `Formula/`. Without the token, copy it by hand |
 | GHCR package visibility | package settings, after the first tag | make `ghcr.io/dmarzzz/shadenet` public |
 | crates.io and npm tokens | repository secrets | real publishing, once packages opt in |
 
