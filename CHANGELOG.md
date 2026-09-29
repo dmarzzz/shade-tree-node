@@ -4,34 +4,74 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
-Work toward the ShadeNet research preview. Wire format, signed strings and the deployed
-Sepolia contracts are unchanged so far.
+Work toward the ShadeNet research preview on Sepolia. Signed and hashed v4 wire strings are
+unchanged (`test/wire-freeze.selftest.mjs`). The contracts change and take effect with a fresh
+deployment: staging is live (`network/sepolia-staging/`); production waits for the economics
+and the trusted setup.
 
-### Changed
+### Contracts
 
-- Public copy, site and current docs renamed to ShadeNet; Grove and Canopy merged into canopy. `/canopy` serves the network page and `/grove`, `/grove/network.json` and the v1/v2 Data API paths keep working. Signed and hashed wire strings are unchanged.
-- `/pricing` redirects to `/stake/`. The stale public `JOIN.md` and `RUN-A-GATEWAY.md` copies under the site are removed.
-- Burn 90% of each slashed member bond instead of paying it all to the slasher (#115).
-  This changes the contract; it takes effect at the next deployment.
-- ADR-0010: the spec and `testdata/vectors.json` are normative; a Rust SDK and a JavaScript
-  SDK live in one monorepo (#130).
-- Moved the Rust workspace from `rust/` to `crates/`, with crates renamed to
-  `shadenet-{proto,rln,egress,cli}`. The binary is still `shade-tree` (#131).
-- Clarified onboarding diagnostics and protocol documentation (#114).
+- Burn 90% of each slashed member bond instead of paying it all to the slasher (#115, audit 2.1.1).
+- The set derives each leaf from the identity commitment and the tier it proves; zero and
+  non-canonical commitments are rejected; exit and withdraw proofs bind chain, contract and leaf
+  index (#136, audit 2.1.2 to 2.2.1).
+- The paid set burns a slashed identity at every tier and refuses to re-insert it; the registrar
+  refuses before charging (#181, audit 2.3.3). The audit's reproductions are regression tests.
+- Economics as config: `network/<net>/economics.json` in, a read-back-verified deployment record
+  out; production refuses placeholder economics (#177). Staging deployed and source-verified on
+  Sourcify's v2 API (#187).
+- The internal audit report and a finding-by-finding index (#151).
 
-### Added
+### SDKs and clients
 
-- The community trusted-setup ceremony kit: `docs/CEREMONY.md`, `docs/ceremony/`,
-  `scripts/ceremony/` (#128).
-- `test/wire-freeze.selftest.mjs` pins every signed, hashed, proved or on-chain v4 string
-  so the rename can't change them (#129).
-- CI: `cargo deny` and `cargo audit` in the supply-chain gate; the Rust embedded-Tor to JS
-  gateway end-to-end run is a required check; nightly full matrix and a monthly mutation run.
+- `shadenet`, the Rust SDK crate, with an async proxy and the `shadenet` CLI (#155): concurrent
+  CONNECTs, structured errors, a status endpoint, `shadenet mcp` for agents.
+- `@shadenet/sdk`, the JavaScript SDK for browsers and Node (#135).
+- Passphrase-protected identity files (#171); no panics on untrusted input (#164); Ethereum
+  primitives in `shadenet::eth` replace ethers-core (#174).
+- Several Elder Trees: deployment record schemaVersion 2 with `elders[]`; both SDKs use every
+  Elder (#182).
+- Agent docs, examples, `llms.txt`, a local API spec and an installer (#161).
+- Rust CLI copy says ShadeNet and canopy (#184). The JS CLI binary is `shade-tree-node` (#134).
+
+### Node and operations
+
+- One-command join from the deployment record; secrets as systemd credentials; pinned Node;
+  journald caps (#165). Bootstrap fixes (#167).
+- RPC failover across up to five endpoints (#156); the spent-nullifier set persists across
+  restarts (#159); the running commit is in `build_info` and `/health` (#158).
+- Onion DoS defenses: a per-circuit stream cap and Arti proof-of-work support (#162).
+- Federation dials the configured Tor SOCKS port (#168); alert rules load in Prometheus (#150);
+  uptime probe hardening (#160).
+- `npm run dev:offline` runs a real node and Proxy on loopback without Tor (#175).
+- Every server environment variable is documented and checked (#172); SLOs, on-call and key
+  backup (#166); fleet hot key rotated and split by role (#148).
+
+### Site and docs
+
+- ShadeNet and canopy across the site and current docs; Grove and Canopy merged into canopy.
+  `/canopy` serves the network page; `/grove` and the v1/v2 Data API paths keep working (#132, #152).
+- Get access page built from the deployment record: stake, status, exit and withdraw with proofs
+  made in the tab (#147, #169). `/pricing` redirects to `/stake/`.
+- Docs reorganized into use, run, reference, security, design and history, with a link check (#170).
+- The launch runbook for the owner's gates (#185); ADR-0010, two SDKs and one spec (#130).
+- Ceremony kit (#128); PSE's RLN setup passes the adoption check for both circuits (#163); the
+  launch circuit set is frozen (#186).
+
+### Build, CI and release
+
+- Rust workspace moved to `crates/` with `shadenet-*` crates (#131).
+- Required checks: real-Tor e2e, bootstrap e2e, `cargo deny`, `cargo audit`; one Node lane per PR
+  and the full matrix nightly (#153, #179); main CI is never cancelled (#183).
+- Release assets for `shadenet`, Intel Mac live build, signing, Homebrew formula, GHCR image and
+  publish dry-runs (#157).
+- The Smithers harness is removed (#154).
 
 ### Dependencies
 
 - arti-client and tor-rtcompat 0.46 (#127); rustls 0.23.45 (RUSTSEC-2026-0285); underscore
-  1.13.8 in the ceremony kit; routine npm, cargo and Actions bumps.
+  1.13.8 in the ceremony kit (#133); arkworks bumps grouped (#149); routine npm, cargo and
+  Actions bumps.
 
 ## 0.6.0 — Private staking and recovery
 
