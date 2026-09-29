@@ -468,14 +468,26 @@ async function main() {
   try {
     const flags = parseArgs(process.argv.slice(2));
     if (flags.help) {
-      console.log("usage: node deploy/v4/preflight.mjs --record <deployment.json> --repo-root <checkout> [--require-stake-profile public-stake-v1] [--rpc-url <actual-runtime-rpc>] [--allow-pending] [--quiet]");
+      console.log("usage: node deploy/v4/preflight.mjs --record <deployment.json> --repo-root <checkout> [--require-stake-profile public-stake-v1] [--rpc-url <runtime-rpc>[,<fallback>...]] [--allow-pending] [--quiet]");
       return;
     }
     if (!flags.record) throw new Error("--record <deployment.json> is required");
     const record = loadDeploymentRecord(flags.record);
     const shape = validateDeploymentRecord(record, flags);
     const pin = shape.ok && flags.requireLive ? validatePinnedCheckout(record, flags) : { ok: true, errors: [] };
-    const chain = shape.ok && pin.ok && flags.requireLive ? await validatePublicStakeOnchain(record, { repoRoot: flags.repoRoot, rpcUrl: flags.rpcUrl }) : { ok: true, errors: [] };
+    // The runtime RPC may be a failover list (SHADE_TREE_RPC_URL takes up to five, comma-separated):
+    // every endpoint the nodes can fall back to must pass the same on-chain checks.
+    const rpcUrls = flags.rpcUrl ? flags.rpcUrl.split(",").map((url) => url.trim()).filter(Boolean) : [null];
+    if (rpcUrls.length > 5) throw new Error("--rpc-url takes at most five comma-separated endpoints");
+    const chain = { ok: true, errors: [] };
+    if (shape.ok && pin.ok && flags.requireLive) {
+      for (const rpcUrl of rpcUrls) {
+        const one = await validatePublicStakeOnchain(record, { repoRoot: flags.repoRoot, rpcUrl });
+        chain.ok &&= one.ok;
+        const via = rpcUrls.length > 1 ? ` (via ${new URL(rpcUrl).host})` : "";
+        chain.errors.push(...one.errors.map((e) => ({ ...e, problem: `${e.problem}${via}` })));
+      }
+    }
     const result = { ok: shape.ok && pin.ok && chain.ok, errors: [...shape.errors, ...pin.errors, ...chain.errors] };
     if (!result.ok) {
       const lines = result.errors.map((e) => `  ${e.field}: ${e.problem}`).join("\n");
