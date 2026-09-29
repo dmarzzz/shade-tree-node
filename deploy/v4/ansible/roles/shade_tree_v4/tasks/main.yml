@@ -473,6 +473,55 @@
     - shade_tree_runs_node | bool
     - shade_tree_onchain_admission | bool
 
+- name: Create the systemd credential store for role secrets
+  ansible.builtin.file:
+    path: /etc/credstore
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: shade_tree_runs_node | bool
+
+# OPS-12: role secrets reach the services through ImportCredential=SHADE_TREE_* (rendered by
+# bootstrap.sh) and lib/credentials.mjs, so they never appear in Environment=, `systemctl show`
+# or /proc/<pid>/environ.
+- name: Install the slash key as a systemd credential
+  ansible.builtin.copy:
+    content: "{{ shade_tree_slash_key }}\n"
+    dest: /etc/credstore/SHADE_TREE_SLASH_KEY
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - shade_tree_runs_node | bool
+    - shade_tree_onchain_admission | bool
+  no_log: true
+  notify: Restart Shade Tree node
+
+- name: Install the gateway operator key as a systemd credential
+  ansible.builtin.copy:
+    content: "{{ shade_tree_gateway_operator_key }}\n"
+    dest: /etc/credstore/SHADE_TREE_GW_OPERATOR_KEY
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - shade_tree_runs_node | bool
+    - shade_tree_deployment.elder.admission == 'stake'
+  no_log: true
+  notify: Restart Shade Tree heartbeat
+
+- name: Remove role secrets that no longer apply
+  ansible.builtin.file:
+    path: "/etc/credstore/{{ item.name }}"
+    state: absent
+  loop:
+    - { name: SHADE_TREE_SLASH_KEY, keep: "{{ shade_tree_onchain_admission | bool }}" }
+    - { name: SHADE_TREE_GW_OPERATOR_KEY, keep: "{{ shade_tree_deployment.elder.admission == 'stake' }}" }
+  when:
+    - shade_tree_runs_node | bool
+    - not (item.keep | bool)
+
 - name: Install on-chain slashing authorization
   ansible.builtin.template:
     src: gateway-secrets.conf.j2
@@ -520,17 +569,11 @@
   no_log: true
   notify: Restart Elder Tree
 
-- name: Install heartbeat operator authorization
-  ansible.builtin.template:
-    src: heartbeat-operator.conf.j2
-    dest: /etc/systemd/system/shade-tree-heartbeat.service.d/v4-operator.conf
-    owner: root
-    group: root
-    mode: "0600"
-  when:
-    - shade_tree_runs_node | bool
-    - shade_tree_deployment.elder.admission == 'stake'
-  no_log: true
+- name: Remove the old heartbeat operator key drop-in (the key is a credential now)
+  ansible.builtin.file:
+    path: /etc/systemd/system/shade-tree-heartbeat.service.d/v4-operator.conf
+    state: absent
+  when: shade_tree_runs_node | bool
   notify: Restart Shade Tree heartbeat
 
 - name: Remove stale Elder stake configuration
@@ -541,15 +584,6 @@
     - shade_tree_runs_elder | bool
     - shade_tree_deployment.elder.admission != 'stake'
   notify: Restart Elder Tree
-
-- name: Remove stale heartbeat operator authorization
-  ansible.builtin.file:
-    path: /etc/systemd/system/shade-tree-heartbeat.service.d/v4-operator.conf
-    state: absent
-  when:
-    - shade_tree_runs_node | bool
-    - shade_tree_deployment.elder.admission != 'stake'
-  notify: Restart Shade Tree heartbeat
 
 - name: Reconcile the dedicated-host firewall
   ansible.builtin.shell:
