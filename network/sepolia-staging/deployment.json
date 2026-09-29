@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "network": "sepolia-staging",
-  "status": "pending",
+  "status": "live",
   "protocol": {
     "min": 4,
     "max": 4
@@ -24,20 +24,20 @@
   "services": {
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "d6324a30ecf17e174d0fb33cb72cf4856c5b2a90"
+      "commit": "9761389a72c538b4ea04ddc96caacaab2d37da9d"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "d6324a30ecf17e174d0fb33cb72cf4856c5b2a90"
+      "commit": "9761389a72c538b4ea04ddc96caacaab2d37da9d"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "d6324a30ecf17e174d0fb33cb72cf4856c5b2a90"
+      "commit": "9761389a72c538b4ea04ddc96caacaab2d37da9d"
     }
   },
   "elder": {
-    "onion": null,
-    "canopySigner": null,
+    "onion": "a4xt55gef66pifqebadjobjpy2drsoa63bdok4toisvenmyehslaz4id.onion",
+    "canopySigner": "e0ce2892955b506c63d746ff61e06c0fdf446536c2b7b3dc68a3ba214608ca8c",
     "admission": "stake",
     "gatewayRegistry": "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868"
   },
@@ -91,5 +91,19 @@
     "legacy": null
   },
   "created": "2026-09-28",
-  "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. No canopy is recorded yet."
+  "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. Canopy: 2 Elder Trees at 9761389a72c5, recorded by scripts/record-canopy.mjs.",
+  "elders": [
+    {
+      "onion": "a4xt55gef66pifqebadjobjpy2drsoa63bdok4toisvenmyehslaz4id.onion",
+      "canopySigner": "e0ce2892955b506c63d746ff61e06c0fdf446536c2b7b3dc68a3ba214608ca8c",
+      "admission": "stake",
+      "gatewayRegistry": "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868"
+    },
+    {
+      "onion": "k54vz4zu7l76qcqjclbfsd276j7uvtggpoyfxelusmpof2qizngxgrid.onion",
+      "canopySigner": "3d5bfa23dbf75d78b0f8ce54320c5dd52dccc7d2dcdd61c6ed8ba6501e67faa1",
+      "admission": "stake",
+      "gatewayRegistry": "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868"
+    }
+  ]
 }
