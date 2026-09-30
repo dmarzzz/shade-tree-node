@@ -45,6 +45,11 @@ const FROZEN = [
     "packages/node/lib/rln.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
     "testdata/vectors.json",
   ]],
+  // Session tickets (ADR 0011): the session signal prefix and the three SHA-256 domains.
+  ["shade-tree:session:v1\\n", ["packages/node/lib/session-tickets.mjs", "crates/shadenet-proto/src/session.rs", "testdata/vectors.json"]],
+  ["Shade Tree session ticket v1\\n", ["packages/node/lib/session-tickets.mjs", "crates/shadenet-proto/src/session.rs", "testdata/vectors.json"]],
+  ["Shade Tree session ticket book v1\\n", ["packages/node/lib/session-tickets.mjs", "crates/shadenet-proto/src/session.rs", "testdata/vectors.json"]],
+  ["Shade Tree session ticket spend v1\\n", ["packages/node/lib/session-tickets.mjs", "crates/shadenet-proto/src/session.rs", "testdata/vectors.json"]],
   // Onion-signed and personal_sign domains.
   ["Shade Tree gateway capabilities v1\\n", [
     "packages/node/lib/directory.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
@@ -124,6 +129,8 @@ ok(RELAY_COUNTER_SCHEMA === "shade-tree-relay-counter-v1"
 // Golden vectors: the signed messages must still start with the frozen domains.
 const V = JSON.parse(read("testdata/vectors.json"));
 ok(V.operatorAuthMessage?.startsWith("Shade Tree gateway operator authorization\nonion="), "vectors.operatorAuthMessage");
+ok(V.sessionTickets?.signal?.startsWith("shade-tree:session:v1\n") && V.sessionTickets.ticketDomain === "Shade Tree session ticket v1\n"
+  && V.sessionTickets.ticketBookDomain === "Shade Tree session ticket book v1\n" && V.sessionTickets.ticketSpendDomain === "Shade Tree session ticket spend v1\n", "vectors.sessionTickets domains");
 
 if (failures) {
   console.log(`\nFAIL: ${failures} frozen wire string(s) changed. These are signed, hashed or on chain; see the header.`);

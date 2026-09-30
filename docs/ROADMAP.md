@@ -44,7 +44,7 @@ mapped onto the sections below, so the roadmap reads as *remaining* work rather 
 | 3.5 bootstrap v2 (on-chain registry + mirrors) | **built (registry)** — `GatewayRegistry` live on Sepolia; client can rebuild the *member* root from chain via EIP-1186 light-client proof; rebuilding the *gateway* set purely from chain is not yet a client path | `contracts/GatewayRegistry.sol`, `docs/LIGHT-CLIENT.md` |
 | 3.5 bootstrap v3 (DHT) | not planned | — |
 | 4–8 payments / x402 / MPP / zkAPI | **partial + design** — paid-access 402 issuance is built; downstream payment adapters and zkAPI credits remain design-only | `docs/PAYMENTS.md`, sections below |
-| 7.5 gateway-bound session tickets | **detailed design** — one RLN proof authorizes a fixed book of cheap single-use CONNECT-stream tickets over one bounded HTTP/2/Tor session; no implementation yet | `docs/design/SESSION-TICKETS.md` |
+| 7.5 gateway-bound session tickets | **implemented behind `sessionTickets`** (ADR 0011): one RLN proof buys a `research-v1` book of six single-use tunnel tickets at one node, spent with proof-less envelopes on the v4 port (not the HTTP/2 side port of the design); H2 decides whether to turn it on | `docs/adr/0011-session-tickets.md`, `docs/design/SESSION-TICKETS.md` |
 | Distributable client | **built for v0.4.0** — the checksummed Rust `-live` binary creates identities, wraps one agent process, serves a loopback CONNECT Proxy over embedded Arti, and exposes the reusable §2.6 client; npm remains an operator/contributor dependency, not an agent dependency | `rust/`, `docs/CLIENTS.md` |
 
 Not built and human-gated: the production trusted-setup ceremony and the first live

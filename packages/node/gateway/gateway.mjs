@@ -42,6 +42,9 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { verifyEnvelope, loadGroupOnchain, loadGroup, currentEpoch, EPOCH_SECONDS, MEMBERS_PATH, getArtifactSet } from "../lib/semaphore.mjs";
 import { reconstructSecret, resolveSlashLeaf, deriveCommitments, TIERS, K_SLOTS } from "../lib/rln.mjs";
+import { verifySessionEnvelope } from "../lib/rln.mjs";
+import { validateSessionInit, validateTicket, policyEcho } from "../lib/session-tickets.mjs";
+import { makeSessionBooks, SESSION_REASONS } from "./session.mjs";
 import { makeRootProvider, configuredContracts } from "../lib/root-provider.mjs";
 import { ADMIT_ORDER, DEFAULT_ADMIT, parseAdmit, admitsFromRoots, describeAdmits } from "../lib/admission.mjs";
 import { buildReceipt } from "../lib/receipt.mjs";
@@ -85,6 +88,10 @@ const M = {
   paidLeaves: metrics.gauge("shade_tree_gateway_paid_access_leaves", "Live leaves in the PaidAccessSet; no contract label is exposed."),
   agentToDestinationBytes: metrics.counter("shade_tree_gateway_agent_to_destination_payload_bytes_total", "Application payload bytes relayed from agents after tunnel establishment. No traffic labels are recorded."),
   destinationToAgentBytes: metrics.counter("shade_tree_gateway_destination_to_agent_payload_bytes_total", "Application payload bytes relayed from destinations after tunnel establishment. No traffic labels are recorded."),
+  // Session tickets (ADR 0011): initializations and ticket spends by bounded result/reason. No
+  // book, ticket, target or nullifier label is ever recorded.
+  sessions: metrics.counter("shade_tree_gateway_sessions_total", "Session-ticket initializations by result=pass|drop (+ reason on drop)."),
+  tickets: metrics.counter("shade_tree_gateway_tickets_total", "Session-ticket spends by result=pass|drop (+ reason on drop)."),
 };
 
 const DROP_LABELS = new Set([
@@ -97,6 +104,7 @@ const DROP_LABELS = new Set([
   "payload-limit",
   "upstream-timeout", "upstream-refused", "upstream-unreachable", "upstream-reset",
   "upstream-error", "internal-error",
+  ...SESSION_REASONS, "session-not-bound",
 ]);
 
 export function gatewayDropLabel(reason) {
@@ -278,7 +286,7 @@ export function makePayloadBudget({
   return { maxBytes, acquire, release, remaining, take, sweep, size: () => entries.size };
 }
 
-function payloadTransform({ budget, nullifier, epoch, count, onLimit }) {
+function payloadTransform({ budget, nullifier, epoch, count, onLimit, shaper = null, onPayload = null }) {
   return new Transform({
     transform(chunk, _encoding, callback) {
       let result;
@@ -293,8 +301,16 @@ function payloadTransform({ budget, nullifier, epoch, count, onLimit }) {
       // callback(null, data) pushes to the downstream socket synchronously. Schedule the close
       // only after that push so the boundary bytes may be relayed, while a shared budget prevents
       // the opposite direction from forwarding anything beyond the same combined ceiling.
-      callback(null, result.allowed > 0 ? chunk.subarray(0, result.allowed) : undefined);
-      if (result.exhausted) onLimit(result.used);
+      const deliver = () => {
+        if (result.allowed > 0) onPayload?.();
+        callback(null, result.allowed > 0 ? chunk.subarray(0, result.allowed) : undefined);
+        if (result.exhausted) onLimit(result.used);
+      };
+      // Session shaping (ADR 0011): one token bucket per direction for the WHOLE session. Holding
+      // the callback is the backpressure: at most this one chunk waits, nothing is buffered.
+      const delayMs = shaper && result.allowed > 0 ? shaper.take(result.allowed) : 0;
+      if (delayMs > 0) setTimeout(deliver, delayMs);
+      else deliver();
     },
   });
 }
@@ -1432,8 +1448,319 @@ export function makeHandler(spentSet, {
   onTunnelOpen = () => {},
   onTunnelClose = () => {},
   relayCounter = null,
+  // Session tickets (ADR 0011): `sessions` is a makeSessionBooks() instance and `sessionOnion`
+  // this node's own onion. Both null (the default, flag off) => every session-v1 envelope is
+  // refused `session-unsupported` and the v4 path is byte-identical.
+  sessions = null,
+  sessionOnion = null,
+  verifySession = verifySessionEnvelope,
 } = {}) {
   const tunnelPayloadBudget = payloadBudget || makePayloadBudget({ maxBytes: maxPayloadBytes });
+  let nextStreamId = 0;
+
+  // DNS, dial and relay for one admitted tunnel, shared by the v4 path (one proof, one tunnel)
+  // and a session-ticket spend (one ticket, one tunnel). `ack()` is the success line; `onEstablished`
+  // runs inside the successful upstream connect BEFORE the ack (the commit point); `onPreConnectFailure`
+  // runs on a DEFINITE failure before any TCP establishment; `shapers`/`onPayload` are the session's
+  // shared token buckets and idle clock. With none of them set the v4 behaviour is unchanged.
+  async function establishTunnel({ socket, tgt, rest, nullifier, epoch, onEstablished = null, ack = () => ({ ok: true }), onPreConnectFailure = null, shapers = null, onPayload = null, onPayloadLimit = null }) {
+    // An exact-envelope retry on this node shares the original slot's payload allowance. If
+    // that slot already consumed the ceiling, fail before DNS/TCP work and do not manufacture
+    // another 40 MiB merely because the member opened a replacement socket.
+    const payloadRemaining = tunnelPayloadBudget.acquire(nullifier, epoch);
+    let payloadBudgetHeld = true;
+    socket.once("close", () => {
+      if (!payloadBudgetHeld) return;
+      payloadBudgetHeld = false;
+      tunnelPayloadBudget.release(nullifier, epoch);
+    });
+    if (payloadRemaining <= 0) {
+      log.debug("tunnel rejected", { reason: "payload-limit" });
+      M.tunnels.inc({ result: "drop", reason: "payload-limit" });
+      reply(socket, { ok: false, err: "payload-limit" });
+      return socket.destroy();
+    }
+
+    const resolvedTarget = await resolveEgressTarget(tgt, { lookup, allowPrivateTargets, timeoutMs: dnsTimeoutMs });
+    if (!resolvedTarget.ok) {
+      onPreConnectFailure?.();
+      M.tunnels.inc({ result: "drop", reason: resolvedTarget.reason });
+      reply(socket, { ok: false, err: resolvedTarget.reason });
+      return socket.destroy();
+    }
+    if (socket.destroyed) return;
+
+    // Step 5: egress :443 tunnel (unchanged; TLS stays end-to-end).
+    let established = false;
+    let tunnelOpened = false;
+    let upstream = null;
+    let gatewayCloseReason = null;
+    let relayStreams = [];
+    const closeTunnel = () => {
+      if (tunnelOpened) {
+        tunnelOpened = false;
+        onTunnelClose();
+      }
+      for (const stream of relayStreams) stream.destroy();
+      relayStreams = [];
+      upstream?.destroy();
+    };
+    // Attach cleanup before dialing. If the client closes while DNS/TCP connect is pending,
+    // the pending upstream is destroyed and a late connect callback cannot create an orphan.
+    socket.once("close", closeTunnel);
+    const upstreamStarted = performance.now();
+    let upstreamConnectObserved = false;
+    const observeUpstreamConnect = () => {
+      if (upstreamConnectObserved) return;
+      upstreamConnectObserved = true;
+      M.upstreamConnect.observe((performance.now() - upstreamStarted) / 1000);
+    };
+    const candidates = resolvedTarget.addresses?.length
+      ? resolvedTarget.addresses
+      : [{ address: resolvedTarget.address, family: resolvedTarget.family }];
+    let candidateIndex = 0;
+    const connectDeadlineAt = idleTimeoutMs > 0 ? performance.now() + idleTimeoutMs : Infinity;
+    const failConnectTimeout = (candidateSocket = null) => {
+      if (candidateSocket && candidateSocket !== upstream) return;
+      observeUpstreamConnect();
+      M.tunnels.inc({ result: "drop", reason: "upstream-timeout" });
+      reply(socket, { ok: false, err: "upstream:ETIMEDOUT" });
+      candidateSocket?.destroy();
+      socket.destroy();
+    };
+    const dialNext = () => {
+      // Every validated answer shares one absolute connection deadline. Immediate failures
+      // may fall through to another pinned address, but DNS fanout cannot multiply the
+      // operator's timeout by the number of answers.
+      if (performance.now() >= connectDeadlineAt) return failConnectTimeout();
+      const candidate = candidates[candidateIndex++];
+      let candidateSocket = null;
+      candidateSocket = connect(tgt.port, candidate.address, () => {
+        if (candidateSocket !== upstream || socket.destroyed) {
+          candidateSocket.destroy();
+          return;
+        }
+        established = true;
+        if (idleTimeoutMs > 0) candidateSocket.setTimeout(idleTimeoutMs);
+        tunnelOpened = true;
+        observeUpstreamConnect();
+        onTunnelOpen();
+        onEstablished?.(candidateSocket);
+        log.debug("tunnel established", { port: tgt.port });
+        M.tunnels.inc({ result: "pass" });
+        // Success ack. Default (no signer) => exactly `{ ok: true }` (byte-identical to the
+        // pre-receipt path); with a signer => `{ ok: true, receipt }` (T-FEAT-13).
+        reply(socket, ack());
+
+        // Enforce one opaque, combined payload budget across both relay directions. TLS remains
+        // end to end: these transforms see only byte chunks, never HTTP methods, queries, hosts,
+        // or streams. The budget key is the admitted RLN epoch+slot, so same-node retries share
+        // what remains. The two direction counters receive only bytes actually admitted by the
+        // budget; the proof envelope and success acknowledgement are outside the accounting.
+        let payloadLimitScheduled = false;
+        const closeAtPayloadLimit = (used) => {
+          if (payloadLimitScheduled) return;
+          payloadLimitScheduled = true;
+          queueMicrotask(() => {
+            if (!established || gatewayCloseReason) return;
+            gatewayCloseReason = "payload-limit";
+            M.tunnelCloses.inc({ reason: "payload-limit" });
+            log.debug("tunnel closed", { reason: "payload-limit", payloadBytes: used });
+            // A session's ceiling is shared: exhausting it stops every stream of the book.
+            onPayloadLimit?.();
+            // net.Socket.destroySoon() flushes the already-admitted boundary bytes before
+            // teardown. No later chunk can pass because the shared budget is exhausted.
+            if (typeof candidateSocket.destroySoon === "function") candidateSocket.destroySoon();
+            else candidateSocket.destroy();
+            if (typeof socket.destroySoon === "function") socket.destroySoon();
+            else socket.destroy();
+          });
+        };
+        const countAgentToDestination = (chunk) => {
+          relayCounter?.addAgentToDestination(chunk);
+          M.agentToDestinationBytes.inc({}, chunk.length);
+        };
+        const countDestinationToAgent = (chunk) => {
+          relayCounter?.addDestinationToAgent(chunk);
+          M.destinationToAgentBytes.inc({}, chunk.length);
+        };
+        const agentRelay = payloadTransform({
+          budget: tunnelPayloadBudget,
+          nullifier,
+          epoch,
+          count: countAgentToDestination,
+          onLimit: closeAtPayloadLimit,
+          shaper: shapers?.up ?? null,
+          onPayload,
+        });
+        const destinationRelay = payloadTransform({
+          budget: tunnelPayloadBudget,
+          nullifier,
+          epoch,
+          count: countDestinationToAgent,
+          onLimit: closeAtPayloadLimit,
+          shaper: shapers?.down ?? null,
+          onPayload,
+        });
+        const closeOnRelayError = () => {
+          candidateSocket.destroy();
+          socket.destroy();
+        };
+        agentRelay.on("error", closeOnRelayError);
+        destinationRelay.on("error", closeOnRelayError);
+        relayStreams = [agentRelay, destinationRelay];
+
+        // Wire destinations first. `__rest` was consumed alongside the proof envelope, so feed
+        // it explicitly before attaching the remaining client stream and count it exactly once.
+        agentRelay.pipe(candidateSocket);
+        destinationRelay.pipe(socket);
+        candidateSocket.pipe(destinationRelay);
+        if (rest && rest.length) {
+          agentRelay.write(rest);
+        }
+        if (!payloadLimitScheduled) socket.pipe(agentRelay);
+      });
+      upstream = candidateSocket;
+      candidateSocket.setNoDelay(true);
+      candidateSocket.on("error", (e) => {
+        if (candidateSocket !== upstream) return;
+        const reason = upstreamDropLabel(e.code);
+        if (!established && candidateIndex < candidates.length && !socket.destroyed) {
+          upstream = null;
+          candidateSocket.destroy();
+          dialNext();
+          return;
+        }
+        if (established) {
+          if (!gatewayCloseReason) {
+            gatewayCloseReason = "upstream-error";
+            M.tunnelCloses.inc({ reason: "upstream-error" });
+          }
+        } else {
+          // Every validated address failed before any TCP establishment: a DEFINITE pre-connect
+          // failure (a session ticket returns to unused; a timeout stays ambiguous and burns it).
+          onPreConnectFailure?.();
+          observeUpstreamConnect();
+          M.tunnels.inc({ result: "drop", reason });
+          reply(socket, { ok: false, err: "upstream:" + e.code });
+        }
+        log.debug("upstream connection closed", { reason, established });
+        socket.destroy();
+      });
+      // The upstream sees activity for bytes travelling in either direction, so one timer
+      // bounds both a black-holed connect and an idle established relay.
+      if (idleTimeoutMs > 0) {
+        const remainingConnectMs = Math.max(1, Math.ceil(connectDeadlineAt - performance.now()));
+        const laterCandidates = candidates.length - candidateIndex;
+        // Give each remaining pinned answer a fair slice of the one total deadline. This
+        // preserves fallback when an address black-holes without granting every address a
+        // fresh full timeout.
+        const candidateTimeoutMs = laterCandidates > 0
+          ? Math.max(1, Math.floor(remainingConnectMs / (laterCandidates + 1)))
+          : remainingConnectMs;
+        candidateSocket.setTimeout(candidateTimeoutMs, () => {
+          if (candidateSocket !== upstream) return;
+          if (established) {
+            gatewayCloseReason = "idle-timeout";
+            M.tunnelCloses.inc({ reason: "idle-timeout" });
+            log.debug("tunnel closed", { reason: "idle-timeout", idleMs: idleTimeoutMs });
+          } else {
+            if (candidateIndex < candidates.length && performance.now() < connectDeadlineAt && !socket.destroyed) {
+              upstream = null;
+              candidateSocket.destroy();
+              dialNext();
+              return;
+            }
+            return failConnectTimeout(candidateSocket);
+          }
+          candidateSocket.destroy();
+          socket.destroy();
+        });
+      }
+    };
+    dialNext();
+    socket.on("error", () => upstream?.destroy());
+  }
+
+  // ---- session tickets (session-v1, ADR 0011) --------------------------------------------
+  // Initialization: the same cheap-first order as v4 (grammar -> this node's onion -> signal
+  // binding -> root -> artifact -> Groth16 -> spent set), then a book is opened and the ack
+  // echoes the policy. No DNS or upstream work happens here; the init socket is closed after the
+  // ack because a book, not a connection, is the session handle.
+  async function handleSessionInit(socket, env) {
+    const drop = (reason, extra = null) => {
+      const label = gatewayDropLabel(reason);
+      log.debug("session rejected", { reason: label });
+      M.sessions.inc({ result: "drop", reason: label });
+      reply(socket, extra ? { ok: false, err: reason, ...extra } : { ok: false, err: reason });
+      return socket.destroy();
+    };
+    const init = validateSessionInit(env.session);
+    if (!init.ok) return drop(init.reason);
+    if (env.session.gateway !== sessionOnion) return drop("session-wrong-gateway");
+    const t0 = performance.now();
+    const v = await verifySession(env, recentRoots, Date.now(), { gatewayOnion: sessionOnion });
+    M.verify.observe((performance.now() - t0) / 1000);
+    if (!v.ok) return drop(v.artifacts ? "gate:" + v.reason : v.label ?? v.reason, v.artifacts ? { artifacts: v.artifacts } : null);
+    // The session nonce is the exact-envelope key for the honest-retry window, as `nonce` is for v4.
+    const res = await spentSet.admit(v.nullifier, v.share, { nonce: env.session.nonce, epoch: v.externalNullifier });
+    if (!res.ok) return drop(res.reason);
+    if (socket.destroyed) return;
+    const opened = sessions.open({
+      digest: v.session.digest, commitments: v.session.commitments, classId: v.session.classId,
+      nullifier: v.nullifier, epoch: v.externalNullifier,
+      onClose: (reason) => { M.tunnelCloses.inc({ reason }); },
+    });
+    if (!opened.ok) return drop(opened.reason);
+    // Publishing the slot to the fleet tally here makes the book single-use across nodes.
+    if (!opened.replay) spentSet.commit?.(v.nullifier, v.externalNullifier);
+    M.sessions.inc({ result: "pass" });
+    log.debug("session opened", { class: v.session.classId, replay: opened.replay });
+    reply(socket, { ok: true, session: { ticketBookDigest: v.session.digest, policy: policyEcho(v.session.classId, opened.book.policy) } });
+    socket.end();
+  }
+
+  // Spend: grammar -> target policy -> SYNCHRONOUS reserve (commitment check, ticket state,
+  // stream and pending-connect caps) -> the shared DNS/dial/relay path with the session's
+  // budget key, shapers and idle clock. The ticket becomes SPENT inside the upstream connect.
+  async function handleTicketSpend(socket, env) {
+    const drop = (reason) => {
+      const label = gatewayDropLabel(reason);
+      log.debug("ticket rejected", { reason: label });
+      M.tickets.inc({ result: "drop", reason: label });
+      reply(socket, { ok: false, err: reason });
+      return socket.destroy();
+    };
+    const t = validateTicket(env.ticket);
+    if (!t.ok) return drop(t.reason);
+    const tgt = validTarget(env.target, targetPolicy);
+    if (!tgt.ok) return drop(tgt.reason);
+    const streamId = ++nextStreamId;
+    const r = sessions.reserve({ digest: t.book, index: t.index, secret: t.secret, target: env.target, requestNonce: t.requestNonce, streamId });
+    if (!r.ok) return drop(r.reason);
+    const { book, ticket } = r;
+    socket.once("close", () => sessions.streamClosed(book, ticket, streamId, socket));
+    M.tickets.inc({ result: "pass" });
+    await establishTunnel({
+      socket, tgt, rest: env.__rest, nullifier: book.nullifier, epoch: book.epoch,
+      onEstablished: () => sessions.spend(book, ticket, streamId, socket),
+      onPreConnectFailure: () => sessions.release(book, ticket, streamId),
+      shapers: { up: book.up, down: book.down },
+      onPayload: () => sessions.touch(book),
+      onPayloadLimit: () => sessions.close(book, "payload-limit"),
+    });
+  }
+
+  async function handleSessionEnvelope(socket, env) {
+    if (!sessions || !sessionOnion) {
+      M.sessions.inc({ result: "drop", reason: "session-unsupported" });
+      reply(socket, { ok: false, err: "session-unsupported" });
+      return socket.destroy();
+    }
+    if (env.session !== undefined) return handleSessionInit(socket, env);
+    return handleTicketSpend(socket, env);
+  }
+
   return async function handle(socket) {
     socket.setNoDelay(true);
     // A permanent error sink on the client socket (T-HARD-4). Found by the slow-loris selftest: a
@@ -1480,6 +1807,12 @@ export function makeHandler(spentSet, {
         M.tunnels.inc({ result: "drop", reason });
         reply(socket, { ok: false, err: vv.reason, proto: vv.proto });
         return socket.destroy();
+      }
+
+      // Session tickets (ADR 0011): an initialization (`session`) or a ticket spend (`ticket`)
+      // takes its own path; a plain v4 envelope continues below byte for byte.
+      if (env.session !== undefined || env.ticket !== undefined) {
+        return await handleSessionEnvelope(socket, env);
       }
 
       // Reject lexical garbage and operator-disallowed destinations before spending CPU on a
@@ -1552,215 +1885,14 @@ export function makeHandler(spentSet, {
       }
       socket.once("close", releaseNullifierSlot);
 
-      // An exact-envelope retry on this node shares the original slot's payload allowance. If
-      // that slot already consumed the ceiling, fail before DNS/TCP work and do not manufacture
-      // another 40 MiB merely because the member opened a replacement socket.
-      const payloadRemaining = tunnelPayloadBudget.acquire(v.nullifier, v.externalNullifier);
-      let payloadBudgetHeld = true;
-      socket.once("close", () => {
-        if (!payloadBudgetHeld) return;
-        payloadBudgetHeld = false;
-        tunnelPayloadBudget.release(v.nullifier, v.externalNullifier);
+      await establishTunnel({
+        socket, tgt, rest: env.__rest, nullifier: v.nullifier, epoch: v.externalNullifier,
+        // Cross-node replay evidence represents a real egress, not a failed DNS/TCP attempt.
+        // Publishing here preserves failover with the same envelope before any destination
+        // connection succeeds while making the established tunnel single-use across the fleet.
+        onEstablished: () => spentSet.commit?.(v.nullifier, v.externalNullifier),
+        ack: () => successAck(makeReceipt),
       });
-      if (payloadRemaining <= 0) {
-        log.debug("tunnel rejected", { reason: "payload-limit" });
-        M.tunnels.inc({ result: "drop", reason: "payload-limit" });
-        reply(socket, { ok: false, err: "payload-limit" });
-        return socket.destroy();
-      }
-
-      const resolvedTarget = await resolveEgressTarget(tgt, { lookup, allowPrivateTargets, timeoutMs: dnsTimeoutMs });
-      if (!resolvedTarget.ok) {
-        M.tunnels.inc({ result: "drop", reason: resolvedTarget.reason });
-        reply(socket, { ok: false, err: resolvedTarget.reason });
-        return socket.destroy();
-      }
-      if (socket.destroyed) return;
-
-      // Step 5: egress :443 tunnel (unchanged; TLS stays end-to-end).
-      let established = false;
-      let tunnelOpened = false;
-      let upstream = null;
-      let gatewayCloseReason = null;
-      let relayStreams = [];
-      const closeTunnel = () => {
-        if (tunnelOpened) {
-          tunnelOpened = false;
-          onTunnelClose();
-        }
-        for (const stream of relayStreams) stream.destroy();
-        relayStreams = [];
-        upstream?.destroy();
-      };
-      // Attach cleanup before dialing. If the client closes while DNS/TCP connect is pending,
-      // the pending upstream is destroyed and a late connect callback cannot create an orphan.
-      socket.once("close", closeTunnel);
-      const upstreamStarted = performance.now();
-      let upstreamConnectObserved = false;
-      const observeUpstreamConnect = () => {
-        if (upstreamConnectObserved) return;
-        upstreamConnectObserved = true;
-        M.upstreamConnect.observe((performance.now() - upstreamStarted) / 1000);
-      };
-      const candidates = resolvedTarget.addresses?.length
-        ? resolvedTarget.addresses
-        : [{ address: resolvedTarget.address, family: resolvedTarget.family }];
-      let candidateIndex = 0;
-      const connectDeadlineAt = idleTimeoutMs > 0 ? performance.now() + idleTimeoutMs : Infinity;
-      const failConnectTimeout = (candidateSocket = null) => {
-        if (candidateSocket && candidateSocket !== upstream) return;
-        observeUpstreamConnect();
-        M.tunnels.inc({ result: "drop", reason: "upstream-timeout" });
-        reply(socket, { ok: false, err: "upstream:ETIMEDOUT" });
-        candidateSocket?.destroy();
-        socket.destroy();
-      };
-      const dialNext = () => {
-        // Every validated answer shares one absolute connection deadline. Immediate failures
-        // may fall through to another pinned address, but DNS fanout cannot multiply the
-        // operator's timeout by the number of answers.
-        if (performance.now() >= connectDeadlineAt) return failConnectTimeout();
-        const candidate = candidates[candidateIndex++];
-        let candidateSocket = null;
-        candidateSocket = connect(tgt.port, candidate.address, () => {
-          if (candidateSocket !== upstream || socket.destroyed) {
-            candidateSocket.destroy();
-            return;
-          }
-          established = true;
-          if (idleTimeoutMs > 0) candidateSocket.setTimeout(idleTimeoutMs);
-          tunnelOpened = true;
-          observeUpstreamConnect();
-          onTunnelOpen();
-          // Cross-node replay evidence represents a real egress, not a failed DNS/TCP attempt.
-          // Publishing here preserves failover with the same envelope before any destination
-          // connection succeeds while making the established tunnel single-use across the fleet.
-          spentSet.commit?.(v.nullifier, v.externalNullifier);
-          log.debug("tunnel established", { port: tgt.port });
-          M.tunnels.inc({ result: "pass" });
-          // Success ack. Default (no signer) => exactly `{ ok: true }` (byte-identical to the
-          // pre-receipt path); with a signer => `{ ok: true, receipt }` (T-FEAT-13).
-          reply(socket, successAck(makeReceipt));
-
-          // Enforce one opaque, combined payload budget across both relay directions. TLS remains
-          // end to end: these transforms see only byte chunks, never HTTP methods, queries, hosts,
-          // or streams. The budget key is the admitted RLN epoch+slot, so same-node retries share
-          // what remains. The two direction counters receive only bytes actually admitted by the
-          // budget; the proof envelope and success acknowledgement are outside the accounting.
-          let payloadLimitScheduled = false;
-          const closeAtPayloadLimit = (used) => {
-            if (payloadLimitScheduled) return;
-            payloadLimitScheduled = true;
-            queueMicrotask(() => {
-              if (!established || gatewayCloseReason) return;
-              gatewayCloseReason = "payload-limit";
-              M.tunnelCloses.inc({ reason: "payload-limit" });
-              log.debug("tunnel closed", { reason: "payload-limit", payloadBytes: used });
-              // net.Socket.destroySoon() flushes the already-admitted boundary bytes before
-              // teardown. No later chunk can pass because the shared budget is exhausted.
-              if (typeof candidateSocket.destroySoon === "function") candidateSocket.destroySoon();
-              else candidateSocket.destroy();
-              if (typeof socket.destroySoon === "function") socket.destroySoon();
-              else socket.destroy();
-            });
-          };
-          const countAgentToDestination = (chunk) => {
-            relayCounter?.addAgentToDestination(chunk);
-            M.agentToDestinationBytes.inc({}, chunk.length);
-          };
-          const countDestinationToAgent = (chunk) => {
-            relayCounter?.addDestinationToAgent(chunk);
-            M.destinationToAgentBytes.inc({}, chunk.length);
-          };
-          const agentRelay = payloadTransform({
-            budget: tunnelPayloadBudget,
-            nullifier: v.nullifier,
-            epoch: v.externalNullifier,
-            count: countAgentToDestination,
-            onLimit: closeAtPayloadLimit,
-          });
-          const destinationRelay = payloadTransform({
-            budget: tunnelPayloadBudget,
-            nullifier: v.nullifier,
-            epoch: v.externalNullifier,
-            count: countDestinationToAgent,
-            onLimit: closeAtPayloadLimit,
-          });
-          const closeOnRelayError = () => {
-            candidateSocket.destroy();
-            socket.destroy();
-          };
-          agentRelay.on("error", closeOnRelayError);
-          destinationRelay.on("error", closeOnRelayError);
-          relayStreams = [agentRelay, destinationRelay];
-
-          // Wire destinations first. `__rest` was consumed alongside the proof envelope, so feed
-          // it explicitly before attaching the remaining client stream and count it exactly once.
-          agentRelay.pipe(candidateSocket);
-          destinationRelay.pipe(socket);
-          candidateSocket.pipe(destinationRelay);
-          if (env.__rest && env.__rest.length) {
-            agentRelay.write(env.__rest);
-          }
-          if (!payloadLimitScheduled) socket.pipe(agentRelay);
-        });
-        upstream = candidateSocket;
-        candidateSocket.setNoDelay(true);
-        candidateSocket.on("error", (e) => {
-          if (candidateSocket !== upstream) return;
-          const reason = upstreamDropLabel(e.code);
-          if (!established && candidateIndex < candidates.length && !socket.destroyed) {
-            upstream = null;
-            candidateSocket.destroy();
-            dialNext();
-            return;
-          }
-          if (established) {
-            if (!gatewayCloseReason) {
-              gatewayCloseReason = "upstream-error";
-              M.tunnelCloses.inc({ reason: "upstream-error" });
-            }
-          } else {
-            observeUpstreamConnect();
-            M.tunnels.inc({ result: "drop", reason });
-            reply(socket, { ok: false, err: "upstream:" + e.code });
-          }
-          log.debug("upstream connection closed", { reason, established });
-          socket.destroy();
-        });
-        // The upstream sees activity for bytes travelling in either direction, so one timer
-        // bounds both a black-holed connect and an idle established relay.
-        if (idleTimeoutMs > 0) {
-          const remainingConnectMs = Math.max(1, Math.ceil(connectDeadlineAt - performance.now()));
-          const laterCandidates = candidates.length - candidateIndex;
-          // Give each remaining pinned answer a fair slice of the one total deadline. This
-          // preserves fallback when an address black-holes without granting every address a
-          // fresh full timeout.
-          const candidateTimeoutMs = laterCandidates > 0
-            ? Math.max(1, Math.floor(remainingConnectMs / (laterCandidates + 1)))
-            : remainingConnectMs;
-          candidateSocket.setTimeout(candidateTimeoutMs, () => {
-            if (candidateSocket !== upstream) return;
-            if (established) {
-              gatewayCloseReason = "idle-timeout";
-              M.tunnelCloses.inc({ reason: "idle-timeout" });
-              log.debug("tunnel closed", { reason: "idle-timeout", idleMs: idleTimeoutMs });
-            } else {
-              if (candidateIndex < candidates.length && performance.now() < connectDeadlineAt && !socket.destroyed) {
-                upstream = null;
-                candidateSocket.destroy();
-                dialNext();
-                return;
-              }
-              return failConnectTimeout(candidateSocket);
-            }
-            candidateSocket.destroy();
-            socket.destroy();
-          });
-        }
-      };
-      dialNext();
-      socket.on("error", () => upstream?.destroy());
     } catch (e) {
       // Request-path exceptions may contain peer-controlled values. Keep the default event useful
       // without copying arbitrary traffic metadata into logs.
@@ -1831,6 +1963,27 @@ function initArtifacts() {
   return set;
 }
 
+export function sessionTicketsEnabled(env = process.env) {
+  return String(env.SHADE_TREE_SESSION_TICKETS ?? "0") === "1";
+}
+
+// The session-ticket books for main(): null unless the flag is on and the onion identity loads
+// (fail closed: without an onion there is nothing to bind a book to, so the feature stays off
+// and says so rather than accepting unbound books).
+async function makeSessionSupport() {
+  if (!sessionTicketsEnabled()) return null;
+  let id;
+  try {
+    id = await loadReceiptIdentity();
+  } catch (e) {
+    log.error("session tickets requested (SHADE_TREE_SESSION_TICKETS=1) but the onion identity is unavailable; session tickets DISABLED", { err: e.message });
+    return null;
+  }
+  const maxSessions = envInt("SHADE_TREE_SESSION_MAX", 256);
+  log.info("session tickets enabled", { classes: ["research-v1"], maxSessions });
+  return { sessions: makeSessionBooks({ maxSessions }), onion: String(id.onion).toLowerCase() };
+}
+
 async function main() {
   loadCredentials();
   const pkg = JSON.parse(await readFile(join(HERE, "../../..", "package.json"), "utf8"));
@@ -1866,11 +2019,17 @@ async function main() {
       : null,
   });
   let activeTunnels = 0;
+  // Session tickets (ADR 0011): on only with SHADE_TREE_SESSION_TICKETS=1 (the deployment record's
+  // `sessionTickets`, set at H2) AND a loadable onion identity, since every book is bound to this
+  // node's onion. Off => the handler refuses session envelopes and is byte-identical for v4.
+  const session = await makeSessionSupport();
   const server = net.createServer(makeHandler(spentSet, {
     makeReceipt,
     limiter,
     payloadBudget,
     relayCounter,
+    sessions: session?.sessions ?? null,
+    sessionOnion: session?.onion ?? null,
     onTunnelOpen: () => { activeTunnels += 1; },
     onTunnelClose: () => { activeTunnels = Math.max(0, activeTunnels - 1); },
   }));
@@ -1907,6 +2066,7 @@ async function main() {
       ["listen", `${LISTEN_HOST}:${LISTEN_PORT}`],
       ["admission", roots.admits?.join(",") || process.env.SHADE_TREE_ADMIT || "invited"],
       ["egress", process.env.SHADE_TREE_EGRESS_ALLOW || "*:443"],
+      ["session tickets", session ? "on (research-v1)" : "off"],
       ["payload limit", payloadBudget.maxBytes > 0 ? `${payloadBudget.maxBytes} bytes combined / RLN slot` : "off"],
       ["relay telemetry", relayTelemetryEnabled ? "private reports on" : "off"],
       ["metrics", metricsPort > 0 ? `127.0.0.1:${metricsPort}` : "off"],

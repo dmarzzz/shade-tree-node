@@ -88,6 +88,10 @@ pub struct EnvelopeInput {
     pub target: String,
     /// Per-request nonce (rides in the envelope so the gateway re-derives + binds `x`).
     pub nonce: String,
+    /// The exact signal string to bind instead of `request_signal(target, nonce)`: a session
+    /// initialization (ADR 0011) binds `shadenet_proto::session::session_signal(..)`. `None`
+    /// keeps the v4 target binding.
+    pub signal: Option<String>,
     /// The epoch the proof is for (`externalNullifier = poseidon2(epoch, rlnIdentifier)`).
     pub epoch: u64,
     /// RLN identifier / group id (decimal, default "1").
@@ -185,7 +189,10 @@ pub fn build_envelope(input: &EnvelopeInput) -> Result<BuiltEnvelope, String> {
     let native_root = fr_to_dec(&tree.root());
 
     // (2) target binding: x = calculate_signal_hash(request_signal(target, nonce)).
-    let signal = shadenet_proto::request_signal(&input.target, &input.nonce);
+    let signal = match &input.signal {
+        Some(signal) => signal.clone(),
+        None => shadenet_proto::request_signal(&input.target, &input.nonce),
+    };
     let x = shadenet_proto::calculate_signal_hash(&signal);
 
     // (3) externalNullifier = poseidon2(epoch, rlnIdentifier) — native, matches JS.

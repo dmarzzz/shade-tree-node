@@ -345,6 +345,11 @@ impl NetArgs {
             .slots(slots)
             .circuits_dir(self.circuits.clone())
             .nonce(self.nonce.clone());
+        // Session tickets (ADR 0011): the network record's `sessionTickets` is the default;
+        // SHADENET_SESSION_TICKETS=1|0 overrides it for this process.
+        if let Some(flag) = env("SESSION_TICKETS")?.as_deref().and_then(parse_bool) {
+            builder = builder.session_tickets(flag);
+        }
 
         // Caches.
         if self.no_cache {

@@ -898,6 +898,8 @@ export async function selectCandidates(req = null, adm = null, opts = null) {
     if (admits) c.admits = admits;
     const rate = canonicalCaps(g.caps).rate;
     if (rate) c.rate = rate;
+    const session = canonicalCaps(g.caps).session; // ADR 0011: signed session-ticket support
+    if (session) c.session = session;
     return c;
   });
 }

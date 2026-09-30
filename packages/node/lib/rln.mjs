@@ -27,6 +27,7 @@
 //   - The signal/message is a STRING (rlnjs hashes it with keccak); requestSignal() now
 //     returns that string, and the circuit's public `x` = calculateSignalHash(message).
 
+import { validateSessionInit, sessionSignal, normalizeOnion } from "./session-tickets.mjs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
@@ -473,7 +474,38 @@ export async function verifyEnvelope(env, recentRoots, nowMs = Date.now(), { art
   if (String(calculateSignalHash(requestSignal(env.target, env.nonce))) !== String(ps.x)) {
     return { ok: false, reason: "target-not-bound" };
   }
+  return verifyBoundProof(env, ps, recentRoots, artifacts);
+}
 
+// Session initialization (session-v1, ADR 0011): the same proof statement, bound to a session
+// signal instead of a (target, nonce). `gatewayOnion` is THIS node's onion: a book is valid at
+// exactly one node, so an initialization captured for another node fails `session-wrong-gateway`
+// here before any Groth16 work. `env.session` is validated structurally by the caller
+// (lib/session-tickets.mjs validateSessionInit) and the signal is rebuilt from those fields.
+export async function verifySessionEnvelope(env, recentRoots, nowMs = Date.now(), { artifacts, gatewayOnion } = {}) {
+  if (!env || typeof env !== "object") return { ok: false, reason: "no-envelope" };
+  const { proof } = env;
+  if (!proof || !proof.snarkProof || !proof.snarkProof.publicSignals) {
+    return { ok: false, reason: "no-proof" };
+  }
+  const ps = proof.snarkProof.publicSignals;
+  const share = env.share || { x: ps.x, y: ps.y };
+  const now = currentEpoch(nowMs);
+  const ok1 = [now, now - 1n].some((e) => externalNullifierFor(e).toString() === String(ps.externalNullifier));
+  if (!ok1) return { ok: false, reason: "stale-external-nullifier" };
+  if (String(share.x) !== String(ps.x)) return { ok: false, reason: "signal-mismatch" };
+  const init = validateSessionInit(env.session);
+  if (!init.ok) return { ok: false, reason: init.reason };
+  if (!gatewayOnion || normalizeOnion(gatewayOnion) !== env.session.gateway) return { ok: false, reason: "session-wrong-gateway" };
+  const signal = sessionSignal({ gateway: env.session.gateway, classId: env.session.class, nonce: env.session.nonce, ticketBookDigest: env.session.ticketBookDigest });
+  if (String(calculateSignalHash(signal)) !== String(ps.x)) return { ok: false, reason: "session-not-bound" };
+  const v = await verifyBoundProof(env, ps, recentRoots, artifacts);
+  return v.ok ? { ...v, session: { classId: init.classId, policy: init.policy, digest: env.session.ticketBookDigest, commitments: env.session.ticketCommitments } } : v;
+}
+
+// Checks 3, 3b and 4, shared by the tunnel and session paths once the signal is bound to ps.x.
+async function verifyBoundProof(env, ps, recentRoots, artifacts) {
+  const { proof } = env;
   // 3. root must be one we currently accept (cheap). Accept an Array or a Set — Array.from
   //    normalizes both (the gateway keeps recentRoots as a Set).
   const roots = Array.from(recentRoots || []).map(String);

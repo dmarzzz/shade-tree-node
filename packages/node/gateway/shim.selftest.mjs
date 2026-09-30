@@ -74,6 +74,7 @@ export const K_SLOTS = 8;
 export const TIERS = [8];
 export function resolveSlashLeaf(secret) { return { commitment: deriveCommitment(secret), limit: 8, resolved: true }; } // T-FEAT-8 (mock)
 export function deriveCommitments(secret, tiers = TIERS) { return tiers.map((limit) => ({ limit, commitment: deriveCommitment(secret) })); } // T-FEAT-8b (mock)
+export async function verifySessionEnvelope() { return { ok: false, reason: "session-unsupported" }; } // ADR 0011 (mock: never a session)
 `;
 
 const LOADER = `

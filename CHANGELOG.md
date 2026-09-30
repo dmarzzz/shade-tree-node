@@ -24,6 +24,11 @@ and the trusted setup.
 
 ### SDKs and clients
 
+- Session tickets behind the `sessionTickets` switch (#103, ADR 0011): one RLN proof buys a
+  `research-v1` book of six single-use tunnel tickets at one node, spent with proof-less
+  envelopes on the v4 port; shared byte ceiling, shaping, lifetime and idle limits per book; the
+  onion-signed `session` capability; the same vectors in the node, the JS client, `@shadenet/sdk`
+  and the Rust SDK. Off by default; H2 turns it on in `economics.json`.
 - `shadenet`, the Rust SDK crate, with an async proxy and the `shadenet` CLI (#155): concurrent
   CONNECTs, structured errors, a status endpoint, `shadenet mcp` for agents.
 - `@shadenet/sdk`, the JavaScript SDK for browsers and Node (#135).

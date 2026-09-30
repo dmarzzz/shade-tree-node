@@ -320,5 +320,78 @@
         }
       ]
     }
+  },
+  "sessionTickets": {
+    "_note": "session-v1 ticket books (ADR 0011, docs/design/SESSION-TICKETS.md §9-10). Fixed test-only secrets. ticketCommitment_i = SHA256(ticketDomain || u16be(i) || secret_i); ticketBookDigest = SHA256(bookDomain || u16be(N) || c_0..c_(N-1) raw bytes); the RLN signal is signalPrefix + onion + '\\n' + class + '\\n' + nonce + '\\n' + digest and its keccak signal hash is the circuit's public x (same calculateSignalHash as v4); spendDigest = SHA256(spendDomain || digest || u16be(i) || u16be(len(target)) || target || requestNonce). The ticket secret rides base64url unpadded (43 chars). capsWithSession pins the onion-signed `session` capability appended after `rate`. Rust (shadenet_proto::session) and @shadenet/sdk reproduce every value.",
+    "signalPrefix": "shade-tree:session:v1\n",
+    "ticketDomain": "Shade Tree session ticket v1\n",
+    "ticketBookDomain": "Shade Tree session ticket book v1\n",
+    "ticketSpendDomain": "Shade Tree session ticket spend v1\n",
+    "classId": "research-v1",
+    "policy": {
+      "class": "research-v1",
+      "tickets": 6,
+      "maxPayloadBytes": 41943040,
+      "lifetimeMs": 90000,
+      "idleTimeoutMs": 15000,
+      "maxConcurrentStreams": 4
+    },
+    "secretsHex": [
+      "0101010101010101010101010101010101010101010101010101010101010101",
+      "0202020202020202020202020202020202020202020202020202020202020202",
+      "0303030303030303030303030303030303030303030303030303030303030303",
+      "0404040404040404040404040404040404040404040404040404040404040404",
+      "0505050505050505050505050505050505050505050505050505050505050505",
+      "0606060606060606060606060606060606060606060606060606060606060606"
+    ],
+    "commitments": [
+      "5cd13b2119bac9035d5eab393bd6a20b69541b7e8fe4a04ae27209e5b375c016",
+      "7e3767485ef2b991e8e44c8c1252d292e9552ef18fee7c7bb344215c983a526e",
+      "e35819923b90a25d2593c9319d398fb8d80c8035056844e380f464b60afe5695",
+      "82cd950851a27bdf6e94a1050b330888b49cb1ae716e5e243bab2cec08f27dfb",
+      "eebf0dab733b01dbcb0277cf8446566dab67cf23ff5a2df2668cd03f08e85953",
+      "3985350c6c06e9fabcf49e37c9f4b7fec6ffe7e8954cb10d01e5d482fec364b5"
+    ],
+    "ticketBookDigest": "78d3381c06657142aaf1377245282ba86daca0afbd186883a4f891fbeaf57f39",
+    "sessionNonce": "86fe22b71e0d1c681e679150f8f103aa",
+    "onion": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
+    "signal": "shade-tree:session:v1\nucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion\nresearch-v1\n86fe22b71e0d1c681e679150f8f103aa\n78d3381c06657142aaf1377245282ba86daca0afbd186883a4f891fbeaf57f39",
+    "signalHashDecimal": "160785431731262803730561233212107556180714651470566900834390257918735953474",
+    "spend": {
+      "index": 2,
+      "target": "example.com:443",
+      "requestNonce": "abababababababababababababababab",
+      "spendDigest": "bec6dd8f6d6791f4490eb0ed9aa935e4926bc5cd57628a59f995e2312cbc23de",
+      "ticket": {
+        "v": 1,
+        "book": "78d3381c06657142aaf1377245282ba86daca0afbd186883a4f891fbeaf57f39",
+        "i": 2,
+        "t": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
+        "n": "abababababababababababababababab"
+      }
+    },
+    "capsWithSession": {
+      "caps": {
+        "admits": [
+          "staked"
+        ],
+        "rate": {
+          "scope": "grove-v4",
+          "window": "fixed",
+          "epochSeconds": 60,
+          "previousEpochsAccepted": 1,
+          "rootFreshnessSeconds": 60,
+          "payloadBytesPerSlot": 41943040
+        },
+        "session": {
+          "version": 1,
+          "classes": [
+            "research-v1"
+          ]
+        }
+      },
+      "canonicalCapsBytesHex": "536861646520547265652067617465776179206361706162696c69746965732076310a7b226f6e696f6e223a2275636e6b6c3564326d356d79616c377a6b78346e796c6a6b6373733474686a6478326c37717a617370373474716e637675747970703361642e6f6e696f6e222c2263617073223a7b2261646d697473223a5b227374616b6564225d2c2272617465223a7b2273636f7065223a2267726f76652d7634222c2277696e646f77223a226669786564222c2265706f63685365636f6e6473223a36302c2270726576696f757345706f6368734163636570746564223a312c22726f6f7446726573686e6573735365636f6e6473223a36302c227061796c6f61644279746573506572536c6f74223a34313934333034307d2c2273657373696f6e223a7b2276657273696f6e223a312c22636c6173736573223a5b2272657365617263682d7631225d7d7d7d",
+      "capsSig": "1a6ffa54f4dac61cf0a3778821b4ca804c68beaa035430126d20a9123d393739bdb6ad83ab6b16c25d06ae297a9ccb9f883344b004fc702ae6cac5690ca8cf06"
+    }
   }
 }

@@ -350,6 +350,8 @@ export function validateDeploymentRecord(rec) {
   }
   const hasStaked = Array.isArray(rec.admission?.paths) && rec.admission.paths.includes("staked");
   validateRatePolicy(rec.ratePolicy, bad, { required: rec.status === "live" && hasStaked });
+  // Session tickets (ADR 0011): optional; absent means off. Set at H2 from economics.json.
+  if (rec.sessionTickets !== undefined && typeof rec.sessionTickets !== "boolean") bad("sessionTickets", "must be true or false");
   if (rec.admission?.defaultPath !== undefined) {
     if (!Array.isArray(rec.admission?.paths) || !rec.admission.paths.includes(rec.admission.defaultPath)) bad("admission.defaultPath", "must name one of admission.paths");
   }
@@ -456,6 +458,9 @@ export function envDefaultsFromRecords({ dir, deployment, contracts, bootnode })
       out.SHADE_TREE_ROOT_FRESHNESS_SECONDS = String(rate.rootFreshnessSeconds);
       out.SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES = String(rate.payloadBytesPerSlot);
     }
+    // ADR 0011: the record's session-ticket switch reaches the node, the heartbeat and the JS
+    // client through one variable; absent = off.
+    if (deployment.sessionTickets === true) out.SHADE_TREE_SESSION_TICKETS = "1";
     const staked = deployment.admission?.roots?.staked;
     if (staked && isEthAddress(staked.contract)) {
       out.SHADE_TREE_GROUP_CONTRACT = staked.contract;

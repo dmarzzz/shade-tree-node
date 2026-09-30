@@ -67,6 +67,8 @@ pub struct ConnectRequest {
     pub proof: ProofRequest,
     pub slots: SlotPolicy,
     pub artifact: String,
+    /// `Some` = a session initialization at exactly one node (ADR 0011).
+    pub session: Option<SessionInit>,
 }
 
 /// Proof inputs with no caller-controlled `message_id`. [`Client::connect`]
@@ -81,6 +83,29 @@ pub struct ProofRequest {
     pub rln_identifier: String,
     pub user_message_limit: u64,
     pub circuits_dir: Option<String>,
+}
+
+/// Session-initialization fields (ADR 0011). With `Some(..)` in [`ConnectRequest::session`]
+/// the proof binds the session signal and the envelope carries `session` instead of
+/// `target`/`nonce`; the node answers with the book's policy and closes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionInit {
+    pub class_id: String,
+    /// The node's `<56>.onion`, the one the book is valid at.
+    pub gateway: String,
+    pub nonce: String,
+    pub commitments: Vec<String>,
+    pub ticket_book_digest: String,
+}
+
+/// One ticket spend (ADR 0011): a proof-less envelope for one tunnel inside a live book.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TicketSpend {
+    pub ticket_book_digest: String,
+    pub index: u16,
+    pub secret: [u8; 32],
+    pub request_nonce: String,
+    pub target: String,
 }
 
 /// Production callers use `CrashSafe`. The deliberately loud unsafe variant is
@@ -507,12 +532,26 @@ impl Client {
                 limit: request.proof.user_message_limit,
             });
         }
+        let session = request.session;
+        let signal = match &session {
+            Some(init) => Some(
+                shadenet_proto::session::session_signal(
+                    &init.gateway,
+                    &init.class_id,
+                    &init.nonce,
+                    &init.ticket_book_digest,
+                )
+                .map_err(Error::Prove)?,
+            ),
+            None => None,
+        };
         let proof_input = EnvelopeInput {
             identity_secret: request.proof.identity_secret,
             member_leaf: request.proof.member_leaf,
             members: request.proof.members,
             target: request.proof.target,
             nonce: request.proof.nonce,
+            signal,
             epoch: request.proof.epoch,
             rln_identifier: request.proof.rln_identifier,
             user_message_limit: request.proof.user_message_limit,
@@ -524,10 +563,8 @@ impl Client {
             target: built.target.clone(),
             nullifier: built.nullifier.clone(),
         };
-        let envelope = serde_json::json!({
+        let mut envelope = serde_json::json!({
             "v": shadenet_proto::PROTO_MAX,
-            "target": built.target,
-            "nonce": built.nonce,
             "artifact": request.artifact,
             "proof": {
                 "snarkProof": { "proof": built.proof, "publicSignals": built.public_signals },
@@ -538,6 +575,24 @@ impl Client {
             "externalNullifier": built.external_nullifier,
             "share": { "x": built.share_x, "y": built.share_y },
         });
+        match &session {
+            // A session initialization carries the book instead of a target; the signal it
+            // bound is rebuilt by the node from these fields (lib/rln.mjs verifySessionEnvelope).
+            Some(init) => {
+                envelope["session"] = serde_json::json!({
+                    "v": shadenet_proto::session::SESSION_VERSION,
+                    "class": init.class_id,
+                    "gateway": init.gateway,
+                    "nonce": init.nonce,
+                    "ticketCommitments": init.commitments,
+                    "ticketBookDigest": init.ticket_book_digest,
+                });
+            }
+            None => {
+                envelope["target"] = serde_json::Value::String(built.target);
+                envelope["nonce"] = serde_json::Value::String(built.nonce);
+            }
+        }
         let wire = serde_json::to_string(&envelope).expect("serialize envelope") + "\n";
         let mut attempts = Vec::with_capacity(request.gateways.len());
         let dialer = self.dialer.isolated();
@@ -596,6 +651,92 @@ impl Client {
             }
         }
         Err(Error::AllCandidatesFailed { attempts })
+    }
+}
+
+impl Client {
+    /// Spend one ticket of a live book at its node (ADR 0011): no proof, no slot. A refusal
+    /// is terminal for this ticket; the caller decides whether the book is still usable.
+    pub async fn spend_ticket(
+        &self,
+        gateway: &Gateway,
+        spend: TicketSpend,
+    ) -> Result<Connected, Error> {
+        let envelope = serde_json::json!({
+            "v": shadenet_proto::PROTO_MAX,
+            "ticket": {
+                "v": shadenet_proto::session::SESSION_VERSION,
+                "book": spend.ticket_book_digest,
+                "i": spend.index,
+                "t": shadenet_proto::session::encode_ticket_secret(&spend.secret),
+                "n": spend.request_nonce,
+            },
+            "target": spend.target,
+        });
+        let wire = serde_json::to_string(&envelope).expect("serialize ticket") + "\n";
+        let proof = ProofMetadata {
+            target: spend.target.clone(),
+            nullifier: String::new(),
+        };
+        let dialer = self.dialer.isolated();
+        let mut attempts = Vec::with_capacity(1);
+        match dialer.dial(gateway).await {
+            Ok(mut stream) => match tokio::time::timeout(
+                self.ack_timeout,
+                exchange_ack(&mut stream, wire.as_bytes()),
+            )
+            .await
+            .map_err(|_| {
+                format!(
+                    "gateway ticket/ack exchange timed out after {:?}",
+                    self.ack_timeout
+                )
+            })
+            .and_then(|result| result)
+            {
+                Ok((ack, early_data)) => {
+                    attempts.push(Attempt {
+                        gateway: gateway.clone(),
+                        dial_succeeded: true,
+                        error: None,
+                    });
+                    if ack.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
+                        return Ok(Connected {
+                            stream,
+                            gateway: gateway.clone(),
+                            ack,
+                            early_data,
+                            proof,
+                            attempts,
+                        });
+                    }
+                    let kind = GatewayRefusalKind::from_ack(&ack);
+                    Err(Error::GatewayRefused {
+                        gateway: gateway.clone(),
+                        kind,
+                        ack: Box::new(ack),
+                        proof,
+                        attempts,
+                    })
+                }
+                Err(error) => {
+                    attempts.push(Attempt {
+                        gateway: gateway.clone(),
+                        dial_succeeded: false,
+                        error: Some(error),
+                    });
+                    Err(Error::AllCandidatesFailed { attempts })
+                }
+            },
+            Err(error) => {
+                attempts.push(Attempt {
+                    gateway: gateway.clone(),
+                    dial_succeeded: false,
+                    error: Some(error),
+                });
+                Err(Error::AllCandidatesFailed { attempts })
+            }
+        }
     }
 }
 
@@ -690,6 +831,7 @@ mod tests {
             members: vec!["1".into()],
             target: target.into(),
             nonce: "00".repeat(16),
+            signal: None,
             epoch: 1,
             rln_identifier: "1".into(),
             user_message_limit: 8,
@@ -828,6 +970,7 @@ mod tests {
                         cursor: cursor.clone(),
                     },
                     artifact: "rln-test".into(),
+                    session: None,
                 })
                 .await
                 .unwrap();
@@ -881,6 +1024,7 @@ mod tests {
                 proof: proof_request("example.com:443"),
                 slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
                 artifact: "rln-test".into(),
+                session: None,
             })
             .await;
 
@@ -947,5 +1091,195 @@ mod tests {
         let mut stream = Box::pin(client) as BoxStream;
         let error = exchange_ack(&mut stream, b"{}\n").await.unwrap_err();
         assert!(error.contains("boolean `ok`"));
+    }
+
+    /// A node that speaks session-v1 on its v4 port: answers an initialization with the policy
+    /// echo and a ticket spend with `{"ok":true}` + early bytes; a plain v4 envelope is refused so
+    /// the test can tell the three kinds apart.
+    struct SessionNode {
+        seen: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+    }
+
+    impl Dialer for SessionNode {
+        fn dial<'a>(&'a self, _gateway: &'a Gateway) -> DialFuture<'a> {
+            let seen = Arc::clone(&self.seen);
+            Box::pin(async move {
+                let (client, mut gateway) = tokio::io::duplex(8192);
+                tokio::spawn(async move {
+                    let mut request = Vec::new();
+                    loop {
+                        let mut byte = [0_u8; 1];
+                        gateway.read_exact(&mut byte).await.unwrap();
+                        request.push(byte[0]);
+                        if byte[0] == b'\n' {
+                            break;
+                        }
+                    }
+                    let value: serde_json::Value =
+                        serde_json::from_slice(&request[..request.len() - 1]).unwrap();
+                    seen.lock().unwrap().push(value.clone());
+                    if let Some(session) = value.get("session") {
+                        assert!(value.get("proof").is_some());
+                        assert!(
+                            value.get("target").is_none(),
+                            "no target in an initialization"
+                        );
+                        let reply = serde_json::json!({
+                            "ok": true,
+                            "session": {
+                                "ticketBookDigest": session["ticketBookDigest"],
+                                "policy": {
+                                    "class": "research-v1", "tickets": 6, "maxPayloadBytes": 41943040,
+                                    "lifetimeMs": 90000, "idleTimeoutMs": 15000, "maxConcurrentStreams": 4
+                                }
+                            }
+                        });
+                        gateway
+                            .write_all((reply.to_string() + "\n").as_bytes())
+                            .await
+                            .unwrap();
+                    } else if value.get("ticket").is_some() {
+                        assert!(value.get("proof").is_none(), "no proof in a spend");
+                        gateway.write_all(b"{\"ok\":true}\nearly").await.unwrap();
+                    } else {
+                        gateway
+                            .write_all(b"{\"ok\":false,\"err\":\"unexpected-v4\"}\n")
+                            .await
+                            .unwrap();
+                    }
+                });
+                Ok(Box::pin(client) as BoxStream)
+            })
+        }
+
+        fn successful_bootstraps(&self) -> usize {
+            0
+        }
+
+        fn isolated(&self) -> Arc<dyn Dialer> {
+            Arc::new(Self {
+                seen: Arc::clone(&self.seen),
+            })
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_initialization_binds_the_session_signal_and_carries_the_book() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let bound = Arc::new(std::sync::Mutex::new(None));
+        let bound_in_prover = Arc::clone(&bound);
+        let prover = Arc::new(BlockingProver::with_function(1, move |input| {
+            *bound_in_prover.lock().unwrap() = input.signal.clone();
+            Ok(built(input.target))
+        }));
+        let client = Client::with_components(
+            Arc::new(SessionNode {
+                seen: Arc::clone(&seen),
+            }),
+            prover,
+        );
+        let onion = "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad";
+        let secrets = [
+            [7u8; 32], [8u8; 32], [9u8; 32], [10u8; 32], [11u8; 32], [12u8; 32],
+        ];
+        let book = shadenet_proto::session::build_ticket_book(&secrets).unwrap();
+        let init = SessionInit {
+            class_id: "research-v1".into(),
+            gateway: format!("{onion}.onion"),
+            nonce: "86fe22b71e0d1c681e679150f8f103aa".into(),
+            commitments: book.commitments.clone(),
+            ticket_book_digest: book.ticket_book_digest.clone(),
+        };
+        let connected = client
+            .connect(ConnectRequest {
+                gateways: vec![Gateway::Onion {
+                    onion: onion.into(),
+                    port: 80,
+                }],
+                proof: proof_request("example.com:443"),
+                slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
+                artifact: "rln-test".into(),
+                session: Some(init.clone()),
+            })
+            .await
+            .expect("initialization accepted");
+        // The proof bound the session signal, not the v4 target signal.
+        let expected = shadenet_proto::session::session_signal(
+            &init.gateway,
+            &init.class_id,
+            &init.nonce,
+            &init.ticket_book_digest,
+        )
+        .unwrap();
+        assert_eq!(bound.lock().unwrap().as_deref(), Some(expected.as_str()));
+        // The envelope carried the book and no target; the node echoed the digest.
+        let sent = seen.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["session"]["class"], "research-v1");
+        assert_eq!(
+            sent[0]["session"]["ticketCommitments"]
+                .as_array()
+                .unwrap()
+                .len(),
+            6
+        );
+        assert_eq!(
+            sent[0]["session"]["ticketBookDigest"],
+            book.ticket_book_digest
+        );
+        assert!(sent[0].get("target").is_none());
+        assert_eq!(
+            connected.ack["session"]["ticketBookDigest"],
+            book.ticket_book_digest
+        );
+        assert!(crate::session::policy_matches(
+            &connected.ack["session"]["policy"],
+            &shadenet_proto::session::RESEARCH_V1
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_ticket_spend_carries_no_proof_and_returns_the_early_bytes() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let prover = Arc::new(BlockingProver::with_function(1, |_input| {
+            panic!("a ticket spend must not prove")
+        }));
+        let client = Client::with_components(
+            Arc::new(SessionNode {
+                seen: Arc::clone(&seen),
+            }),
+            prover,
+        );
+        let gateway = Gateway::Onion {
+            onion: "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad".into(),
+            port: 80,
+        };
+        let secret = [3u8; 32];
+        let connected = client
+            .spend_ticket(
+                &gateway,
+                TicketSpend {
+                    ticket_book_digest:
+                        "78d3381c06657142aaf1377245282ba86daca0afbd186883a4f891fbeaf57f39".into(),
+                    index: 2,
+                    secret,
+                    request_nonce: "ab".repeat(16),
+                    target: "example.com:443".into(),
+                },
+            )
+            .await
+            .expect("ticket accepted");
+        assert_eq!(connected.early_data, b"early");
+        let sent = seen.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0]["v"], shadenet_proto::PROTO_MAX);
+        assert_eq!(sent[0]["ticket"]["i"], 2);
+        assert_eq!(
+            sent[0]["ticket"]["t"],
+            "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM"
+        );
+        assert_eq!(sent[0]["ticket"]["n"], "ab".repeat(16));
+        assert_eq!(sent[0]["target"], "example.com:443");
+        assert!(sent[0].get("proof").is_none() && sent[0].get("nullifier").is_none());
     }
 }

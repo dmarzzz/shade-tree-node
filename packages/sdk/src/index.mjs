@@ -12,3 +12,7 @@ export { exitContext, withdrawContext } from "./contexts.mjs";
 export { proveAction } from "./exit-proof.mjs";
 export { verifyCanopy, mergeCanopies } from "./canopy.mjs";
 export { daemonStatus, normalizeStatus, DEFAULT_DAEMON, STATUS_PATH } from "./status.mjs";
+export {
+  SESSION_CLASSES, buildTicketBook, ticketCommitment, ticketBookDigest, spendDigest, sessionSignal,
+  sessionInitFields, ticketFields, validateSessionInit, validateTicket, policyEcho, policyMatches,
+} from "./session.mjs";

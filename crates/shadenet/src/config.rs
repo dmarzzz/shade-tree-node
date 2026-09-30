@@ -177,6 +177,7 @@ impl Default for ConfigBuilder {
                         default_path: None,
                         rate_policy: None,
                         staked: None,
+                        session_tickets: false,
                     },
                 },
                 Some(error.to_string()),
@@ -236,6 +237,9 @@ macro_rules! setter {
 impl ConfigBuilder {
     /// Use this network record (bundled or loaded from a file).
     pub fn network(mut self, network: Network) -> Self {
+        // The record decides the session-ticket default (H2 flips `sessionTickets`); an explicit
+        // `session_tickets(..)` after this call still wins.
+        self.config.session_tickets = network.deployment.session_tickets;
         self.config.network = network;
         self.network_error = None;
         self

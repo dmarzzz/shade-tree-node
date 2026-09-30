@@ -213,6 +213,13 @@ export function advertisedRate(env = process.env) {
   return canonicalCaps({ rate }).rate || null;
 }
 
+// The session-ticket capability (ADR 0011): `{ version: 1, classes: ["research-v1"] }` iff the
+// node was started with SHADE_TREE_SESSION_TICKETS=1 (the same switch gateway.mjs reads), else null.
+export function advertisedSession(env = process.env) {
+  if (String(env.SHADE_TREE_SESSION_TICKETS ?? "0") !== "1") return null;
+  return canonicalCaps({ session: { version: 1, classes: ["research-v1"] } }).session || null;
+}
+
 // Build the raw caps object from env (injectable for tests; defaults to process.env). Returns
 // null when the gateway is UNCONFIGURED (no explicit egress policy, no valid region, no artifact
 // set, no admission policy, no pay advert) so the announce stays byte-identical to today.
@@ -245,8 +252,12 @@ export function buildGatewayCaps(env = process.env, { artifactIds = null, gatewa
   if (pay) caps.pay = pay;
   const rate = advertisedRate(env);
   if (rate) caps.rate = rate;
+  // session (ADR 0011): advertised only while the node runs with session tickets on. Clients that
+  // want a session route only to nodes whose SIGNED caps carry it.
+  const session = advertisedSession(env);
+  if (session) caps.session = session;
   // Nothing configured -> no caps -> byte-identical announce (proven in the selftest).
-  if (caps.ports === undefined && caps.region === undefined && caps.artifacts === undefined && caps.admits === undefined && caps.pay === undefined && caps.rate === undefined) return null;
+  if (caps.ports === undefined && caps.region === undefined && caps.artifacts === undefined && caps.admits === undefined && caps.pay === undefined && caps.rate === undefined && caps.session === undefined) return null;
   // At least one real cap: advertise the proto range too (complete, and safe — it only ever
   // rides alongside already-present caps, never triggers caps on its own).
   caps.proto = { min: PROTO_RANGE.min, max: PROTO_RANGE.max };

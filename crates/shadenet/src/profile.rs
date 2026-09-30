@@ -65,6 +65,9 @@ pub struct Deployment {
     pub default_path: Option<String>,
     pub rate_policy: Option<shadenet_proto::CanonicalRate>,
     pub staked: Option<StakedRoot>,
+    /// Session tickets (ADR 0011): the record's `sessionTickets`, set at H2. The client
+    /// default; `SHADENET_SESSION_TICKETS` overrides it.
+    pub session_tickets: bool,
 }
 
 /// The zero-configuration public path of a network: staked admission, one signed rate policy and
@@ -300,6 +303,15 @@ pub fn parse_deployment(name: &str, raw: &str) -> Result<Deployment, String> {
         .filter(|value| !value.is_null())
         .map(parse_staked)
         .transpose()?;
+    let session_tickets = match deployment.get("sessionTickets") {
+        None | Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::Bool(b)) => *b,
+        Some(_) => {
+            return Err(format!(
+                "{name} deployment sessionTickets must be a boolean"
+            ))
+        }
+    };
     Ok(Deployment {
         elder_onion: primary.onion,
         canopy_signer: primary.canopy_signer,
@@ -307,6 +319,7 @@ pub fn parse_deployment(name: &str, raw: &str) -> Result<Deployment, String> {
         default_path,
         rate_policy,
         staked,
+        session_tickets,
     })
 }
 

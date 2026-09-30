@@ -1359,3 +1359,155 @@ fn caps_with_admission_match_vector() {
         s(&v["capabilities"], "canonicalCapsBytesHex")
     );
 }
+
+// --------------------------------------------------------------------------
+// Session tickets (session-v1, ADR 0011): `sessionTickets` vector
+// --------------------------------------------------------------------------
+
+#[test]
+fn session_ticket_book_matches_vector() {
+    use shadenet_proto::session as st;
+    let v = vectors();
+    let t = &v["sessionTickets"];
+    assert_eq!(s(t, "signalPrefix"), st::SESSION_SIGNAL_PREFIX);
+    assert_eq!(s(t, "ticketDomain"), st::TICKET_DOMAIN);
+    assert_eq!(s(t, "ticketBookDomain"), st::TICKET_BOOK_DOMAIN);
+    assert_eq!(s(t, "ticketSpendDomain"), st::TICKET_SPEND_DOMAIN);
+
+    let secrets: Vec<[u8; 32]> = str_vec(&t["secretsHex"])
+        .iter()
+        .map(|h| seed32(h))
+        .collect();
+    let book = st::build_ticket_book(&secrets).unwrap();
+    assert_eq!(book.commitments, str_vec(&t["commitments"]));
+    assert_eq!(book.ticket_book_digest, s(t, "ticketBookDigest"));
+
+    let signal = st::session_signal(
+        s(t, "onion"),
+        s(t, "classId"),
+        s(t, "sessionNonce"),
+        &book.ticket_book_digest,
+    )
+    .unwrap();
+    assert_eq!(signal, s(t, "signal"));
+    assert_eq!(calculate_signal_hash(&signal), s(t, "signalHashDecimal"));
+
+    let spend = &t["spend"];
+    let index = spend["index"].as_u64().unwrap() as u16;
+    assert_eq!(
+        st::spend_digest(
+            &book.ticket_book_digest,
+            index,
+            s(spend, "target"),
+            s(spend, "requestNonce")
+        )
+        .unwrap(),
+        s(spend, "spendDigest")
+    );
+    let ticket = &spend["ticket"];
+    assert_eq!(ticket["v"].as_u64().unwrap(), st::SESSION_VERSION);
+    assert_eq!(s(ticket, "book"), book.ticket_book_digest);
+    assert_eq!(ticket["i"].as_u64().unwrap() as u16, index);
+    assert_eq!(
+        st::encode_ticket_secret(&secrets[index as usize]),
+        s(ticket, "t")
+    );
+    assert_eq!(
+        st::decode_ticket_secret(s(ticket, "t")),
+        Some(secrets[index as usize])
+    );
+    assert_eq!(s(ticket, "n"), s(spend, "requestNonce"));
+
+    let policy = &t["policy"];
+    let class = st::class_policy(s(t, "classId")).expect("research-v1 is known");
+    assert_eq!(s(policy, "class"), class.class);
+    assert_eq!(policy["tickets"].as_u64().unwrap(), class.tickets);
+    assert_eq!(
+        policy["maxPayloadBytes"].as_u64().unwrap(),
+        class.max_payload_bytes
+    );
+    assert_eq!(policy["lifetimeMs"].as_u64().unwrap(), class.lifetime_ms);
+    assert_eq!(
+        policy["idleTimeoutMs"].as_u64().unwrap(),
+        class.idle_timeout_ms
+    );
+    assert_eq!(
+        policy["maxConcurrentStreams"].as_u64().unwrap(),
+        class.max_concurrent_streams
+    );
+    assert_eq!(class.tickets as usize, secrets.len());
+}
+
+#[test]
+fn caps_with_session_match_vector_and_are_onion_signed() {
+    let v = vectors();
+    let cws = &v["sessionTickets"]["capsWithSession"];
+    let onion = s(&v, "onion");
+    let rate = &cws["caps"]["rate"];
+    let caps = Caps {
+        admits: Some(str_vec(&cws["caps"]["admits"])),
+        rate: Some(RateCaps {
+            scope: s(rate, "scope").into(),
+            window: s(rate, "window").into(),
+            epoch_seconds: rate["epochSeconds"].as_i64().unwrap(),
+            previous_epochs_accepted: rate["previousEpochsAccepted"].as_i64().unwrap(),
+            root_freshness_seconds: rate["rootFreshnessSeconds"].as_i64().unwrap(),
+            payload_bytes_per_slot: rate["payloadBytesPerSlot"].as_i64().unwrap(),
+        }),
+        session: Some(shadenet_proto::SessionCaps {
+            version: cws["caps"]["session"]["version"].as_i64().unwrap(),
+            classes: str_vec(&cws["caps"]["session"]["classes"]),
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        hex::encode(canonical_caps_bytes(onion, &caps)),
+        s(cws, "canonicalCapsBytesHex")
+    );
+    assert_eq!(
+        hex::encode(ed25519_sign(
+            &canonical_caps_bytes(onion, &caps),
+            &seed32(s(&v, "onionSeed"))
+        )),
+        s(cws, "capsSig")
+    );
+    assert!(verify_caps_sig(onion, &caps, Some(s(cws, "capsSig"))));
+
+    // A signer without the onion key cannot add or widen session support.
+    let mut widened = caps.clone();
+    widened
+        .session
+        .as_mut()
+        .unwrap()
+        .classes
+        .push("bulk-v1".into());
+    assert!(!verify_caps_sig(onion, &widened, Some(s(cws, "capsSig"))));
+    let mut removed = caps.clone();
+    removed.session = None;
+    assert!(!verify_caps_sig(onion, &removed, Some(s(cws, "capsSig"))));
+
+    // Junk session adverts are dropped whole, never thrown; absent stays byte-identical.
+    let junk = Caps {
+        session: Some(shadenet_proto::SessionCaps {
+            version: 0,
+            classes: vec!["research-v1".into()],
+        }),
+        ..Default::default()
+    };
+    assert_eq!(shadenet_proto::canonical_caps(&junk).session, None);
+    assert!(!shadenet_proto::has_caps(&junk));
+    let unsorted = Caps {
+        session: Some(shadenet_proto::SessionCaps {
+            version: 1,
+            classes: vec!["zeta".into(), "alpha".into(), "zeta".into(), "Bad".into()],
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        shadenet_proto::canonical_caps(&unsorted)
+            .session
+            .unwrap()
+            .classes,
+        vec!["alpha".to_string(), "zeta".to_string()]
+    );
+}

@@ -1,5 +1,7 @@
 # Multiplexed request tickets over a gateway session
 
+> **Status (ADR 0011, #103):** implemented behind the `sessionTickets` switch with one deviation from section 6: `session-v1` rides the existing v4 onion port as two new envelope kinds instead of an HTTP/2 side port (see the ADR for why). Sections 8 to 10 and 13 to 17 are implemented as written; section 11 advertises `{ version, classes }` without a port.
+
 **Status: detailed design; not implemented.**
 
 **Roadmap track:** gateway-bound session tickets, before transferable zkAPI credits.
