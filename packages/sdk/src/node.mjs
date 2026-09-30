@@ -7,7 +7,7 @@
 import http from "node:http";
 import https from "node:https";
 import tls from "node:tls";
-import { ShadeTreeClient } from "../../../client/shade-tree-client.mjs";
+import { ShadeTreeClient } from "../../node/client/shade-tree-client.mjs";
 import { ShadeNetError, ERROR_CODES, toShadeNetError } from "./errors.mjs";
 import { DEFAULT_DAEMON } from "./status.mjs";
 import { setDefaultArtifacts } from "./exit-proof.mjs";

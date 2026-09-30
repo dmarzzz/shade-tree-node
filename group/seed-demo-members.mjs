@@ -18,7 +18,7 @@ import { writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { identityFor, rateCommitmentOf, MEMBERS_PATH } from "../lib/rln.mjs";
+import { identityFor, rateCommitmentOf, MEMBERS_PATH } from "../packages/node/lib/rln.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 

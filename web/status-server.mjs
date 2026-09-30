@@ -9,11 +9,11 @@
 // address is dropped before it ever leaves this process.
 //
 // It is a CACHE VIEWER, not a trust root: the signature check is the real bootnode signature
-// path (lib/directory.mjs verifyDirectory), so a lying bootnode shows up here as signerOk=false
+// path (packages/node/lib/directory.mjs verifyDirectory), so a lying bootnode shows up here as signerOk=false
 // rather than as a forged fleet.
 //
 // Config (all SHADE_TREE_*):
-//   SHADE_TREE_BOOTNODE_ONION   the bootnode's v3 onion; reached over Tor (bootnode/fetch.mjs)
+//   SHADE_TREE_BOOTNODE_ONION   the bootnode's v3 onion; reached over Tor (packages/node/bootnode/fetch.mjs)
 //   SHADE_TREE_BOOTNODE_URL     OR a plain http base URL (e.g. http://127.0.0.1:8877) for local/dev
 //   SHADE_TREE_DIR_SIGNER       the pinned directory-signer pubkey (hex) the bootnode prints on boot
 //   SHADE_TREE_STATUS_PORT      loopback port for this status page          (default 8090)
@@ -28,8 +28,8 @@ import http from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { verifyDirectory } from "../lib/directory.mjs";
-import { fetchOverTor } from "../bootnode/fetch.mjs";
+import { verifyDirectory } from "../packages/node/lib/directory.mjs";
+import { fetchOverTor } from "../packages/node/bootnode/fetch.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = readFileSync(join(HERE, "status.html"), "utf8");

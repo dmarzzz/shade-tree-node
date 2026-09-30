@@ -2,9 +2,9 @@
 # T-TEST-1 real-Tor local fleet integration harness (BEST-EFFORT / GATED).
 #
 # Proves the FULL member egress path end-to-end over REAL Tor: the JS REFERENCE client
-# (client/shade-tree-client.mjs) mints a REAL per-request RLN membership proof, dials the
+# (packages/node/client/shade-tree-client.mjs) mints a REAL per-request RLN membership proof, dials the
 # gateway's published v3 `.onion` over the system Tor SOCKS port, and the REAL JS gateway
-# (gateway/gateway.mjs) ACCEPTS it and proxies the CONNECT to a LOCAL sink. We then assert
+# (packages/node/gateway/gateway.mjs) ACCEPTS it and proxies the CONNECT to a LOCAL sink. We then assert
 # three independent facts: the client got an `ok` ack (ACCEPT), the node's local pass
 # counter advanced, and the sink actually received the tunneled connection.
 #
@@ -79,7 +79,7 @@ trap cleanup EXIT INT TERM HUP PIPE
 command -v "$TORBIN" >/dev/null 2>&1 || { echo "no system tor ($TORBIN); set SHADE_TREE_TOR_BIN"; exit 1; }
 command -v node   >/dev/null 2>&1 || { echo "no node on PATH"; exit 1; }
 
-echo "== deriving member identity + single-member group (lib/rln.mjs) =="
+echo "== deriving member identity + single-member group (packages/node/lib/rln.mjs) =="
 node "$INTEROP/egress-derive.mjs" "$WORK" "$SECRET"
 MEMBERS="$WORK/members.json"
 
@@ -98,7 +98,7 @@ echo "== starting real JS gateway (127.0.0.1:${GW_PORT}) =="
 SHADE_TREE_EGRESS_ALLOW="$TARGET" \
   SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
   SHADE_TREE_METRICS_PORT="$METRICS_PORT" \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
 GW_PID=$! ; track "$GW_PID" ; disown "$GW_PID" 2>/dev/null || true
 node "$INTEROP/wait-log.mjs" "$WORK/gw.log" "gateway up on" 20000
 

@@ -33,14 +33,14 @@ mapped onto the sections below, so the roadmap reads as *remaining* work rather 
 
 | Section | Built | Where |
 |---|---|---|
-| 2.1 fleet-wide RLN evidence exchange | **partial** — shared spent-nullifier tally across gateways (only `(nullifier, epoch)` on the wire, fail-open) catches a replay to a second gateway; cross-fleet *share* exchange and reconstruction is not wired | `gateway/fleet-tally.mjs`, `docs/FLEET.md` |
+| 2.1 fleet-wide RLN evidence exchange | **partial** — shared spent-nullifier tally across gateways (only `(nullifier, epoch)` on the wire, fail-open) catches a replay to a second gateway; cross-fleet *share* exchange and reconstruction is not wired | `packages/node/gateway/fleet-tally.mjs`, `docs/FLEET.md` |
 | 2.4 client leak resistance | **partial** — per-tunnel Tor circuit isolation, endpoint hardening (bounded reads, strict parsers, adversarial tests on every wire surface) | `client/`, `test/adversarial.selftest.mjs`, `test/protocol-adversarial.selftest.mjs` |
 | 3.1 discover onions, not egress IPs | **built** — the onion is never on chain; `GatewayRegistry` stakes an operator address only | `contracts/GatewayRegistry.sol`, ADR 0002 |
 | 3.2 boot node = liveness layer, not trust root | **built** — announces carry onion-control (ed25519) + optional operator-stake signature; clients re-verify; bootnode can omit but not inject | `bootnode/`, ADR 0003, `docs/BOOTNODE.md` |
-| 3.2 gateway record | **built (subset)** — signed `{ports, region, proto}` capability advertisement; clients select by capability and fail closed. `payment` and `sequence` fields not yet in the record | `lib/directory.mjs`, `bootnode/announce.mjs` |
-| 3.3 / 3.4 join + client bootstrap | **built** — `shade-tree register-gateway` / `heartbeat`; client queries bootnode over Tor, verifies, caches last-known-good, rotates with failover | `bin/shade-tree.mjs`, `docs/QUICKSTART.md` |
-| 3.5 bootstrap v0 (one onion) | **built** | `bootnode/server.mjs` |
-| 3.5 bootstrap v1 (mirrors) | **built** — bootnode federation with gossip; every gossiped gateway re-verified through the full announce path; M-of-N threshold-signed directory removes the single signer | `bootnode/federation.mjs`, `lib/directory.mjs` (threshold) |
+| 3.2 gateway record | **built (subset)** — signed `{ports, region, proto}` capability advertisement; clients select by capability and fail closed. `payment` and `sequence` fields not yet in the record | `packages/node/lib/directory.mjs`, `packages/node/bootnode/announce.mjs` |
+| 3.3 / 3.4 join + client bootstrap | **built** — `shade-tree register-gateway` / `heartbeat`; client queries bootnode over Tor, verifies, caches last-known-good, rotates with failover | `packages/node/bin/shade-tree.mjs`, `docs/QUICKSTART.md` |
+| 3.5 bootstrap v0 (one onion) | **built** | `packages/node/bootnode/server.mjs` |
+| 3.5 bootstrap v1 (mirrors) | **built** — bootnode federation with gossip; every gossiped gateway re-verified through the full announce path; M-of-N threshold-signed directory removes the single signer | `packages/node/bootnode/federation.mjs`, `packages/node/lib/directory.mjs` (threshold) |
 | 3.5 bootstrap v2 (on-chain registry + mirrors) | **built (registry)** — `GatewayRegistry` live on Sepolia; client can rebuild the *member* root from chain via EIP-1186 light-client proof; rebuilding the *gateway* set purely from chain is not yet a client path | `contracts/GatewayRegistry.sol`, `docs/LIGHT-CLIENT.md` |
 | 3.5 bootstrap v3 (DHT) | not planned | — |
 | 4–8 payments / x402 / MPP / zkAPI | **partial + design** — paid-access 402 issuance is built; downstream payment adapters and zkAPI credits remain design-only | `docs/PAYMENTS.md`, sections below |

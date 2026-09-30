@@ -6,12 +6,12 @@
 #   [A] ROOT PARITY: the native Rust depth-20 Poseidon tree root EQUALS the rlnjs
 #       Semaphore-v3 group root over several identical member lists.
 #   [B] SINGLE-MEMBER ENVELOPE: a RUST-computed root+path (index 0, all-zero
-#       siblings) drives the circom-rln prover and lib/rln.mjs verifyEnvelope ACCEPTS it.
+#       siblings) drives the circom-rln prover and packages/node/lib/rln.mjs verifyEnvelope ACCEPTS it.
 #   [C] MULTI-MEMBER ENVELOPE: a RUST-computed root+path for a member at a NON-zero
 #       index (real leaf + real internal-node siblings) drives the prover and
 #       verifyEnvelope ACCEPTS it.
 #
-# The JS side here is only the rlnjs reference (imported from lib/rln.mjs) and small
+# The JS side here is only the rlnjs reference (imported from packages/node/lib/rln.mjs) and small
 # inline readers/mergers; no existing .mjs is modified. run.sh (T-RUST-2b) still
 # covers the JS-fixture path; this script is the Rust-owned-tree counterpart.
 #
@@ -34,7 +34,7 @@ TREE="$REPO/target/debug/shadenet-rln-tree"
 echo "== [A] root parity: Rust tree root == rlnjs group root =="
 js_root() { # args: leaves...  -> rlnjs newGroup([...]).root
   node --input-type=module -e '
-    import { newGroup } from "'"$REPO"'/lib/rln.mjs";
+    import { newGroup } from "'"$REPO"'/packages/node/lib/rln.mjs";
     console.log(newGroup(process.argv.slice(1).map(BigInt)).root.toString());
   ' "$@"
 }
@@ -78,7 +78,7 @@ node --input-type=module -e '
     identityFor, identitySecretOf, rateCommitmentOf, newGroup,
     externalNullifierFor, requestSignal, proveForSlot, K_SLOTS, RLN_IDENTIFIER,
     calculateSignalHash, cleanUp,
-  } from "'"$REPO"'/lib/rln.mjs";
+  } from "'"$REPO"'/packages/node/lib/rln.mjs";
   import { writeFileSync } from "node:fs";
 
   const SECRET = "12345678901234567890";
@@ -139,7 +139,7 @@ node "$HERE/verify-envelope.mjs" "$WORK/envC.json"
 echo "== [D] removal parity: Rust remove-middle root == JS reconstructRoot / contract golden =="
 # The loop-26 register-3 / slash-middle scenario. Leaves are the RLN rate commitments
 # for secrets 111/222/333 (deriveCommitment), the SAME leaves as the on-chain contract
-# test + lib/rln-removal-parity.selftest.mjs. The JS side computes the zero-in-place
+# test + packages/node/lib/rln-removal-parity.selftest.mjs. The JS side computes the zero-in-place
 # root two independent ways (root-provider.mjs reconstructRoot over the Member* event
 # log, AND a direct Group.removeMember oracle); the Rust side reproduces it via the
 # native tree. All must equal the pinned GOLDEN root.
@@ -147,8 +147,8 @@ GOLDEN="143671906208321455372238906363379265022108616351340787780823532042334565
 # JS: reconstructRoot(register c0@0,c1@1,c2@2; slash c1) and a removeMember oracle,
 # plus the leaves + the tree zero value, emitted together so Rust reuses them.
 node --input-type=module -e '
-  import { newGroup, deriveCommitment } from "'"$REPO"'/lib/rln.mjs";
-  import { reconstructRoot } from "'"$REPO"'/lib/root-provider.mjs";
+  import { newGroup, deriveCommitment } from "'"$REPO"'/packages/node/lib/rln.mjs";
+  import { reconstructRoot } from "'"$REPO"'/packages/node/lib/root-provider.mjs";
   import { writeFileSync } from "node:fs";
   const TOPIC = {
     registered: "0x0dbb6a3ed41d8f3d21e481b86d0e8bbf65a630b7dc4c5ee6c2c1a74561841e6d",

@@ -4,7 +4,7 @@
 //
 // The CLI mints keys and writes into the repo (a persistent group/directory-signer.key
 // plus group/directory.example.json), so invoking it would dirty the tree. Instead we
-// exercise the SAME lib/directory.mjs functions the CLI uses -- signDirectory,
+// exercise the SAME packages/node/lib/directory.mjs functions the CLI uses -- signDirectory,
 // verifyDirectory, pubkeyToOnion, onionToPubkey, and the ed25519 helpers -- against a
 // directory built exactly the way the tool builds one: fresh ed25519 gateway keys, raw
 // pub = last 32 bytes of the spki DER, onion = pubkeyToOnion(pub). No files are written.
@@ -18,7 +18,7 @@ import {
   pubkeyToOnion,
   onionToPubkey,
   ed25519PublicKey,
-} from "../lib/directory.mjs";
+} from "../packages/node/lib/directory.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };

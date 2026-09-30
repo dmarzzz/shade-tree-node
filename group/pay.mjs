@@ -34,15 +34,15 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { ethers } from "ethers";
-import { request } from "../payments/http-client.mjs";
-import { tokenDomain, randomNonce, signAuthorization, checkAuthorizationShape } from "../payments/eip3009.mjs";
+import { request } from "../packages/node/payments/http-client.mjs";
+import { tokenDomain, randomNonce, signAuthorization, checkAuthorizationShape } from "../packages/node/payments/eip3009.mjs";
 import {
   decodeX402Header, x402PaymentPayload, encodeX402Header, chainIdOfCaip2,
   parseWwwAuthenticate, mppCredential, mppNonce, decodeMppReceipt, b64decode, jsonParseSafe,
-} from "../payments/wire.mjs";
+} from "../packages/node/payments/wire.mjs";
 import { resolveSecret } from "./identity.mjs";
-import { identityFileFor } from "../lib/identity-file.mjs";
-import { K_SLOTS, normLimit } from "../lib/rln.mjs";
+import { identityFileFor } from "../packages/node/lib/identity-file.mjs";
+import { K_SLOTS, normLimit } from "../packages/node/lib/rln.mjs";
 
 const USAGE = `usage: shade-tree-node pay (--bootnode <onion> | --registrar-url <url>) --limit <tier> [--protocol x402|mpp] [--key-file <path> | --account <keystore.json>] [--commitment <dec> | --secret-file <path>] [--dry-run]`;
 

@@ -1,7 +1,7 @@
 // Unit self-test for graceful shutdown / connection draining (T-DEV-8).
 //
-// Drives the exported makeGracefulShutdown() from BOTH gateway/gateway.mjs and
-// bootnode/server.mjs with a fake server + fake sockets + an injected clock and an
+// Drives the exported makeGracefulShutdown() from BOTH packages/node/gateway/gateway.mjs and
+// packages/node/bootnode/server.mjs with a fake server + fake sockets + an injected clock and an
 // injected onExit (instead of real process.exit). No real process signals, no real
 // timers, no real net listener — pure control-flow proof.
 //
@@ -16,8 +16,8 @@
 //
 // Exit 0 = all invariants held; nonzero = a check failed (prints which).
 
-import { makeGracefulShutdown as gatewayShutdown } from "../gateway/gateway.mjs";
-import { makeGracefulShutdown as bootnodeShutdown } from "../bootnode/server.mjs";
+import { makeGracefulShutdown as gatewayShutdown } from "../packages/node/gateway/gateway.mjs";
+import { makeGracefulShutdown as bootnodeShutdown } from "../packages/node/bootnode/server.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };

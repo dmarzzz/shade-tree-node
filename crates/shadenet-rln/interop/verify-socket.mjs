@@ -1,8 +1,8 @@
 // T-RUST-2d de-risk (layer 2): the MINIMAL socket contract the real gateway is built on.
 //
 // A tiny TCP server that reads ONE newline-terminated envelope exactly as
-// gateway/gateway.mjs readEnvelope does (first 0x0a, JSON.parse), runs the REAL
-// lib/rln.mjs verifyEnvelope against the group root computed from a member set, replies
+// packages/node/gateway/gateway.mjs readEnvelope does (first 0x0a, JSON.parse), runs the REAL
+// packages/node/lib/rln.mjs verifyEnvelope against the group root computed from a member set, replies
 // `JSON.stringify(ack) + "\n"` exactly as the gateway's reply() does, then exits. This
 // isolates the WIRE FRAMING + verifyEnvelope ACCEPT from the gateway's target-policy +
 // upstream-proxy path, so a framing/binding bug is caught here before the full harness.
@@ -10,7 +10,7 @@
 // Usage: node verify-socket.mjs <port> <members-file>
 import net from "node:net";
 import { readFileSync } from "node:fs";
-import { verifyEnvelope, newGroup, cleanUp } from "../../../lib/semaphore.mjs";
+import { verifyEnvelope, newGroup, cleanUp } from "../../../packages/node/lib/semaphore.mjs";
 
 const port = Number(process.argv[2]);
 const membersFile = process.argv[3];

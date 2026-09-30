@@ -6,7 +6,7 @@
 // contracts/deployed.local.json (addresses only) and broadcast/<Script>/<chainId>/run-latest.json
 // (addresses + tx hashes + receipts with block numbers). This script lifts address + tx + block
 // from that receipt bundle (or from explicit flags) into the committed record, validates the
-// result with lib/network-record.mjs, and writes it atomically. It never talks to a chain and
+// result with packages/node/lib/network-record.mjs, and writes it atomically. It never talks to a chain and
 // never broadcasts anything.
 //
 //   node scripts/record-deploy.mjs --network devnet \
@@ -33,8 +33,8 @@
 import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isEthAddress } from "../lib/config.mjs";
-import { validateContractsRecord, isTxHash, isNetworkName, NETWORK_ROOT } from "../lib/network-record.mjs";
+import { isEthAddress } from "../packages/node/lib/config.mjs";
+import { validateContractsRecord, isTxHash, isNetworkName, NETWORK_ROOT } from "../packages/node/lib/network-record.mjs";
 
 // Foundry contractName -> contracts.json slot. Extend when a new contract joins the record.
 export const CONTRACT_SLOTS = {

@@ -22,9 +22,9 @@ Ground rules for this document:
 | Asset | What it is | Where it lives | Compromise impact |
 |---|---|---|---|
 | Member identity secret | The app field-element secret behind a Semaphore v3 / RLN identity | Client only, never on the wire | Full impersonation of that member |
-| `identitySecret` | `Poseidon2(nullifier, trapdoor)` of the identity; the value a slash reveals | Derived client-side (`lib/rln.mjs:identitySecretOf`) | Two different shares under one nullifier reconstruct it, deliberately revealing the slashable leaf |
+| `identitySecret` | `Poseidon2(nullifier, trapdoor)` of the identity; the value a slash reveals | Derived client-side (`packages/node/lib/rln.mjs:identitySecretOf`) | Two different shares under one nullifier reconstruct it, deliberately revealing the slashable leaf |
 | RLN transcript unlinkability | Distinct slots do not expose a shared leaf or stable cryptographic identifier | Enforced by the RLN nullifier structure | Loss creates a cryptographic link across a member's uses; timing and traffic metadata are separate correlation channels |
-| Gateway onion identity key | The ed25519 seed behind a v3 `.onion` (a `.onion` **is** this pubkey) | Operator host (`tor/hs/`, `bootnode/keygen.mjs`) | Lets an attacker impersonate that gateway in the directory/announce |
+| Gateway onion identity key | The ed25519 seed behind a v3 `.onion` (a `.onion` **is** this pubkey) | Operator host (`tor/hs/`, `packages/node/bootnode/keygen.mjs`) | Lets an attacker impersonate that gateway in the directory/announce |
 | Directory signer key | The pinned ed25519 key that signs the fleet directory | Bootnode / offline signer | Lets an attacker sign a poisoned fleet list — but see the layered onion↔key check below |
 | On-chain bonds | Member bonds (`StakedReputationSet`) and operator bonds (`GatewayRegistry`) | Ethereum (Sepolia) | Fund-custody / slash-authorization bugs |
 | Target metadata | The `host:port` a member egresses to | Encrypted in transit through Tor; plaintext to the serving gateway | A gateway can correlate destinations, timing, tunnel lifetime, and volume for the tunnels it serves |
@@ -83,7 +83,7 @@ narrows the label trust. The bootnode is not a substitute for a protected signin
 **The pinned directory signer (`SHADE_TREE_DIR_SIGNER`).**
 Trusted for: authenticating and choosing *which list* is the fleet. The bundled Sepolia client
 profile pins the current v4 signer. An explicit Elder or static-directory source must supply its
-matching pin (`client/selection.mjs:parsePinnedSigners`); it is never accepted through trust on
+matching pin (`packages/node/client/selection.mjs:parsePinnedSigners`); it is never accepted through trust on
 first use. A compromised signer can add any internally consistent entry, including an
 attacker-controlled onion/key pair. The independent onion↔pubkey check only prevents a mismatched
 pair (see §5).
@@ -91,7 +91,7 @@ pair (see §5).
 **The on-chain registry / RPC.**
 Trusted like any node read. Stake/root reads default to `latest` (dev-chain friendly) and can be
 pinned to a confirmation depth for reorg safety (`SHADE_TREE_CONFIRMATIONS`,
-`lib/gateway-registry.mjs:blockTag`, `lib/root-provider.mjs`). NOT trusted to be reorg-safe at
+`packages/node/lib/gateway-registry.mjs:blockTag`, `packages/node/lib/root-provider.mjs`). NOT trusted to be reorg-safe at
 default settings — that is an operator config. The **onion is never on chain**
 (`contracts/GatewayRegistry.sol`): only an operator *address* stakes, so the fleet stays
 un-enumerable and one stake can rotate across many onions.
@@ -100,7 +100,7 @@ trusted for the root outright (event reconstruction; the solo-staker's own node)
 `SHADE_TREE_ROOT_PROVIDER=light` the root's slot **value** is proven by EIP-1186 proofs, so the only
 remaining lie is the block `stateRoot` the proof is anchored to (a fake header + a proof
 consistent with it admits the attacker's tree). **That lever is closed when `SHADE_TREE_HELIOS_RPC_URL`
-is set** (T-DEV-9b, `lib/helios-root.mjs`): the header comes from a local Helios verifying RPC
+is set** (T-DEV-9b, `packages/node/lib/helios-root.mjs`): the header comes from a local Helios verifying RPC
 (beacon sync-committee signed), the RPC's header is cross-checked and a divergence is rejected
 with a precise `stateRoot mismatch` reason; Helios unreachable / wrong chain fails closed. The
 RPC can then only withhold (the last-known-good root keeps gating). Residual trust: the sync
@@ -129,27 +129,27 @@ Each row cites the enforcing function. "Enforced" means verified present in the 
 ### 4.1 Source-IP hiding from the gateway
 The gateway terminates a Tor rendezvous; there is no Tor exit node and the client source IP is not
 present on the application connection. **Enforced** by the onion transport (the shim /
-`client/shade-tree-client.mjs`), not by app crypto. This property does not hide targets or defeat
+`packages/node/client/shade-tree-client.mjs`), not by app crypto. This property does not hide targets or defeat
 traffic analysis. Adversary A1/A4.
 
 ### 4.2 Membership soundness
 A request carries a real RLN Groth16 proof of membership in a `rateCommitment` leaf of the depth-20
 tree, checked against the currently-accepted root set. **Enforced** by
-`lib/rln.mjs:verifyEnvelope` (check 3 root membership + check 4 Groth16 verify) over
+`packages/node/lib/rln.mjs:verifyEnvelope` (check 3 root membership + check 4 Groth16 verify) over
 `recentRoots`. A forged set fails the root check; a bad proof fails verification. Adversary A5.
 
 ### 4.3 Per-tunnel proof unlinkability + rate cap (RLN)
 The RLN nullifier is a function of the identity, the per-epoch `externalNullifier`, and a **private
 `messageId` (slot)**; a member rotates the slot per tunnel, yielding distinct, mutually-unlinkable
 nullifiers, capped at `K` per epoch (`K_SLOTS`, default 8). **Enforced** by
-`lib/rln.mjs:proveForSlot` (`messageId = i`, range-checked in the circuit) and the top-of-file RLN
+`packages/node/lib/rln.mjs:proveForSlot` (`messageId = i`, range-checked in the circuit) and the top-of-file RLN
 semantics comment; the gateway keys its spent-set on the proof's *public-signal* nullifier
-(`lib/rln.mjs:verifyEnvelope` returns `nullifier` from `publicSignals`, never the envelope's copy),
+(`packages/node/lib/rln.mjs:verifyEnvelope` returns `nullifier` from `publicSignals`, never the envelope's copy),
 so a lying envelope cannot desync accounting. At the proof layer the gateway learns a fresh
 nullifier per slot and no stable leaf identifier. Target, timing, volume, account, and cookie data
 may still correlate uses. Adversary A1 (including a colluding set).
 
-The client allocates each slot through `client/slot-state.mjs` before proving.
+The client allocates each slot through `packages/node/client/slot-state.mjs` before proving.
 The versioned `{epoch,nextSlot}` state is serialized by an atomic directory lock
 shared with the Rust client, durably replaced, and namespaced by the public
 member leaf; no bearer secret is written. Restart, local proof failure, and a
@@ -168,7 +168,7 @@ unlinkable nullifiers per epoch from the same tree, and the tier itself never re
   explicit tier field — `test/reputation-tiers.selftest.mjs` UNLINKABLE). **Tier forgery (A5) is leaf forgery:** a
 member proving with a limit its leaf does not carry has no Merkle path (`proveForSlot` "not in
 group"), and a real proof over a self-made tree with the wished-for leaf is rejected
-`wrong-group-root` before any SNARK work (`lib/rln.mjs:verifyEnvelope` check 3); a tier-8
+`wrong-group-root` before any SNARK work (`packages/node/lib/rln.mjs:verifyEnvelope` check 3); a tier-8
 member at slot 8 has no valid proof at all (client pre-check + circuit RangeCheck assert), so
 exceeding its tier forces a nullifier reuse => `over-spend-slashed`. Residual: `LessThan(16)`
 is unsound for a limit >= 2^16, so admission MUST refuse such leaves (`MAX_LIMIT`, `normLimit`
@@ -178,8 +178,8 @@ leaves staked on chain are unslashable there until `docs/ONCHAIN.md` "Tiers on c
 ### 4.4 Message-to-target binding
 A captured proof cannot be redirected to a different destination. The committed public `x` is
 `calculateSignalHash(requestSignal(target, nonce))`; the gateway recomputes it from the envelope's
-`target`+`nonce` and requires it to equal `ps.x`. **Enforced** by `lib/rln.mjs:verifyEnvelope`
-check **2b**, gated by `lib/rln.mjs:signalFieldSafe` (rejects newline/oversize fields that could
+`target`+`nonce` and requires it to equal `ps.x`. **Enforced** by `packages/node/lib/rln.mjs:verifyEnvelope`
+check **2b**, gated by `packages/node/lib/rln.mjs:signalFieldSafe` (rejects newline/oversize fields that could
 make the newline-delimited `requestSignal` non-injective) and failing closed (`unbound-target`) when
 `nonce`/`target` are absent. The invariant note in the code is explicit that 2b is only meaningful
 *with* check 4 (`ps.x` is attacker-supplied until the Groth16 proof verifies). Adversary A1.
@@ -189,9 +189,9 @@ make the newline-delimited `requestSignal` non-injective) and failing closed (`u
 Two distinct public `x` values under the *same* nullifier are two points on the degree-1 line, so
 the `identitySecret` is Shamir-reconstructed and the gateway attempts to slash the leaf at most once
 per in-memory nullifier. **Enforced** by
-`gateway/gateway.mjs:makeSpentSet` (`admit` → the "distinct public x under the same nullifier"
-branch → `reconstruct`/`derive`/`slash`), `lib/rln.mjs:reconstructSecret` +
-`lib/rln.mjs:deriveCommitment`, and on chain `contracts/StakedReputationSet.sol:slash`
+`packages/node/gateway/gateway.mjs:makeSpentSet` (`admit` → the "distinct public x under the same nullifier"
+branch → `reconstruct`/`derive`/`slash`), `packages/node/lib/rln.mjs:reconstructSecret` +
+`packages/node/lib/rln.mjs:deriveCommitment`, and on chain `contracts/StakedReputationSet.sol:slash`
 (**permissionless** — the secret is a cryptographic proof of over-spend; `slash` re-derives
 `commitmentOf(secret)` and reverts `BadSecret` on mismatch). The spent set marks the attempt before
 calling the slasher; a failed call is logged but is not automatically retried, so successful
@@ -200,7 +200,7 @@ on-chain slashing is not guaranteed. Adversary A5.
 ### 4.6 Per-gateway replay handling
 An exact-envelope resend to the *same* gateway is accepted within a short window without counting
 as an over-spend, and rejected after it. The current handler can open another upstream tunnel for
-that accepted replay, so this is not side-effect idempotence. **Enforced** by `gateway/gateway.mjs:makeSpentSet`:
+that accepted replay, so this is not side-effect idempotence. **Enforced** by `packages/node/gateway/gateway.mjs:makeSpentSet`:
 the `seenEnv` fingerprint `nullifier|share.x|nonce` plus `replayWindowMs` (default 5s) →
 `replay` (accept) vs `replayed-envelope` (drop). **Scope limit:** this is per-process, per-gateway
 only; there is no shared spent-set across non-colluding gateways (residual T-FEAT-20, §5). Adversary
@@ -208,25 +208,25 @@ A1.
 
 ### 4.7 Directory authenticity, signer pinning, rotation allowlist
 The whole list is ed25519-signed by a pinned signer, and the pinned argument is an **allowlist**
-(single key, or an overlap set for rotation). **Enforced** by `lib/directory.mjs:verifyDirectory`
+(single key, or an overlap set for rotation). **Enforced** by `packages/node/lib/directory.mjs:verifyDirectory`
 (+ `normalizePinnedSigners`): the signature must verify under *some* pinned key AND the declared
 `dir.signer`, when present, must itself be pinned — this is an allowlist, not "trust any signer"; an
 unpinned or wrong signer is rejected (`signer-not-pinned` / `bad-signature`). Rotation without a
 flag day: `SHADE_TREE_DIR_SIGNER` accepts a comma-separated `{old,new}` overlap set
-(`client/selection.mjs:parsePinnedSigners`; T-HARD-5, built). Adversary A2.
+(`packages/node/client/selection.mjs:parsePinnedSigners`; T-HARD-5, built). Adversary A2.
 
 ### 4.8 Onion↔key self-authentication (poisoned-directory defense)
 Each directory/announce entry's `pubkey` must equal the ed25519 key encoded in its own v3 `.onion`
 address. A v3 address *is* that key, so a mismatched or swapped pair is rejected. This is an
 internal-consistency check, not proof that the directory signer controls the onion. **Enforced** by
-`lib/directory.mjs:onionToPubkey` (checksum-validated recovery) inside `verifyDirectory`
+`packages/node/lib/directory.mjs:onionToPubkey` (checksum-validated recovery) inside `verifyDirectory`
 (per-entry `pubkey-onion-mismatch` / `bad-onion` rejection). At announce admission, control is
-separately proven by `bootnode/announce.mjs:verifyAnnounce` (`onionSig` verified via
-`lib/directory.mjs:verifyOnionControl` over `canonicalAnnounceBytes`, freshness-bounded by `ts`/skew
+separately proven by `packages/node/bootnode/announce.mjs:verifyAnnounce` (`onionSig` verified via
+`packages/node/lib/directory.mjs:verifyOnionControl` over `canonicalAnnounceBytes`, freshness-bounded by `ts`/skew
 and optional `seenNonce`). The onion is never on chain (`contracts/GatewayRegistry.sol`). Adversary
 A1/A2.
 
-*Note (claimed, unverified):* `lib/directory.mjs:verifyOnionControl` also exists as a **live per-dial
+*Note (claimed, unverified):* `packages/node/lib/directory.mjs:verifyOnionControl` also exists as a **live per-dial
 challenge**, but the code comment says to "wire the challenge/response into the gateway envelope
 handshake" — the shipped per-dial handshake was not confirmed to call it. Connection-time onion
 control is instead provided by Tor itself (you cannot reach a v3 onion without the service holding
@@ -235,7 +235,7 @@ its key); the announce signature provides it at directory-build time.
 ### 4.9 Directory rollback / stale-replay defense
 An ed25519 directory signature is valid forever, so a hostile/replaying bootnode could serve an
 *old* validly-signed directory to resurrect a dropped or slashed gateway, and stateless
-`verifyDirectory` would accept it clean. Two guards close this in `client/selection.mjs:ensureLoaded`:
+`verifyDirectory` would accept it clean. Two guards close this in `packages/node/client/selection.mjs:ensureLoaded`:
 
 - **Monotonic issued floor** (`lastAcceptedIssued`): a *fresh* directory whose `issued` predates the
   newest already accepted is rejected (`directory rollback rejected`); the last-known-good cache is
@@ -248,17 +248,17 @@ An ed25519 directory signature is valid forever, so a hostile/replaying bootnode
 ### 4.10 Client-side weight clamp (traffic-concentration defense)
 Selection weight is gateway-attested, so a poisoned static directory or compromised signer could
 try to concentrate a member's traffic on one gateway (a deanonymization lever). **Enforced** on the
-client by `lib/directory.mjs:clampWeight` (`MAX_WEIGHT = 1000`, negatives floored, NaN → 1),
-independent of the bootnode's own announce-time clamp (`bootnode/server.mjs` `MAX_WEIGHT`). Adversary
+client by `packages/node/lib/directory.mjs:clampWeight` (`MAX_WEIGHT = 1000`, negatives floored, NaN → 1),
+independent of the bootnode's own announce-time clamp (`packages/node/bootnode/server.mjs` `MAX_WEIGHT`). Adversary
 A1/A2/A6.
 
 ### 4.11 Operator↔onion binding + live stake (stake mode)
 In `admission=stake`, an announce carries a durable operator ECDSA authorization binding
 operator↔onion plus a live on-chain stake check. **Enforced** by
-`bootnode/announce.mjs:verifyAnnounce` (`verifyOperatorSig` recovers the operator from
+`packages/node/bootnode/announce.mjs:verifyAnnounce` (`verifyOperatorSig` recovers the operator from
 `operatorAuthMessage` and confirms it equals `operator`; `isStaked` gated by `requireStake`, with a
 chain-read failure hard-rejecting rather than silently passing) against
-`contracts/GatewayRegistry.sol:isStaked` via `lib/gateway-registry.mjs:makeStakeVerifier`. Revocation
+`contracts/GatewayRegistry.sol:isStaked` via `packages/node/lib/gateway-registry.mjs:makeStakeVerifier`. Revocation
 = unstaking (`isStaked` flips false, entry drops next refresh). Adversary A2/A6.
 
 ### 4.12 Client zero-trust operator re-verification
@@ -266,7 +266,7 @@ The signed directory carries a bootnode `staked`/`operator` label the client can
 entry alone. With `SHADE_TREE_VERIFY_STAKE=1` the client refuses to take the label on faith: for every
 entry claiming stake it fetches `GET /gateway/<onion>` and re-runs the same two proofs
 (`verifyAnnounce` sigs + live `isStaked`), dropping any that fail. **Enforced** by
-`client/selection.mjs:reverifyGateway` / `filterReverified` (T-DEV-5). **OFF by default**, so the
+`packages/node/client/selection.mjs:reverifyGateway` / `filterReverified` (T-DEV-5). **OFF by default**, so the
 default path still trusts the bootnode's pairing label — flagged as a residual in `SECURITY.md`.
 Adversary A2.
 
@@ -274,7 +274,7 @@ Adversary A2.
 A gateway's signed egress-success receipt is a per-*gateway* liveness attestation carrying **zero**
 request-linkable data: only a schema version, the gateway's own `.onion` (self-authenticating via
 `onionToPubkey`), a **coarse epoch bucket**, and a constant `ok:true`. **Enforced** by
-`lib/receipt.mjs:canonicalReceiptBytes` / `buildReceipt` / `verifyReceipt`, with a receipt-only
+`packages/node/lib/receipt.mjs:canonicalReceiptBytes` / `buildReceipt` / `verifyReceipt`, with a receipt-only
 domain tag (`RECEIPT_DOMAIN`) providing domain separation so a receipt signature can never be
 confused with an announce/directory signature by the same onion key. Deliberately absent: member
 identity, nullifier (or any prefix), share, target `host:port`, request nonce, fine timestamp, or a
@@ -282,12 +282,12 @@ counter. Consequence stated honestly in-code: two receipts from one gateway in o
 byte-identical, so a receipt proves gateway liveness, not that *your* request egressed — the missing
 per-tunnel binding is exactly the linkability channel refused. The client-side tally that consumes
 receipts is local-only, off by default, never transmitted
-(`client/selection.mjs:reportReceipt`, `SHADE_TREE_RECEIPT_SCORING`). Adversary A1.
+(`packages/node/client/selection.mjs:reportReceipt`, `SHADE_TREE_RECEIPT_SCORING`). Adversary A1.
 
 ### 4.14 On-chain stake / root reorg-safety
 Stake and root reads can be pinned to a confirmation depth to reduce the chance that a reorg flips
-an admission decision under the gateway. **Enforced** by `lib/gateway-registry.mjs:blockTag` (reads at
-`head - SHADE_TREE_CONFIRMATIONS`, or `finalized`) and `lib/root-provider.mjs` (confirmation-depth
+an admission decision under the gateway. **Enforced** by `packages/node/lib/gateway-registry.mjs:blockTag` (reads at
+`head - SHADE_TREE_CONFIRMATIONS`, or `finalized`) and `packages/node/lib/root-provider.mjs` (confirmation-depth
 `eth_getLogs` up to `head - N` / `finalized`). **Default is `latest`** (dev-chain friendly), so
 reorg risk reduction is opt-in via `SHADE_TREE_CONFIRMATIONS`. Reorgs deeper than the configured
 depth, or failures in finalized-header assumptions, remain possible.
@@ -296,7 +296,7 @@ Adversary A2.
 ### 4.14b Multi-root admission: static + staked + paid sets (T-FEAT-7)
 The gateway admits a proof under ANY root in the union of its configured sources — the static
 `members.json`, each `StakedReputationSet` in `SHADE_TREE_GROUP_CONTRACT`, the `PaidAccessSet` in
-`SHADE_TREE_PAID_ACCESS_CONTRACT` (`gateway/gateway.mjs:initRoots`, `lib/root-provider.mjs:
+`SHADE_TREE_PAID_ACCESS_CONTRACT` (`packages/node/gateway/gateway.mjs:initRoots`, `packages/node/lib/root-provider.mjs:
 CompositeRootProvider`). Soundness per source is unchanged (§4.2: the proof still opens a leaf under
 one trusted root); what the union changes is WHO can add a leaf: the operator (members.json, and the
 paid set's operator-only `insert` after an off-chain 402 payment) and anyone who posts a bond
@@ -307,8 +307,8 @@ static, staked or paid member, and nothing finer — the paid set's crowd is its
 logged against `SHADE_TREE_PAID_MIN_LEAVES` (WARN, never refuse; the floor is a parameter, not a bound).
 Slashing routes to the contract that holds the leaf (`limitOf`), so a paid over-spender loses its
 leaf on the paid set and a staked one its bond; a members.json member is only ever dry-run/primary
-slashed as before. **Enforced** in `gateway/gateway.mjs:makeRoutingSlasher`; tested in
-`test/paid-access.selftest.mjs`, `gateway/root-sources.selftest.mjs`. Adversaries A1, A2, A4.
+slashed as before. **Enforced** in `packages/node/gateway/gateway.mjs:makeRoutingSlasher`; tested in
+`test/paid-access.selftest.mjs`, `packages/node/gateway/root-sources.selftest.mjs`. Adversaries A1, A2, A4.
 
 ### 4.14c Per-gateway admission policy + `--max-anon` (T-FEAT-9, ADR [0008](adr/0008-per-gateway-admission-and-payment-choice.md))
 What each admission path REVEALS is not the same, so §4.14b's "which ROOT the proof opens" leak has
@@ -323,9 +323,9 @@ three different weights (the ANONYMITY ORDER, most → least):
 Consequences and what is enforced:
 - A gateway that admits several paths MIXES these crowds; a member's proof still shows only its
   root, but a member who wants the strongest guarantee should route only to gateways whose whole
-  population is invited. Hence `SHADE_TREE_ADMIT` on the gateway (`gateway/gateway.mjs:resolveAdmission`;
+  population is invited. Hence `SHADE_TREE_ADMIT` on the gateway (`packages/node/gateway/gateway.mjs:resolveAdmission`;
   the DEFAULT is `invited` ALONE, even when contract addresses are configured; a named path whose
-  contract is missing fails CLOSED at startup) and the client's `--max-anon` (`client/selection.mjs
+  contract is missing fails CLOSED at startup) and the client's `--max-anon` (`packages/node/client/selection.mjs
   filterByAdmission`: keep ONLY gateways whose SIGNED `admits` is exactly `["invited"]`; a
   policy-less gateway cannot prove it and is EXCLUDED; and the client REFUSES to run with a staked or
   paid leaf, saying which linkability that leaf carries — an invited-only gateway would reject the
@@ -345,19 +345,19 @@ Consequences and what is enforced:
   `400 protocol-disabled` before any parsing (one less parser reachable by an unauthenticated peer).
 - Slashing routes only over ADMITTED contracts (`makeSlasher({ rootContracts })`): a leaf in an
   un-admitted set could never have egressed here.
-**Enforced** in `gateway/gateway.mjs:resolveAdmission/initRoots`, `client/selection.mjs:
-filterByAdmission`, `client/shade-tree-client.mjs:_admission`, `lib/directory.mjs:canonicalAdmits`;
-tested in `gateway/admission.selftest.mjs`, `client/admission-filter.selftest.mjs`,
-`lib/admission-caps.selftest.mjs`, `test/paid-access.selftest.mjs` §7. Adversaries A1, A2, A4.
+**Enforced** in `packages/node/gateway/gateway.mjs:resolveAdmission/initRoots`, `packages/node/client/selection.mjs:
+filterByAdmission`, `packages/node/client/shade-tree-client.mjs:_admission`, `packages/node/lib/directory.mjs:canonicalAdmits`;
+tested in `packages/node/gateway/admission.selftest.mjs`, `packages/node/client/admission-filter.selftest.mjs`,
+`packages/node/lib/admission-caps.selftest.mjs`, `test/paid-access.selftest.mjs` §7. Adversaries A1, A2, A4.
 
 ### 4.15 Version-negotiation downgrade resistance
 The gateway declares an inclusive envelope-version range and checks the incoming `v` **before any
 field is read**, so a garbage or out-of-range version never reaches `verifyEnvelope`. **Enforced** by
-`gateway/gateway.mjs:acceptEnvelopeVersion` (sole version authority; `bad-version` for
+`packages/node/gateway/gateway.mjs:acceptEnvelopeVersion` (sole version authority; `bad-version` for
 non-integers, `unsupported-version` for out-of-range; absent `v` == legacy v3). The advertised range
 rides back on rejection so a client can re-select. Capability advertisement (incl. the proto
 range) is signed into the announce and directory entry with an onion-bound `capsSig`
-(`lib/directory.mjs:verifyCapsSig`; T-FEAT-10/10b), so a bootnode or MITM cannot rewrite an
+(`packages/node/lib/directory.mjs:verifyCapsSig`; T-FEAT-10/10b), so a bootnode or MITM cannot rewrite an
 advertised range without the gateway's onion key. **Limit:** the range that rides back on a
 *rejection* is unsigned, but a forged one can only cause a re-select or a fail-closed
 `no-mutual-version`, and version choice cannot forge §4.2/§4.3.
@@ -366,33 +366,33 @@ Adversary A1.
 ### 4.16 Endpoint DoS levers (slow-loris, connection pinning, verify floods) — CLOSED (T-HARD-4)
 Both listeners bound what an *unauthenticated* peer can cost before it has proven anything, and
 what a member can cost with one proof. **Enforced** by:
-- `gateway/gateway.mjs:readEnvelope` — absolute envelope deadline (`SHADE_TREE_ENVELOPE_TIMEOUT_MS`,
+- `packages/node/gateway/gateway.mjs:readEnvelope` — absolute envelope deadline (`SHADE_TREE_ENVELOPE_TIMEOUT_MS`,
   30 s from connect, not re-armed by dribbled bytes) => drop `envelope-timeout`; size cap =>
   `envelope-too-large`.
-- `gateway/gateway.mjs:makeHandler` — relay idle timeout on both sockets (`SHADE_TREE_TUNNEL_IDLE_TIMEOUT_MS`,
+- `packages/node/gateway/gateway.mjs:makeHandler` — relay idle timeout on both sockets (`SHADE_TREE_TUNNEL_IDLE_TIMEOUT_MS`,
   5 min; either socket idle == no bytes in either direction) => `tunnel_closes{idle-timeout}`; a
   black-holed upstream connect is bounded by the same timer (`upstream-timeout`); a permanent
   socket error sink closes the **half-close crash** (a partial envelope + FIN used to raise an
   unhandled `EPIPE` on the error reply and kill the whole gateway process — one connection, full
   outage; found by the T-HARD-4 selftest, confirmed against `main` before the fix).
-- `gateway/gateway.mjs:makePayloadBudget` — both opaque relay directions share a 40 MiB
+- `packages/node/gateway/gateway.mjs:makePayloadBudget` — both opaque relay directions share a 40 MiB
   `(externalNullifier, nullifier)` allowance (`SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES`); same-node
   retries cannot reset it, and the exact boundary closes both sockets with `payload-limit`.
   Cross-node concurrency remains subject to the asynchronous, fail-open fleet-tally residual.
-- `gateway/gateway.mjs:makeConnLimiter` — `SHADE_TREE_MAX_CONNS` (1024) concurrent sockets, refused at
+- `packages/node/gateway/gateway.mjs:makeConnLimiter` — `SHADE_TREE_MAX_CONNS` (1024) concurrent sockets, refused at
   accept before any read (`too-many-connections`); `SHADE_TREE_MAX_CONNS_PER_NULLIFIER` (8) concurrent
   tunnels per nullifier (`nullifier-conn-limit`), checked *after* `spentSet.admit` so a slashable
   second distinct share is never hidden by the cap. Slots released on close; the per-nullifier map
   is bounded by open sockets.
-- `bootnode/server.mjs:makeAnnounceBucket` — GLOBAL announce token bucket, the last gate before
+- `packages/node/bootnode/server.mjs:makeAnnounceBucket` — GLOBAL announce token bucket, the last gate before
   `verifyAnnounce` (`SHADE_TREE_BOOTNODE_ANNOUNCE_RATE`/`_BURST`, default 66.7/s, burst 1000 = 2×maxEntries/
   heartbeat and maxEntries/10): an attacker minting fresh onions gets at most `burst` ed25519 verifies
   in an instant, then `rate`/s (was: up to `maxEntries` in one burst); `429` + `Retry-After`; cheap
   per-onion/full rejects are checked first and consume no token; legit heartbeats at default cadence
   never hit it (`docs/BOOTNODE.md` "Endpoint hardening" for the math).
-- `bootnode/server.mjs:HTTP_LIMITS` — headers 10 s / request 30 s (`408`), keep-alive idle 5 s,
+- `packages/node/bootnode/server.mjs:HTTP_LIMITS` — headers 10 s / request 30 s (`408`), keep-alive idle 5 s,
   headers <= 8 KiB (`431`), enforced every 1 s (Node defaults 60 s / 300 s / 16 KiB / 30 s).
-Proven in `gateway/hardening.selftest.mjs`, `bootnode/hardening.selftest.mjs` (real sockets, verify
+Proven in `packages/node/gateway/hardening.selftest.mjs`, `packages/node/bootnode/hardening.selftest.mjs` (real sockets, verify
 spy) and `test/adversarial.selftest.mjs` scenarios 6–7. **Limit:** these bound *this process*; Tor
 rendezvous/onion-service DoS remains an operator concern (§5, `docs/TOR-HARDENING.md`). Adversaries
 A1 (as a client of peers), A5, and any unauthenticated network peer.
@@ -407,8 +407,8 @@ the transfer before insertion and simulates transactions before spending gas. Se
 insertion are not atomic: after payment, the buyer trusts the operator to complete insertion. The
 payer↔leaf link does not reach the gateway through the proof protocol.
 
-**Where enforced.** `payments/registrar.mjs` `makeEngine.verifyAndSettle` (order: wire shape via
-`payments/wire.mjs` `parseX402Payment` / `parseMppCredential`; body `limit` == paid tier;
+**Where enforced.** `packages/node/payments/registrar.mjs` `makeEngine.verifyAndSettle` (order: wire shape via
+`packages/node/payments/wire.mjs` `parseX402Payment` / `parseMppCredential`; body `limit` == paid tier;
 commitment is a field element; time window with a settle buffer; EIP-712 recovery over the
 token domain proven at boot against `DOMAIN_SEPARATOR()`; on-chain `authorizationState`,
 `balanceOf`, `PaidAccessSet.limitOf == 0`; `eth_call` simulation) → serialized settle → wait →
@@ -419,7 +419,7 @@ nonce)` (identical replay → stored receipt, different commitment → `409`, ch
 challenge; a bodied challenge is digest-bound (RFC 9530). Endpoint DoS: the bootnode's token
 bucket in front of paid POSTs and quotes, an in-flight cap, 4 KiB body cap, the T-HARD-4 slow-
 client limits, and the operator key never rendered into a unit (0600 drop-in). Proof:
-`payments/wire.selftest.mjs` (parse matrix, spec golden), `payments/registrar.selftest.mjs`
+`packages/node/payments/wire.selftest.mjs` (parse matrix, spec golden), `packages/node/payments/registrar.selftest.mjs`
 (both rails end to end on anvil, replay/idempotency, adversarial matrix, slow-loris, crash
 recovery), `test/Eip3009Token.t.sol`.
 
@@ -453,7 +453,7 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
 
 - **Cross-fleet replay / rate is fleet-wide only when the tally is on (T-FEAT-20/20b, ROADMAP-v1
   #1/#3).** §4.6 defends *one* gateway. The shared per-epoch nullifier tally
-  (`gateway/fleet-tally.mjs`, `SHADE_TREE_FLEET_TALLY_PEERS`, authenticated by
+  (`packages/node/gateway/fleet-tally.mjs`, `SHADE_TREE_FLEET_TALLY_PEERS`, authenticated by
   `SHADE_TREE_FLEET_TALLY_TOKEN`) rejects a replay at a second gateway and
   shares only `(nullifier, epoch)` (RLN's per-tunnel nullifiers keep it from being a linkability
   channel), but it is **opt-in and fail-open**: a fleet without it lets a malicious gateway fan a
@@ -465,7 +465,7 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
   and the superseded rln-v3 set (`0xdAE242AE…20FC`, the experiment's earlier slash target) keeps the
   mock.
 - **RLN leaf-removal parity (T-DEV-2) — closed.** `reconstructRoot` now follows the contract's
-  zero-in-place convention (`lib/root-provider.mjs`, three-way JS/Solidity/Rust proof); listed so
+  zero-in-place convention (`packages/node/lib/root-provider.mjs`, three-way JS/Solidity/Rust proof); listed so
   the history of the caveat is not lost.
 - **Trusted-setup provenance (T-HARD-1, P0).** The ZK artifacts came from an **untrusted testnet
   phase-2 ceremony** (`circuits/rln/ARTIFACTS.md`). Their hashes are now pinned and CI-verified
@@ -483,7 +483,7 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
 - **Capability/version advertisement is opt-in on the gateway side (T-FEAT-10/10b, §4.15).** Signed
   and onion-bound when present; a gateway that advertises nothing is treated as default-capable
   only, and the version range echoed on a rejection is unsigned (fail-closed either way).
-- **Deploy bootstrap runs as root.** `bootnode/deploy/bootstrap.sh` is exercised end to end in CI
+- **Deploy bootstrap runs as root.** `packages/node/bootnode/deploy/bootstrap.sh` is exercised end to end in CI
   (`.github/workflows/bootstrap-e2e.yml`, T-TEST-8) but runs as root on a fresh box; read it before
   running it (`docs/AUDIT.md`, `SECURITY.md`).
 
@@ -507,22 +507,22 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
 
 Highest-value review targets, roughly in order of trust concentration:
 
-1. **`lib/directory.mjs`** — the trust core. Confirm `verifyDirectory` rejects: unsigned, wrong
+1. **`packages/node/lib/directory.mjs`** — the trust core. Confirm `verifyDirectory` rejects: unsigned, wrong
    signer, non-pinned declared signer, tampered field, grafted onion, pubkey↔onion mismatch. Confirm
-   `onionToPubkey` checksum validation and `clampWeight`. Read alongside `lib/directory.selftest.mjs`.
-2. **`lib/rln.mjs:verifyEnvelope`** — walk checks 1→4 in order and confirm 2b (target binding) is
+   `onionToPubkey` checksum validation and `clampWeight`. Read alongside `packages/node/lib/directory.selftest.mjs`.
+2. **`packages/node/lib/rln.mjs:verifyEnvelope`** — walk checks 1→4 in order and confirm 2b (target binding) is
    never trusted without 4 (Groth16 verify), and that `nullifier`/`share` come from `publicSignals`,
-   not the envelope. Confirm `signalFieldSafe` runs before hashing. Beside `lib/rln.selftest.mjs`.
-3. **`gateway/gateway.mjs:makeSpentSet`** — the over-spend/slash and replay control flow. Confirm
+   not the envelope. Confirm `signalFieldSafe` runs before hashing. Beside `packages/node/lib/rln.selftest.mjs`.
+3. **`packages/node/gateway/gateway.mjs:makeSpentSet`** — the over-spend/slash and replay control flow. Confirm
    slash-exactly-once, the `seenEnv` replay window, and that failures don't crash the path. Confirm
    `acceptEnvelopeVersion` is the sole version gate. In `makeHandler`, confirm the socket error sink,
    the envelope deadline, the connection caps and the idle timeout (§4.16) bracket every exit path.
-4. **`bootnode/announce.mjs:verifyAnnounce`** — the discovery loop's admission. Confirm onion-sig +
+4. **`packages/node/bootnode/announce.mjs:verifyAnnounce`** — the discovery loop's admission. Confirm onion-sig +
    operator-sig + `isStaked` ordering, freshness/skew, nonce replay, and that a chain-read failure
-   hard-rejects under `requireStake`. Beside `bootnode/selftest.mjs`. In `bootnode/server.mjs`,
+   hard-rejects under `requireStake`. Beside `packages/node/bootnode/selftest.mjs`. In `packages/node/bootnode/server.mjs`,
    confirm the global announce bucket is the last gate before verify and reload is its only exemption
    (§4.16).
-5. **`client/selection.mjs:ensureLoaded`** — the rollback floor + max-age bound + last-known-good
+5. **`packages/node/client/selection.mjs:ensureLoaded`** — the rollback floor + max-age bound + last-known-good
    fallback; and `reverifyGateway`/`filterReverified` for the zero-trust stake path.
 6. **`contracts/StakedReputationSet.sol` + `contracts/GatewayRegistry.sol`** — stake lifecycle, the
    permissionless member `slash` vs the governed gateway `slash`, fund custody, the mock exit

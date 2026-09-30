@@ -2,7 +2,7 @@
 // geographic / network DIVERSITY -- how many independent vantage points the rotation spreads
 // across -- WITHOUT deanonymizing or locating any single gateway.
 //
-// THREAT MODEL FIRST. The signed directory (lib/directory.mjs) is { onion, pubkey, weight,
+// THREAT MODEL FIRST. The signed directory (packages/node/lib/directory.mjs) is { onion, pubkey, weight,
 // health } and DELIBERATELY carries no geo/IP data: a v3 onion service has no clearnet IP by
 // design, and the fleet is non-enumerable on purpose. So there is NOTHING here to geolocate and
 // we never try. onion -> country is both impossible (no IP) and against the point (it would

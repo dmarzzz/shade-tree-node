@@ -9,7 +9,7 @@ name: uptime-probe
 #   SHADE_TREE_BOOTNODE_ONION   the fleet bootnode's v3 .onion
 #   SHADE_TREE_DIR_SIGNER       the pinned directory-signer pubkey (hex, no 0x)
 #   SHADE_TREE_NETWORK          ALTERNATIVE: a network/<name>/ record name (e.g. sepolia); the probe reads
-#                         the two values above from network/<name>/bootnode.json (lib/network-record.mjs)
+#                         the two values above from network/<name>/bootnode.json (packages/node/lib/network-record.mjs)
 #   SHADE_TREE_PROBE_ACCEPT_PRE_V4_CAPS  keep 0 for the current v4 Grove; 1 is observation-only
 #                         compatibility for an explicitly identified legacy fleet
 #   SHADE_TREE_GROVE_SIGNING_KEY  dedicated Ed25519 private key, stored only as an Actions secret
@@ -90,7 +90,7 @@ jobs:
         run: |
           # A pending record (onion null) means there is nothing to probe yet: say so and stop green.
           out="$(node -e '
-            import("./lib/network-record.mjs").then((m) => {
+            import("./packages/node/lib/network-record.mjs").then((m) => {
               if (process.env.SHADE_TREE_BOOTNODE_ONION && process.env.SHADE_TREE_DIR_SIGNER) {
                 console.log("resolved");
                 return;

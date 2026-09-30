@@ -26,7 +26,7 @@
 //   SHADE_TREE_DIR_SIGNER=<canopy-signer-pubkey> \
 //   node examples/agent-egress.mjs
 
-import { ShadeTreeClient, cleanUp } from "../client/shade-tree-client.mjs";
+import { ShadeTreeClient, cleanUp } from "../packages/node/client/shade-tree-client.mjs";
 
 for (const v of ["SHADE_TREE_SECRET", "SHADE_TREE_BOOTNODE_ONION", "SHADE_TREE_DIR_SIGNER"]) {
   if (!process.env[v]) {

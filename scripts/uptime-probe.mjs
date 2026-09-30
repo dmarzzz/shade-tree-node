@@ -2,9 +2,9 @@
 //
 // An external monitor (cron, or an uptime service with a tor-capable runner) runs this
 // standalone, dependency-light check on an interval. It reaches the bootnode the SAME way a
-// client does -- a SOCKS dial through the local Tor daemon (bootnode/fetch.mjs), no exit node,
+// client does -- a SOCKS dial through the local Tor daemon (packages/node/bootnode/fetch.mjs), no exit node,
 // the bootnode never learns the monitor's IP -- fetches GET /health and GET /directory, and
-// verifies the directory signature against the PINNED signer (lib/directory.mjs verifyDirectory).
+// verifies the directory signature against the PINNED signer (packages/node/lib/directory.mjs verifyDirectory).
 // So the check proves the fleet is not just reachable but serving an authentic, signer-pinned
 // directory: a swapped/MITM'd bootnode fails signerOk, not just reachability.
 //
@@ -42,9 +42,9 @@ import net from "node:net";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchOverTor } from "../bootnode/fetch.mjs";
-import { verifyDirectory } from "../lib/directory.mjs";
-import { applyNetworkEnv } from "../lib/network-record.mjs";
+import { fetchOverTor } from "../packages/node/bootnode/fetch.mjs";
+import { verifyDirectory } from "../packages/node/lib/directory.mjs";
+import { applyNetworkEnv } from "../packages/node/lib/network-record.mjs";
 
 const TOR_HOST = process.env.SHADE_TREE_TOR_HOST || "127.0.0.1";
 const TOR_PORT = Number(process.env.SHADE_TREE_TOR_PORT || 9250);

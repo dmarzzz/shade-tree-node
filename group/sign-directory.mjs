@@ -2,7 +2,7 @@
 // gateway onions so the whole path is runnable end to end).
 //
 // The directory signer is a long-lived ed25519 key whose PUBLIC half is PINNED in
-// the client (SHADE_TREE_DIR_SIGNER / the default in client/selection.mjs). This tool
+// the client (SHADE_TREE_DIR_SIGNER / the default in packages/node/client/selection.mjs). This tool
 // holds the SECRET half, offline, and signs the list the fleet publishes.
 //
 // Usage:
@@ -18,7 +18,7 @@ import { existsSync } from "node:fs";
 import { generateKeyPairSync } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { signDirectory, verifyDirectory, pubkeyToOnion, ed25519PublicKey } from "../lib/directory.mjs";
+import { signDirectory, verifyDirectory, pubkeyToOnion, ed25519PublicKey } from "../packages/node/lib/directory.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SIGNER_KEY_PATH = join(HERE, "directory-signer.key"); // secret; do not ship

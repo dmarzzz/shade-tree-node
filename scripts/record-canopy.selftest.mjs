@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { main, parseArgs } from "./record-canopy.mjs";
-import { eldersOf, validateDeploymentRecord } from "../lib/network-record.mjs";
+import { eldersOf, validateDeploymentRecord } from "../packages/node/lib/network-record.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };

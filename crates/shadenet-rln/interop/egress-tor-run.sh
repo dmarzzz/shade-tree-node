@@ -56,7 +56,7 @@ echo "== building feature client (cargo build -p shadenet-cli --features live) =
 cargo build -p shadenet-cli --features live --manifest-path "$REPO/Cargo.toml"
 SHADE_TREE="$REPO/target/debug/shade-tree"
 
-echo "== deriving identity + member set (lib/rln.mjs) =="
+echo "== deriving identity + member set (packages/node/lib/rln.mjs) =="
 node "$HERE/egress-derive.mjs" "$WORK"
 IDENTITY="$WORK/identity.json"
 MEMBERS="$WORK/members.json"
@@ -74,7 +74,7 @@ node "$HERE/wait-log.mjs" "$WORK/sink.log" "[sink] up" 15000
 
 echo "== starting real gateway (:${GW_PORT}) =="
 SHADE_TREE_EGRESS_ALLOW="$TARGET" SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 SHADE_TREE_EPOCH_SECONDS=120 \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
 GW_PID=$!
 disown "$GW_PID" 2>/dev/null || true
 node "$HERE/wait-log.mjs" "$WORK/gw.log" "gateway up on" 20000

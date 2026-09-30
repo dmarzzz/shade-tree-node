@@ -31,5 +31,5 @@ USER node
 
 # `shade-tree <command> [--flags]` — e.g. `docker run IMG bootnode --port 8877`.
 # CMD makes a bare `docker run IMG` print the command list.
-ENTRYPOINT ["node", "/app/bin/shade-tree.mjs"]
+ENTRYPOINT ["node", "/app/packages/node/bin/shade-tree.mjs"]
 CMD ["help"]

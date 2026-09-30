@@ -42,11 +42,11 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { generateOnionIdentity } from "../bootnode/keygen.mjs";
-import { buildAnnounce } from "../bootnode/announce.mjs";
-import { makeRegistry, makeServer, loadOrMintSigner } from "../bootnode/server.mjs";
-import { initRoots, makeSpentSet, _setRecentRoots } from "../gateway/gateway.mjs";
-import { MockStakeVerifier } from "../lib/gateway-registry.mjs";
+import { generateOnionIdentity } from "../packages/node/bootnode/keygen.mjs";
+import { buildAnnounce } from "../packages/node/bootnode/announce.mjs";
+import { makeRegistry, makeServer, loadOrMintSigner } from "../packages/node/bootnode/server.mjs";
+import { initRoots, makeSpentSet, _setRecentRoots } from "../packages/node/gateway/gateway.mjs";
+import { MockStakeVerifier } from "../packages/node/lib/gateway-registry.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -197,15 +197,15 @@ function scanFile(rel) {
 // Files that both LOG and touch secret material. announce.mjs and shade-tree-client.mjs have no sinks
 // at all (pure libs / event-emit only) — included so the test asserts that stays true.
 const FILES = [
-  "gateway/gateway.mjs",
-  "bootnode/server.mjs",
-  "bootnode/heartbeat.mjs",
-  "bootnode/announce.mjs",
-  "client/shade-tree-client.mjs",
-  "client/shim.mjs",
-  "client/selection.mjs",
-  "payments/registrar.mjs",
-  "gateway/fleet-tally.mjs",
+  "packages/node/gateway/gateway.mjs",
+  "packages/node/bootnode/server.mjs",
+  "packages/node/bootnode/heartbeat.mjs",
+  "packages/node/bootnode/announce.mjs",
+  "packages/node/client/shade-tree-client.mjs",
+  "packages/node/client/shim.mjs",
+  "packages/node/client/selection.mjs",
+  "packages/node/payments/registrar.mjs",
+  "packages/node/gateway/fleet-tally.mjs",
   "group/register-gateway.mjs",
   "group/register-onchain.mjs",
 ];

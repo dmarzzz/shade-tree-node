@@ -33,7 +33,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { identityFor, identityCommitmentOf, rateCommitmentOf, MEMBERS_PATH, loadGroup, K_SLOTS, normLimit } from "../lib/rln.mjs";
+import { identityFor, identityCommitmentOf, rateCommitmentOf, MEMBERS_PATH, loadGroup, K_SLOTS, normLimit } from "../packages/node/lib/rln.mjs";
 
 const args = process.argv.slice(2);
 const commitmentOnly = args.includes("--commitment-only") || args.includes("--no-local");

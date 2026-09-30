@@ -1,7 +1,7 @@
 // Reputation-weighted rate budget (T-FEAT-8) with REAL Groth16 proofs — the acceptance
 // criterion verbatim: "two tiers with different K, each proven in ZK; the gateway enforces the
 // proven tier; a member cannot claim a tier they lack." Slow suite (real proving; in
-// scripts/test-all.mjs SLOW_SUITES, skipped by SHADE_TREE_FAST=1). The fast half is lib/tiers.selftest.mjs.
+// scripts/test-all.mjs SLOW_SUITES, skipped by SHADE_TREE_FAST=1). The fast half is packages/node/lib/tiers.selftest.mjs.
 //
 // Design under test (docs/adr/0006-reputation-tiers.md): the tier IS the leaf's PRIVATE
 // userMessageLimit. circom-rln's leaf is Poseidon2(Poseidon1(identitySecret), limit) and the
@@ -38,9 +38,9 @@ import {
   toField, identityFor, identitySecretOf, rateCommitmentOf, deriveCommitment, groupFromIdentities, newGroup,
   requestSignal, proveForSlot, verifyEnvelope, currentEpoch, EPOCH_SECONDS, K_SLOTS, RLN_IDENTIFIER,
   getProverSets, calculateSignalHash, cleanUp,
-} from "../lib/rln.mjs";
-import { makeSpentSet, deriveSlashLeaf } from "../gateway/gateway.mjs";
-import { buildEnvelope, makeSlotPool } from "../client/shade-tree-client.mjs";
+} from "../packages/node/lib/rln.mjs";
+import { makeSpentSet, deriveSlashLeaf } from "../packages/node/gateway/gateway.mjs";
+import { buildEnvelope, makeSlotPool } from "../packages/node/client/shade-tree-client.mjs";
 
 let failures = 0;
 function ok(name) { console.log("  PASS  " + name); }

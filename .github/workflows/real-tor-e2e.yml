@@ -1,8 +1,8 @@
 name: real-tor-e2e
 
 # T-TEST-1: real-Tor END-TO-END member tunnel. It boots the SAME systemd-container fleet as
-# bootstrap-e2e (bootnode/deploy/bootstrap.sh -> tor + shade-tree-bootnode + shade-tree-gateway with REAL
-# published v3 onions), then runs the JS REFERENCE client (client/shade-tree-client.mjs, driven by
+# bootstrap-e2e (packages/node/bootnode/deploy/bootstrap.sh -> tor + shade-tree-bootnode + shade-tree-gateway with REAL
+# published v3 onions), then runs the JS REFERENCE client (packages/node/client/shade-tree-client.mjs, driven by
 # test/real-tor-e2e-client.mjs): it mints a real per-tunnel RLN membership proof and dials the
 # gateway's .onion over the container's Tor SOCKS, and the real gateway must ACCEPT and proxy the
 # CONNECT to a local sink.
@@ -47,7 +47,7 @@ jobs:
       - id: gate
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/ci-changes.sh '^(crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|bootnode/|gateway/|client/|lib/|group/|circuits/|testdata/|network/|package(-lock)?\.json$|test/real-tor-e2e|\.github/workflows/real-tor-e2e\.yml$|scripts/ci-changes\.sh$)'
+        run: bash scripts/ci-changes.sh '^(crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|packages/node/|bootnode/|gateway/|client/|lib/|group/|circuits/|testdata/|network/|package(-lock)?\.json$|test/real-tor-e2e|\.github/workflows/real-tor-e2e\.yml$|scripts/ci-changes\.sh$)'
 
   real-tor-e2e:
     name: real-Tor client tunnel e2e (systemd fleet)

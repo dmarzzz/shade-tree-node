@@ -19,7 +19,7 @@
 //   SHADE_TREE_TOR_PORT=9260 \
 //   node examples/agent-fetch.mjs  https://api.ipify.org  https://cloudflare.com/cdn-cgi/trace
 
-import { ShadeTreeClient, cleanUp } from "../client/shade-tree-client.mjs";
+import { ShadeTreeClient, cleanUp } from "../packages/node/client/shade-tree-client.mjs";
 
 for (const name of ["SHADE_TREE_SECRET", "SHADE_TREE_BOOTNODE_ONION", "SHADE_TREE_DIR_SIGNER", "SHADE_TREE_LIMIT"]) {
   if (!process.env[name]) {

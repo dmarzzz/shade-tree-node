@@ -4,7 +4,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 import { createClient } from "@shadenet/sdk/node";
-import { envFlag } from "../lib/admission.mjs";
+import { envFlag } from "../packages/node/lib/admission.mjs";
 
 export const LAB_TARGET = "https://example.com/";
 export const DEFAULT_COOLDOWN_MS = 16_000;

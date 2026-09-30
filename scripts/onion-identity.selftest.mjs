@@ -4,7 +4,7 @@
 // (a) DERIVE the exact .onion Tor will publish, and (b) RESTORE a working HiddenServiceDir with
 // the right layout + perms — so a rebuilt box comes back on the SAME onion.
 //
-//   - mint a real onion identity (reuse bootnode/keygen.mjs), so the expected onion is known
+//   - mint a real onion identity (reuse packages/node/bootnode/keygen.mjs), so the expected onion is known
 //   - derive-from-secret reproduces that onion (our hand-rolled A = a·B == keygen's node:crypto pub)
 //   - restore into a FRESH dir writes secret/public/hostname with 0600/0600/0644 + dir 0700
 //   - restored hostname == derived onion; restored public/secret bytes are correct
@@ -17,8 +17,8 @@
 import { mkdtempSync, rmSync, readFileSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateOnionIdentity } from "../bootnode/keygen.mjs";
-import { pubkeyToOnion } from "../lib/directory.mjs";
+import { generateOnionIdentity } from "../packages/node/bootnode/keygen.mjs";
+import { pubkeyToOnion } from "../packages/node/lib/directory.mjs";
 import {
   identityFromSecretKeyFile, scalarFromSecretKeyFile, publicKeyFileBytes,
   deriveFromFile, restoreToHsDir,
@@ -32,7 +32,7 @@ async function main() {
   const work = mkdtempSync(join(tmpdir(), "shade-tree-onion-"));
   try {
     // --- mint a real onion identity: gives us the ground-truth onion + secret key file --------
-    console.log("mint (bootnode/keygen.mjs):");
+    console.log("mint (packages/node/bootnode/keygen.mjs):");
     const srcHs = join(work, "src-hs");
     const id = await generateOnionIdentity(srcHs, { label: "selftest" });
     const secretFile = join(srcHs, "hs_ed25519_secret_key");

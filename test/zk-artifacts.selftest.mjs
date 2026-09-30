@@ -16,7 +16,7 @@
 //     crates/shadenet-rln/src/prover.rs, no cargo build), so the lock hashes cover it
 //   - circuits/rln/ARTIFACTS.md's hash table agrees with the lock (docs cannot drift from bytes)
 //   - (T-HARD-8) each circuit's `artifactId` in the lock == `<circuit>-<sha256(vkey)[0:16]>`
-//     (the id the gateway/client/Rust derive at runtime; lib/zk-artifacts.mjs), the Rust `live`
+//     (the id the gateway/client/Rust derive at runtime; packages/node/lib/zk-artifacts.mjs), the Rust `live`
 //     binary embeds the SAME lock file for its startup self-check, and release.yml runs this test
 //
 //   node test/zk-artifacts.selftest.mjs   (exit 0 = all invariants held)
@@ -27,7 +27,7 @@ import { join } from "node:path";
 import {
   ROOT, LOCK_PATH, ARTIFACTS, PROVENANCE_DEV, PROVENANCES, checkLock, readLock, measure, buildLock, artifactIdFor, VKEY_OF,
 } from "../scripts/zk-artifacts-lock.mjs";
-import { artifactIdOfFile, builtinArtifactId, lockArtifactIds } from "../lib/zk-artifacts.mjs";
+import { artifactIdOfFile, builtinArtifactId, lockArtifactIds } from "../packages/node/lib/zk-artifacts.mjs";
 
 // FLIP THIS to "ceremony" in the same commit that pins ceremony output (docs/CEREMONY.md §7).
 const EXPECTED_PROVENANCE = PROVENANCE_DEV;

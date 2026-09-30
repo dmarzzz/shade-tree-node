@@ -6,7 +6,7 @@
 //   { "identitySecret": "<dec>", "leaf": "<dec>" }
 //
 // This command derives that file from the member's app secret with the JS reference
-// (lib/identity-file.mjs -> lib/rln.mjs), so the Rust client is the SAME member as the JS client
+// (packages/node/lib/identity-file.mjs -> packages/node/lib/rln.mjs), so the Rust client is the SAME member as the JS client
 // (same secret -> same identitySecret -> same leaf == the member's group/members.json entry).
 //
 // Usage (via the router or directly):
@@ -31,8 +31,8 @@
 
 import { readFileSync, writeFileSync, chmodSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { identityFileFor, serializeIdentityFile } from "../lib/identity-file.mjs";
-import { K_SLOTS, normLimit } from "../lib/rln.mjs";
+import { identityFileFor, serializeIdentityFile } from "../packages/node/lib/identity-file.mjs";
+import { K_SLOTS, normLimit } from "../packages/node/lib/rln.mjs";
 
 const USAGE = "usage: shade-tree identity [--out <path>] [--secret-file <path>] [--limit <n>]   (secret: --secret-file | SHADE_TREE_SECRET | ./.secret; limit: --limit | SHADE_TREE_LIMIT | bundled default)";
 

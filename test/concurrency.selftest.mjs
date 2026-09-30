@@ -11,11 +11,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeSpentSet } from "../gateway/gateway.mjs";
-import { makeRegistry, loadOrMintSigner } from "../bootnode/server.mjs";
-import { MockStakeVerifier } from "../lib/gateway-registry.mjs";
-import { generateOnionIdentity } from "../bootnode/keygen.mjs";
-import { buildAnnounce } from "../bootnode/announce.mjs";
+import { makeSpentSet } from "../packages/node/gateway/gateway.mjs";
+import { makeRegistry, loadOrMintSigner } from "../packages/node/bootnode/server.mjs";
+import { MockStakeVerifier } from "../packages/node/lib/gateway-registry.mjs";
+import { generateOnionIdentity } from "../packages/node/bootnode/keygen.mjs";
+import { buildAnnounce } from "../packages/node/bootnode/announce.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };

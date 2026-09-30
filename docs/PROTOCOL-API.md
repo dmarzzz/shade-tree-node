@@ -11,13 +11,13 @@ older section links; new links should point to the canonical document.
 
 [Read this section](WIRE-SPEC.md#1-canonical-byte-encodings).
 
-### 1.1 `canonicalAnnounceBytes`: `bootnode/announce.mjs:38`
+### 1.1 `canonicalAnnounceBytes`: `packages/node/bootnode/announce.mjs:38`
 
-[Read this section](WIRE-SPEC.md#11-canonicalannouncebytes-bootnodeannouncemjs38).
+[Read this section](WIRE-SPEC.md#11-canonicalannouncebytes-packagesnodebootnodeannouncemjs38).
 
-### 1.2 `canonicalDirectoryBytes`: `lib/directory.mjs:129`
+### 1.2 `canonicalDirectoryBytes`: `packages/node/lib/directory.mjs:129`
 
-[Read this section](WIRE-SPEC.md#12-canonicaldirectorybytes-libdirectorymjs129).
+[Read this section](WIRE-SPEC.md#12-canonicaldirectorybytes-packagesnodelibdirectorymjs129).
 
 ## 2. v3 onion <-> ed25519 identity key
 
@@ -43,9 +43,9 @@ older section links; new links should point to the canonical document.
 
 [Read this section](WIRE-SPEC.md#33-freshness--nonce-replay).
 
-### 3.4 `verifyAnnounce` reason codes: `bootnode/announce.mjs:80`
+### 3.4 `verifyAnnounce` reason codes: `packages/node/bootnode/announce.mjs:80`
 
-[Read this section](WIRE-SPEC.md#34-verifyannounce-reason-codes-bootnodeannouncemjs80).
+[Read this section](WIRE-SPEC.md#34-verifyannounce-reason-codes-packagesnodebootnodeannouncemjs80).
 
 ## 4. Signed directory
 
@@ -59,13 +59,13 @@ older section links; new links should point to the canonical document.
 
 [Read this section](WIRE-SPEC.md#42-pinned-signer-model).
 
-### 4.3 `verifyDirectory` reason codes: `lib/directory.mjs:152`
+### 4.3 `verifyDirectory` reason codes: `packages/node/lib/directory.mjs:152`
 
-[Read this section](WIRE-SPEC.md#43-verifydirectory-reason-codes-libdirectorymjs152).
+[Read this section](WIRE-SPEC.md#43-verifydirectory-reason-codes-packagesnodelibdirectorymjs152).
 
-### 4.4 Threshold (M-of-N) directory: T-FEAT-9, `lib/directory.mjs`
+### 4.4 Threshold (M-of-N) directory: T-FEAT-9, `packages/node/lib/directory.mjs`
 
-[Read this section](WIRE-SPEC.md#44-threshold-m-of-n-directory-t-feat-9-libdirectorymjs).
+[Read this section](WIRE-SPEC.md#44-threshold-m-of-n-directory-t-feat-9-packagesnodelibdirectorymjs).
 
 ## 5. Bootnode HTTP API
 
@@ -83,29 +83,29 @@ older section links; new links should point to the canonical document.
 
 [Read this section](WIRE-SPEC.md#53-admission-modes--dos-caps).
 
-### 5.4 Registrar HTTP API (402 rails, T-FEAT-7): `payments/registrar.mjs` `makeServer`
+### 5.4 Registrar HTTP API (402 rails, T-FEAT-7): `packages/node/payments/registrar.mjs` `makeServer`
 
-[Read this section](WIRE-SPEC.md#54-registrar-http-api-402-rails-t-feat-7-paymentsregistrarmjs-makeserver).
+[Read this section](WIRE-SPEC.md#54-registrar-http-api-402-rails-t-feat-7-packagesnodepaymentsregistrarmjs-makeserver).
 
 ## 6. Egress envelope v4
 
 [Read this section](WIRE-SPEC.md#6-egress-envelope-v4).
 
-### 6.1 Wire shape: `client/shade-tree-client.mjs:82` `buildEnvelope`
+### 6.1 Wire shape: `packages/node/client/shade-tree-client.mjs:82` `buildEnvelope`
 
-[Read this section](WIRE-SPEC.md#61-wire-shape-clientshade-tree-clientmjs82-buildenvelope).
+[Read this section](WIRE-SPEC.md#61-wire-shape-packagesnodeclientshade-tree-clientmjs82-buildenvelope).
 
 ### 6.2 Tunnel signal + target binding
 
 [Read this section](WIRE-SPEC.md#62-tunnel-signal--target-binding).
 
-### 6.3 `signalFieldSafe` bounds: `lib/rln.mjs:132`
+### 6.3 `signalFieldSafe` bounds: `packages/node/lib/rln.mjs:132`
 
-[Read this section](WIRE-SPEC.md#63-signalfieldsafe-bounds-librlnmjs132).
+[Read this section](WIRE-SPEC.md#63-signalfieldsafe-bounds-packagesnodelibrlnmjs132).
 
-### 6.4 `verifyEnvelope` check order: `lib/rln.mjs:288`
+### 6.4 `verifyEnvelope` check order: `packages/node/lib/rln.mjs:288`
 
-[Read this section](WIRE-SPEC.md#64-verifyenvelope-check-order-librlnmjs288).
+[Read this section](WIRE-SPEC.md#64-verifyenvelope-check-order-packagesnodelibrlnmjs288).
 
 ### 6.5 Determinism
 

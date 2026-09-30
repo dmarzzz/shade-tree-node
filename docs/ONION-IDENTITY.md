@@ -8,7 +8,7 @@ this tool *proves the key is the right one and lays it down correctly on the new
 ## Why onion continuity is operationally critical
 
 A v3 onion address **is** an ed25519 public key: `onion = base32(pubkey ‖ checksum ‖ 0x03)`. The
-fleet directory ([`lib/directory.mjs`](../lib/directory.mjs)) is a signed list of
+fleet directory ([`packages/node/lib/directory.mjs`](../packages/node/lib/directory.mjs)) is a signed list of
 `{ onion, pubkey, weight, health }`, and clients **pin** those onions. Two consequences:
 
 - If a rebuilt box comes up on a **new** onion, it is not in the directory anyone pinned. Clients
@@ -53,7 +53,7 @@ printed or logged** by any path.
 | *(the HiddenServiceDir itself)* | — | `0700` |
 
 Tor refuses a group/other-accessible HS dir, so the dir is forced to `0700` and the secret to `0600`
-(matching what [`bootnode/keygen.mjs`](../bootnode/keygen.mjs) mints and what
+(matching what [`packages/node/bootnode/keygen.mjs`](../packages/node/bootnode/keygen.mjs) mints and what
 [`scripts/backup.mjs`](BACKUP.md) restores). `restore` refuses to clobber an existing populated HS
 dir unless you pass `--force`.
 
@@ -70,7 +70,7 @@ Run this on the **new** box before pointing Tor at the restored dir and starting
 3. **Lay it down.** `node scripts/onion-identity.mjs restore <path>/hs_ed25519_secret_key
    /var/lib/tor/shade-tree-<role>`. This writes the secret + public + hostname with correct perms.
 4. **Cut over.** Point the `HiddenServiceDir` in the torrc include
-   ([`bootnode/deploy/torrc.hardened`](../bootnode/deploy/torrc.hardened)) at that dir and
+   ([`packages/node/bootnode/deploy/torrc.hardened`](../packages/node/bootnode/deploy/torrc.hardened)) at that dir and
    `systemctl restart tor`. Tor's own `hostname` will now match step 2.
 5. **Confirm live.** Once the descriptor republishes, the directory's `verifyOnionControl` challenge
    succeeds against the same key and clients reach the box on the original onion.
@@ -86,19 +86,19 @@ makes it a live, wrong onion.**
   checked onion and a publishable HS dir. Typical flow: `shade-tree restore …` (get the secret back) →
   `onion-identity.mjs derive …` (verify) → `onion-identity.mjs restore …` (place it for Tor).
 - **T-DEPLOY-3 infra-as-code** (OpenTofu + Ansible in `agent-devops`) provisions a *fresh* box and,
-  by default, **mints new onions** via [`bootnode/keygen.mjs`](../bootnode/keygen.mjs). To rebuild
+  by default, **mints new onions** via [`packages/node/bootnode/keygen.mjs`](../packages/node/bootnode/keygen.mjs). To rebuild
   an *existing* identity instead of minting a new one, skip the keygen step and run `restore` against
   the backed-up secret so the box rejoins on its original onion. The HS dir path this writes is the
   same one the generated torrc include and the hardened systemd unit's `ReadWritePaths` already
   expect, so no unit changes are needed.
-- **`bootnode/keygen.mjs`** is the inverse of this tool: keygen makes a *new* identity (seed → files);
+- **`packages/node/bootnode/keygen.mjs`** is the inverse of this tool: keygen makes a *new* identity (seed → files);
   this tool *reconstructs* an existing one (secret → files + onion). Both produce byte-identical HS
   file layouts, so a restored dir is indistinguishable from a freshly minted one to Tor.
 
 ## How the derivation works (and what was hand-rolled)
 
 The onion encoding (`base32(pubkey ‖ checksum ‖ 0x03)`, `checksum = SHA3-256(".onion checksum" ‖
-pubkey ‖ 0x03)[:2]`) is **reused** from [`lib/directory.mjs`](../lib/directory.mjs) (`pubkeyToOnion`).
+pubkey ‖ 0x03)[:2]`) is **reused** from [`packages/node/lib/directory.mjs`](../packages/node/lib/directory.mjs) (`pubkeyToOnion`).
 
 The one piece that is **not** already in the repo, and that `node:crypto` cannot do, is recovering
 the public key from the *expanded* secret key. Tor's `hs_ed25519_secret_key` stores

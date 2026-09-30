@@ -64,13 +64,13 @@ published.
 env/tor/deps. Confirm gateways can reach `POST /announce` (a network partition looks like a dead
 bootnode from the client side only).
 
-**Recovery.** Restart `bootnode/server.mjs` (on a bootstrapped box: `systemctl restart
+**Recovery.** Restart `packages/node/bootnode/server.mjs` (on a bootstrapped box: `systemctl restart
 shade-tree-bootnode`). If the bootnode runs with `SHADE_TREE_BOOTNODE_STORE` set (the `bootstrap.sh` unit sets it
 to `deploy-state/bootnode-state.json`), the live set is mirrored to that JSON file on every accepted
 announce and reloaded on boot: `loadPersisted()` re-runs each stored record through the real announce
 path (onion control + operator/stake re-verified; tampered, forged, or past-TTL entries are dropped),
 so `/directory` is populated immediately and no re-announce settling window is needed (T-DEV-4;
-`bootnode/server.mjs`, `docs/BOOTNODE.md` "Surviving a restart"). Without the store the registry is
+`packages/node/bootnode/server.mjs`, `docs/BOOTNODE.md` "Surviving a restart"). Without the store the registry is
 in-memory only, and a restart drops the fleet until every gateway re-announces on its next heartbeat
 (up to `SHADE_TREE_BOOTNODE_HEARTBEAT`, default 300s). Either way the signer key persists on disk
 (`SHADE_TREE_BOOTNODE_SIGNER_KEY`), so the pinned signer is unchanged and clients accept the rebuilt
@@ -78,7 +78,7 @@ directory with no re-pin.
 
 **Prevention.** Set `SHADE_TREE_BOOTNODE_STORE` so a restart is not a fleet blank. Run redundant bootnodes,
 federated with `SHADE_TREE_BOOTNODE_PEERS` so each learns the others' gateways (T-FEAT-1,
-`bootnode/federation.mjs`); clients pin one bootnode onion at a time (`SHADE_TREE_BOOTNODE_ONION`), so
+`packages/node/bootnode/federation.mjs`); clients pin one bootnode onion at a time (`SHADE_TREE_BOOTNODE_ONION`), so
 re-pointing a client to a surviving peer is still a manual re-point. Keep the LKG cache path
 writable so degradation actually works. Publish a static signed directory as a cold fallback.
 
@@ -111,7 +111,7 @@ holds OR a public honest gateway (the binding guarantees no third option). Audit
 `SHADE_TREE_BOOTNODE_SIGNER_KEY` for exfiltration.
 
 **Recovery.** Rotate the pinned signer. `SHADE_TREE_DIR_SIGNER` accepts a comma-separated **allowlist**
-of signer pubkeys (T-HARD-5, `client/selection.mjs` `parsePinnedSigners`; a single value behaves as
+of signer pubkeys (T-HARD-5, `packages/node/client/selection.mjs` `parsePinnedSigners`; a single value behaves as
 before), so rotation has an overlap window: (1) push the NEW signer pubkey to every client's
 allowlist alongside the old one, out of band; (2) mint the new signer key on the bootnode and
 restart it (the bootnode re-signs the directory with whatever `SHADE_TREE_BOOTNODE_SIGNER_KEY` holds);
@@ -142,9 +142,9 @@ tampering, downtime).
 - Replay an exact envelope. Against the SAME gateway this fails: `makeSpentSet` fingerprints
   `(nullifier, share.x, nonce)`, and an identical envelope seen again after `SHADE_TREE_REPLAY_WINDOW_MS`
   (5s, the honest-retry window) is rejected `replayed-envelope` (T-FEAT-12,
-  `gateway/gateway.mjs`). Against OTHER gateways it fails only when the fleet runs the shared
+  `packages/node/gateway/gateway.mjs`). Against OTHER gateways it fails only when the fleet runs the shared
   per-epoch nullifier tally (`SHADE_TREE_FLEET_TALLY_PEERS` plus `SHADE_TREE_FLEET_TALLY_TOKEN`,
-  T-FEAT-20/20b, `gateway/fleet-tally.mjs`;
+  T-FEAT-20/20b, `packages/node/gateway/fleet-tally.mjs`;
   off by default, fail-open); a fleet without the tally lets a captured envelope be fanned to
   peers, each of which sees it once and egresses it. Amplification is therefore bounded to
   one egress per non-tallying gateway per captured envelope, and it never slashes (identical `x`
@@ -240,7 +240,7 @@ successful stake check). Result: the fleet shrinks safely toward whatever was al
 admits an unverified operator. The 15s `isStaked` cache (`SHADE_TREE_STAKE_CACHE_MS`) briefly masks a very
 short blip.
 
-**Root reads (gateway).** `lib/root-provider.mjs` `withCache` serves the last-known-good roots with a
+**Root reads (gateway).** `packages/node/lib/root-provider.mjs` `withCache` serves the last-known-good roots with a
 `{ stale: true, error }` flag when a fresh fetch throws; `onChange` polling keeps the last-known-good
 rather than crashing the gate. So the gateway keeps verifying member proofs against the last roots it
 successfully read. A membership change during the outage is simply not seen until RPC returns (a
@@ -328,7 +328,7 @@ gateway clocks.
 bond drained you did not expect.
 
 **What a legitimate slash requires.** A member over-spend is a cryptographic fact, not a judgment:
-the gateway's spent-set (`gateway/gateway.mjs` `makeSpentSet`) sees TWO DISTINCT signals (distinct
+the gateway's spent-set (`packages/node/gateway/gateway.mjs` `makeSpentSet`) sees TWO DISTINCT signals (distinct
 public `x`) under the SAME `nullifier`. That is the L+1-th RLN evaluation point, which reconstructs
 the identity secret (Shamir) and derives the rate-commitment leaf. An IDENTICAL replay (same
 `share.x`) is deduped and is NEVER slashed. So a slash means two genuinely different points were
@@ -378,7 +378,7 @@ member's own rate accounting matches what the gateway enforces. Run the slasher 
   `SHADE_TREE_FLEET_TALLY_PEERS` plus `SHADE_TREE_FLEET_TALLY_TOKEN` and is fail-open by design.
 - **Client zero-trust operator re-verification is opt-in** (#3): `SHADE_TREE_VERIFY_STAKE=1` makes the
   client re-fetch `GET /gateway/<onion>` and re-check sigs + live stake itself (T-DEV-5,
-  `client/selection.mjs`); off by default, the client trusts the bootnode's `staked` label.
+  `packages/node/client/selection.mjs`); off by default, the client trusts the bootnode's `staked` label.
 
 Shipped since this playbook was written: bootnode persistence (T-DEV-4, `SHADE_TREE_BOOTNODE_STORE`),
 per-gateway replay cache (T-FEAT-12), signer-rotation allowlist (T-HARD-5), client stake

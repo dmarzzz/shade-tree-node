@@ -31,7 +31,7 @@ import {
   identityFor, identitySecretOf, deriveCommitment, groupFromIdentities, newGroup,
   rateCommitmentOf, currentEpoch, requestSignal, proveForSlot, verifyEnvelope,
   reconstructSecret, toField, cleanUp,
-} from "../lib/rln.mjs";
+} from "../packages/node/lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const dep = JSON.parse(readFileSync(join(HERE, "..", "contracts", "deployed.local.json"), "utf8"));

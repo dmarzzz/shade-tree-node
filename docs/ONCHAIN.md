@@ -6,7 +6,7 @@ secret reconstruction, on-chain incremental tree + `currentRoot` accessor) was d
 Sepolia as release `rln-v3` (`network/sepolia/contracts.json`; that deployment used
 `MockWithdrawVerifier`, see `docs/CONTRACTS-AUDIT.md` section 3). The Sepolia record is now
 retired pre-v4 history and must not be used as a current client, gateway, or staking preset.
-The gateway reads a v4 operator's root through `lib/root-provider.mjs`
+The gateway reads a v4 operator's root through `packages/node/lib/root-provider.mjs`
 (`SHADE_TREE_GROUP_CONTRACT`; `node` provider, plus the EIP-1186
 `light` provider, whose stateRoot is anchored to the beacon sync committee when the opt-in Helios
 sidecar is on, `SHADE_TREE_HELIOS_RPC_URL`, T-DEV-9b); `contracts/GatewayRegistry.sol`
@@ -97,7 +97,7 @@ project's circuit and artifacts (`rlnjs` / `zerokit` / the circom `rln` circuit)
 rather than hand-rolling one. The RLN circuit already does Merkle membership + a
 Poseidon nullifier + the share evaluation in one proof, and its tree is a Poseidon
 incremental Merkle tree compatible with the Semaphore/LeanIMT group we already build.
-So `lib/semaphore.mjs` swaps `@semaphore-protocol/proof` for an RLN prover/verifier;
+So `packages/node/lib/semaphore.mjs` swaps `@semaphore-protocol/proof` for an RLN prover/verifier;
 the group machinery is largely reusable.
 
 **Two budget knobs, kept distinct.** The RLN degree `L` sets the *slashable* threshold
@@ -283,7 +283,7 @@ unblockability cost (adversarial-review #3, #10) rather than being a tax.
 **How the gateway reads the root is pluggable, behind one interface.** The gateway does
 not care *how* it learned the current root; it only needs the set of roots it will
 accept proofs against right now. So the source is a `RootProvider` with a single shape
-(see `lib/root-provider.mjs`):
+(see `packages/node/lib/root-provider.mjs`):
 
 ```
 RootProvider.currentRoots() -> {
@@ -344,8 +344,8 @@ link, and it is a switch (T-DEV-9b, `docs/LIGHT-CLIENT.md` "Decision, how-to and
   verified; …)` at startup and results carry `stateRootVerified:false`. A lying RPC can pair a
   fake header with a proof consistent with it (the `THREAT-MODEL.md` "RPC lies about the
   stateRoot" lever).
-- `SHADE_TREE_HELIOS_RPC_URL` **set** to a local Helios verifying RPC (`lib/helios-root.mjs`,
-  sidecar via `bootnode/deploy/bootstrap.sh SHADE_TREE_HELIOS=1`): the header comes from Helios,
+- `SHADE_TREE_HELIOS_RPC_URL` **set** to a local Helios verifying RPC (`packages/node/lib/helios-root.mjs`,
+  sidecar via `packages/node/bootnode/deploy/bootstrap.sh SHADE_TREE_HELIOS=1`): the header comes from Helios,
   i.e. it chains to a beacon **sync-committee**-signed execution payload; the RPC's header for
   the same block is only cross-checked and a divergence is rejected with a precise
   `stateRoot mismatch` reason. Now the whole chain — sync committee → `stateRoot` → account
@@ -435,19 +435,19 @@ that reveals nothing, exactly as any staking system's account is linkable to its
 
 ## What changes in the codebase
 
-- **`lib/semaphore.mjs`** → gains an RLN mode: `generateProof` / `verifyProof` swap to
+- **`packages/node/lib/semaphore.mjs`** → gains an RLN mode: `generateProof` / `verifyProof` swap to
   an RLN prover/verifier (rlnjs / zerokit artifacts), plus nullifier + share
   extraction. `loadGroup` gains an on-chain mode behind `SHADE_TREE_GROUP_CONTRACT` /
   `SHADE_TREE_RPC_URL` / `SHADE_TREE_GROUP_ID`, with the JSON path kept as an offline cache whose
   root is verified against chain. The RLN message becomes request-bound (target +
   anti-replay salt), not the constant `1n`.
-- **`gateway/gateway.mjs`** → `TRUSTED_ROOT` becomes a refreshed recent-roots set fed
+- **`packages/node/gateway/gateway.mjs`** → `TRUSTED_ROOT` becomes a refreshed recent-roots set fed
   by a `RootProvider` (below); `spend()` becomes a share-collecting spent-set that
   reconstructs and slashes on threshold; add an on-chain slash submitter behind
   `SHADE_TREE_SLASH_KEY` (an operational hot key, deliberately separate from any member
   anonymity — the gateway slashing is not anonymous and does not need to be). Reorder
   the cheap public checks before the SNARK verify, as adversarial-review #4 recommends.
-- **`lib/root-provider.mjs`** (new) → the pluggable root source behind
+- **`packages/node/lib/root-provider.mjs`** (new) → the pluggable root source behind
   `SHADE_TREE_ROOT_PROVIDER=node|light`: `NodeRootProvider` (trusted local node, the
   solo-staker path) and `LightClientRootProvider` (Helios-style state proofs, the
   run-many path), both returning the same `currentRoots()` shape with a shared
@@ -474,7 +474,7 @@ redeploy (`network/sepolia/contracts.json`, release `rln-v4-tiers`,
    Poseidon2(Poseidon1(secret), limit)` for `1 <= limit <= 65535` (`MAX_LIMIT`, the
    circuit's `LessThan(16)` soundness bound; `BadLimit` outside), and the one-argument
    `commitmentOf(secret)` stays the byte-equivalent `K = 8` leaf. `ICommitmentHasher` declares
-   both overloads. Goldens: `test/StakedReputationSet.tiers.t.sol` vs `lib/tiers.selftest.mjs`
+   both overloads. Goldens: `test/StakedReputationSet.tiers.t.sol` vs `packages/node/lib/tiers.selftest.mjs`
    / `crates/shadenet-rln/tests/tree_parity.rs`.
 2. **Stake -> tier at admission.** `registerIdentity(identityCommitment, limit)` requires
    `msg.value == bondFor(limit)` from a **fixed, small tier table set in the constructor**
@@ -500,12 +500,12 @@ redeploy (`network/sepolia/contracts.json`, release `rln-v4-tiers`,
    circuit's identity commitment to the leaf at that limit
    (`Poseidon2(identityCommitment, limit) == commitment`); the same identity's proof for its
    tier-32 leaf never authorizes its tier-8 leaf and vice-versa (the context binds the leaf).
-5. **Root reconstruction is unchanged** (a leaf is a leaf): `lib/root-provider.mjs` accepts
+5. **Root reconstruction is unchanged** (a leaf is a leaf): `packages/node/lib/root-provider.mjs` accepts
    both event generations (rln-v3 topic0 without `limit`, rln-v4 with), so one provider reads
    either deployment; `currentRoot` stays at storage slot 3 (the tier mappings are declared
    after the tree state), so the light-client / freshness-window paths are untouched.
 
-**Gateway slash path (`gateway/gateway.mjs`).** `resolveSlashTier(secret)` names the leaf
+**Gateway slash path (`packages/node/gateway/gateway.mjs`).** `resolveSlashTier(secret)` names the leaf
 + tier locally (members.json leaves, `SHADE_TREE_TIERS`); in on-chain root mode (no local leaves)
 the on-chain slasher (`makeOnchainSlasher`) probes the contract once at startup
 (`DEFAULT_LIMIT()` => rln-v4 tiered ABI; else the rln-v3 three-argument ABI), unions
@@ -525,7 +525,7 @@ reveals anyway, so use one identity per stake (audit 2.3.1). (b) During the 2026
 gateways' `SHADE_TREE_SLASH_CONTRACT` still pointed at the superseded rln-v3 set until their
 units were flipped (`docs/ONCHAIN-DEPLOY.md` §8); the later rln-v4 record is retained as
 historical evidence, not as a current staking preset.
-(c) `MAX_LIMIT` is enforced on chain and in `lib/rln.mjs normLimit`; the table on Sepolia is
+(c) `MAX_LIMIT` is enforced on chain and in `packages/node/lib/rln.mjs normLimit`; the table on Sepolia is
 {8, 32}, other tiers need a new deployment.
 
 Foundry: `test/StakedReputationSet.tiers.t.sol` (tier-32 leaf slashes only with limit 32,

@@ -72,7 +72,7 @@ SHADE_TREE_EGRESS_ALLOW="$TARGET" \
 SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
 SHADE_TREE_BANNER=never \
 SHADE_TREE_EPOCH_SECONDS="$EPOCH_SECONDS" \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
 PIDS+=($!)
 node "$HERE/wait-log.mjs" "$WORK/gateway.log" "gateway up on" 30000
 

@@ -25,7 +25,7 @@ publishes the active archival RPC and deploy block beside them.
 ## connect to an operator's v4 canopy: what you need
 
 - Node.js 20 or newer, then `npm install` in this repo (`npm link` if you want `shade-tree-node` on PATH,
-  otherwise `node bin/shade-tree.mjs` everywhere)
+  otherwise `node packages/node/bin/shade-tree.mjs` everywhere)
 - tor installed locally (`brew install tor`, or `apt install tor`); `bash scripts/start-tor-client.sh`
   starts one on SOCKS 9260, or use a system tor with `SHADE_TREE_TOR_PORT=9050`
 - your secret, sent to you privately and loaded through a hidden shell read

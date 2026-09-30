@@ -2,10 +2,10 @@
 
 **Status: design; most of it is now built.** The directory library, its signature and
 onion-control binding, per-tunnel selection, and the shim wiring are written and
-tested (`lib/directory.mjs`, `client/selection.mjs`, `group/directory.example.json`,
-the `SHADE_TREE_DIRECTORY` path in `client/shim.mjs`); live discovery through a bootnode is
+tested (`packages/node/lib/directory.mjs`, `packages/node/client/selection.mjs`, `group/directory.example.json`,
+the `SHADE_TREE_DIRECTORY` path in `packages/node/client/shim.mjs`); live discovery through a bootnode is
 `bootnode/` (`docs/BOOTNODE.md`); the shared per-epoch spent-nullifier tally across
-gateways is `gateway/fleet-tally.mjs` (`SHADE_TREE_FLEET_TALLY_PEERS`, T-FEAT-20/20b, opt-in,
+gateways is `packages/node/gateway/fleet-tally.mjs` (`SHADE_TREE_FLEET_TALLY_PEERS`, T-FEAT-20/20b, opt-in,
 authenticated with `SHADE_TREE_FLEET_TALLY_TOKEN`, fail-open, and memory-bounded — it shares only
 `(nullifier, epoch)`, so a later replay to a second gateway is rejected after propagation;
 concurrent or partitioned attempts remain fail-open, and cross-gateway *share* exchange
@@ -85,7 +85,7 @@ able to graft a hostile address:
    the key in the address (`verifyOnionControl`). This proves the gateway on the far
    end of the rendezvous actually holds the advertised onion's key, closing a directory
    that lists an onion whose descriptor an attacker temporarily controls. The check
-   exists in `lib/directory.mjs`; adding the challenge to the envelope handshake is the
+   exists in `packages/node/lib/directory.mjs`; adding the challenge to the envelope handshake is the
    remaining integration, and it does not touch `gateway.mjs`'s verify path.
 
 **Distribution, in three stages.**
@@ -168,11 +168,11 @@ root-and-epoch scoped, not gateway-scoped.
 ## The hard cost: fleet budget does not compose
 
 This was the genuinely unbuilt part when the doc was written, and the reason it exists.
-Since then the shared nullifier tally (T-FEAT-20/20b, `gateway/fleet-tally.mjs`) covers the
+Since then the shared nullifier tally (T-FEAT-20/20b, `packages/node/gateway/fleet-tally.mjs`) covers the
 replay-to-a-second-gateway case; the per-gateway `Map` below is still the local budget.
 
 Each gateway keeps its rate budget in a per-process in-memory `Map`
-(`budget` in `gateway/gateway.mjs`): `scope -> Map<nullifier, count>`, capped at
+(`budget` in `packages/node/gateway/gateway.mjs`): `scope -> Map<nullifier, count>`, capped at
 `RATE_LIMIT` (30) redemptions per member per epoch. Nothing crosses process
 boundaries. So a member who spreads requests across `N` gateways gets **`N × RATE_LIMIT`**
 aggregate, because each gateway sees only the fraction of that nullifier's redemptions
@@ -384,12 +384,12 @@ justification; it is not this one.
 
 | File | What it is |
 |---|---|
-| `lib/directory.mjs` | Load + verify a signed directory (ed25519, pinned signer), onion↔pubkey binding, onion-control check, weighted `pickGateway` / `selectionOrder`, `reportHealth`, last-known-good `loadDirectory`. On-chain mode is a TODO behind the same shape. |
-| `client/selection.mjs` | Shim-facing: `directoryEnabled()`, `selectCandidates()` (weighted pick + failover order), `reportResult()`. Refreshes lazily, carries health across refresh, degrades to cache. |
-| `client/shim.mjs` | `SHADE_TREE_DIRECTORY` path: per-CONNECT candidate order with dial-timeout failover and health feedback. `SHADE_TREE_ONION` and the single-onion path are unchanged. |
+| `packages/node/lib/directory.mjs` | Load + verify a signed directory (ed25519, pinned signer), onion↔pubkey binding, onion-control check, weighted `pickGateway` / `selectionOrder`, `reportHealth`, last-known-good `loadDirectory`. On-chain mode is a TODO behind the same shape. |
+| `packages/node/client/selection.mjs` | Shim-facing: `directoryEnabled()`, `selectCandidates()` (weighted pick + failover order), `reportResult()`. Refreshes lazily, carries health across refresh, degrades to cache. |
+| `packages/node/client/shim.mjs` | `SHADE_TREE_DIRECTORY` path: per-CONNECT candidate order with dial-timeout failover and health feedback. `SHADE_TREE_ONION` and the single-onion path are unchanged. |
 | `group/directory.example.json` | A signed 3-gateway example with real, internally-consistent v3 onions. |
 | `group/sign-directory.mjs` | Mint the signer key and (re)sign a directory; with no args mints the example. |
-| `bootnode/deploy/bootstrap.sh` | Fleet bring-up per box. `SHADE_TREE_BOOTNODE_ONION=<onion>` = gateway-only box that joins an existing bootnode (no local bootnode unit/HS); `SHADE_TREE_ENABLE_POW=1` = onion PoW defense (default `0`); `SHADE_TREE_GATEWAY_REGION=<bucket>` = region in signed caps. Table: `bootnode/deploy/README.md`. |
+| `packages/node/bootnode/deploy/bootstrap.sh` | Fleet bring-up per box. `SHADE_TREE_BOOTNODE_ONION=<onion>` = gateway-only box that joins an existing bootnode (no local bootnode unit/HS); `SHADE_TREE_ENABLE_POW=1` = onion PoW defense (default `0`); `SHADE_TREE_GATEWAY_REGION=<bucket>` = region in signed caps. Table: `packages/node/bootnode/deploy/README.md`. |
 
 Enable directory mode:
 

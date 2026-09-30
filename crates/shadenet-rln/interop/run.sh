@@ -2,7 +2,7 @@
 # End-to-end RLN interop check (T-RUST-2b RLN-INTEROP).
 #
 #   Rust builds an RLN Groth16 envelope proof against the repo's circom-rln
-#   artifacts; the JS reference (lib/rln.mjs verifyEnvelope) ACCEPTS it; and a
+#   artifacts; the JS reference (packages/node/lib/rln.mjs verifyEnvelope) ACCEPTS it; and a
 #   cross-impl over-spend reconstructs the identity secret from two Rust shares.
 #
 # Prereqs: `npm install` at the repo root (rlnjs) and a Rust toolchain.

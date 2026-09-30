@@ -38,7 +38,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
-import { makeBoundedJsonRpcProvider, rpcTimeoutMs, waitForTransactionReceipt } from "../lib/rpc-safety.mjs";
+import { makeBoundedJsonRpcProvider, rpcTimeoutMs, waitForTransactionReceipt } from "../packages/node/lib/rpc-safety.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEPLOYED_PATH = join(HERE, "..", "contracts", "deployed.local.json");

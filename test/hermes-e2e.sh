@@ -206,7 +206,7 @@ SHADE_TREE_GATEWAY_PORT="$GW_PORT" \
 SHADE_TREE_METRICS_PORT="$METRICS_PORT" \
 SHADE_TREE_LOG_LEVEL=info \
 SHADE_TREE_BANNER=never \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
 GW_PID=$!
 track "$GW_PID"
 node "$INTEROP/wait-log.mjs" "$WORK/gateway.log" "gateway up on" 30000 || {

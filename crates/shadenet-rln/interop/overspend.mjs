@@ -1,11 +1,11 @@
 // Cross-impl over-spend: two RUST-generated shares for the SAME (identity, epoch,
 // slot) but DIFFERENT x (different nonce) lie on the same degree-1 line and share a
-// nullifier. lib/rln.mjs reconstructSecret must recover the identitySecret from the
+// nullifier. packages/node/lib/rln.mjs reconstructSecret must recover the identitySecret from the
 // two Rust shares — the slash primitive working across the JS/Rust boundary.
 //
 // Usage: node overspend.mjs <rust-envelope-A.json> <rust-envelope-B.json> <fixture-A.json>
 import { readFileSync } from "node:fs";
-import { reconstructSecret, cleanUp } from "../../../lib/rln.mjs";
+import { reconstructSecret, cleanUp } from "../../../packages/node/lib/rln.mjs";
 
 const a = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const b = JSON.parse(readFileSync(process.argv[3], "utf8"));

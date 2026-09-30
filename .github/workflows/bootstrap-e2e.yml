@@ -1,14 +1,14 @@
 name: bootstrap-e2e
 
-# T-TEST-8: prove bootnode/deploy/bootstrap.sh actually brings a fleet up, instead of
+# T-TEST-8: prove packages/node/bootnode/deploy/bootstrap.sh actually brings a fleet up, instead of
 # being hand-run once. It runs the SAME local runner a developer uses
-# (bootnode/deploy/e2e-container.sh): boot ubuntu:24.04 with real systemd as PID 1,
+# (packages/node/bootnode/deploy/e2e-container.sh): boot ubuntu:24.04 with real systemd as PID 1,
 # run bootstrap.sh against this checkout, and assert tor + the shade-tree units are active,
 # both onion hostname files were written, and the bootnode answers /health on loopback.
 # Reaching the onion over the live Tor network is attempted best-effort (non-fatal).
 # A second matrix entry runs the same container in bootstrap.sh's GATEWAY-ONLY mode
 # (SHADE_TREE_BOOTNODE_ONION set -> no bootnode unit / HS, heartbeat -> the remote onion; T-DEPLOY-5
-# GAP-6). See bootnode/deploy/E2E-CONTAINER.md for the systemd-in-container rationale +
+# GAP-6). See packages/node/bootnode/deploy/E2E-CONTAINER.md for the systemd-in-container rationale +
 # honest coverage notes.
 
 on:
@@ -48,7 +48,7 @@ jobs:
         id: gate
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/ci-changes.sh '^(bootnode/|gateway/|lib/|bin/|group/|payments/|network/|tor/|package(-lock)?\.json$|\.github/workflows/bootstrap-e2e\.yml$|scripts/ci-changes\.sh$)'
+        run: bash scripts/ci-changes.sh '^(packages/node/|bootnode/|gateway/|lib/|bin/|group/|payments/|network/|tor/|package(-lock)?\.json$|\.github/workflows/bootstrap-e2e\.yml$|scripts/ci-changes\.sh$)'
 
       - name: No bootstrap inputs changed
         if: steps.gate.outputs.run != 'true'
@@ -60,4 +60,4 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           E2E_MODE: ${{ matrix.mode }}
-        run: bash bootnode/deploy/e2e-container.sh
+        run: bash packages/node/bootnode/deploy/e2e-container.sh

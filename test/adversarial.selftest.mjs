@@ -1,5 +1,5 @@
 // Auditor-facing ADVERSARIAL SCENARIO suite for the discovery / directory / announce trust
-// surface. The unit selftests (lib/directory.selftest.mjs, bootnode/selftest.mjs,
+// surface. The unit selftests (packages/node/lib/directory.selftest.mjs, packages/node/bootnode/selftest.mjs,
 // test/fuzz.selftest.mjs) prove each primitive in isolation. THIS file does something
 // different: it composes the real modules into end-to-end ATTACK scenarios, so an auditor has
 // ONE place that reads "here is the attack, here is the attack executed against the real code,
@@ -23,10 +23,10 @@
 //   7. BOOTNODE ENDPOINT DoS — fresh-onion verify burst vs the GLOBAL bucket (spy proves
 //                             verify never runs past the cap), HTTP slow-loris cut off.
 //   8. PAID ADMISSION (T-FEAT-7) — lives in its own files because it needs a chain: the wire
-//                             parse matrix (payments/wire.selftest.mjs: tampered x402 payloads,
+//                             parse matrix (packages/node/payments/wire.selftest.mjs: tampered x402 payloads,
 //                             HMAC-broken / replayed / mis-nonced MPP credentials, spec golden)
 //                             and the end-to-end attacks on the registrar over anvil
-//                             (payments/registrar.selftest.mjs §5: wrong amount / payTo /
+//                             (packages/node/payments/registrar.selftest.mjs §5: wrong amount / payTo /
 //                             window / signature, replayed nonce, already-inserted leaf,
 //                             oversize body+header, slow-loris, rate bucket).
 
@@ -35,13 +35,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import net from "node:net";
 
-import { generateOnionIdentity } from "../bootnode/keygen.mjs";
-import { buildAnnounce, operatorAuthMessage, verifyAnnounce } from "../bootnode/announce.mjs";
-import { makeRegistry, makeServer, loadOrMintSigner } from "../bootnode/server.mjs";
-import { MockStakeVerifier } from "../lib/gateway-registry.mjs";
+import { generateOnionIdentity } from "../packages/node/bootnode/keygen.mjs";
+import { buildAnnounce, operatorAuthMessage, verifyAnnounce } from "../packages/node/bootnode/announce.mjs";
+import { makeRegistry, makeServer, loadOrMintSigner } from "../packages/node/bootnode/server.mjs";
+import { MockStakeVerifier } from "../packages/node/lib/gateway-registry.mjs";
 import {
   signDirectory, verifyDirectory, onionToPubkey, pickGateway,
-} from "../lib/directory.mjs";
+} from "../packages/node/lib/directory.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
@@ -284,7 +284,7 @@ async function main() {
     console.log("\nSCENARIO 6 — gateway endpoint DoS (slow-loris / half-close crash / tunnel pinning):");
     process.env.SHADE_TREE_EGRESS_ALLOW = "127.0.0.1:*"; // egress policy is built at import; allow the loopback echo target
     process.env.SHADE_TREE_ALLOW_PRIVATE_TARGETS = "1"; // isolated loopback attack harness only
-    const { makeHandler, makeConnLimiter } = await import("../gateway/gateway.mjs");
+    const { makeHandler, makeConnLimiter } = await import("../packages/node/gateway/gateway.mjs");
     const echo = net.createServer((c) => { c.on("data", (d) => c.write(d)); c.on("error", () => {}); });
     await new Promise((r) => echo.listen(0, "127.0.0.1", r));
     const stubVerify = async (env) => ({ ok: true, nullifier: String(env.nullifier), externalNullifier: "1", share: env.share || { x: "1", y: "2" } });

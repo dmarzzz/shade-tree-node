@@ -18,7 +18,7 @@ shipped code.
 |------|------|
 | `test/real-tor-e2e-client.mjs` | Thin driver: instantiates `ShadeTreeClient` exactly as a real caller would (`{ secret, onion, torPort }`), `connect()`s to the sink target, prints the accept outcome as JSON. Adds no protocol logic. |
 | `test/real-tor-e2e.sh` | **Local** harness (gated `SHADE_TREE_TOR_E2E=1`). Publishes the gateway's HS via system `tor` + a SOCKS port, points `group/members.json` at a derived single member (backup+restore), runs the client egress over Tor, asserts the accept. SIGPIPE-robust cleanup — leaves zero tor/gateway/sink processes. |
-| `test/real-tor-e2e-container.sh` | **CI/authoritative** runner. Boots the systemd-container fleet via `bootnode/deploy/bootstrap.sh` (real onions), points the gateway root at a derived member + restarts it, then runs the same client egress over the container's Tor SOCKS against the published gateway onion. |
+| `test/real-tor-e2e-container.sh` | **CI/authoritative** runner. Boots the systemd-container fleet via `packages/node/bootnode/deploy/bootstrap.sh` (real onions), points the gateway root at a derived member + restarts it, then runs the same client egress over the container's Tor SOCKS against the published gateway onion. |
 | `.github/workflows/real-tor-e2e.yml` | CI job wrapping the container runner. |
 
 The single-member derivation reuses `crates/shadenet-rln/interop/egress-derive.mjs`; the log-readiness
@@ -45,7 +45,7 @@ Neither is part of `node scripts/test-all.mjs` (it auto-discovers `*.selftest.mj
 v3 HS descriptor propagation over the live Tor network (local tor uploads to the HSDirs → the
 client's tor fetches the descriptor) is slow (~30–90s) and flaky. Both runners therefore RETRY
 the whole client run a few times and treat "no accept, onions did publish" as a **soft/neutral**
-outcome (exit 0), exactly as `bootnode/deploy/e2e-container.sh` treats its best-effort over-Tor
+outcome (exit 0), exactly as `packages/node/bootnode/deploy/e2e-container.sh` treats its best-effort over-Tor
 dial. What is NOT soft:
 
 - a client that reports ACCEPT **without** the corroborating gateway+sink evidence → HARD failure

@@ -17,7 +17,7 @@ Every CONNECT tunnel carries one Groth16 proof bound to a fresh `(epoch, slot)` 
 cannot set it once and reuse it: reusing a nullifier with a different signal is exactly the
 over-spend the gateway slashes on. So every proxy, library, or CLI client regenerates the
 proof per tunnel. The JavaScript library and Proxy share the same hardened core
-(`client/shade-tree-client.mjs`): one proof per logical tunnel, deterministic across gateway
+(`packages/node/client/shade-tree-client.mjs`): one proof per logical tunnel, deterministic across gateway
 failover (same signal → same share), plus slot + gateway rotation. The Rust live binary is
 wire-compatible, shares the same default-on slot-state format, and exposes one reusable
 `shadenet` SDK implementation to both its CLI and Rust callers.
@@ -25,10 +25,10 @@ wire-compatible, shares the same default-on slot-state format, and exposes one r
 ## Option A: library (`ShadeTreeClient`)
 
 Use this when the client is **your own code** (e.g. an agent doing many queries). No local
-proxy; just call a function. `client/shade-tree-client.mjs`:
+proxy; just call a function. `packages/node/client/shade-tree-client.mjs`:
 
 ```js
-import { ShadeTreeClient, cleanUp } from "./client/shade-tree-client.mjs";
+import { ShadeTreeClient, cleanUp } from "./packages/node/client/shade-tree-client.mjs";
 
 const shadeTree = new ShadeTreeClient({
   secret,        // enrolled member secret (or SHADE_TREE_SECRET)
@@ -107,7 +107,7 @@ shade-tree proxy --leaf-source paid --limit 32 \
   --paid-access-contract <v4-paid-set-address>
 ```
 
-## Option B: local proxy (`client/shim.mjs`)
+## Option B: local proxy (`packages/node/client/shim.mjs`)
 
 Use this when the client is a **stock tool** you can't change (browser, curl, any
 `http_proxy`-aware app). The shim is now a thin HTTP-CONNECT front-end over the same
@@ -129,7 +129,7 @@ Env, if you want to override discovery: `SHADE_TREE_SECRET`, then one discovery 
 `SHADE_TREE_DIRECTORY`+`SHADE_TREE_DIR_SIGNER` (an operator-supplied static signed directory), or
 `SHADE_TREE_ONION` (pin one gateway); plus `SHADE_TREE_TOR_HOST`/`SHADE_TREE_TOR_PORT`. The routed
 `shade-tree proxy` command fails before startup when a directory or Elder Tree is configured without
-its pinned signer. A direct SDK import or `node client/shim.mjs` bypasses that router validation and
+its pinned signer. A direct SDK import or `node packages/node/client/shim.mjs` bypasses that router validation and
 can reach the local-development `tor/hs/hostname` fallback, so treat a missing signer there as a
 configuration error too.
 

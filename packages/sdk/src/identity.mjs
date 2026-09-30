@@ -1,11 +1,11 @@
-// Member identities: create, import, back up. The math lives in lib/identity-core.mjs (shared
+// Member identities: create, import, back up. The math lives in packages/node/lib/identity-core.mjs (shared
 // with the gateway); this module adds the network's tier rules and a browser download helper.
 // In a browser nothing is persisted: the identity exists in memory until the caller saves the
 // file the member downloads.
 
 import {
   deriveIdentity, parseIdentityFile, serializeIdentity, parseCommitment, rateCommitment, identityCommitmentOf,
-} from "../../../lib/identity-core.mjs";
+} from "../../node/lib/identity-core.mjs";
 import { resolveNetwork } from "./network.mjs";
 import { ShadeNetError } from "./errors.mjs";
 

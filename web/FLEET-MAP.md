@@ -10,7 +10,7 @@ It is a *diversity view, not a location map*. There is no world map, no pin, no 
 ## The data-source honesty note (read this first)
 
 Onion services **have no clearnet IP by design**, and the fleet is deliberately non-enumerable. The
-signed directory ([`lib/directory.mjs`](../lib/directory.mjs)) is exactly
+signed directory ([`packages/node/lib/directory.mjs`](../packages/node/lib/directory.mjs)) is exactly
 `{ onion, pubkey, weight, health }` and carries **no geo/ASN field**. So:
 
 - **There is nothing to geolocate, and this tool never tries.** `onion → country` is both

@@ -1,8 +1,8 @@
 // T-TEST-21: ADVERSARIAL / TOTALITY suite for the two freshest wire surfaces —
-//   (a) signed egress RECEIPTS   (lib/receipt.mjs: buildReceipt / verifyReceipt / canonicalReceiptBytes)
+//   (a) signed egress RECEIPTS   (packages/node/lib/receipt.mjs: buildReceipt / verifyReceipt / canonicalReceiptBytes)
 //   (b) protocol VERSION NEGOTIATION (gateway.mjs acceptEnvelopeVersion + client selectProtoVersion)
 //
-// The authors' own selftests (gateway/receipt.selftest.mjs, gateway/version-negotiation.selftest.mjs)
+// The authors' own selftests (packages/node/gateway/receipt.selftest.mjs, packages/node/gateway/version-negotiation.selftest.mjs)
 // prove the happy path plus a few negatives. THIS file is the ATTACKER'S file: it drives ONLY the
 // real, imported functions (never a reimplementation) through the failure modes a genuine defect
 // would slip past — tamper, wrong-key, wrong-gateway, cross-protocol signature confusion, stale/
@@ -20,18 +20,18 @@ import { createPublicKey, randomBytes } from "node:crypto";
 
 import {
   RECEIPT_VERSION, RECEIPT_DOMAIN, canonicalReceiptBytes, buildReceipt, verifyReceipt,
-} from "../lib/receipt.mjs";
+} from "../packages/node/lib/receipt.mjs";
 import {
   acceptEnvelopeVersion, PROTO_MIN, PROTO_MAX,
-} from "../gateway/gateway.mjs";
+} from "../packages/node/gateway/gateway.mjs";
 import {
   selectProtoVersion, CLIENT_PROTO_MIN, CLIENT_PROTO_MAX, CLIENT_PROTO_RANGE,
-} from "../client/shade-tree-client.mjs";
+} from "../packages/node/client/shade-tree-client.mjs";
 import {
   verifyEnvelope, currentEpoch, externalNullifierFor, calculateSignalHash, requestSignal,
-} from "../lib/rln.mjs";
-import { buildAnnounce, canonicalAnnounceBytes, verifyAnnounce } from "../bootnode/announce.mjs";
-import { ed25519PrivateKey, ed25519Verify, pubkeyToOnion, onionToPubkey } from "../lib/directory.mjs";
+} from "../packages/node/lib/rln.mjs";
+import { buildAnnounce, canonicalAnnounceBytes, verifyAnnounce } from "../packages/node/bootnode/announce.mjs";
+import { ed25519PrivateKey, ed25519Verify, pubkeyToOnion, onionToPubkey } from "../packages/node/lib/directory.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
@@ -45,7 +45,7 @@ function guard(fn) {
 }
 
 // A deterministic onion identity: a random 32-byte ed25519 seed, the raw pubkey, and the v3 .onion
-// that key commits to (same derivation as bootnode/keygen.mjs / the authors' receipt selftest).
+// that key commits to (same derivation as packages/node/bootnode/keygen.mjs / the authors' receipt selftest).
 function makeOnionIdentity() {
   const seed = randomBytes(32).toString("hex");
   const der = createPublicKey(ed25519PrivateKey(seed)).export({ format: "der", type: "spki" });

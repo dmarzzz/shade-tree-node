@@ -42,8 +42,8 @@ import { join } from "node:path";
 
 import {
   signDirectory, verifyDirectory, selectionOrder, reportHealth, pubkeyToOnion,
-} from "../lib/directory.mjs";
-import { buildAnnounce, operatorAuthMessage } from "../bootnode/announce.mjs";
+} from "../packages/node/lib/directory.mjs";
+import { buildAnnounce, operatorAuthMessage } from "../packages/node/bootnode/announce.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
@@ -185,7 +185,7 @@ async function main() {
     delete process.env.SHADE_TREE_BOOTNODE_ONION;      // file source, not the un-injectable bootnode fetch
     delete process.env.SHADE_TREE_VERIFY_STAKE;
 
-    const sel = await import("../client/selection.mjs");
+    const sel = await import("../packages/node/client/selection.mjs");
     sel._resetIssuedFloor();
 
     // --- baseline: a good directory establishes the fleet AND writes the last-known-good cache ---
@@ -266,7 +266,7 @@ async function main() {
   // =====================================================================================
   console.log("\nFAULT 6 — zero-trust gateway re-verification under injected fetch/stake faults:");
   {
-    const sel = await import("../client/selection.mjs");
+    const sel = await import("../packages/node/client/selection.mjs");
     const { ethers } = await import("ethers");
 
     const gk = newKey();

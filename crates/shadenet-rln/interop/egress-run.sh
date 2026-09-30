@@ -4,10 +4,10 @@
 # artifacts) and sends it over a PLAIN TCP socket to a running JS reference. Two layers:
 #
 #   Layer 2 (framing + verify): a minimal socket server (verify-socket.mjs) reads the
-#     envelope and runs the REAL lib/rln.mjs verifyEnvelope. Isolates wire framing +
+#     envelope and runs the REAL packages/node/lib/rln.mjs verifyEnvelope. Isolates wire framing +
 #     target-binding ACCEPT from the gateway's proxy path.
 #
-#   Layer 3 (full gateway proxy): the REAL gateway/gateway.mjs, with the derived member set
+#   Layer 3 (full gateway proxy): the REAL packages/node/gateway/gateway.mjs, with the derived member set
 #     as its PoC root source and a local :port egress sink, ACCEPTS the Rust envelope end to
 #     end (version gate -> verifyEnvelope Groth16 -> target policy -> spent-set -> upstream
 #     connect -> `{ ok: true }`). No Tor here: the client uses the `--plain-tcp` escape hatch
@@ -48,7 +48,7 @@ echo "== building feature client (cargo build -p shadenet-cli --features live) =
 cargo build -p shadenet-cli --features live --manifest-path "$REPO/Cargo.toml"
 SHADE_TREE="$REPO/target/debug/shade-tree"
 
-echo "== deriving identity + member set (lib/rln.mjs) =="
+echo "== deriving identity + member set (packages/node/lib/rln.mjs) =="
 node "$HERE/egress-derive.mjs" "$WORK"
 IDENTITY="$WORK/identity.json"
 MEMBERS="$WORK/members.json"
@@ -74,7 +74,7 @@ fi
 echo "LAYER 2 OK"
 
 echo
-echo "== LAYER 3: full gateway proxy ACCEPT (gateway/gateway.mjs) =="
+echo "== LAYER 3: full gateway proxy ACCEPT (packages/node/gateway/gateway.mjs) =="
 # Point the gateway's PoC root source at our derived member set (backup + restore in trap).
 MEMBERS_BAK="$WORK/members.json.repo-bak"
 cp "$REPO/group/members.json" "$MEMBERS_BAK"
@@ -91,7 +91,7 @@ node "$HERE/wait-log.mjs" "$WORK/sink.log" "[sink] up" 15000
 # Wait on the gateway's OWN "gateway up" log line (never a TCP connect-probe: the gateway
 # reads a full newline-terminated envelope, and a half-open probe would EPIPE-crash it).
 SHADE_TREE_EGRESS_ALLOW="$TARGET" SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 SHADE_TREE_EPOCH_SECONDS=120 \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
 GW_PID=$!
 disown "$GW_PID" 2>/dev/null || true
 node "$HERE/wait-log.mjs" "$WORK/gw.log" "gateway up on" 20000

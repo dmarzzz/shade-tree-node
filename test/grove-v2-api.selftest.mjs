@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { attestPublicGroveSnapshot, buildPublicGroveSnapshot } from "../lib/public-grove.mjs";
+import { attestPublicGroveSnapshot, buildPublicGroveSnapshot } from "../packages/node/lib/public-grove.mjs";
 import { GET } from "../docs/post/api/grove-v2.mjs";
 import {
   GROVE_V2_SNAPSHOT_URL,

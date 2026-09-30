@@ -22,7 +22,7 @@ const hex = (b) => Buffer.from(b).toString("hex");
 const entry = (spec) => `
 export { verifyCanopy, ShadeNetError } from ${JSON.stringify(spec(join(HERE, "..", "src", "index.mjs")))};
 export { canonicalDirectoryBytes, canonicalCapsBytes, onionToPubkey, pubkeyToOnion, verifyCapsSig,
-  ed25519Sign, ed25519PubFromSeed } from ${JSON.stringify(spec(join(ROOT, "lib", "directory.mjs")))};
+  ed25519Sign, ed25519PubFromSeed } from ${JSON.stringify(spec(join(ROOT, "packages", "node", "lib", "directory.mjs")))};
 `;
 
 async function suite(label, m) {

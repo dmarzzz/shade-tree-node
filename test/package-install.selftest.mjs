@@ -35,10 +35,10 @@ try {
   const installed = join(npmRoot, "shade-tree-node");
   for (const path of [
     "assets/shade-tree-readme-banner.webp",
-    "bin/shade-tree.mjs",
-    "bootnode/fetch.mjs",
-    "client/shim.mjs",
-    "gateway/gateway.mjs",
+    "packages/node/bin/shade-tree.mjs",
+    "packages/node/bootnode/fetch.mjs",
+    "packages/node/client/shim.mjs",
+    "packages/node/gateway/gateway.mjs",
     "group/join.mjs",
     "scripts/doctor.mjs",
     "specs/README.md",
@@ -50,11 +50,11 @@ try {
   ]) assert.ok(existsSync(join(installed, path)), `packed install is missing ${path}`);
 
   const imports = [
-    "lib/rln.mjs",
-    "client/selection.mjs",
-    "client/shim.mjs",
-    "gateway/gateway.mjs",
-    "bootnode/server.mjs",
+    "packages/node/lib/rln.mjs",
+    "packages/node/client/selection.mjs",
+    "packages/node/client/shim.mjs",
+    "packages/node/gateway/gateway.mjs",
+    "packages/node/bootnode/server.mjs",
   ].map((path) => pathToFileURL(join(installed, path)).href);
   run(process.execPath, ["--input-type=module", "-e", `await Promise.all(${JSON.stringify(imports)}.map((url) => import(url)))`], { cwd: work });
 

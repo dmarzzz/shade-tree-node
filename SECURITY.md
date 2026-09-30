@@ -75,7 +75,7 @@ instead.
 - **Directory signer rotation is out of band.** `SHADE_TREE_DIR_SIGNER` accepts an
   allowlist so rotation has an overlap window (T-HARD-5), but distributing the new
   pubkey to clients is a manual step; there is no in-band rotation message.
-- **Deploy bootstrap runs as root.** `bootnode/deploy/bootstrap.sh` is exercised
+- **Deploy bootstrap runs as root.** `packages/node/bootnode/deploy/bootstrap.sh` is exercised
   end to end in CI inside a systemd container (`.github/workflows/bootstrap-e2e.yml`,
   T-TEST-8), but it still runs as root on a fresh box; read it before running it.
   (`docs/AUDIT.md`.)

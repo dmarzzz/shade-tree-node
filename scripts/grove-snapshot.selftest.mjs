@@ -8,7 +8,7 @@ import {
   GROVE_HISTORY_CAP,
   scrubGroveHistory,
   verifyPublicGroveAttestation,
-} from "../lib/public-grove.mjs";
+} from "../packages/node/lib/public-grove.mjs";
 import { collectPublicGrove } from "./grove-snapshot.mjs";
 
 const NOW = new Date("2026-08-23T12:00:00.000Z");

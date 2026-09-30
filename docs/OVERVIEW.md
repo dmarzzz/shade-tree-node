@@ -41,10 +41,10 @@ by rendezvous, so there is no exit node and the gateway never learns the client 
 
 - **The proof is real RLN.** The set is a [Semaphore](https://semaphore.pse.dev/) /
   [RLN](https://rate-limiting-nullifier.github.io/rln-docs/) group; each request carries a
-  fresh nullifier and a Shamir share inside one circom-rln Groth16 proof (`lib/rln.mjs`,
+  fresh nullifier and a Shamir share inside one circom-rln Groth16 proof (`packages/node/lib/rln.mjs`,
   `circuits/rln/`). One share per slot egresses; a second distinct signal on the same
   nullifier is a provable over-spend, so the gateway reconstructs the identity secret and
-  slashes on whichever contract holds the leaf (`gateway/gateway.mjs:makeRoutingSlasher`).
+  slashes on whichever contract holds the leaf (`packages/node/gateway/gateway.mjs:makeRoutingSlasher`).
   Proof transcripts carry no stable member identifier across slots. A gateway can still
   correlate tunnels through destination, timing, volume, or application metadata. A member's
   per-epoch budget is a tier
@@ -54,13 +54,13 @@ by rendezvous, so there is no exit node and the gateway never learns the client 
   machine). A gateway reads one root per source it admits, `group/members.json` (invited),
   `StakedReputationSet` (staked, `contracts/StakedReputationSet.sol`) and `PaidAccessSet`
   (paid, `contracts/PaidAccessSet.sol`, [ADR 0007](adr/0007-paid-access.md)), through a
-  `RootProvider` (`lib/root-provider.mjs`: node, or an EIP-1186 light client, optionally
+  `RootProvider` (`packages/node/lib/root-provider.mjs`: node, or an EIP-1186 light client, optionally
   Helios-anchored) and trusts their union. `GatewayRegistry` (`contracts/GatewayRegistry.sol`)
   holds operator bonds; an operator can configure the bootnode to admit staked operators only.
   The values in [`network/sepolia/contracts.json`](../network/sepolia/contracts.json) are
   historical and must not be substituted for current v4 contract inputs.
 - **Payment is a leaf, not a token.** `shade-tree-node pay` speaks HTTP 402 in x402 v2 or MPP to the
-  provider's registrar (`payments/registrar.mjs`), signs one EIP-3009 authorization, the
+  provider's registrar (`packages/node/payments/registrar.mjs`), signs one EIP-3009 authorization, the
   operator settles it and inserts the commitment; egress is the same RLN proof
   ([`PAYMENTS.md`](PAYMENTS.md)).
 - **The fleet is discovered live.** Gateways heartbeat to a bootnode (`bootnode/`) that
@@ -151,12 +151,12 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
 
 | Path | What it is |
 |------|------------|
-| `bin/shade-tree.mjs` | The unified CLI (every role, `--flag` → `SHADE_TREE_*` env) |
-| `lib/rln.mjs`, `circuits/rln/` | circom-rln Groth16: prove, verify, reconstruct, slash |
-| `lib/directory.mjs`, `lib/root-provider.mjs`, `lib/helios-root.mjs` | Signed fleet directory + caps; on-chain root read (node / light client); Helios anchor |
-| `lib/gateway-registry.mjs`, `lib/zk-artifacts.mjs` | Gateway-stake verifier; ZK artifact-set lock + negotiation |
+| `packages/node/bin/shade-tree.mjs` | The unified CLI (every role, `--flag` → `SHADE_TREE_*` env) |
+| `packages/node/lib/rln.mjs`, `circuits/rln/` | circom-rln Groth16: prove, verify, reconstruct, slash |
+| `packages/node/lib/directory.mjs`, `packages/node/lib/root-provider.mjs`, `packages/node/lib/helios-root.mjs` | Signed fleet directory + caps; on-chain root read (node / light client); Helios anchor |
+| `packages/node/lib/gateway-registry.mjs`, `packages/node/lib/zk-artifacts.mjs` | Gateway-stake verifier; ZK artifact-set lock + negotiation |
 | `contracts/` | `StakedReputationSet.sol`, `PaidAccessSet.sol`, `GatewayRegistry.sol` |
-| `gateway/gateway.mjs` | Onion-side egress: admit set, verify, dedup/slash, tunnel, drop |
+| `packages/node/gateway/gateway.mjs` | Onion-side egress: admit set, verify, dedup/slash, tunnel, drop |
 | `bootnode/` | Discovery server, announce, keygen, heartbeat, fetch; `deploy/` = the one-command droplet |
 | `client/` | The fleet client library (`shade-tree-client.mjs`), HTTP-CONNECT proxy (`shim.mjs`), selection |
 | `payments/` | The 402 registrar, both wire dialects, EIP-3009 typed data, test-asset deploy |

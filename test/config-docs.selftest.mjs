@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DIRS = ["gateway", "bootnode", "payments", "lib"];
+const DIRS = ["packages/node/gateway", "packages/node/bootnode", "packages/node/payments", "packages/node/lib"];
 const READ = /(?:process\.env|\benv)(?:\.|\[\s*["'])(SHADE_TREE_[A-Z0-9_]*[A-Z0-9])|\benv(?:Int|Num|Bool)?\(\s*["'](SHADE_TREE_[A-Z0-9_]*[A-Z0-9])["']/g;
 
 const used = new Map();

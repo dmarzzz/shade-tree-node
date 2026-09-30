@@ -8,7 +8,7 @@
 // contexts of the retired v4 set, which the bundled record may still name until its replacement.
 
 import { solidityPackedKeccak256, getAddress } from "ethers";
-import { FIELD } from "../../../lib/identity-core.mjs";
+import { FIELD } from "../../node/lib/identity-core.mjs";
 
 export function exitContext(commitment, binding = null) {
   if (!binding) return solidityPackedKeccak256(["string", "uint256"], ["SHADE_TREE_EXIT", BigInt(commitment)]);

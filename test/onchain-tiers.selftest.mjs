@@ -109,7 +109,7 @@ async function main() {
 
     // 3. T-DEV-9c locally: the light provider proves the tiered contract's root from slot 3.
     process.env.SHADE_TREE_CONFIRMATIONS = "1";
-    const { LightClientRootProvider, NodeRootProvider } = await import("../lib/root-provider.mjs");
+    const { LightClientRootProvider, NodeRootProvider } = await import("../packages/node/lib/root-provider.mjs");
     await rpc(url, "evm_mine", []);
     const light = LightClientRootProvider({ contract: set, rpcUrl: url });
     const lr = await light.currentRoots();

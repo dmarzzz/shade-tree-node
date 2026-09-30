@@ -11,9 +11,9 @@ import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { onionToPubkey, pubkeyToOnion, canonicalDirectoryBytes, verifyDirectory } from "../lib/directory.mjs";
-import { parseHttp } from "../bootnode/fetch.mjs";
-import { verifyAnnounce } from "../bootnode/announce.mjs";
+import { onionToPubkey, pubkeyToOnion, canonicalDirectoryBytes, verifyDirectory } from "../packages/node/lib/directory.mjs";
+import { parseHttp } from "../packages/node/bootnode/fetch.mjs";
+import { verifyAnnounce } from "../packages/node/bootnode/announce.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CORPUS_PATH = join(HERE, "..", "testdata", "corpus", "regressions.json");

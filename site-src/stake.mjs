@@ -1,6 +1,6 @@
 import { getAddress } from "ethers";
 import { createIdentity, createStaking, importIdentity, serializeIdentity, identityCommitmentOf } from "../packages/sdk/src/index.mjs";
-import { deriveIdentity as deriveCore, leafFromIdentityCommitment, parseCommitment as parseCore } from "../lib/identity-core.mjs";
+import { deriveIdentity as deriveCore, leafFromIdentityCommitment, parseCommitment as parseCore } from "../packages/node/lib/identity-core.mjs";
 import {
   CHAIN_ID,
   CHAIN_NAME,

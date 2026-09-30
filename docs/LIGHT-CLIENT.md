@@ -1,12 +1,12 @@
 # Light-client integration: trust-minimized reads of the reputation root
 
 **Status: built (option A, sidecar), opt-in.** `LightClientRootProvider`
-(`lib/root-provider.mjs`, `SHADE_TREE_ROOT_PROVIDER=light`) verifies the contract's `currentRoot`
+(`packages/node/lib/root-provider.mjs`, `SHADE_TREE_ROOT_PROVIDER=light`) verifies the contract's `currentRoot`
 storage slot against a block header's `stateRoot` via an EIP-1186 `eth_getProof` MPT proof
 (SHIP-PLAN T-DEV-9), and since T-DEV-9b the `stateRoot` itself can be anchored to the beacon
 sync committee instead of the RPC's header: set `SHADE_TREE_HELIOS_RPC_URL` to a LOCAL
 [a16z/helios](https://github.com/a16z/helios) verifying JSON-RPC and the provider takes the
-header from it (`lib/helios-root.mjs`, `makeHeliosTrustedStateRoot`), cross-checks the RPC's
+header from it (`packages/node/lib/helios-root.mjs`, `makeHeliosTrustedStateRoot`), cross-checks the RPC's
 header against it, and rejects with a precise reason if they differ. Then the whole chain
 sync-committee → stateRoot → account proof → storage proof → root is verified end to end and
 the RPC is a dumb pipe. Unset, behaviour is unchanged (RPC-trusted stateRoot) and the gateway
@@ -27,10 +27,10 @@ gain). The pieces:
 
 | piece | where |
 |---|---|
-| the hook implementation | `lib/helios-root.mjs` — `makeHeliosTrustedStateRoot({ rpcUrl, chainId?, upstreamRpcUrl? })` → `trustedStateRoot(tag)` = Helios `eth_getBlockByNumber(tag,false)` → `{ stateRoot, number, hash }`; first use checks Helios `eth_chainId` against `SHADE_TREE_HELIOS_CHAIN_ID` (else the RPC's own `eth_chainId`); unreachable / mismatch / null block / malformed header all **throw** (fail closed, reason names `helios`) |
-| wiring | `lib/root-provider.mjs` — `SHADE_TREE_HELIOS_RPC_URL` set ⇒ `LightClientRootProvider` installs the hook, anchors the proof to Helios' `stateRoot`, and **cross-checks** the RPC's header for the same block number: `stateRoot mismatch at block N: RPC (…) claims X but the anchor (helios (sync-committee verified)) attests Y` ⇒ rejected before any proof is fetched. `describe().stateRootSource` and the gateway startup log say `helios (sync-committee verified)` vs `rpc header (TRUSTED, not verified; …)`. Results carry `stateRootVerified: true|false`. `SHADE_TREE_HELIOS_RPC_URL` with `SHADE_TREE_ROOT_PROVIDER=node` is refused (would look verified without being so) |
-| tests | `lib/helios-root.selftest.mjs` (fake Helios + fake RPC in-process: hook honoured, chainId mismatch, unreachable, RPC-lies-about-stateRoot both stale-honest and self-consistent-fake, tag mapping, "Helios lies" boundary, node-mode guard), `lib/root-provider-light.selftest.mjs` §8 |
-| sidecar | `bootnode/deploy/bootstrap.sh` `SHADE_TREE_HELIOS=1` (opt-in, default render unchanged): installs the **pinned** release `helios 0.11.1` (`helios_linux_{amd64,arm64}.tar.gz`, sha256 `339bf4ce…62ddb` / `20132e1f…5dab6`, verified before install; other versions need `SHADE_TREE_HELIOS_SHA256`), renders `shade-tree-helios.service` (loopback `127.0.0.1:8546`, endpoints via `EXECUTION_RPC`/`CONSENSUS_RPC` env, same sandbox as the other units + `MemoryDenyWriteExecute`), and points the gateway unit at it (`SHADE_TREE_ROOT_PROVIDER=light`, `SHADE_TREE_HELIOS_RPC_URL`, `SHADE_TREE_RPC_URL`, `SHADE_TREE_GROUP_CONTRACT`, ordered after the sidecar). `bootnode/deploy/README.md` has the tunables |
+| the hook implementation | `packages/node/lib/helios-root.mjs` — `makeHeliosTrustedStateRoot({ rpcUrl, chainId?, upstreamRpcUrl? })` → `trustedStateRoot(tag)` = Helios `eth_getBlockByNumber(tag,false)` → `{ stateRoot, number, hash }`; first use checks Helios `eth_chainId` against `SHADE_TREE_HELIOS_CHAIN_ID` (else the RPC's own `eth_chainId`); unreachable / mismatch / null block / malformed header all **throw** (fail closed, reason names `helios`) |
+| wiring | `packages/node/lib/root-provider.mjs` — `SHADE_TREE_HELIOS_RPC_URL` set ⇒ `LightClientRootProvider` installs the hook, anchors the proof to Helios' `stateRoot`, and **cross-checks** the RPC's header for the same block number: `stateRoot mismatch at block N: RPC (…) claims X but the anchor (helios (sync-committee verified)) attests Y` ⇒ rejected before any proof is fetched. `describe().stateRootSource` and the gateway startup log say `helios (sync-committee verified)` vs `rpc header (TRUSTED, not verified; …)`. Results carry `stateRootVerified: true|false`. `SHADE_TREE_HELIOS_RPC_URL` with `SHADE_TREE_ROOT_PROVIDER=node` is refused (would look verified without being so) |
+| tests | `packages/node/lib/helios-root.selftest.mjs` (fake Helios + fake RPC in-process: hook honoured, chainId mismatch, unreachable, RPC-lies-about-stateRoot both stale-honest and self-consistent-fake, tag mapping, "Helios lies" boundary, node-mode guard), `packages/node/lib/root-provider-light.selftest.mjs` §8 |
+| sidecar | `packages/node/bootnode/deploy/bootstrap.sh` `SHADE_TREE_HELIOS=1` (opt-in, default render unchanged): installs the **pinned** release `helios 0.11.1` (`helios_linux_{amd64,arm64}.tar.gz`, sha256 `339bf4ce…62ddb` / `20132e1f…5dab6`, verified before install; other versions need `SHADE_TREE_HELIOS_SHA256`), renders `shade-tree-helios.service` (loopback `127.0.0.1:8546`, endpoints via `EXECUTION_RPC`/`CONSENSUS_RPC` env, same sandbox as the other units + `MemoryDenyWriteExecute`), and points the gateway unit at it (`SHADE_TREE_ROOT_PROVIDER=light`, `SHADE_TREE_HELIOS_RPC_URL`, `SHADE_TREE_RPC_URL`, `SHADE_TREE_GROUP_CONTRACT`, ordered after the sidecar). `packages/node/bootnode/deploy/README.md` has the tunables |
 
 **How-to (by hand, any box).** Helios 0.11.1 CLI (checked against the README and
 `helios ethereum --help` on 2026-08-17):
@@ -198,7 +198,7 @@ Three, in the order I would reach for them.
 as a local JSON-RPC server that only returns consensus-verified results, executing
 `eth_call` locally against light-client-verified state. So the integration is almost
 nothing on our side: run Helios as a local process and point `SHADE_TREE_RPC_URL` at its
-endpoint. The existing `NodeRootProvider` (docs/ONCHAIN.md, `lib/root-provider.mjs`) then
+endpoint. The existing `NodeRootProvider` (docs/ONCHAIN.md, `packages/node/lib/root-provider.mjs`) then
 reads `root()` and gets light-client security for free, because the "node" it is talking
 to is a verifying client rather than a trusted upstream. This collapses "trusted vs
 light" into *which endpoint the provider points at* — own node, a bad third-party RPC, or

@@ -37,14 +37,14 @@ Local anvil deploys write `contracts/deployed.local.json` (gitignored) instead â
 real networks get a committed `network/<name>/` record.
 
 Records carry the **public discovery handles only**: onions, pubkeys, contract addresses.
-Never an IP, never a key. The validator (`lib/network-record.mjs`) rejects a record that
+Never an IP, never a key. The validator (`packages/node/lib/network-record.mjs`) rejects a record that
 puts an IP into a discovery field.
 
 ## Pointing a component at a network: `SHADE_TREE_NETWORK`
 
 `SHADE_TREE_NETWORK=<name>` (or `shade-tree --network <name>`) makes every component read the records
 under `network/<name>/` as **defaults** for the env vars it already consumes
-(`lib/network-record.mjs`, `applyNetworkEnv`). Explicit env / flags always win; the record
+(`packages/node/lib/network-record.mjs`, `applyNetworkEnv`). Explicit env / flags always win; the record
 only fills what is unset:
 
 | record | fills (when the value is non-null) |
@@ -59,10 +59,10 @@ only fills what is unset:
 
 Resolution order everywhere: **explicit env/flag > `network/<name>/` record > `contracts/deployed.local.json` (deployer-box cache) > dev default.**
 `shade-tree` fails fast (exit 1) on an unknown network name or an invalid record; the library
-paths (`lib/gateway-registry.mjs`, `group/register-gateway.mjs`) treat an unresolvable
-record as "no default". Wired today: `bin/shade-tree.mjs` (every command), `client/selection.mjs`
-(so `node client/shim.mjs` and the SDK honour it), `bootnode/heartbeat.mjs`,
-`lib/gateway-registry.mjs`, `group/register-gateway.mjs`, `scripts/uptime-probe.mjs`.
+paths (`packages/node/lib/gateway-registry.mjs`, `group/register-gateway.mjs`) treat an unresolvable
+record as "no default". Wired today: `packages/node/bin/shade-tree.mjs` (every command), `packages/node/client/selection.mjs`
+(so `node packages/node/client/shim.mjs` and the SDK honour it), `packages/node/bootnode/heartbeat.mjs`,
+`packages/node/lib/gateway-registry.mjs`, `group/register-gateway.mjs`, `scripts/uptime-probe.mjs`.
 
 ```bash
 # A current, non-retired record can configure the whole stack by name:
@@ -121,7 +121,7 @@ the legacy preset or invited credentials.
 }
 ```
 
-Rules enforced by `validateContractsRecord` (`lib/network-record.mjs`): every `contracts.*`
+Rules enforced by `validateContractsRecord` (`packages/node/lib/network-record.mjs`): every `contracts.*`
 value is a 0x 20-byte address **or `null`**; a missing slot means the same as null; a
 `deployTxs`/`deployBlocks` entry for a slot that is not an address is a contradiction and
 rejected; blocks are JSON numbers. A loader that needs an address calls
@@ -178,7 +178,7 @@ atomically. It never broadcasts anything.
 Rules (`validateBootnodeRecord`): `status: live` **requires** non-null `onion` and `signer`
 (a live record without discovery inputs is a lie); `pending` tolerates nulls and is the
 committed template state before T-DEPLOY-1 (GO-LIVE row 7.1); `retired` supplies no defaults.
-`signer` as an array is the signer-rotation overlap allowlist (`client/selection.mjs`) and is
+`signer` as an array is the signer-rotation overlap allowlist (`packages/node/client/selection.mjs`) and is
 joined with `,` into `SHADE_TREE_DIR_SIGNER`. `gatewayRegistry` may appear here as address|null
 for readability, but `contracts.json` is its canonical home.
 

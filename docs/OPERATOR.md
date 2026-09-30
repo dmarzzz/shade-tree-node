@@ -8,7 +8,7 @@
 > current [deployment plan](DEPLOYMENT-PLAN.md).
 
 For running a Shade Tree node or Elder Tree. Every command here exists in
-`bin/shade-tree.mjs` or the deploy scripts. For the full config surface see
+`packages/node/bin/shade-tree.mjs` or the deploy scripts. For the full config surface see
 [CONFIG.md](CONFIG.md); for the discovery design see [BOOTNODE.md](BOOTNODE.md).
 
 Two ways to invoke the CLI:
@@ -16,7 +16,7 @@ Two ways to invoke the CLI:
 - Workstation with the repo: run `npm ci && npm link` once, then `shade-tree-node <cmd>`. Use this
   path for the full local canopy, tests, code changes, and any future deployment work.
 - On a bootstrapped droplet (repo at `/opt/shade-tree`, not linked): run it explicitly,
-  e.g. `sudo -u shade-tree-node node /opt/shade-tree/bin/shade-tree.mjs <cmd>`.
+  e.g. `sudo -u shade-tree-node node /opt/shade-tree/packages/node/bin/shade-tree.mjs <cmd>`.
 
 `shade-tree help` lists commands; `shade-tree <cmd> --help` prints one-line help. Every `--flag`
 just sets the matching `SHADE_TREE_*` env var (see [CLI.md](CLI.md)).
@@ -36,29 +36,29 @@ and the client command. Idempotent (re-running reuses keys and units).
 
 ```bash
 ssh root@<droplet-ip>
-curl -fsSL https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/bootnode/deploy/bootstrap.sh \
+curl -fsSL https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/packages/node/bootnode/deploy/bootstrap.sh \
   | sudo env SHADE_TREE_MEMBERS_FILE=/root/operator-members.json bash
 ```
 
 Or, if the repo is already on the box:
 
 ```bash
-sudo env SHADE_TREE_MEMBERS_FILE=/root/operator-members.json bash bootnode/deploy/bootstrap.sh
+sudo env SHADE_TREE_MEMBERS_FILE=/root/operator-members.json bash packages/node/bootnode/deploy/bootstrap.sh
 ```
 
 It creates three `Restart=always` units:
 
 | unit | what it runs | source |
 |---|---|---|
-| `shade-tree-bootnode` | discovery service | `bootnode/server.mjs` |
-| `shade-tree-gateway` | access-gated egress node | `gateway/gateway.mjs` |
-| `shade-tree-heartbeat` | announces the gateway to the local bootnode | `bootnode/heartbeat.mjs` |
+| `shade-tree-bootnode` | discovery service | `packages/node/bootnode/server.mjs` |
+| `shade-tree-gateway` | access-gated egress node | `packages/node/gateway/gateway.mjs` |
+| `shade-tree-heartbeat` | announces the gateway to the local bootnode | `packages/node/bootnode/heartbeat.mjs` |
 
 Tunables are env vars on the `curl | bash` line, e.g. `SHADE_TREE_ADMISSION=stake`,
 `SHADE_TREE_BOOTNODE_PORT`, `SHADE_TREE_GATEWAY_PORT`, `SHADE_TREE_DIR`, `SHADE_TREE_REF=<tag|sha>` to pin the
 git ref the box clones (fetch the script from that same ref), `SHADE_TREE_ENABLE_POW=1` (onion PoW
 DoS defense; **off by default** because a `pow: no` client tor cannot reach a PoW onion),
-`SHADE_TREE_GATEWAY_REGION=eu`. Full table: `bootnode/deploy/README.md` "Tunables". Every value
+`SHADE_TREE_GATEWAY_REGION=eu`. Full table: `packages/node/bootnode/deploy/README.md` "Tunables". Every value
 is validated before anything is installed.
 
 Firewall: the gateway and bootnode are onion services and take **no inbound clearnet
@@ -84,7 +84,7 @@ ssh root@<new-ubuntu-24.04-host>
 install -d -m 0700 /root/shadenet-creds
 # your staked operator key (see "Stake the operator" below); a file, never argv or shell history
 install -m 0600 /dev/stdin /root/shadenet-creds/SHADE_TREE_GW_OPERATOR_KEY < /path/to/operator.key
-curl -fsSL --proto '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/bootnode/deploy/bootstrap.sh \
+curl -fsSL --proto '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/packages/node/bootnode/deploy/bootstrap.sh \
   | SHADENET_NETWORK=sepolia SHADE_TREE_CREDENTIALS_FROM=/root/shadenet-creds bash
 journalctl -u shade-tree-heartbeat -f -o cat  # msg="heartbeat accepted" once Tor is ready
 ```
@@ -136,7 +136,7 @@ service checkout:
 
 ```bash
 export SHADE_TREE_REF=<reviewed-tag-or-commit>
-curl -fsSL "https://raw.githubusercontent.com/dmarzzz/shade-tree-node/$SHADE_TREE_REF/bootnode/deploy/bootstrap.sh" \
+curl -fsSL "https://raw.githubusercontent.com/dmarzzz/shade-tree-node/$SHADE_TREE_REF/packages/node/bootnode/deploy/bootstrap.sh" \
   -o /tmp/shade-tree-bootstrap.sh
 sudo env \
   SHADE_TREE_REF="$SHADE_TREE_REF" \
@@ -348,11 +348,11 @@ Locally (non-bootstrapped) the same files live under `tor/hs*/identity.local.jso
 
 ```bash
 export SHADE_TREE_BACKUP_PASSPHRASE='…a long, unique passphrase…'
-sudo -E node /opt/shade-tree/bin/shade-tree.mjs backup /opt/shade-tree/deploy-state shade-tree-keys-$(date +%F).shade-tree-backup
+sudo -E node /opt/shade-tree/packages/node/bin/shade-tree.mjs backup /opt/shade-tree/deploy-state shade-tree-keys-$(date +%F).shade-tree-backup
 # then move the .shade-tree-backup file to an off-box, encrypted-at-rest location.
 
 # on a fresh box, before starting the units:
-sudo -E node /opt/shade-tree/bin/shade-tree.mjs restore shade-tree-keys-<date>.shade-tree-backup /opt/shade-tree/deploy-state   # --force to overwrite
+sudo -E node /opt/shade-tree/packages/node/bin/shade-tree.mjs restore shade-tree-keys-<date>.shade-tree-backup /opt/shade-tree/deploy-state   # --force to overwrite
 ```
 
 Restore lays the files back with `0600`/`0700` perms; the onion address and pinned
@@ -413,7 +413,7 @@ outside the honest-retry window (`SHADE_TREE_REPLAY_WINDOW_MS`, default 5s) is d
 spent-set — a malicious relay could fan one captured envelope to **peer** gateways and
 each would serve it once.
 
-The optional **shared nonce tally** (`gateway/fleet-tally.mjs`) reduces that replay
+The optional **shared nonce tally** (`packages/node/gateway/fleet-tally.mjs`) reduces that replay
 window on a best-effort basis. Gateways share a per-epoch spent-**nullifier** tally.
 Gateway A publishes only after the destination TCP connection succeeds, then gateway B
 rejects the same envelope `replayed-envelope` once it receives the tally. DNS and
@@ -448,7 +448,7 @@ logs `scope=fleet`.
 
 The tally speaks to the fleet through an injectable `{ publish(nullifier, epoch),
 subscribe(cb) }` seam. The bundled real transport (`makeHttpTallyTransport` in
-`gateway/fleet-tally.mjs`) is a tiny **HTTP push**: each gateway exposes an inbound
+`packages/node/gateway/fleet-tally.mjs`) is a tiny **HTTP push**: each gateway exposes an inbound
 announcement endpoint and POSTs `{"nullifier":…,"epoch":…}` to each **configured peer**
 gateway. It is a direct **1-hop** push to a fixed peer set — not a forwarding flood — so a
 nullifier crosses the wire at most once per peer per established egress (no gossip storm, no loops: the
@@ -623,7 +623,7 @@ the very first call — which is how both fleet gateways crash-looped at startup
 after `SHADE_TREE_PAID_ACCESS_CONTRACT` was enabled (`docs/history/GO-LIVE-LOG-2026-08-17.md`,
 `docs/INCIDENT.md` §5).
 
-Since that night the gateway does three things on its own (`lib/root-provider.mjs`):
+Since that night the gateway does three things on its own (`packages/node/lib/root-provider.mjs`):
 
 - **Pages the scan.** `[from, head]` is split into `SHADE_TREE_LOGS_CHUNK` windows (default 10000,
   under every cap above; `head` is resolved to a number once so every page sees the same block); a
@@ -658,7 +658,7 @@ SHADE_TREE_HELIOS=1 \
 SHADE_TREE_HELIOS_CONSENSUS_RPC=https://lodestar-sepolia.chainsafe.io \   # a beacon API with the light-client endpoints
 SHADE_TREE_RPC_URL=<execution RPC that serves eth_getProof at finalized> \
 SHADE_TREE_GROUP_CONTRACT=0xFe48De8b9aCA4386DC31C845d579ae62f04f9d25 \   # rln-v4-tiers (on-chain root; network/sepolia/contracts.json)
-  sudo bash bootnode/deploy/bootstrap.sh          # composes with SHADE_TREE_BOOTNODE_ONION (gateway-only)
+  sudo bash packages/node/bootnode/deploy/bootstrap.sh          # composes with SHADE_TREE_BOOTNODE_ONION (gateway-only)
 journalctl -u shade-tree-helios -f                       # 'consensus client in sync with checkpoint', then 'finalized block number=…'
 journalctl -u shade-tree-gateway | grep stateRootSource  # expect: helios (sync-committee verified)
 ```
@@ -671,7 +671,7 @@ from public checkpoint services), `SHADE_TREE_HELIOS_NETWORK` (`sepolia` default
 Trust after this: the sync committee + that checkpoint; the RPC can withhold but not lie
 (`docs/THREAT-MODEL.md`). If Helios is down or on the wrong chain the gateway refuses to
 start reading roots (fail closed) and restarts until it is up. Full how-to, flags and the live
-Sepolia receipt: `docs/LIGHT-CLIENT.md`; tunables: `bootnode/deploy/README.md`.
+Sepolia receipt: `docs/LIGHT-CLIENT.md`; tunables: `packages/node/bootnode/deploy/README.md`.
 
 ### Reputation tiers (T-FEAT-8)
 
@@ -764,7 +764,7 @@ offer is advertised in your gateway's signed caps (`caps.pay`; heartbeat `SHADE_
 ### Selling access via 402 (T-FEAT-7)
 
 Members can *buy* a leaf instead of being enrolled by hand: `docs/PAYMENTS.md` "Shipped
-2026-08-17". You run a **registrar** (`payments/registrar.mjs`) next to the bootnode; it speaks
+2026-08-17". You run a **registrar** (`packages/node/payments/registrar.mjs`) next to the bootnode; it speaks
 both HTTP-402 rails (x402 v2 and MPP), takes a stablecoin (EIP-3009: the buyer signs, *you*
 submit and pay gas), and inserts the buyer's commitment into the on-chain `PaidAccessSet`
 (`contracts/PaidAccessSet.sol`, operator-insert-only). Your gateways trust that set's root next
@@ -787,7 +787,7 @@ SHADE_TREE_PAID_ACCESS_CONTRACT=0x4e8C2Bf5d3c5454A04837401095fce2646484111 \   #
 SHADE_TREE_PAY_ASSET=<stablecoin>            \   # Sepolia USDC 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238, or contracts.json payAsset (tUSD)
 SHADE_TREE_PAY_PRICES=8=100000,32=400000     \   # atomic units per tier (0.10 / 0.40 with 6 decimals)
 SHADE_TREE_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com \
-  sudo -E bash bootnode/deploy/bootstrap.sh
+  sudo -E bash packages/node/bootnode/deploy/bootstrap.sh
 # the operator key is a SECRET: 0600 drop-in via stdin, never argv / unit file / log
 sudo install -d -m 0755 /etc/systemd/system/shade-tree-registrar.service.d
 printf '[Service]\nEnvironment=SHADE_TREE_REGISTRAR_KEY=%s\n' "$(cat /path/to/operator.key)" \
@@ -882,7 +882,7 @@ export SHADE_TREE_TIERS=8,32                       # the tiers you sell, so a pa
 Both listeners bound every lever an *unauthenticated* peer can pull. Defaults are on; you
 should not need to touch them unless you run an unusually large or slow fleet.
 
-**Gateway** (`gateway/gateway.mjs`):
+**Gateway** (`packages/node/gateway/gateway.mjs`):
 
 - **Envelope deadline** — the newline-terminated envelope must arrive within
   `SHADE_TREE_ENVELOPE_TIMEOUT_MS` (30 s) *of connect*. The deadline is absolute (dribbling one byte
@@ -909,7 +909,7 @@ If a *legitimate* member trips `too-many-connections` (metric climbing under nor
 `SHADE_TREE_MAX_CONNS`; the per-nullifier cap should never be hit by an honest client (one request per
 nullifier, one tunnel each; a retry replaces a dead tunnel).
 
-**Bootnode** (`bootnode/server.mjs`):
+**Bootnode** (`packages/node/bootnode/server.mjs`):
 
 - **HTTP slow-client limits** — headers within 10 s, whole request within 30 s (`408`), keep-alive
   idle 5 s, headers <= 8 KiB (`431`), enforced every second (Node's own defaults are 60 s / 300 s

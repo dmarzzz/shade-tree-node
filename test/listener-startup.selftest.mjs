@@ -23,8 +23,8 @@ try {
     SHADE_TREE_LOG_LEVEL: "info",
   });
   for (const [entry, override] of [
-    ["gateway/gateway.mjs", "SHADE_TREE_GATEWAY_PORT"],
-    ["client/shim.mjs", "SHADE_TREE_SHIM_PORT"],
+    ["packages/node/gateway/gateway.mjs", "SHADE_TREE_GATEWAY_PORT"],
+    ["packages/node/client/shim.mjs", "SHADE_TREE_SHIM_PORT"],
   ]) {
     const result = spawnSync(process.execPath, [entry], { cwd: root, env, encoding: "utf8", timeout: 15000 });
     assert.ifError(result.error);

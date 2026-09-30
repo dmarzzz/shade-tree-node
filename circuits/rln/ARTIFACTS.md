@@ -65,7 +65,7 @@ On a BREACH the recovered secret is that `identitySecret`, so
 
 Each circuit's artifact SET is named on the wire by a content-derived id,
 `<circuit>-<sha256(verification_key.json)[0:16]>` — the vkey row above, first 16 hex chars
-(`lib/zk-artifacts.mjs` `artifactIdOf`; `testdata/zk-artifacts.lock.json` `circuits.<c>.artifactId`;
+(`packages/node/lib/zk-artifacts.mjs` `artifactIdOf`; `testdata/zk-artifacts.lock.json` `circuits.<c>.artifactId`;
 Rust `shadenet_proto::artifact_id_of`). Envelopes carry the rln id in `artifact`; gateways accept a set
 of ids (`SHADE_TREE_ZK_ARTIFACTS`) so a ceremony swap runs as a dual-VK window (`docs/CEREMONY.md` §6).
 

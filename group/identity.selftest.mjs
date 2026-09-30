@@ -1,6 +1,6 @@
-// Selftest for `shade-tree identity` (group/identity.mjs + lib/identity-file.mjs): the Rust client's
+// Selftest for `shade-tree identity` (group/identity.mjs + packages/node/lib/identity-file.mjs): the Rust client's
 // `--identity` file exported from a member's secret. Proves, spawning the real CLI as a child:
-//   - the file's `leaf` == rateCommitmentOf(identityFor(secret)) from lib/rln.mjs — the SAME
+//   - the file's `leaf` == rateCommitmentOf(identityFor(secret)) from packages/node/lib/rln.mjs — the SAME
 //     leaf `shade-tree enroll` publishes / the on-chain slash names — and `identitySecret` ==
 //     identitySecretOf(...), so the Rust client is the same member as the JS client;
 //   - the bytes are IDENTICAL to what the interop harness helper
@@ -19,15 +19,15 @@ import { mkdtemp, rm, readFile, writeFile, stat, chmod, mkdir } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { identityFor, identitySecretOf, rateCommitmentOf } from "../lib/rln.mjs";
-import { identityFileFor, serializeIdentityFile } from "../lib/identity-file.mjs";
+import { identityFor, identitySecretOf, rateCommitmentOf } from "../packages/node/lib/rln.mjs";
+import { identityFileFor, serializeIdentityFile } from "../packages/node/lib/identity-file.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
-const CLI = join(ROOT, "bin", "shade-tree.mjs");
+const CLI = join(ROOT, "packages", "node", "bin", "shade-tree.mjs");
 const DERIVE = join(ROOT, "crates", "shadenet-rln", "interop", "egress-derive.mjs");
 
 // A fixed test secret (0x-hex, as `shade-tree enroll` mints). Never a real member.
@@ -54,14 +54,14 @@ function run(args, { env = {}, cwd } = {}) {
 async function main() {
   const work = await mkdtemp(join(tmpdir(), "shade-tree-identity-"));
   try {
-    // ---- reference values from lib/rln.mjs ------------------------------------------------
+    // ---- reference values from packages/node/lib/rln.mjs ------------------------------------------------
     const identity = identityFor(SECRET);
     const refLeaf = rateCommitmentOf(identity).toString();
     const refIdSecret = identitySecretOf(identity).toString();
 
-    console.log("lib/identity-file.mjs derivation:");
+    console.log("packages/node/lib/identity-file.mjs derivation:");
     const file = identityFileFor(SECRET);
-    ok(file.leaf === refLeaf, "identityFileFor(secret).leaf == rateCommitmentOf(identityFor(secret)) (lib/rln.mjs)");
+    ok(file.leaf === refLeaf, "identityFileFor(secret).leaf == rateCommitmentOf(identityFor(secret)) (packages/node/lib/rln.mjs)");
     ok(file.identitySecret === refIdSecret, "identityFileFor(secret).identitySecret == identitySecretOf(identityFor(secret))");
     ok(Object.keys(JSON.parse(serializeIdentityFile(file))).join(",") === "identitySecret,leaf", "serialized key order is identitySecret,leaf");
     let threw = false; try { identityFileFor(""); } catch { threw = true; }

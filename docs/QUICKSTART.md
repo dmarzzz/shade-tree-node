@@ -22,7 +22,7 @@ Everything is one CLI: `shade-tree <command> [--flags]`. Install it:
 
 ```bash
 npm install
-npm link           # puts `shade-tree-node` on PATH; or just use `node bin/shade-tree.mjs` everywhere
+npm link           # puts `shade-tree-node` on PATH; or just use `node packages/node/bin/shade-tree.mjs` everywhere
 shade-tree-node doctor        # checks node, tor, deps, keys
 ```
 
@@ -213,7 +213,7 @@ After those gates clear, the bootstrap target is a fresh Ubuntu 24.04 host:
 
 ```bash
 ssh root@<droplet>
-curl -fsSL https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/bootnode/deploy/bootstrap.sh \
+curl -fsSL https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/packages/node/bootnode/deploy/bootstrap.sh \
   | sudo env SHADE_TREE_MEMBERS_FILE=/root/operator-members.json bash
 ```
 
@@ -221,7 +221,7 @@ It installs Tor + Node.js, mints the onions, starts the internal bootnode + gate
 systemd units, and prints the Elder Tree onion, its pinned signer, and a Proxy template. Opt-ins:
 `SHADE_TREE_BOOTNODE_ONION=<onion>` (node-only host joining an existing Elder Tree), `SHADE_TREE_REGISTRAR=1`
 (sell access over 402), `SHADE_TREE_HELIOS=1` (light-client root anchor). See
-[bootnode/deploy/README.md](../bootnode/deploy/README.md). Then connect as in [step 5](#5-connect-a-proxy), pointing `--bootnode` / `--dir-signer` at what it printed and using the operator-supplied member values.
+[packages/node/bootnode/deploy/README.md](../packages/node/bootnode/deploy/README.md). Then connect as in [step 5](#5-connect-a-proxy), pointing `--bootnode` / `--dir-signer` at what it printed and using the operator-supplied member values.
 
 ## On-chain mode (optional)
 

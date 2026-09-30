@@ -10,11 +10,11 @@ Golden fixtures: [`testdata/vectors.json`](../testdata/vectors.json). See [Confo
 
 | Tag | Value | Meaning | Source |
 | --- | --- | --- | --- |
-| `ANNOUNCE_VERSION` | `1` | announce record `v` field | `bootnode/announce.mjs:34` |
-| directory `version` | `1` | signed-directory `version` field | `bootnode/server.mjs:127` |
-| envelope `v` | `4` | egress-envelope `v` field | `client/shade-tree-client.mjs` `buildEnvelope` |
-| signal prefix | `shade-tree:v4` | tunnel-signal line 1 | `lib/rln.mjs` `requestSignal` |
-| onion | v3 | Tor onion address version byte `0x03` | `lib/directory.mjs:104` |
+| `ANNOUNCE_VERSION` | `1` | announce record `v` field | `packages/node/bootnode/announce.mjs:34` |
+| directory `version` | `1` | signed-directory `version` field | `packages/node/bootnode/server.mjs:127` |
+| envelope `v` | `4` | egress-envelope `v` field | `packages/node/client/shade-tree-client.mjs` `buildEnvelope` |
+| signal prefix | `shade-tree:v4` | tunnel-signal line 1 | `packages/node/lib/rln.mjs` `requestSignal` |
+| onion | v3 | Tor onion address version byte `0x03` | `packages/node/lib/directory.mjs:104` |
 
 Shade Tree protocol v4, Tor onion-service v3, and the announce/directory schema version `1`
 are independent tags. Keep them distinct.
@@ -27,9 +27,9 @@ order exactly as written below. Whitespace: none (default `JSON.stringify`). Num
 JSON numbers. Unsigned / label fields are EXCLUDED from the signed bytes.
 
 ed25519 (RFC 8032, `crypto.sign(null, msg, key)`) is deterministic, so a signature over these
-bytes is byte-reproducible across implementations (`lib/directory.mjs:46` `ed25519Sign`).
+bytes is byte-reproducible across implementations (`packages/node/lib/directory.mjs:46` `ed25519Sign`).
 
-### 1.1 `canonicalAnnounceBytes`: `bootnode/announce.mjs:38`
+### 1.1 `canonicalAnnounceBytes`: `packages/node/bootnode/announce.mjs:38`
 
 ```
 payload = { v, onion, weight, ts, nonce }      // exactly this order
@@ -38,7 +38,7 @@ bytes   = utf8( JSON.stringify(payload) )
 
 Excluded from the signed bytes: `onionSig`, `operator`, `operatorSig`.
 
-### 1.2 `canonicalDirectoryBytes`: `lib/directory.mjs:129`
+### 1.2 `canonicalDirectoryBytes`: `packages/node/lib/directory.mjs:129`
 
 ```
 payload = {
@@ -54,7 +54,7 @@ Excluded from the signed bytes: top-level `signer`, `signature`; per-gateway `op
 
 ## 2. v3 onion <-> ed25519 identity key
 
-A v3 `.onion` address IS its ed25519 public key. `lib/directory.mjs:96` `onionToPubkey` /
+A v3 `.onion` address IS its ed25519 public key. `packages/node/lib/directory.mjs:96` `onionToPubkey` /
 `:114` `pubkeyToOnion`.
 
 ```
@@ -64,7 +64,7 @@ checksum = SHA3-256( b".onion checksum" || pubkey || 0x03 )[:2]
 ```
 
 - base32 alphabet: `abcdefghijklmnopqrstuvwxyz234567`, lowercase, NO padding
-  (`lib/directory.mjs:63` `B32`).
+  (`packages/node/lib/directory.mjs:63` `B32`).
 - The address string is the 56 base32 chars WITHOUT the `.onion` suffix; decoded it is 35
   bytes (`32 + 2 + 1`).
 - Recovery checks: 56 chars, decodes to 35 bytes, `version == 0x03`, checksum matches.
@@ -82,7 +82,7 @@ checksum = SHA3-256( b".onion checksum" || pubkey || 0x03 )[:2]
 
 ## 3. Announce record
 
-Built by `bootnode/announce.mjs:51` `buildAnnounce`; verified by `:80` `verifyAnnounce`.
+Built by `packages/node/bootnode/announce.mjs:51` `buildAnnounce`; verified by `:80` `verifyAnnounce`.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -94,7 +94,7 @@ Built by `bootnode/announce.mjs:51` `buildAnnounce`; verified by `:80` `verifyAn
 | `onionSig` | hex string | yes | ed25519 over `canonicalAnnounceBytes(rec)`, signed by the onion identity key (`:59`) |
 | `operator` | string | no | Ethereum address, lowercased (`:62`) |
 | `operatorSig` | hex string | no | EIP-191 `personal_sign` over `operatorAuthMessage` (`:63`) |
-| `caps` | object | no | T-FEAT-10 signed capabilities, `canonicalCaps` form (`lib/directory.mjs`): fixed field order `ports, region, proto, artifacts, admits, pay`, each present only when valid; covered by `onionSig` (appended after `nonce` in `canonicalAnnounceBytes`) |
+| `caps` | object | no | T-FEAT-10 signed capabilities, `canonicalCaps` form (`packages/node/lib/directory.mjs`): fixed field order `ports, region, proto, artifacts, admits, pay`, each present only when valid; covered by `onionSig` (appended after `nonce` in `canonicalAnnounceBytes`) |
 | `capsSig` | hex string | with `caps` | durable onion-key signature over `canonicalCapsBytes(onion, caps)` (`CAPS_DOMAIN` + `{onion,caps}`); copied verbatim onto the directory entry |
 
 #### 3.0.1 `caps` fields (all bucketed, TOTAL canonicalization: junk dropped, never thrown)
@@ -120,13 +120,13 @@ by the bootnode: they ride under `onionSig` and `capsSig`, so a widened/narrowed
 
 `onionSig = ed25519Sign( canonicalAnnounceBytes(rec), onionSeedHex )` where `onionSeedHex` is
 the 32-byte ed25519 seed behind the onion. Verified with `verifyOnionControl(onion, bytes,
-sig)` (`lib/directory.mjs:179`), which re-derives the key from the address. Never trusts the
+sig)` (`packages/node/lib/directory.mjs:179`), which re-derives the key from the address. Never trusts the
 bootnode.
 
 ### 3.2 Operator authorization (proof 2, optional; enforced when `admission=stake`)
 
 Durable (no timestamp): one signature authorizes the onion for as long as the operator stays
-staked. Message string, `bootnode/announce.mjs:45` `operatorAuthMessage`:
+staked. Message string, `packages/node/bootnode/announce.mjs:45` `operatorAuthMessage`:
 
 ```
 Shade Tree gateway operator authorization\nonion=<onion>\noperator=<operator-lowercased>
@@ -135,7 +135,7 @@ Shade Tree gateway operator authorization\nonion=<onion>\noperator=<operator-low
 `\n` are literal newline bytes (`0x0a`). `<operator>` is `String(operator).toLowerCase()`.
 Verified by recovering the EIP-191 signer with `ethers.verifyMessage` and requiring
 `recovered.toLowerCase() === operator.toLowerCase()` (`:131` `verifyOperatorSig`). Stake is
-then confirmed via `GatewayRegistry.isStaked(operator)` (`lib/gateway-registry.mjs`).
+then confirmed via `GatewayRegistry.isStaked(operator)` (`packages/node/lib/gateway-registry.mjs`).
 
 ### 3.3 Freshness + nonce replay
 
@@ -144,9 +144,9 @@ then confirmed via `GatewayRegistry.isStaked(operator)` (`lib/gateway-registry.m
 - Nonce replay (`:97`,`:124`): the replay key is the string `` `${onion}:${nonce}` ``. If a
   `seenNonce` guard is supplied and already `has` the key, reject; otherwise `add` it only on
   full success. The bootnode's guard is a bounded `Map` swept on the TTL
-  (`bootnode/server.mjs:59` `makeNonceGuard`).
+  (`packages/node/bootnode/server.mjs:59` `makeNonceGuard`).
 
-### 3.4 `verifyAnnounce` reason codes: `bootnode/announce.mjs:80`
+### 3.4 `verifyAnnounce` reason codes: `packages/node/bootnode/announce.mjs:80`
 
 Checks run in this order; the FIRST failure is returned. `<...>` are interpolations.
 
@@ -171,7 +171,7 @@ present. If `isStaked` is omitted, stake is not checked and `staked` stays `fals
 
 ## 4. Signed directory
 
-Built by `bootnode/server.mjs:118` `directory()` -> `signDirectory` (`lib/directory.mjs:143`);
+Built by `packages/node/bootnode/server.mjs:118` `directory()` -> `signDirectory` (`packages/node/lib/directory.mjs:143`);
 verified by `:152` `verifyDirectory`.
 
 ### 4.1 Shape
@@ -202,16 +202,16 @@ verified by `:152` `verifyDirectory`.
 and `capsSig` is re-verified per entry against the entry's OWN onion key (`bad-caps-sig:<onion>`),
 so neither the bootnode nor the directory signer can alter a gateway's advertised policy/offer.
 The bootnode stores the verified caps + capsSig from the announce and emits them unchanged
-(`bootnode/server.mjs directory()`); an entry announced with caps but no standalone `capsSig`
+(`packages/node/bootnode/server.mjs directory()`); an entry announced with caps but no standalone `capsSig`
 is listed cap-free. The delta protocol (`/directory/delta`) re-ships an entry whose body changed
 in place (e.g. its `admits`) in `added`.
-`health` is `"up"` for every live entry the bootnode emits (`bootnode/server.mjs:123`);
-clients still probe and fail over (`lib/directory.mjs:264` `reportHealth`).
+`health` is `"up"` for every live entry the bootnode emits (`packages/node/bootnode/server.mjs:123`);
+clients still probe and fail over (`packages/node/lib/directory.mjs:264` `reportHealth`).
 
 ### 4.2 Pinned-signer model
 
 The client pins ONE signer pubkey (`SHADE_TREE_DIR_SIGNER`, printed at bootnode startup,
-`bootnode/server.mjs:197`). `verifyDirectory(dir, pinnedSignerHex)`:
+`packages/node/bootnode/server.mjs:197`). `verifyDirectory(dir, pinnedSignerHex)`:
 
 1. `dir.signature` must exist.
 2. If `dir.signer` is present, it must equal `pinnedSignerHex` (case-insensitive).
@@ -225,7 +225,7 @@ prevents an existing onion from being paired with a different key. When capabili
 are present, `capsSig` makes them independently verifiable. `verifyDirectory` does not
 verify the stored announce or prove liveness.
 
-### 4.3 `verifyDirectory` reason codes: `lib/directory.mjs:152`
+### 4.3 `verifyDirectory` reason codes: `packages/node/lib/directory.mjs:152`
 
 | # | Reason | Condition |
 | --- | --- | --- |
@@ -239,7 +239,7 @@ verify the stored announce or prove liveness.
 
 `<onion[:12]>` is the first 12 chars of the onion string.
 
-### 4.4 Threshold (M-of-N) directory: T-FEAT-9, `lib/directory.mjs`
+### 4.4 Threshold (M-of-N) directory: T-FEAT-9, `packages/node/lib/directory.mjs`
 
 The single-signer directory trusts ONE bootnode key for fleet selection. Compromise it and
 a client's view can be steered with omitted, reordered, or added entries. A directory MAY
@@ -290,7 +290,7 @@ bytes equal `canonicalDirectoryBytesHex`). Rust parity: `crates/shadenet-proto`
 
 ## 5. Bootnode HTTP API
 
-Server: `bootnode/server.mjs:151` `makeServer`. All responses
+Server: `packages/node/bootnode/server.mjs:151` `makeServer`. All responses
 `content-type: application/json`. Listens on loopback (`127.0.0.1:SHADE_TREE_BOOTNODE_PORT`, default
 `8877`) behind its own onion service.
 
@@ -346,7 +346,7 @@ events and the public canopy animation are interface behavior, not additional wi
 
 ### 5.3 Admission modes + DoS caps
 
-Registry: `bootnode/server.mjs:76` `makeRegistry`.
+Registry: `packages/node/bootnode/server.mjs:76` `makeRegistry`.
 
 | Control | Default | Env | Effect |
 | --- | --- | --- | --- |
@@ -372,7 +372,7 @@ The signed `/directory` response is bounded transitively by `maxEntries` (one ga
 per live entry); there is no separate byte-cap on the response. See ambiguity note in the
 report.
 
-### 5.4 Registrar HTTP API (402 rails, T-FEAT-7): `payments/registrar.mjs` `makeServer`
+### 5.4 Registrar HTTP API (402 rails, T-FEAT-7): `packages/node/payments/registrar.mjs` `makeServer`
 
 The operator's payment endpoint, published as an EXTRA virtual port of an onion the box runs:
 the bootnode onion (`http://<bootnode-onion>:8878/`) or, for T-FEAT-9, the GATEWAY onion on a
@@ -382,7 +382,7 @@ set; but only the rails the provider ENABLED (`SHADE_TREE_PAY_PROTOCOLS`, defaul
 a disabled rail gets NO challenge header in any 402, is absent from `pay.protocols`, and a
 `POST /pay` carrying its header is refused `400 { ok:false, err:"protocol-disabled",
 protocol:"x402"|"mpp", protocols:[<enabled>], detail }` before any parsing. Wire formats in
-`payments/wire.mjs`, exact headers/fields in `docs/PAYMENTS.md` "Headers (both rails, exact)".
+`packages/node/payments/wire.mjs`, exact headers/fields in `docs/PAYMENTS.md` "Headers (both rails, exact)".
 
 | Method | Path | Success | Notes |
 | --- | --- | --- | --- |
@@ -401,7 +401,7 @@ once. Its `protocol` is `unknown|x402|mpp`, its `result` is
 a closed registrar-owned vocabulary. Early rejects before rail selection use
 `protocol="unknown"`; unexpected dependency values collapse to `reason="other"`.
 
-Errors (`payments/registrar.mjs` `makeServer` / `makeEngine`):
+Errors (`packages/node/payments/registrar.mjs` `makeServer` / `makeEngine`):
 
 | Status | When | Body / headers |
 | --- | --- | --- |
@@ -419,13 +419,13 @@ stored receipt (no second settle/insert).
 ## 6. Egress envelope v4
 
 The envelope is NOT part of the bootnode HTTP API. The client sends it to a GATEWAY onion over
-a Tor SOCKS tunnel (`client/shade-tree-client.mjs:184` `_dial`, destination port `80`) as
+a Tor SOCKS tunnel (`packages/node/client/shade-tree-client.mjs:184` `_dial`, destination port `80`) as
 `JSON.stringify(envelope) + "\n"` (`:218`). The gateway replies with ONE newline-terminated
 JSON line: `{ ok:true }` on admit, else `{ ok:false, err:"<reason>" }` (sometimes with
 negotiation metadata). Documented here because the same wire format the
 Rust client emits must satisfy `verifyEnvelope`.
 
-### 6.1 Wire shape: `client/shade-tree-client.mjs:82` `buildEnvelope`
+### 6.1 Wire shape: `packages/node/client/shade-tree-client.mjs:82` `buildEnvelope`
 
 ```jsonc
 {
@@ -433,7 +433,7 @@ Rust client emits must satisfy `verifyEnvelope`.
   "target": "<host:port>",
   "nonce":  "<16 random bytes hex, 32 chars>",
   "artifact": "rln-<16 hex>",    // OPTIONAL (T-HARD-8): id of the ZK artifact set the proof was made with
-  "proof": {                     // wireProof, lib/rln.mjs:227
+  "proof": {                     // wireProof, packages/node/lib/rln.mjs:227
     "snarkProof": { "proof": {...}, "publicSignals": { "y","root","nullifier","x","externalNullifier" } },
     "epoch": "<decimal string>",
     "rlnIdentifier": "<decimal string>"
@@ -444,7 +444,7 @@ Rust client emits must satisfy `verifyEnvelope`.
 }
 ```
 
-`artifact` (T-HARD-8, `lib/zk-artifacts.mjs`) names the ZK artifact set (wasm + zkey + vkey from one
+`artifact` (T-HARD-8, `packages/node/lib/zk-artifacts.mjs`) names the ZK artifact set (wasm + zkey + vkey from one
 phase-2 output) the proof was generated with, so a gateway running a dual-VK rollout window
 (`docs/CEREMONY.md` §6) verifies under the matching vkey. Value = `<circuit>-<sha256(verification_
 key.json bytes) hex[0:16]>`; grammar `^[a-z0-9][a-z0-9._-]{0,63}$`; i.e. literally the vkey's
@@ -459,8 +459,8 @@ its signed caps (`caps.artifacts`, §3), else optimistically its newest (`select
 
 `nullifier`, `externalNullifier`, and `share` are copies of the proof's public signals but are
 NON-authoritative: `verifyEnvelope` reads them from `proof.snarkProof.publicSignals` (`ps`), not
-from the envelope copies (`lib/rln.mjs:288` header). `publicSignals` field set is
-`{ y, root, nullifier, x, externalNullifier }` (`client/shade-tree-client.mjs:214`).
+from the envelope copies (`packages/node/lib/rln.mjs:288` header). `publicSignals` field set is
+`{ y, root, nullifier, x, externalNullifier }` (`packages/node/client/shade-tree-client.mjs:214`).
 
 **Reputation tiers carry NO wire field (T-FEAT-8, `docs/adr/0006-reputation-tiers.md`).** The
 member's per-epoch budget (`userMessageLimit`) is a PRIVATE circuit input hashed into its leaf and
@@ -470,14 +470,14 @@ gateway MUST NOT be sent one. Enforcement is the root (`wrong-group-root`) + the
 
 ### 6.2 Tunnel signal + target binding
 
-`lib/rln.mjs:124` `requestSignal`:
+`packages/node/lib/rln.mjs:124` `requestSignal`:
 
 ```
 requestSignal(target, nonce) = `shade-tree:v4\n${target}\n${nonce}`
 ```
 
 The circuit public `x` is `calculateSignalHash(message)` = `keccak256(utf8(message)) >> 8`
-(`lib/rln.mjs:122`,`:253`), deterministic. Target-binding invariant (`:322`):
+(`packages/node/lib/rln.mjs:122`,`:253`), deterministic. Target-binding invariant (`:322`):
 
 ```
 calculateSignalHash( requestSignal(env.target, env.nonce) )  ==  ps.x
@@ -485,7 +485,7 @@ calculateSignalHash( requestSignal(env.target, env.nonce) )  ==  ps.x
 
 so a captured proof cannot be redirected to a different target/nonce.
 
-### 6.3 `signalFieldSafe` bounds: `lib/rln.mjs:132`
+### 6.3 `signalFieldSafe` bounds: `packages/node/lib/rln.mjs:132`
 
 ```
 signalFieldSafe(s, maxLen) = (typeof s === "string") && s.length > 0
@@ -496,7 +496,7 @@ In `verifyEnvelope`: `signalFieldSafe(target, 256)` and `signalFieldSafe(nonce, 
 (`:316`). Enforced BEFORE hashing so no crafted delimiter or oversized field can make two
 distinct `(target, nonce)` pairs collide to one signal.
 
-### 6.4 `verifyEnvelope` check order: `lib/rln.mjs:288`
+### 6.4 `verifyEnvelope` check order: `packages/node/lib/rln.mjs:288`
 
 Fail-closed, FIRST failure returned. `ps = proof.snarkProof.publicSignals`;
 `share = env.share || { x: ps.x, y: ps.y }`.
@@ -518,7 +518,7 @@ Fail-closed, FIRST failure returned. `ps = proof.snarkProof.publicSignals`;
 | 4 | `invalid-proof` | Groth16 verify returned false (incl. a proof claiming an accepted id it was not made with) |
 | none | success | `{ ok:true, reason:"ok", nullifier, externalNullifier, share:{x,y}, artifact }` from `ps` |
 
-Step 3b (`lib/zk-artifacts.mjs` `resolveArtifact`) is a cheap map lookup on the accepted set
+Step 3b (`packages/node/lib/zk-artifacts.mjs` `resolveArtifact`) is a cheap map lookup on the accepted set
 `{artifactId -> vkey}` (`SHADE_TREE_ZK_ARTIFACTS`; default = the built-in vkey under its own id): absent
 field ⇒ the legacy id, then the same rules. Its three rejections additionally return `label` (the
 bounded metrics key: `bad-artifact` / `artifact-retired` / `artifact-unknown`, never the id) and
@@ -532,7 +532,7 @@ only AUTHORITATIVE once check 4 proves the Groth16 membership proof. Both are re
 trust 2b without 4. Do not reorder 2b apart from 4.
 
 Epoch clock: `epoch = floor(nowMs/1000 / EPOCH_SECONDS)`, `EPOCH_SECONDS` default `120`
-(`lib/rln.mjs:78`,`:80`). `externalNullifier(epoch) = Poseidon(epoch, RLN_IDENTIFIER)`,
+(`packages/node/lib/rln.mjs:78`,`:80`). `externalNullifier(epoch) = Poseidon(epoch, RLN_IDENTIFIER)`,
 `RLN_IDENTIFIER` default `1` (`:72`,`:115`).
 
 ### 6.5 Determinism
@@ -542,7 +542,7 @@ Epoch clock: `epoch = floor(nowMs/1000 / EPOCH_SECONDS)`, `EPOCH_SECONDS` defaul
 | ed25519 signatures (announce, directory) | YES (RFC 8032) | byte-equality |
 | onion address, checksum, canonical bytes | YES | byte-equality |
 | `calculateSignalHash(message)` = `x` | YES | byte/decimal-equality |
-| RLN Groth16 proof bytes (`proof.snarkProof.proof`) | NO (randomized per call, `lib/rln.mjs:238`) | verify for validity/equivalence, NOT byte-equality |
+| RLN Groth16 proof bytes (`proof.snarkProof.proof`) | NO (randomized per call, `packages/node/lib/rln.mjs:238`) | verify for validity/equivalence, NOT byte-equality |
 | RLN public signals `x,y,nullifier,externalNullifier,root` | YES given inputs | value-equality |
 
 ## 7. Cross-check for a second implementation

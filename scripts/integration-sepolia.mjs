@@ -21,8 +21,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { ethers } from "ethers";
 import { poseidon1 } from "poseidon-lite";
-import { deriveCommitment, identitySecretOf, identityFor, currentEpoch, requestSignal, proveForSlot, loadGroup } from "../lib/semaphore.mjs";
-import { makeSlotPool, buildEnvelope } from "../client/shim.mjs";
+import { deriveCommitment, identitySecretOf, identityFor, currentEpoch, requestSignal, proveForSlot, loadGroup } from "../packages/node/lib/semaphore.mjs";
+import { makeSlotPool, buildEnvelope } from "../packages/node/client/shim.mjs";
 
 // A member's identitySecret + rateCommitment leaf from the app seed (single-leaf model).
 const idsecOf = (seed) => identitySecretOf(identityFor(seed));
@@ -77,7 +77,7 @@ function sendEnvelope(envelope, timeoutMs = 45000) {
 let gw, gwOut = "";
 function startGateway() {
   return new Promise((resolve, reject) => {
-    gw = spawn(process.execPath, [join(ROOT, "gateway", "gateway.mjs")], {
+    gw = spawn(process.execPath, [join(ROOT, "packages", "node", "gateway", "gateway.mjs")], {
       cwd: ROOT,
       env: { ...process.env,
         // T-FEAT-9: the gateway admits invited (members.json) ONLY by default; this integration

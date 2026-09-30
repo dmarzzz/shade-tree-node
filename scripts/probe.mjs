@@ -15,7 +15,7 @@ import { SocksClient } from "socks";
 import { Identity } from "@semaphore-protocol/identity";
 import { Group } from "@semaphore-protocol/group";
 import { generateProof } from "@semaphore-protocol/proof";
-import { currentEpoch } from "../lib/semaphore.mjs";
+import { currentEpoch } from "../packages/node/lib/semaphore.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const mode = process.argv[2] || "noproof";
