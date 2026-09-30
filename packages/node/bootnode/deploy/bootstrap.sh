@@ -36,6 +36,9 @@
 #                    later = edit /etc/tor/torrc.d-shade-tree + `systemctl reload tor` (keys/onions
 #                    are unchanged either way).
 #   SHADE_TREE_BOOTNODE_ONION   <56-char>.onion   (default: unset = this box runs its OWN bootnode)
+#   SHADE_TREE_BOOTNODE_ONIONS  <onion>[,<onion>...] every Elder Tree of the canopy (ADR 0012; the
+#                    SHADENET_NETWORK preset fills it from the record's elders[]). Written into
+#                    the heartbeat unit so the gateway announces to each Elder every interval.
 #                    GATEWAY-ONLY mode: when set, this box installs ONLY tor + shade-tree-gateway +
 #                    shade-tree-heartbeat (no shade-tree-bootnode unit, no bootnode HS block, no bootnode
 #                    identity) and the heartbeat announces the gateway to THAT remote bootnode.
@@ -186,6 +189,11 @@ out = {
     "SHADE_TREE_REF": r["services"]["node"]["commit"],
     "SHADE_TREE_ADMIT": "staked",
 }
+if not elder_only:
+    # ADR 0012: a joining node announces to EVERY Elder Tree of the record, primary first.
+    elders = [e["onion"] for e in (r.get("elders") or [elder]) if e.get("onion")]
+    if len(elders) > 1:
+        out["SHADE_TREE_BOOTNODE_ONIONS"] = ",".join(elders)
 if staked:
     rpc = staked.get("rpcUrls") or [staked["rpcUrl"]]
     out.update({
@@ -233,6 +241,7 @@ SHADE_TREE_BOOTNODE_PORT="${SHADE_TREE_BOOTNODE_PORT:-8877}"
 SHADE_TREE_GATEWAY_PORT="${SHADE_TREE_GATEWAY_PORT:-8443}"
 SHADE_TREE_ENABLE_POW="${SHADE_TREE_ENABLE_POW:-0}"
 SHADE_TREE_BOOTNODE_ONION="${SHADE_TREE_BOOTNODE_ONION:-}"
+SHADE_TREE_BOOTNODE_ONIONS="${SHADE_TREE_BOOTNODE_ONIONS:-}"
 SHADE_TREE_BOOTNODE_SIGNER="${SHADE_TREE_BOOTNODE_SIGNER:-}"
 SHADE_TREE_ELDER_ONLY="${SHADE_TREE_ELDER_ONLY:-0}"
 SHADE_TREE_BOOTNODE_PEERS="${SHADE_TREE_BOOTNODE_PEERS:-}"
@@ -347,6 +356,23 @@ if [ -n "$SHADE_TREE_BOOTNODE_ONION" ]; then
   SHADE_TREE_BOOTNODE_ONION="${SHADE_TREE_BOOTNODE_ONION%.onion}.onion"
   [[ "$SHADE_TREE_BOOTNODE_ONION" =~ ^[a-z2-7]{56}\.onion$ ]] \
     || die "SHADE_TREE_BOOTNODE_ONION must be a v3 onion address (56 base32 chars, optional .onion suffix)"
+fi
+if [ -n "$SHADE_TREE_BOOTNODE_ONIONS" ]; then
+  [ -n "$SHADE_TREE_BOOTNODE_ONION" ] || die "SHADE_TREE_BOOTNODE_ONIONS needs SHADE_TREE_BOOTNODE_ONION (the primary Elder) as well"
+  onions_normalized=""
+  IFS=',' read -r -a onion_list <<<"$SHADE_TREE_BOOTNODE_ONIONS"
+  for one_onion in "${onion_list[@]}"; do
+    one_onion="${one_onion//[[:space:]]/}"
+    [ -n "$one_onion" ] || continue
+    one_onion="${one_onion%.onion}.onion"
+    [[ "$one_onion" =~ ^[a-z2-7]{56}\.onion$ ]] \
+      || die "SHADE_TREE_BOOTNODE_ONIONS entries must be v3 onion addresses (56 base32 chars, optional .onion suffix)"
+    onions_normalized="${onions_normalized:+$onions_normalized,}$one_onion"
+  done
+  SHADE_TREE_BOOTNODE_ONIONS="$onions_normalized"
+  unset onions_normalized onion_list one_onion
+fi
+if [ -n "$SHADE_TREE_BOOTNODE_ONION" ]; then
   WITH_BOOTNODE=0
 fi
 if [ "$SHADE_TREE_ELDER_ONLY" = "1" ]; then WITH_GATEWAY=0; fi
@@ -869,6 +895,8 @@ Environment=SHADE_TREE_BANNER=${SHADE_TREE_BANNER}
 SyslogIdentifier=shade-tree-heartbeat
 EOF
     [ -z "$SHADE_TREE_GATEWAY_REGION" ] || echo "Environment=SHADE_TREE_GATEWAY_REGION=${SHADE_TREE_GATEWAY_REGION}"
+    # ADR 0012: every Elder Tree of the canopy; the heartbeat announces to each one.
+    [ -z "$SHADE_TREE_BOOTNODE_ONIONS" ] || echo "Environment=SHADE_TREE_BOOTNODE_ONIONS=${SHADE_TREE_BOOTNODE_ONIONS}"
     # Heartbeat loads the same vkeys and advertises their content-derived ids in signed caps.
     [ -z "$SHADE_TREE_ZK_ARTIFACTS" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACTS=${SHADE_TREE_ZK_ARTIFACTS}"
     if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
@@ -1170,7 +1198,11 @@ if [ "$WITH_GATEWAY" = "1" ]; then
   log "gateway heartbeat -> bootnode ${BN_ONION}"
   render_heartbeat_unit /etc/systemd/system/shade-tree-heartbeat.service
   systemctl daemon-reload
-  systemctl enable --now shade-tree-heartbeat >/dev/null 2>&1 || systemctl restart shade-tree-heartbeat
+  # A re-run must restart an already-running heartbeat (same fix as #200 for the Elder): `enable
+  # --now` on a running unit is a no-op, which left the fleet's heartbeats on the previous commit
+  # and would ignore a changed unit (ADR 0012 adds SHADE_TREE_BOOTNODE_ONIONS to it).
+  systemctl enable shade-tree-heartbeat >/dev/null 2>&1 || true
+  systemctl restart shade-tree-heartbeat
 elif [ -f /etc/systemd/system/shade-tree-heartbeat.service ]; then
   systemctl disable --now shade-tree-heartbeat >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/shade-tree-heartbeat.service

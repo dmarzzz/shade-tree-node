@@ -200,6 +200,17 @@ for (const [field, value] of [["epochSeconds", 120], ["rootFreshnessSeconds", 12
 }
 const badRpc = copy(staked); badRpc.admission.roots.staked.rpcUrl = "https://token@example.test";
 ok(fields(validateDeploymentRecord(badRpc, { repoRoot: ROOT })).includes("admission.roots.staked.rpcUrl"), "credentialed staking RPC URLs are rejected");
+// ADR 0012: the failover list.
+const listed = copy(staked); listed.admission.roots.staked.rpcUrls = ["https://rpc.example.test", "https://fallback.example.test"];
+ok(!fields(validateDeploymentRecord(listed, { repoRoot: ROOT })).some((f) => f.startsWith("admission.roots.staked.rpc")), "rpcUrls with rpcUrl as its first entry is accepted");
+const mismatched = copy(listed); mismatched.admission.roots.staked.rpcUrls = ["https://fallback.example.test", "https://rpc.example.test"];
+ok(fields(validateDeploymentRecord(mismatched, { repoRoot: ROOT })).includes("admission.roots.staked.rpcUrl"), "rpcUrl must equal rpcUrls[0]");
+const credentialed = copy(listed); credentialed.admission.roots.staked.rpcUrls[1] = "https://token@fallback.example.test";
+ok(fields(validateDeploymentRecord(credentialed, { repoRoot: ROOT })).includes("admission.roots.staked.rpcUrls"), "a credentialed fallback endpoint is rejected");
+const tooMany = copy(listed); tooMany.admission.roots.staked.rpcUrls = ["https://rpc.example.test", ...Array.from({ length: 5 }, (_, i) => `https://f${i}.example.test`)];
+ok(fields(validateDeploymentRecord(tooMany, { repoRoot: ROOT })).includes("admission.roots.staked.rpcUrls"), "more than five endpoints are rejected");
+const doubled = copy(listed); doubled.admission.roots.staked.rpcUrls = ["https://rpc.example.test", "https://rpc.example.test"];
+ok(fields(validateDeploymentRecord(doubled, { repoRoot: ROOT })).includes("admission.roots.staked.rpcUrls"), "a duplicated endpoint is rejected");
 const badDeployBlock = copy(staked); badDeployBlock.admission.roots.staked.deployBlock = -1;
 ok(fields(validateDeploymentRecord(badDeployBlock, { repoRoot: ROOT })).includes("admission.roots.staked.deployBlock"), "negative staking deploy blocks are rejected");
 const noAuth = copy(staked); noAuth.admission.operatorAuthorization = null;

@@ -41,7 +41,7 @@ function signedCanopy(issued, count = 2) {
   };
 }
 
-async function loadSelection(tag, work, signer, { live = true, cache = null, directory = null } = {}) {
+async function loadSelection(tag, work, signer, { live = true, cache = null, directory = null, elders = null } = {}) {
   delete process.env.SHADE_TREE_NETWORK;
   process.env.SHADE_TREE_DIR_SIGNER = signer;
   process.env.SHADE_TREE_DIRECTORY_REFRESH_MS = "600000";
@@ -50,6 +50,7 @@ async function loadSelection(tag, work, signer, { live = true, cache = null, dir
   process.env.SHADE_TREE_RECEIPT_SCORING = "0";
   if (live) {
     process.env.SHADE_TREE_BOOTNODE_ONION = "private-elder-address";
+    if (elders) process.env.SHADE_TREE_BOOTNODE_ONIONS = elders; else delete process.env.SHADE_TREE_BOOTNODE_ONIONS;
     delete process.env.SHADE_TREE_DIRECTORY;
   } else {
     delete process.env.SHADE_TREE_BOOTNODE_ONION;
@@ -84,6 +85,31 @@ async function main() {
     const warmEvents = [];
     await live.selectCandidates(null, null, { onEvent: (event) => warmEvents.push(event) });
     ok(warmEvents.length === 0, "selection inside the refresh window emits no canopy event");
+
+    console.log("several Elder Trees (ADR 0012): fallback in record order, address-free events:");
+    {
+      const second = signedCanopy(1_700_000_005, 3);
+      // Two Elders, each with its own canopy signer; the pinned set is the union (primary first).
+      const multi = await loadSelection("multi", work, `${signer.pub},${second.signer.pub}`, { elders: "private-elder-address,private-elder-two" });
+      ok(multi._elderCount() === 2, "SHADE_TREE_BOOTNODE_ONIONS adds the second Elder (primary from SHADE_TREE_BOOTNODE_ONION stays first)");
+      const asked = [];
+      multi._setCanopyFetch(async (onion) => { asked.push(onion); if (onion === "private-elder-address") throw new Error("socks: host unreachable"); return second.directory; });
+      const mEvents = [];
+      const viaSecond = await multi.selectCandidates(null, null, { onEvent: (event) => mEvents.push(event) });
+      ok(viaSecond.length === 3 && asked.join(",") === "private-elder-address,private-elder-two", "primary unreachable -> the second Elder's canopy is used (tried in order)");
+      ok(mEvents.length === 2 && mEvents[1].status === "verified" && mEvents[1].count === 3, "one query + one verified event for the whole fallback, not one per Elder");
+      ok(safeEventShape(mEvents) && !JSON.stringify(mEvents).includes("private-elder-two"), "events name no Elder address");
+      const unverifiable = await loadSelection("multi-bad", work, signer.pub, { elders: "private-elder-address,private-elder-two" });
+      const asked2 = [];
+      unverifiable._setCanopyFetch(async (onion) => { asked2.push(onion); return onion === "private-elder-address" ? second.directory : directory; });
+      const viaVerified = await unverifiable.selectCandidates(null, null, {});
+      ok(viaVerified.length === 2 && asked2.length === 2, "a primary that serves a directory signed by an unpinned key is skipped; the next Elder's verified canopy wins");
+      const allDown = await loadSelection("multi-down", work, signer.pub, { elders: "private-elder-address,private-elder-two" });
+      allDown._setCanopyFetch(async () => { throw new Error("socks: timeout"); });
+      let threw = null;
+      try { await allDown.selectCandidates(null, null, {}); } catch (e) { threw = e.message; }
+      ok(/no verifiable bootnode directory/.test(threw || "") && /socks: timeout/.test(threw || ""), "every Elder down and no cache -> the usual fail-closed error");
+    }
 
     console.log("background refresh:");
     let scheduled = null;

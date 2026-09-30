@@ -8,6 +8,10 @@
 //
 // Config:
 //   SHADE_TREE_BOOTNODE_ONION     the bootnode to announce to (required; or via SHADE_TREE_NETWORK, see packages/node/lib/network-record.mjs)
+//   SHADE_TREE_BOOTNODE_ONIONS    every Elder Tree of the canopy, comma-separated (ADR 0012; filled
+//                           from the record's elders[] by SHADE_TREE_NETWORK). The heartbeat announces
+//                           to each one every interval, so a node stays listed on every Elder and
+//                           a client that fails over to the second Elder still finds a fresh canopy
 //   SHADE_TREE_GW_IDENTITY        path to the onion identity.local.json { onion, seed }
 //                           (packages/node/bootnode/keygen.mjs; default tor/hs/identity.local.json)
 //   SHADE_TREE_GW_WEIGHT          selection weight advertised                    (default 100)
@@ -75,7 +79,13 @@ const M = {
   attempts: metrics.counter("shade_tree_heartbeat_attempts_total", "Heartbeat cycles by bounded outcome=accepted|rejected|egress-unhealthy|transport-error."),
   lastSuccess: metrics.gauge("shade_tree_heartbeat_last_success_timestamp_seconds", "Unix timestamp of the last accepted heartbeat."),
   egressUp: metrics.gauge("shade_tree_heartbeat_egress_check_up", "1 when the latest local egress check succeeded, 0 when it failed."),
+  // ADR 0012 fan-out: how many Elder Trees this heartbeat announces to, and how many accepted the
+  // latest cycle. accepted < total while the fleet is healthy means one Elder is unreachable.
+  eldersTotal: metrics.gauge("shade_tree_heartbeat_elders_total", "Elder Trees this heartbeat announces to (ADR 0012)."),
+  eldersAccepted: metrics.gauge("shade_tree_heartbeat_elders_accepted", "Elder Trees that accepted the latest heartbeat cycle."),
 };
+M.eldersTotal.set(0);
+M.eldersAccepted.set(0);
 M.lastSuccess.set(0);
 
 function writeLog(logger, level, message, fields, legacyMessage = message) {
@@ -337,9 +347,15 @@ export async function announceIfHealthy({ announce, egress, enabled = egressChec
 export function heartbeatConfig(env = process.env) {
   applyNetworkEnv(env);
   const bootnode = env.SHADE_TREE_BOOTNODE_ONION;
-  if (!bootnode) throw new Error("set SHADE_TREE_BOOTNODE_ONION (the bootnode to announce to), or SHADE_TREE_NETWORK=<name> with a live network/<name>/bootnode.json");
+  const listed = String(env.SHADE_TREE_BOOTNODE_ONIONS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!bootnode && !listed.length) throw new Error("set SHADE_TREE_BOOTNODE_ONION (the bootnode to announce to), or SHADE_TREE_NETWORK=<name> with a live network/<name>/bootnode.json");
+  // ADR 0012: announce to every Elder Tree. An explicit SHADE_TREE_BOOTNODE_ONION stays first (and is
+  // added when the list omits it), so a single-Elder configuration behaves exactly as before.
+  const bootnodes = [];
+  for (const onion of [bootnode, ...listed]) if (onion && !bootnodes.includes(onion)) bootnodes.push(onion);
   return {
-    bootnode,
+    bootnode: bootnodes[0],
+    bootnodes,
     intervalSec: Number(env.SHADE_TREE_BOOTNODE_HEARTBEAT || 300),
     weight: Number(env.SHADE_TREE_GW_WEIGHT || 100),
     torHost: env.SHADE_TREE_TOR_HOST || "127.0.0.1",
@@ -383,6 +399,53 @@ export function makeBeat({ announce, egress, enabled = egressCheckEnabled(), log
   };
 }
 
+// ADR 0012 fan-out: one egress check, then one announce per Elder Tree, in parallel, each
+// classified and logged exactly as a single-Elder tick is (tagged with the Elder's prefix). The
+// cycle is `ok` when at least one Elder accepted: the node is listed somewhere and the relay
+// report may follow. Per-Elder outcomes ride in `results` and the two gauges, so one dead Elder
+// is visible without failing the cycle. NEVER throws, like makeBeat.
+export function makeFanoutBeat({ bootnodes, announce, egress, enabled = egressCheckEnabled(), log = heartbeatLog, now = () => Date.now() } = {}) {
+  const tagged = (bootnode) => {
+    const tag = `${bootnode.slice(0, 16)}..onion`;
+    if (typeof log === "function") return (s) => log(`[${tag}] ${s}`);
+    return new Proxy({}, { get: (_, level) => (message, fields) => log?.[level]?.(message, { ...fields, elder: tag }) });
+  };
+  const beats = bootnodes.map((bootnode) => makeBeat({ announce: () => announce(bootnode), egress: async () => ({ healthy: true }), enabled: false, log: tagged(bootnode), now }));
+  M.eldersTotal.set(bootnodes.length);
+  return async () => {
+    if (enabled) {
+      let r;
+      try { r = await egress(); }
+      catch (e) {
+        M.egressUp.set(0);
+        M.eldersAccepted.set(0);
+        M.attempts.inc({ outcome: "transport-error" });
+        writeLog(log, "warn", "heartbeat transport failed; will retry", { reason: "transport-error" }, `announce failed: ${e.message} (will retry next interval)`);
+        return { failed: true, err: e.message };
+      }
+      M.egressUp.set(r.healthy ? 1 : 0);
+      if (!r.healthy) {
+        M.eldersAccepted.set(0);
+        M.attempts.inc({ outcome: "egress-unhealthy" });
+        writeLog(log, "warn", "egress check failed; skipping heartbeat", { reason: "egress-unhealthy" }, `egress DOWN (${r.target} ${r.reason}); SKIP announce; gateway ages out of the bootnode via TTL`);
+        return { skipped: true, egress: r };
+      }
+    }
+    const results = await Promise.all(beats.map((beat) => beat()));
+    const accepted = results.filter((r) => r && r.ok === true);
+    M.eldersAccepted.set(accepted.length);
+    const perElder = results.map((r, i) => ({ bootnode: bootnodes[i], ...(r || {}) }));
+    if (accepted.length === 0) {
+      const first = results.find((r) => r && (r.err || r.failed)) || {};
+      return { ok: false, err: first.err || "no Elder Tree accepted the announce", accepted: 0, total: bootnodes.length, results: perElder };
+    }
+    if (accepted.length < bootnodes.length) {
+      writeLog(log, "warn", "heartbeat accepted by some Elder Trees only", { accepted: accepted.length, total: bootnodes.length }, `announced to ${accepted.length} of ${bootnodes.length} Elder Trees (the rest will be retried next interval)`);
+    }
+    return { ...accepted[0], accepted: accepted.length, total: bootnodes.length, results: perElder };
+  };
+}
+
 // The long-running heartbeat. `deps` are all optional (defaults = the real CLI); tests inject
 // fakes for env, identity/operator resolution, announce transport, egress probe, scheduler, log.
 export async function runHeartbeat({
@@ -395,10 +458,12 @@ export async function runHeartbeat({
   identity = null,       // pre-resolved { onion, seed } (else loadIdentity(env))
   operator = null,       // pre-resolved { operator, operatorSig } (else resolveOperator(onion, env))
 } = {}) {
-  const { bootnode, intervalSec, weight, torHost, torPort } = heartbeatConfig(env);
+  const { bootnode, bootnodes, intervalSec, weight, torHost, torPort } = heartbeatConfig(env);
   const id = identity ?? await loadIdentity(env);
   const op = operator ?? await resolveOperator(id.onion, env);
   writeLog(log, "info", "heartbeat configured", { intervalSec, authMode: op.operator ? "staked-operator" : "onion-only" }, `heartbeat: ${id.onion.slice(0, 16)}..onion -> ${bootnode.slice(0, 16)}..onion every ${intervalSec}s${op.operator ? ` (operator ${op.operator.slice(0, 10)}..)` : " (onion-only)"}`);
+  if (bootnodes.length > 1) writeLog(log, "info", "heartbeat fan-out configured", { elders: bootnodes.length }, `heartbeat: announcing to ${bootnodes.length} Elder Trees (${bootnodes.map((b) => b.slice(0, 16) + "..onion").join(", ")})`);
+  M.eldersTotal.set(bootnodes.length);
   const enabled = egressCheckEnabled(env);
   writeLog(log, "info", "egress self-check configured", { enabled, target: enabled ? EGRESS_CHECK_TARGET : "disabled" }, enabled
     ? `egress self-check: ON (metadata-only TCP connect to ${EGRESS_CHECK_TARGET} before each announce; SKIP announce if DOWN). Disable with SHADE_TREE_EGRESS_CHECK=0`
@@ -411,17 +476,20 @@ export async function runHeartbeat({
   else writeLog(log, "warn", "admission policy is not advertised", { reason: "SHADE_TREE_ADMIT-unset" }, "admission policy: NOT advertised (SHADE_TREE_ADMIT unset here); clients assume this gateway may admit any leaf source; set SHADE_TREE_ADMIT to the gateway's policy");
   if (caps?.pay) writeLog(log, "debug", "payment offer advertised", { protocols: caps.pay.protocols, port: caps.pay.port }, `payment advert: protocols=${caps.pay.protocols.join(",")} port=${caps.pay.port}${caps.pay.onion ? " onion=" + caps.pay.onion.slice(0, 16) + ".." : " (this onion)"}`);
 
-  const announceBeat = makeBeat({
-    announce: () => announce({ id, bootnode, op, weight, torHost, torPort, caps }),
-    egress: () => egress(),
-    enabled,
-    log,
-  });
+  const announceBeat = bootnodes.length > 1
+    ? makeFanoutBeat({ bootnodes, announce: (elder) => announce({ id, bootnode: elder, op, weight, torHost, torPort, caps }), egress: () => egress(), enabled, log })
+    : makeBeat({
+      announce: () => announce({ id, bootnode, op, weight, torHost, torPort, caps }),
+      egress: () => egress(),
+      enabled,
+      log,
+    });
   const relayEnabled = env.SHADE_TREE_RELAY_TELEMETRY === "1";
   const counterPath = env.SHADE_TREE_RELAY_TELEMETRY_STATE || join(HERE, "../../..", "tor", "hs", "relay-telemetry.local.json");
   const reportStatePath = env.SHADE_TREE_RELAY_REPORT_STATE || join(HERE, "../../..", "tor", "hs", "relay-report.local.json");
   const beat = async () => {
     const result = await announceBeat();
+    if (bootnodes.length === 1) M.eldersAccepted.set(result?.ok === true ? 1 : 0);
     // Bind reports to an already-authenticated live announcement: only report after this cycle's
     // /announce was accepted. Telemetry remains best-effort and cannot make the liveness heartbeat
     // fail; the Elder independently verifies the onion signature and live registry membership.
@@ -437,7 +505,7 @@ export async function runHeartbeat({
   };
   const first = await beat();
   const timer = schedule(beat, intervalSec * 1000);
-  return { beat, first, timer, id: { onion: id.onion }, op: { operator: op.operator }, caps, relayTelemetry: relayEnabled };
+  return { beat, first, timer, id: { onion: id.onion }, op: { operator: op.operator }, caps, relayTelemetry: relayEnabled, bootnodes };
 }
 
 async function main() {

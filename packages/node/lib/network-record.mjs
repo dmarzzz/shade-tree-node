@@ -108,6 +108,13 @@ function validateStakedRoot(root, bad, rate) {
       }
     }
   }
+  // ADR 0012: the RPC failover list. `rpcUrl` stays the first entry so a reader that knows one
+  // endpoint keeps working; up to five, the same bound SHADE_TREE_RPC_URL takes.
+  if (root.rpcUrls !== undefined) {
+    if (!Array.isArray(root.rpcUrls) || root.rpcUrls.length === 0 || root.rpcUrls.length > 5 || !root.rpcUrls.every(isUrl)) bad("admission.roots.staked.rpcUrls", "must be 1..5 http(s)/ws(s) URLs");
+    else if (new Set(root.rpcUrls).size !== root.rpcUrls.length) bad("admission.roots.staked.rpcUrls", "must not list an endpoint twice");
+    else if (root.rpcUrl !== undefined && root.rpcUrl !== root.rpcUrls[0]) bad("admission.roots.staked.rpcUrl", "must equal rpcUrls[0] (the primary endpoint)");
+  }
   if (root.slashRewardDivisor !== undefined && !(isPosInt(root.slashRewardDivisor) && root.slashRewardDivisor >= 2 && root.slashRewardDivisor <= 1000)) {
     bad("admission.roots.staked.slashRewardDivisor", "must be an integer in 2..1000 (the contract's bound)");
   }
@@ -395,6 +402,12 @@ function validateElderList(rec, bad) {
   }
 }
 
+// The staked root's RPC endpoints in failover order: `rpcUrls` when present, else `[rpcUrl]`.
+export function rpcUrlsOf(root) {
+  if (Array.isArray(root?.rpcUrls) && root.rpcUrls.length && root.rpcUrls.every(isUrl)) return root.rpcUrls.slice();
+  return isUrl(root?.rpcUrl) ? [root.rpcUrl] : [];
+}
+
 // Every Elder Tree of a record as [{ onion, canopySigner }], primary first (v1: just `elder`).
 export function eldersOf(rec) {
   if (Array.isArray(rec?.elders) && rec.elders.length) return rec.elders.map((e) => ({ onion: e.onion, canopySigner: e.canopySigner }));
@@ -449,7 +462,15 @@ export function envDefaultsFromRecords({ dir, deployment, contracts, bootnode })
   const out = {};
   if (deployment?.status === "live" && deployment.protocol?.min <= 4 && deployment.protocol?.max >= 4) {
     out.SHADE_TREE_BOOTNODE_ONION = deployment.elder.onion.trim();
-    out.SHADE_TREE_DIR_SIGNER = signerToEnv(deployment.elder.canopySigner);
+    // ADR 0012: every Elder Tree of the record. The heartbeat announces to all of them and the
+    // client falls back through them in order; a v1 record yields the one Elder. The pinned signer
+    // set is the union of their canopy signers (primary first), so a directory fetched from the
+    // second Elder verifies.
+    const elders = eldersOf(deployment).filter((e) => isOnion(e.onion));
+    out.SHADE_TREE_BOOTNODE_ONIONS = elders.map((e) => e.onion.trim()).join(",");
+    const signers = [];
+    for (const e of elders) for (const s of signerToEnv(e.canopySigner).split(",")) if (s && !signers.includes(s)) signers.push(s);
+    out.SHADE_TREE_DIR_SIGNER = signers.join(",");
     if (deployment.elder.admission) out.SHADE_TREE_BOOTNODE_ADMISSION = deployment.elder.admission;
     if (deployment.elder.gatewayRegistry) out.SHADE_TREE_GATEWAY_REGISTRY = deployment.elder.gatewayRegistry;
     const rate = deployment.ratePolicy;
@@ -464,7 +485,10 @@ export function envDefaultsFromRecords({ dir, deployment, contracts, bootnode })
     const staked = deployment.admission?.roots?.staked;
     if (staked && isEthAddress(staked.contract)) {
       out.SHADE_TREE_GROUP_CONTRACT = staked.contract;
-      if (isUrl(staked.rpcUrl)) out.SHADE_TREE_RPC_URL = staked.rpcUrl;
+      // ADR 0012: the record's failover list becomes the comma-separated SHADE_TREE_RPC_URL the
+      // node, the heartbeat and the JS client already accept (up to five, tried in order).
+      const rpcUrls = rpcUrlsOf(staked);
+      if (rpcUrls.length) out.SHADE_TREE_RPC_URL = rpcUrls.join(",");
       if (isPosInt(staked.chainId)) out.SHADE_TREE_CHAIN_ID = String(staked.chainId);
       if (staked.profile === "public-stake-v1") out.SHADE_TREE_STAKE_PROFILE = staked.profile;
       if (isBlock(staked.deployBlock)) {

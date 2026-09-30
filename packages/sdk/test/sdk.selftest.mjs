@@ -28,6 +28,27 @@ ok(net1.staked.tiers.map((t) => t.limit).join(",") === "1,8" && net1.staked.tier
 ok(net1.elder.canopySigner.length === 64, "canopy signer pinned from the record");
 ok(await code(() => sdk.resolveNetwork("nope")) === "InvalidInput", "unknown network -> InvalidInput");
 ok(net1.elders.length === 2 && net1.elders[0].onion === net1.elder.onion && net1.elders[1].onion.startsWith("k54vz4zu"), "every Elder Tree from elders[] (primary first)");
+// ADR 0012: the record's RPC failover list; rpcUrl is its first entry.
+ok(Array.isArray(net1.staked.rpcUrls) && net1.staked.rpcUrls.length === 2 && net1.staked.rpcUrls[0] === net1.staked.rpcUrl, "rpcUrls from the record, rpcUrl first");
+{
+  const one = sdk.resolveNetwork({ ...net1.record, admission: { ...net1.record.admission, roots: { ...net1.record.admission.roots, staked: { ...net1.record.admission.roots.staked, rpcUrls: undefined } } } });
+  ok(one.staked.rpcUrls.length === 1 && one.staked.rpcUrls[0] === net1.staked.rpcUrl, "a record without rpcUrls yields [rpcUrl]");
+  const { jsonRpcProvider } = await import("../src/staking.mjs");
+  const hits = [];
+  const fetchImpl = async (url) => {
+    hits.push(url);
+    if (url === "https://dead.example") throw new Error("ECONNREFUSED");
+    if (url === "https://busy.example") return { ok: false, status: 429, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ jsonrpc: "2.0", id: 1, result: "0xaa36a7" }) };
+  };
+  const p = jsonRpcProvider(["https://dead.example", "https://busy.example", "https://good.example"], { fetchImpl });
+  ok(await p.request({ method: "eth_chainId" }) === "0xaa36a7" && hits.join(",") === "https://dead.example,https://busy.example,https://good.example", "provider moves past a transport failure and a non-2xx answer to the next endpoint");
+  const errProvider = jsonRpcProvider(["https://good.example", "https://never.example"], { fetchImpl: async (url) => { hits.push(url); return { ok: true, status: 200, json: async () => ({ jsonrpc: "2.0", id: 1, error: { code: -32000, message: "execution reverted" } }) }; } });
+  hits.length = 0;
+  ok(await code(() => errProvider.request({ method: "eth_call", params: [] })) === "Rpc" && hits.join(",") === "https://good.example", "a JSON-RPC error is the chain's answer: no failover");
+  const allDead = jsonRpcProvider(["https://dead.example"], { fetchImpl });
+  ok(await code(() => allDead.request({ method: "eth_chainId" })) === "Rpc", "every endpoint down -> Rpc error");
+}
 
 console.log("=== several Elder Trees ===");
 {

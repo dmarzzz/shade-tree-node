@@ -33,6 +33,8 @@ pub struct StakedRoot {
     pub profile: Option<String>,
     pub contract: String,
     pub rpc_url: String,
+    /// The record's RPC failover list (ADR 0012); `rpc_url` is always its first entry.
+    pub rpc_urls: Vec<String>,
     pub chain_id: Option<u64>,
     pub deploy_tx: Option<String>,
     pub deploy_block: Option<u64>,
@@ -78,6 +80,8 @@ pub struct PublicProfile {
     pub rate_policy: shadenet_proto::CanonicalRate,
     pub contract: String,
     pub rpc_url: String,
+    /// Every RPC endpoint in failover order (ADR 0012); the client tries them in turn.
+    pub rpc_urls: Vec<String>,
     pub chain_id: u64,
     pub deploy_block: u64,
     pub default_limit: u64,
@@ -368,6 +372,28 @@ fn parse_staked(value: &serde_json::Value) -> Result<StakedRoot, String> {
         .get("rpcUrl")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "staked root has no RPC".to_string())?;
+    let rpc_urls = match value.get("rpcUrls") {
+        None => vec![rpc_url.to_string()],
+        Some(list) => {
+            let urls =
+                list.as_array()
+                    .ok_or_else(|| "staked root rpcUrls must be an array".to_string())?
+                    .iter()
+                    .map(|entry| {
+                        entry.as_str().map(str::to_string).ok_or_else(|| {
+                            "staked root rpcUrls entries must be strings".to_string()
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+            if urls.is_empty() || urls.len() > 5 {
+                return Err("staked root rpcUrls must list 1..5 endpoints".to_string());
+            }
+            if urls[0] != rpc_url {
+                return Err("staked root rpcUrl must equal rpcUrls[0]".to_string());
+            }
+            urls
+        }
+    };
     let optional_string = |name: &str| {
         value
             .get(name)
@@ -409,6 +435,7 @@ fn parse_staked(value: &serde_json::Value) -> Result<StakedRoot, String> {
         profile: optional_string("profile")?,
         contract: contract.to_string(),
         rpc_url: rpc_url.to_string(),
+        rpc_urls,
         chain_id: optional_u64(value, "chainId")?,
         deploy_tx: optional_string("deployTx")?,
         deploy_block: optional_u64(value, "deployBlock")?,
@@ -510,6 +537,7 @@ pub fn public_profile_from(deployment: Deployment) -> Result<PublicProfile, Stri
         rate_policy,
         contract: staked.contract,
         rpc_url: staked.rpc_url,
+        rpc_urls: staked.rpc_urls,
         chain_id,
         deploy_block,
         default_limit,
@@ -665,5 +693,50 @@ mod tests {
         assert_eq!(network.name, "sepolia-staging");
         assert_eq!(network.public_profile().unwrap().default_limit, 1);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rpc_urls_are_the_failover_order_with_rpc_url_first() {
+        // ADR 0012: `rpcUrls` is the failover order and `rpcUrl` its first entry; a record
+        // without the list yields `[rpcUrl]`; a swapped or empty list is refused.
+        let mut record = public_fixture();
+        let rpc_url = record["admission"]["roots"]["staked"]["rpcUrl"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        record["admission"]["roots"]["staked"]["rpcUrls"] =
+            json!([rpc_url, "https://fallback.example"]);
+        let parsed = parse_deployment("test", &record.to_string()).unwrap();
+        let staked = parsed.staked.as_ref().unwrap();
+        assert_eq!(
+            staked.rpc_urls,
+            vec![
+                staked.rpc_url.clone(),
+                "https://fallback.example".to_string()
+            ]
+        );
+        assert_eq!(
+            public_profile_from(parsed.clone()).unwrap().rpc_urls.len(),
+            2
+        );
+        let mut one = public_fixture();
+        one["admission"]["roots"]["staked"]
+            .as_object_mut()
+            .unwrap()
+            .remove("rpcUrls");
+        let one = parse_deployment("test", &one.to_string()).unwrap();
+        let staked = one.staked.as_ref().unwrap();
+        assert_eq!(staked.rpc_urls, vec![staked.rpc_url.clone()]);
+        let mut swapped = record.clone();
+        swapped["admission"]["roots"]["staked"]["rpcUrls"] =
+            json!(["https://fallback.example", staked.rpc_url.clone()]);
+        assert!(parse_deployment("test", &swapped.to_string())
+            .unwrap_err()
+            .contains("rpcUrls[0]"));
+        let mut empty = record.clone();
+        empty["admission"]["roots"]["staked"]["rpcUrls"] = json!([]);
+        assert!(parse_deployment("test", &empty.to_string())
+            .unwrap_err()
+            .contains("1..5"));
     }
 }

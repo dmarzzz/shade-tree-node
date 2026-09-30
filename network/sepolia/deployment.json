@@ -71,6 +71,10 @@
         "contract": "0xEB67Abf066c11D78856BccC63476ed14d51e4275",
         "deployTx": "0x27d187dc35ea6d333a1cc91effcc78883534964b4818601937f96ce2b7a2719c",
         "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
+        "rpcUrls": [
+          "https://rpc.sepolia.ethpandaops.io",
+          "https://ethereum-sepolia-rpc.publicnode.com"
+        ],
         "deployBlock": 11624622,
         "hasher": "0x4Aef86FA47026432567E6F1cE5d5Bb46c62d8d23",
         "withdrawVerifier": "0x2a905423D252e39d73d37156C28503aD8650C952",

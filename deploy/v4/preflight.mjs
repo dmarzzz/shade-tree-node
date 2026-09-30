@@ -170,6 +170,13 @@ export function validateDeploymentRecord(record, { requireLive = true, repoRoot 
       for (const path of ["staked", "paid"]) if (roots[path] !== null) {
         if (!isObject(roots[path]) || !isEthAddress(roots[path].contract)) bad(`admission.roots.${path}.contract`, "must be a contract address or null");
         if (roots[path].rpcUrl !== undefined && !safeRepository(roots[path].rpcUrl)) bad(`admission.roots.${path}.rpcUrl`, "must be a credential-free HTTPS URL when present");
+        // ADR 0012: the failover list; rpcUrl stays its first entry for readers that know one endpoint.
+        if (roots[path].rpcUrls !== undefined) {
+          const list = roots[path].rpcUrls;
+          if (!Array.isArray(list) || list.length === 0 || list.length > 5 || !list.every(safeRepository)) bad(`admission.roots.${path}.rpcUrls`, "must be 1..5 credential-free HTTPS URLs when present");
+          else if (new Set(list).size !== list.length) bad(`admission.roots.${path}.rpcUrls`, "must not list an endpoint twice");
+          else if (roots[path].rpcUrl !== undefined && roots[path].rpcUrl !== list[0]) bad(`admission.roots.${path}.rpcUrl`, "must equal rpcUrls[0] (the primary endpoint)");
+        }
         if (roots[path].deployBlock !== undefined && (!Number.isInteger(roots[path].deployBlock) || roots[path].deployBlock < 0)) bad(`admission.roots.${path}.deployBlock`, "must be a non-negative integer when present");
       }
       if (Array.isArray(paths)) for (const path of paths) {
@@ -483,7 +490,9 @@ async function main() {
     const pin = shape.ok && flags.requireLive ? validatePinnedCheckout(record, flags) : { ok: true, errors: [] };
     // The runtime RPC may be a failover list (SHADE_TREE_RPC_URL takes up to five, comma-separated):
     // every endpoint the nodes can fall back to must pass the same on-chain checks.
-    const rpcUrls = flags.rpcUrl ? flags.rpcUrl.split(",").map((url) => url.trim()).filter(Boolean) : [null];
+    // Without --rpc-url, every endpoint of the record's own failover list is checked (ADR 0012).
+    const recordRpcs = record.admission?.roots?.staked?.rpcUrls;
+    const rpcUrls = flags.rpcUrl ? flags.rpcUrl.split(",").map((url) => url.trim()).filter(Boolean) : (Array.isArray(recordRpcs) && recordRpcs.length ? recordRpcs : [null]);
     if (rpcUrls.length > 5) throw new Error("--rpc-url takes at most five comma-separated endpoints");
     const chain = { ok: true, errors: [] };
     if (shape.ok && pin.ok && flags.requireLive) {

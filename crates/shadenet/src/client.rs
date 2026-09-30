@@ -162,7 +162,9 @@ struct MemberSnapshot {
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct MemberKey {
     contract: String,
-    rpc_url: String,
+    /// Failover order (ADR 0012): an explicit rpc_url (comma-separated allowed), else the
+    /// profile's list, else the local dev node.
+    rpc_urls: Vec<String>,
     from_block: u64,
     block_tag: String,
 }
@@ -720,12 +722,20 @@ impl Client {
         };
         Ok(Some(MemberKey {
             contract,
-            rpc_url: self
+            rpc_urls: self
                 .config
                 .rpc_url
-                .clone()
-                .or_else(|| self.profile.as_ref().map(|p| p.rpc_url.clone()))
-                .unwrap_or_else(|| "http://127.0.0.1:8545".into()),
+                .as_deref()
+                .map(|list| {
+                    list.split(',')
+                        .map(str::trim)
+                        .filter(|url| !url.is_empty())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|urls| !urls.is_empty())
+                .or_else(|| self.profile.as_ref().map(|p| p.rpc_urls.clone()))
+                .unwrap_or_else(|| vec!["http://127.0.0.1:8545".into()]),
             from_block: self
                 .config
                 .from_block
@@ -740,13 +750,27 @@ impl Client {
         let rln_identifier = self.config.rln_identifier.parse::<u64>().unwrap_or(1);
         let request = key.clone();
         let result = tokio::task::spawn_blocking(move || {
-            leaves::fetch_members(
-                &request.rpc_url,
-                &request.contract,
-                request.from_block,
-                &request.block_tag,
-                rln_identifier,
-            )
+            // ADR 0012: try every RPC endpoint in the record's order; the first complete member set
+            // wins. A pool that drops history fails closed in `leaves` and the next endpoint is tried.
+            let mut failures = Vec::new();
+            for rpc_url in &request.rpc_urls {
+                match leaves::fetch_members(
+                    rpc_url,
+                    &request.contract,
+                    request.from_block,
+                    &request.block_tag,
+                    rln_identifier,
+                ) {
+                    Ok(set) => return Ok(set),
+                    Err(error) => {
+                        if request.rpc_urls.len() > 1 {
+                            tracing::warn!(rpc = %rpc_url, %error, "member set fetch failed; trying the next RPC");
+                        }
+                        failures.push(format!("{rpc_url}: {error}"));
+                    }
+                }
+            }
+            Err(failures.join("; "))
         })
         .await
         .map_err(|e| Error::Internal(e.to_string()))?;

@@ -123,7 +123,10 @@ outputs. Rehearse first: `node scripts/ceremony/rehearse.mjs --inputs <build-inp
 ## M8: deploy and launch
 
 **Inputs that change:** only `network/sepolia/economics.json` (H2) and the adopted artifacts and
-lock (H3). The script, contracts and checks are the ones staging already ran.
+lock (H3). The script, contracts and checks are the ones staging already ran. The deploy also
+writes the record's RPC failover list (`rpcUrls`, ADR 0012) from `SHADE_TREE_RPC_URL` or
+`--rpc-url` (comma-separated, full-history endpoint first; the default is ethpandaops then
+publicnode, the pair staging runs on).
 
 **1. Fund the deployer** with enough for gas (about 0.005 ETH at 1 gwei) plus the launch cohort
 and sponsor seats (step 5). Check: `cast balance --ether 0x62c448057273fceE5785dd5b57e40d0ff19554b1 --rpc-url https://ethereum-sepolia-rpc.publicnode.com`.

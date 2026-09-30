@@ -240,6 +240,16 @@ async function main() {
       const r = render(work, "gw-bad", { SHADE_TREE_BOOTNODE_ONION: bad });
       ok(r.status !== 0 && /SHADE_TREE_BOOTNODE_ONION must be a v3 onion/.test(r.stderr), `malformed bootnode onion rejected: ${JSON.stringify(bad)}`);
     }
+    // ADR 0012: every Elder Tree of the canopy reaches the heartbeat unit; absent == default.
+    ok(!/SHADE_TREE_BOOTNODE_ONIONS/.test(hb), "no SHADE_TREE_BOOTNODE_ONIONS -> the heartbeat unit carries no fan-out line (golden unchanged)");
+    const SECOND = "b".repeat(56);
+    const fan = render(work, "gw-fan", { SHADE_TREE_BOOTNODE_ONION: `${ONION}.onion`, SHADE_TREE_BOOTNODE_ONIONS: `${ONION}, ${SECOND}` });
+    const fanHb = fan.status === 0 ? await readFile(join(fan.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8") : "";
+    ok(fan.status === 0 && unitEnv(fanHb, "SHADE_TREE_BOOTNODE_ONIONS") === `${ONION}.onion,${SECOND}.onion` && unitEnv(fanHb, "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "SHADE_TREE_BOOTNODE_ONIONS is normalised (suffix, whitespace) into the heartbeat unit next to the primary");
+    const fanNoPrimary = render(work, "gw-fan-bad", { SHADE_TREE_BOOTNODE_ONIONS: `${ONION}.onion,${SECOND}.onion` });
+    ok(fanNoPrimary.status !== 0 && /needs SHADE_TREE_BOOTNODE_ONION/.test(fanNoPrimary.stderr), "SHADE_TREE_BOOTNODE_ONIONS without the primary is rejected");
+    const fanBad = render(work, "gw-fan-bad2", { SHADE_TREE_BOOTNODE_ONION: `${ONION}.onion`, SHADE_TREE_BOOTNODE_ONIONS: `${ONION}.onion,not-an-onion` });
+    ok(fanBad.status !== 0 && /SHADE_TREE_BOOTNODE_ONIONS entries must be v3 onion/.test(fanBad.stderr), "a malformed entry in the list is rejected");
     // PoW toggle composes with gateway-only.
     const gwPow = render(work, "gw-only-pow", { SHADE_TREE_BOOTNODE_ONION: ONION, SHADE_TREE_ENABLE_POW: "1" });
     const gwPowBlocks = hsBlocks(await readFile(join(gwPow.out, "etc/tor/torrc.d-shade-tree"), "utf8"));

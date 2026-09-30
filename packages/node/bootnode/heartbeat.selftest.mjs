@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import {
-  loadIdentity, resolveOperator, announceOnce, makeBeat, runHeartbeat, heartbeatConfig, egressCheckEnabled,
+  loadIdentity, resolveOperator, announceOnce, makeBeat, makeFanoutBeat, runHeartbeat, heartbeatConfig, egressCheckEnabled,
 } from "./heartbeat.mjs";
 import { buildAnnounce, verifyAnnounce, verifyOperatorSig, canonicalAnnounceBytes, operatorAuthMessage } from "./announce.mjs";
 import { postOverTor, parseHttp } from "./fetch.mjs";
@@ -258,6 +258,14 @@ async function main() {
   ok(dc.intervalSec === 300 && dc.weight === 100 && dc.torHost === "127.0.0.1" && dc.torPort === 9250, "defaults: 300s, weight 100, 127.0.0.1:9250");
   const oc = heartbeatConfig({ SHADE_TREE_BOOTNODE_ONION: "b.onion", SHADE_TREE_BOOTNODE_HEARTBEAT: "60", SHADE_TREE_GW_WEIGHT: "7", SHADE_TREE_TOR_HOST: "10.0.0.2", SHADE_TREE_TOR_PORT: "9050" });
   ok(oc.intervalSec === 60 && oc.weight === 7 && oc.torHost === "10.0.0.2" && oc.torPort === 9050, "overrides parsed");
+  // ADR 0012: every Elder Tree; the primary stays first and is added when the list omits it.
+  ok(JSON.stringify(dc.bootnodes) === JSON.stringify(["b.onion"]), "one Elder -> bootnodes = [bootnode]");
+  const fan = heartbeatConfig({ SHADE_TREE_BOOTNODE_ONION: "a.onion", SHADE_TREE_BOOTNODE_ONIONS: " a.onion, b.onion ,c.onion,b.onion" });
+  ok(fan.bootnode === "a.onion" && JSON.stringify(fan.bootnodes) === JSON.stringify(["a.onion", "b.onion", "c.onion"]), "SHADE_TREE_BOOTNODE_ONIONS: trimmed, deduplicated, primary first");
+  const fan2 = heartbeatConfig({ SHADE_TREE_BOOTNODE_ONION: "z.onion", SHADE_TREE_BOOTNODE_ONIONS: "a.onion,b.onion" });
+  ok(fan2.bootnode === "z.onion" && JSON.stringify(fan2.bootnodes) === JSON.stringify(["z.onion", "a.onion", "b.onion"]), "an explicit primary missing from the list is put first");
+  const fan3 = heartbeatConfig({ SHADE_TREE_BOOTNODE_ONIONS: "a.onion,b.onion" });
+  ok(fan3.bootnode === "a.onion" && fan3.bootnodes.length === 2, "the list alone is enough; its first entry is the primary");
   ok(egressCheckEnabled({}) === true && egressCheckEnabled({ SHADE_TREE_EGRESS_CHECK: "0" }) === false && egressCheckEnabled({ SHADE_TREE_EGRESS_CHECK: "1" }) === true, "egressCheckEnabled: default ON, `0` OFF");
 
   const files = { "/id/good.json": JSON.stringify(VID), "/id/noseed.json": JSON.stringify({ onion: V.onion }), "/id/bad.json": "{not json", "/id/arr.json": "[1,2]" };
@@ -273,6 +281,34 @@ async function main() {
   ok(defaultPath.endsWith(join("tor", "hs", "identity.local.json")), "no SHADE_TREE_GW_IDENTITY -> default tor/hs/identity.local.json");
 
   // ===================================================================================
+  console.log("\n4b. makeFanoutBeat (ADR 0012): one egress check, one announce per Elder, partial acceptance:");
+  {
+    const flogs = [];
+    const seen = [];
+    let down = new Set();
+    const fanAnnounce = async (elder) => { seen.push(elder); if (down.has(elder)) throw new Error(`no circuit to ${elder}`); return { ok: true, staked: true, ttl: 900 }; };
+    let egressCalls = 0;
+    const fanBeat = makeFanoutBeat({ bootnodes: ["aaaaaaaaaaaaaaaaaaaaaaaa.onion", "bbbbbbbbbbbbbbbbbbbbbbbb.onion"], announce: fanAnnounce, egress: async () => { egressCalls++; return { healthy: true }; }, enabled: true, log: (s) => flogs.push(s) });
+    let r = await fanBeat();
+    ok(r.ok === true && r.accepted === 2 && r.total === 2 && egressCalls === 1 && seen.length === 2, "both Elders announced after ONE egress check; cycle ok with accepted=2");
+    ok(r.results.length === 2 && r.results.every((x) => x.ok === true && x.bootnode.endsWith(".onion")), "per-Elder results carry the Elder and its outcome");
+    ok(flogs.filter((l) => /^\[aaaaaaaaaaaaaaaa\.\.onion\] announced \(staked=true, ttl=900s\)$/.test(l)).length === 1 && flogs.filter((l) => /^\[bbbbbbbbbbbbbbbb\.\.onion\] announced/.test(l)).length === 1, "each Elder's log line is tagged with its prefix");
+    down = new Set(["bbbbbbbbbbbbbbbbbbbbbbbb.onion"]);
+    r = await fanBeat();
+    ok(r.ok === true && r.accepted === 1 && r.results[1].failed === true && /no circuit/.test(r.results[1].err), "one Elder down: cycle still ok (listed on the other), the failure is in results");
+    ok(flogs.some((l) => l === "announced to 1 of 2 Elder Trees (the rest will be retried next interval)"), "partial acceptance is logged");
+    down = new Set(["aaaaaaaaaaaaaaaaaaaaaaaa.onion", "bbbbbbbbbbbbbbbbbbbbbbbb.onion"]);
+    r = await fanBeat();
+    ok(r.ok === false && r.accepted === 0 && /no circuit/.test(r.err), "every Elder down: cycle not ok, error names the transport failure");
+    const before = seen.length;
+    const gated = makeFanoutBeat({ bootnodes: ["aaaaaaaaaaaaaaaaaaaaaaaa.onion", "bbbbbbbbbbbbbbbbbbbbbbbb.onion"], announce: fanAnnounce, egress: async () => ({ healthy: false, target: "example.com:443", reason: "ECONNREFUSED" }), enabled: true, log: (s) => flogs.push(s) });
+    r = await gated();
+    ok(r.skipped === true && seen.length === before, "egress DOWN skips every Elder (no announce at all)");
+    const thrower = makeFanoutBeat({ bootnodes: ["aaaaaaaaaaaaaaaaaaaaaaaa.onion"], announce: fanAnnounce, egress: async () => { throw new Error("probe crashed"); }, enabled: true, log: (s) => flogs.push(s) });
+    r = await thrower();
+    ok(r.failed === true && /probe crashed/.test(r.err), "an egress probe that throws is a transport failure, never a crash");
+  }
+
   console.log("\n5. runHeartbeat with a fake scheduler: interval, outage recovery, wiring:");
   const gw = newOnion();
   const opKey = "0x" + randomBytes(32).toString("hex");
@@ -298,6 +334,16 @@ async function main() {
   ok(calls.length === 4, "scheduled ticks call announce every interval (3 more ticks -> 4 announces)");
   ok(rlogs.filter((l) => l.startsWith("announce failed: tor circuit failed (will retry next interval)")).length === 2, "outage ticks log `announce failed ... (will retry next interval)`");
   ok(rlogs.filter((l) => l === "announced (staked=true, ttl=900s)").length === 2, "first + recovered ticks log `announced`");
+  ok(JSON.stringify(h.bootnodes) === JSON.stringify([V.onion]) && !rlogs.some((l) => l.startsWith("heartbeat: announcing to")), "single Elder: no fan-out banner, one announce per tick (byte-identical path)");
+  // ADR 0012: with several Elders, one tick announces to each of them.
+  {
+    const fcalls = [];
+    const fenv = { ...env, SHADE_TREE_BOOTNODE_ONIONS: `${V.onion},${newOnion().onion}` };
+    const fl = [];
+    const fh = await runHeartbeat({ env: fenv, log: (s) => fl.push(s), schedule: fakeSchedule, announce: async (a) => { fcalls.push(a.bootnode); return { ok: true, staked: true, ttl: 900 }; }, egress: up, identity: gw });
+    ok(fh.bootnodes.length === 2 && fcalls.length === 2 && fcalls[0] === V.onion && fcalls[1] === fenv.SHADE_TREE_BOOTNODE_ONIONS.split(",")[1], "two Elders: the first tick announces to both, primary first");
+    ok(fh.first.ok === true && fh.first.accepted === 2 && fl.some((l) => l.startsWith("heartbeat: announcing to 2 Elder Trees (")), "fan-out banner names the count; first beat accepted by both");
+  }
   ok(calls[3].op === calls[0].op && calls[3].id === calls[0].id, "operator auth + identity resolved ONCE and reused across ticks (durable)");
   // Onion-only + egress-check OFF + no caps env: banner variants.
   const rlogs2 = [];
