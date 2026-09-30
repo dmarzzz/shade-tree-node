@@ -73,6 +73,7 @@ async function main() {
     nullifier: p.nullifier,
     externalNullifier: p.externalNullifier,
     share: p.share,
+    artifact: p.artifact, // T-HARD-8: name the set, as every real client does
   };
   const recentRoots = new Set([group.root.toString()]); // gateway keeps a Set
   const res = await verifyEnvelope(env, recentRoots, nowMs);
