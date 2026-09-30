@@ -230,7 +230,7 @@ role.
 - A second node off DigitalOcean (needs Dan's Hetzner or Vultr token), the DigitalOcean token rotation, per-host age recipients.
 - The staging seats sponsored today (Hermes on orbital-one, the SearXNG stack, the browser identity) stay in the staging set; they are not production seats.
 
-## 10. H2 economics on staging (2026-09-30, late)
+## 11. H2 economics on staging (2026-09-30, late)
 
 The H2 decision (`docs/ECONOMICS.md`, PR #212: tier 1 = 0.01 Sepolia ETH, tier 8 = 0.08, session
 tickets on, unbonding 24 h, slash 1/10, 24 sponsor seats) was rehearsed on staging in two halves,
