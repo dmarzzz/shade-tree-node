@@ -20,17 +20,19 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const check = process.argv.includes("--check");
 const stale = [];
 
-// Which record the page is built from, and where the output goes (default: the committed site).
-export const SITE_NETWORK = process.env.SHADENET_SITE_NETWORK || "sepolia";
+// Which record the page is built from, and where the output goes (default: the committed site,
+// from the record named in site-src/record.mjs).
+const { SITE_NETWORK: DEFAULT_NETWORK } = await import("../site-src/record.mjs");
+export const SITE_NETWORK = process.env.SHADENET_SITE_NETWORK || DEFAULT_NETWORK;
 const RECORD_PATH = join(root, "network", SITE_NETWORK, "deployment.json");
 const outRoot = process.env.SHADENET_SITE_OUT ? resolve(process.env.SHADENET_SITE_OUT) : root;
-if (check && (SITE_NETWORK !== "sepolia" || outRoot !== root)) {
+if (check && (SITE_NETWORK !== DEFAULT_NETWORK || outRoot !== root)) {
   console.error("--check compares the committed site only: unset SHADENET_SITE_NETWORK and SHADENET_SITE_OUT");
   process.exit(2);
 }
-if (SITE_NETWORK !== "sepolia") readFileSync(RECORD_PATH); // fail early on an unknown record
-// The page renderer imports network/sepolia/deployment.json; point that at the chosen record.
-if (SITE_NETWORK !== "sepolia") register("./site-record-loader.mjs", { parentURL: import.meta.url, data: { network: SITE_NETWORK } });
+readFileSync(RECORD_PATH); // fail early on an unknown record
+// The page renderer imports the default record; point that at the chosen one.
+if (SITE_NETWORK !== DEFAULT_NETWORK) register("./site-record-loader.mjs", { parentURL: import.meta.url, data: { from: DEFAULT_NETWORK, to: SITE_NETWORK } });
 const { renderStakePage } = await import("../site-src/stake-page.mjs");
 const { navLinks } = await import("../site-src/site-nav.mjs");
 
@@ -50,7 +52,7 @@ export const BUNDLE_OPTIONS = {
   plugins: [{
     name: "shadenet-site-record",
     setup(api) {
-      api.onResolve({ filter: /network\/sepolia\/deployment\.json$/ }, () => ({ path: RECORD_PATH }));
+      api.onResolve({ filter: /network\/[a-z0-9-]+\/deployment\.json$/ }, () => ({ path: RECORD_PATH }));
     },
   }],
 };

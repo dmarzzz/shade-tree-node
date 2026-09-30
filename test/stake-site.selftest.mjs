@@ -15,14 +15,16 @@ import {
   parseCommitment,
   parseIdentityFile,
   registerCommitment,
+  describeBalance,
 } from "../site-src/stake.mjs";
-import { formatEth, formatDuration } from "../site-src/profile.mjs";
+import { CLIENT_RELEASE, SITE_NETWORK, formatEth, formatDuration } from "../site-src/profile.mjs";
+import { explainError, formatExplanation } from "../site-src/stake-errors.mjs";
 import { describeSetSize } from "../site-src/stake-live.mjs";
-import { renderStakePage } from "../site-src/stake-page.mjs";
+import { PROVER_MB, renderStakePage } from "../site-src/stake-page.mjs";
 import { GET as stakeHead, readStakeHead, STAKE_HEAD_SCHEMA } from "../docs/post/api/stake-head.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const deployment = JSON.parse(readFileSync(join(ROOT, "network/sepolia/deployment.json"), "utf8"));
+const deployment = JSON.parse(readFileSync(join(ROOT, `network/${SITE_NETWORK}/deployment.json`), "utf8"));
 const html = readFileSync(join(ROOT, "docs/post/stake/index.html"), "utf8");
 const source = readFileSync(join(ROOT, "site-src/stake.mjs"), "utf8");
 const sdkStaking = readFileSync(join(ROOT, "packages/sdk/src/staking.mjs"), "utf8");
@@ -37,7 +39,7 @@ const check = (name, condition) => {
 };
 
 const staked = deployment.admission.roots.staked;
-check("browser profile is pinned to the live deployment record", CHAIN_ID === BigInt(staked.chainId)
+check(`browser profile is pinned to the ${SITE_NETWORK} deployment record`, CHAIN_ID === BigInt(staked.chainId)
   && CONTRACT.toLowerCase() === staked.contract.toLowerCase()
   && DEFAULT_LIMIT === BigInt(staked.defaultLimit)
   && TIERS.length === staked.tiers.length
@@ -64,7 +66,10 @@ for (const [name, malformed] of [
   assert.throws(() => parseIdentityFile(JSON.stringify(malformed)), undefined, name);
 }
 check("identity import rejects unoffered tiers, mismatched leaves, and extra fields", true);
-check("register takes the leaf under the current record's ABI", registerCommitment(vector) === vector.leaf);
+const idcAbi = staked.registerInput === "identityCommitment";
+check(`register takes the ${idcAbi ? "identity commitment" : "leaf"} under the current record's ABI`, idcAbi
+  ? (registerCommitment(vector) !== vector.leaf && /^\d+$/.test(registerCommitment(vector)))
+  : registerCommitment(vector) === vector.leaf);
 assert.throws(() => parseCommitment("0"));
 assert.throws(() => parseCommitment("01"));
 assert.throws(() => parseCommitment("not-a-field"));
@@ -79,30 +84,61 @@ check("finality countdown counts remaining slots", finalityEstimate(110, 100).se
 check("anonymity-set disclosure is honest at zero and small sizes", /0 staked members today/.test(describeSetSize(0)) && /among 3/.test(describeSetSize(3)) && describeSetSize(-1) === null);
 
 // The page is generated from the record: every tier's bond appears, and no bond or address is typed by hand.
-check("Get access page shows every tier from the record", TIERS.every((tier) => html.includes(`<th scope="row">${tier.limit}</th>`) && html.includes(`${formatEth(tier.bondWei)} ETH`)));
-check("page template hard-codes no bond, contract, rate or unbonding value", !/0\.1 |0\.8 |0x[0-9a-fA-F]{40}|40 MiB|60-second|24 hours|86400|41943040/.test(pageSource));
+check("Get access page shows every tier from the record, twice (member and sponsor)", TIERS.every((tier) => (html.match(new RegExp(`<span class="tier-name">tier ${tier.limit}</span>`, "g")) || []).length === 2 && html.includes(`${formatEth(tier.bondWei)} ETH`)));
+check("page template hard-codes no bond, contract, rate or unbonding value", !/0\.1 |0\.8 |0\.001 |0x[0-9a-fA-F]{40}|40 MiB|60-second|24 hours|86400|41943040/.test(pageSource));
 check("the static page promises only the privacy boundary it implements", /No identity API exists/.test(html)
   && /Loading any website can expose your IP/.test(html)
   && /wallet, amount, commitment, and timing are public/.test(html)
   && /Misuse can slash your sponsored bond/.test(html)
   && /data-live-set/.test(html));
-check("the page covers tiers, funding, member, sponsor, recovery, handoff, verify, leave and FAQ", /What a stake buys/.test(html)
-  && /Get Sepolia ETH/.test(html)
+check("the page covers tiers, funding, member, sponsor, recovery, hand-off, leave and FAQ", /Choose a tier/.test(html)
+  && new RegExp(`No ${deployment.admission.roots.staked.chainId === 11155111 ? "Sepolia" : "chain"} ETH\\? Two ways in`).test(html)
   && /data-mode="member"/.test(html)
   && /data-mode="sponsor"/.test(html)
   && /data-sponsor-tier/.test(html)
   && /data-download-identity/.test(html)
   && /data-recovery-check/.test(html)
-  && /shade-tree enroll --out identity\.json/.test(html)
-  && /register-member --identity identity\.json/.test(html)
-  && /chmod 600 identity\.json/.test(html)
-  && /Verify it works/.test(html)
-  && /shade-tree exit-member/.test(html)
-  && /shade-tree withdraw-member/.test(html)
+  && /data-rail-step="handoff"/.test(html)
+  && /chmod 600 ~\/.config\/shadenet\/identity\.json/.test(html)
+  && /shadenet status --wait/.test(html)
+  && /shadenet run --no-proxy/.test(html)
+  && /hermes mcp add shadenet --command shadenet --args mcp/.test(html)
+  && /claude mcp add shadenet -- shadenet mcp/.test(html)
+  && /docker compose up -d/.test(html)
+  && /@shadenet\/sdk/.test(html)
+  && /shadenet exit-member/.test(html)
+  && /shadenet withdraw-member/.test(html)
   && /<details>/.test(html)
   && /research preview/i.test(html));
+check("install lines pin the newest release that ships the shadenet binary", new RegExp(`SHADENET_VERSION=${CLIENT_RELEASE.replace(/\./g, "\\.")} sh`).test(html) && /^v\d+\.\d+\.\d+/.test(CLIENT_RELEASE));
+check("hand-off commands carry the identity file name and the prover states its size", (html.match(/data-file-name/g) || []).length >= 3
+  && new RegExp(`<span data-prover-mb>${PROVER_MB}</span> MB`).test(html) && Number(PROVER_MB) > 0 && Number(PROVER_MB) < 5);
+check("hand-off tabs are a keyboard-operable tablist with one panel per client", (html.match(/role="tab"/g) || []).length === 5 && (html.match(/role="tabpanel"/g) || []).length === 5 && /role="tablist"/.test(html));
+check("the page says once, plainly, that ShadeNet is not Shade Network or Shade Protocol", /ShadeNet is not affiliated with Shade Network, Shade Protocol/.test(html) && !/Shade Net\b/.test(html));
+check("every step has a rail entry and a panel", ["tier", "identity", "save", "stake"].every((step) => html.includes(`data-step-panel="${step}"`) && html.includes(`data-rail-step="${step}"`)));
 check("errors use an assertive alert region and progress a polite status", /data-alert role="alert"/.test(html) && /data-status role="status" aria-live="polite"/.test(html));
 check("the recovery confirmation is a deliberate click, never auto-ticked", !/recoveryCheck\.checked = true/.test(source));
+const balanceOk = describeBalance({ balanceWei: 10n ** 18n, tier: TIERS[0], gasPriceWei: 10n ** 9n });
+const balanceShort = describeBalance({ balanceWei: 1n, tier: TIERS[0], gasPriceWei: 10n ** 9n });
+check("the wallet's balance is judged against bond plus gas before any stake is attempted", balanceOk.enough && /enough for tier/.test(balanceOk.message)
+  && !balanceShort.enough && /more/.test(balanceShort.message) && /sponsor/.test(balanceShort.message) && /readBalance\(\)/.test(source));
+const explained = [
+  [{ code: 4001, message: "User rejected the request." }, /cancelled in the wallet/],
+  [{ code: -32002, message: "Request of type 'wallet_requestPermissions' already pending" }, /already has a request open/],
+  [new Error("Wallet is on chain 1; Sepolia (11155111) is required."), /not on Sepolia/],
+  [{ message: "insufficient funds for gas * price + value" }, /Not enough Sepolia ETH/],
+  [{ message: "transaction 0xab reverted" }, /rejected the transaction/],
+  [{ message: "contract bond for tier 1 is 5 wei, the record says 6; refusing to send" }, /differs from the number this page shows/],
+  [{ message: "this commitment is exiting and cannot be registered again yet" }, /still unbonding/],
+  [new Error("No compatible Ethereum wallet was found in this browser."), /No Ethereum wallet/],
+  [{ message: "RPC eth_call failed: Failed to fetch" }, /Could not reach Sepolia/],
+  [{ message: "failed to load /stake/zk/withdraw.wasm" }, /prover/],
+  [{ message: "This canopy offers tiers 1 and 8; limit 3 is not one of them." }, /offers tiers/],
+];
+check("every wallet and SDK failure gets a plain sentence and a next step", explained.every(([error, expected]) => {
+  const view = explainError(error, { chainName: "Sepolia", need: "0.001 ETH" });
+  return expected.test(formatExplanation(view)) && typeof view.text === "string" && view.text.length > 0;
+}) && /fail\(error/.test(source) && !/announce\(error\.message/.test(source));
 check("only identities created in this tab can stake", /state\.imported/.test(source) && /memberBlocked = state\.mode === "member" && \(!saved \|\| state\.imported\)/.test(source));
 check("identity state is never persisted or sent through a site API", !/localStorage|sessionStorage|indexedDB|fetch\s*\(|XMLHttpRequest|sendBeacon|analytics/i.test(source));
 check("the live module fetches only fixed aggregate URLs and never touches identity or wallet state",

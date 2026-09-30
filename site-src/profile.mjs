@@ -1,7 +1,8 @@
 // The Get access page's only source of numbers and addresses: the bundled network record.
 // Every price, tier, rate and address on /stake/ comes from here, so a redeploy (new contract,
 // new economics) is a rebuild, not a copy edit. esbuild inlines the JSON at bundle time.
-import deployment from "../network/sepolia/deployment.json" with { type: "json" };
+import deployment from "./record.mjs";
+export { SITE_NETWORK, CLIENT_RELEASE } from "./record.mjs";
 
 const staked = deployment.admission?.roots?.staked;
 if (!staked) throw new Error("deployment.json has no staked admission root; the Get access page needs one.");
