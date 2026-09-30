@@ -4,10 +4,15 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
-Work toward the ShadeNet research preview on Sepolia. Signed and hashed v4 wire strings are
-unchanged (`test/wire-freeze.selftest.mjs`). The contracts change and take effect with a fresh
-deployment: staging is live (`network/sepolia-staging/`); production waits for the economics
-and the trusted setup.
+Nothing yet.
+
+## 0.7.0-rc.1 — ShadeNet research preview, release candidate
+
+First release cut from a tag under the ShadeNet name; a prerelease, so it never becomes "Latest"
+and the fleet rolls to it on staging only. Work toward the ShadeNet research preview on Sepolia.
+Signed and hashed v4 wire strings are unchanged (`test/wire-freeze.selftest.mjs`). The contracts
+change and take effect with a fresh deployment: staging is live (`network/sepolia-staging/`);
+production waits for the economics and the trusted setup.
 
 ### Contracts
 
@@ -66,6 +71,7 @@ and the trusted setup.
 ### Build, CI and release
 
 - Rust workspace moved to `crates/` with `shadenet-*` crates (#131).
+- The JS node moved to `packages/node/` with shims at the old paths for one minor release (#202).
 - Required checks: real-Tor e2e, bootstrap e2e, `cargo deny`, `cargo audit`; one Node lane per PR
   and the full matrix nightly (#153, #179); main CI is never cancelled (#183).
 - Release assets for `shadenet`, Intel Mac live build, signing, Homebrew formula, GHCR image and
