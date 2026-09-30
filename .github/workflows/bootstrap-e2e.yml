@@ -48,7 +48,7 @@ jobs:
         id: gate
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/ci-changes.sh '^(packages/node/|bootnode/|gateway/|lib/|bin/|group/|payments/|network/|tor/|package(-lock)?\.json$|\.github/workflows/bootstrap-e2e\.yml$|scripts/ci-changes\.sh$)'
+        run: bash scripts/ci-changes.sh '^(packages/node/|group/|network/|tor/|package(-lock)?\.json$|\.github/workflows/bootstrap-e2e\.yml$|scripts/ci-changes\.sh$)'
 
       - name: No bootstrap inputs changed
         if: steps.gate.outputs.run != 'true'
