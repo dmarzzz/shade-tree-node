@@ -1198,7 +1198,11 @@ if [ "$WITH_GATEWAY" = "1" ]; then
   log "gateway heartbeat -> bootnode ${BN_ONION}"
   render_heartbeat_unit /etc/systemd/system/shade-tree-heartbeat.service
   systemctl daemon-reload
-  systemctl enable --now shade-tree-heartbeat >/dev/null 2>&1 || systemctl restart shade-tree-heartbeat
+  # A re-run must restart an already-running heartbeat (same fix as #200 for the Elder): `enable
+  # --now` on a running unit is a no-op, which left the fleet's heartbeats on the previous commit
+  # and would ignore a changed unit (ADR 0012 adds SHADE_TREE_BOOTNODE_ONIONS to it).
+  systemctl enable shade-tree-heartbeat >/dev/null 2>&1 || true
+  systemctl restart shade-tree-heartbeat
 elif [ -f /etc/systemd/system/shade-tree-heartbeat.service ]; then
   systemctl disable --now shade-tree-heartbeat >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/shade-tree-heartbeat.service
