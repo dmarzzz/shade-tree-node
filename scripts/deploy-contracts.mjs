@@ -29,7 +29,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateDeploymentRecord as validateClientRecord } from "../lib/network-record.mjs";
+import { validateDeploymentRecord as validateClientRecord } from "../packages/node/lib/network-record.mjs";
 import { validateDeploymentRecord as preflightRecord, validatePublicStakeOnchain } from "../deploy/v4/preflight.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");

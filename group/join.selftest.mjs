@@ -1,4 +1,4 @@
-// Guided-onboarding selftest. Spawns the REAL CLI (`node bin/shade-tree.mjs join ...`) for both
+// Guided-onboarding selftest. Spawns the REAL CLI (`node packages/node/bin/shade-tree.mjs join ...`) for both
 // roles and proves the front door does its two jobs without ever mishandling a secret:
 //
 //   shade-tree join member   -> self-enrolls: prints a well-formed commitment + the EXACT Proxy
@@ -18,14 +18,14 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { identityFor, identityCommitmentOf, rateCommitmentOf, FIELD } from "../lib/rln.mjs";
+import { identityFor, identityCommitmentOf, rateCommitmentOf, FIELD } from "../packages/node/lib/rln.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
-const CLI = join(ROOT, "bin", "shade-tree.mjs");
+const CLI = join(ROOT, "packages", "node", "bin", "shade-tree.mjs");
 
 // Run the CLI keeping stdout and stderr SEPARATE — the whole point is which stream carries what.
 function shadeTree(args, opts = {}) {

@@ -22,7 +22,7 @@
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { NETWORK_ROOT, isNetworkName, validateDeploymentRecord as validateClientRecord } from "../lib/network-record.mjs";
+import { NETWORK_ROOT, isNetworkName, validateDeploymentRecord as validateClientRecord } from "../packages/node/lib/network-record.mjs";
 import { validateDeploymentRecord as preflightRecord } from "../deploy/v4/preflight.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");

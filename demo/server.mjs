@@ -26,7 +26,7 @@ import { dirname, join } from "node:path";
 import { ethers } from "ethers";
 import { SocksClient } from "socks";
 import { createClient } from "@shadenet/sdk/node";
-import { deriveCommitment, identitySecretOf, identityFor, currentEpoch, K_SLOTS, EPOCH_SECONDS } from "../lib/rln.mjs";
+import { deriveCommitment, identitySecretOf, identityFor, currentEpoch, K_SLOTS, EPOCH_SECONDS } from "../packages/node/lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");

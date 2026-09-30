@@ -82,7 +82,7 @@ need to, that is a design discussion, not a quiet edit. All are grounded in
   freshness, throttle, size cap) before an ed25519 verify or a Groth16 verify, so
   hostile input cannot force expensive work. Keep new code on this ordering.
 - **The `2b <- check4` authority invariant** in `verifyEnvelope`
-  (`lib/rln.mjs` / `gateway/gateway.mjs`). Target binding recomputes
+  (`packages/node/lib/rln.mjs` / `packages/node/gateway/gateway.mjs`). Target binding recomputes
   `calculateSignalHash(requestSignal(target, nonce))` and binds it to the
   proof's committed `x`; the field-safety check (`signalFieldSafe`, rejecting a
   delimiter or over-long nonce) must run *before* hashing so `(target, nonce) ->

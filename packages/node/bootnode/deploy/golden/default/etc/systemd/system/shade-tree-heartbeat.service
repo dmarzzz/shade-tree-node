@@ -1,0 +1,61 @@
+[Unit]
+Description=shade-tree gateway heartbeat to bootnode
+After=shade-tree-bootnode.service tor.service
+[Service]
+User=shade-tree
+WorkingDirectory=/opt/shade-tree
+Environment=SHADE_TREE_BOOTNODE_ONION=bootnodeplaceholderplaceholderplaceholderplaceholderplac.onion
+Environment=SHADE_TREE_GW_IDENTITY=/opt/shade-tree/deploy-state/gateway-hs/identity.local.json
+Environment=SHADE_TREE_TOR_PORT=9050
+Environment=SHADE_TREE_ADMIT=invited
+Environment=SHADE_TREE_EPOCH_SECONDS=120
+Environment=SHADE_TREE_TIERS=8
+Environment=SHADE_TREE_ROOT_FRESHNESS_SECONDS=120
+Environment=SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=41943040
+Environment=SHADE_TREE_HEARTBEAT_METRICS_PORT=9103
+Environment=SHADE_TREE_LOG_LEVEL=info
+Environment=SHADE_TREE_LOG_FORMAT=json
+Environment=SHADE_TREE_BANNER=never
+SyslogIdentifier=shade-tree-heartbeat
+ExecStart=/usr/bin/node /opt/shade-tree/packages/node/bootnode/heartbeat.mjs
+Restart=always
+RestartSec=10
+# --- secrets: systemd credentials (OPS-12). Files named SHADE_TREE_<SECRET> in /etc/credstore
+# (root, 0600) reach the service via $CREDENTIALS_DIRECTORY, never Environment= or systemctl show.
+ImportCredential=SHADE_TREE_*
+# --- sandbox (see rationale in bootstrap.sh) ---
+NoNewPrivileges=true
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=/opt/shade-tree/deploy-state
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+Nice=5
+CPUAccounting=true
+CPUQuota=20%
+CPUWeight=25
+MemoryAccounting=true
+MemoryMax=256M
+MemorySwapMax=0
+TasksAccounting=true
+TasksMax=96
+[Install]
+WantedBy=multi-user.target

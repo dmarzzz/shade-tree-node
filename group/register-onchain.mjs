@@ -34,9 +34,9 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { poseidon2 } from "poseidon-lite";
-import { normLimit, K_SLOTS, FIELD } from "../lib/rln.mjs";
-import { parseContractList } from "../lib/root-provider.mjs";
-import { makeBoundedJsonRpcProvider, registrationKey, requireRpcChainId, waitForTransactionReceipt } from "../lib/rpc-safety.mjs";
+import { normLimit, K_SLOTS, FIELD } from "../packages/node/lib/rln.mjs";
+import { parseContractList } from "../packages/node/lib/root-provider.mjs";
+import { makeBoundedJsonRpcProvider, registrationKey, requireRpcChainId, waitForTransactionReceipt } from "../packages/node/lib/rpc-safety.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEPLOYED_PATH = join(HERE, "..", "contracts", "deployed.local.json");

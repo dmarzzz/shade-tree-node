@@ -18,52 +18,52 @@ Files:
 
 | Metric | Type | Labels | Source |
 |---|---|---|---|
-| `shade_tree_bootnode_announces_total` | counter | `result` (accepted\|rejected), `reason` (on reject) | `bootnode/server.mjs` |
-| `shade_tree_bootnode_directory_fetches_total` | counter | none | `bootnode/server.mjs` |
-| `shade_tree_bootnode_directory_delta_fetches_total` | counter | `result` | `bootnode/server.mjs` |
-| `shade_tree_bootnode_live_gateways` | gauge | none | `bootnode/server.mjs` |
-| `shade_tree_bootnode_connections` | gauge | none | `bootnode/server.mjs` |
-| `shade_tree_gateway_tunnels_total` | counter | `result` (pass\|drop), `reason` (on drop) | `gateway/gateway.mjs` |
-| `shade_tree_gateway_slashes_total` | counter | none | `gateway/gateway.mjs` |
-| `shade_tree_gateway_tunnel_closes_total` | counter | `reason` (idle-timeout\|payload-limit\|upstream-error) | `gateway/gateway.mjs` (separate from `tunnels_total` because these tunnels already counted as pass) |
-| `shade_tree_gateway_active_tunnels` | gauge | none | `gateway/gateway.mjs` |
-| `shade_tree_gateway_connections` | gauge | none | `gateway/gateway.mjs` |
-| `shade_tree_gateway_agent_to_destination_payload_bytes_total` | counter | none | `gateway/gateway.mjs` |
-| `shade_tree_gateway_destination_to_agent_payload_bytes_total` | counter | none | `gateway/gateway.mjs` |
-| `shade_tree_gateway_verify_seconds` | histogram | `le` (on `_bucket`) | `gateway/gateway.mjs` |
-| `shade_tree_gateway_upstream_connect_seconds` | histogram | `le` (on `_bucket`) | `gateway/gateway.mjs` |
-| `shade_tree_gateway_trusted_roots` | gauge | `source` (invited\|staked\|paid) | `gateway/gateway.mjs` |
-| `shade_tree_gateway_root_source_degraded` | gauge | `source` | `gateway/gateway.mjs` |
-| `shade_tree_gateway_paid_access_leaves` | gauge | none | `gateway/gateway.mjs` |
-| `shade_tree_proxy_tunnels_total` | counter | `result`, bounded `reason` | `client/shim.mjs` |
-| `shade_tree_proxy_active_tunnels` | gauge | none | `client/shim.mjs` |
-| `shade_tree_proxy_connect_seconds` | histogram | `le` (on `_bucket`) | `client/shim.mjs` |
-| `shade_tree_proxy_proof_seconds` | histogram | `le` (on `_bucket`) | `client/shim.mjs` |
-| `shade_tree_proxy_tor_dial_seconds` | histogram | `le` (on `_bucket`) | `client/shim.mjs` |
-| `shade_tree_proxy_failovers_total` | counter | none | `client/shim.mjs` |
-| `shade_tree_proxy_canopy_refresh_total` | counter | `result` (query\|verified\|cache\|error) | `client/shim.mjs` |
-| `shade_tree_proxy_candidates` | gauge | none | `client/shim.mjs` |
-| `shade_tree_heartbeat_attempts_total` | counter | `outcome` (accepted\|rejected\|egress-unhealthy\|transport-error) | `bootnode/heartbeat.mjs` |
-| `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `bootnode/heartbeat.mjs` |
-| `shade_tree_heartbeat_egress_check_up` | gauge | none | `bootnode/heartbeat.mjs` |
-| `shade_tree_registrar_payments_total` | counter | `protocol` (unknown\|x402\|mpp), `result` (challenged\|inserted\|replayed\|rejected\|failed), bounded `reason` on non-success outcomes | `payments/registrar.mjs` |
-| `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `payments/registrar.mjs` |
-| `shade_tree_registrar_txs_total` | counter | `kind` (settle\|insert), `result` (ok\|failed) | `payments/registrar.mjs` |
-| `shade_tree_registrar_orders` / `shade_tree_registrar_inflight` | gauge | none | `payments/registrar.mjs` |
-| `shade_tree_rpc_failovers_total` | counter | `endpoint` (list index that failed; never the URL) | `lib/rpc-safety.mjs` (any role with `SHADE_TREE_RPC_URL`) |
+| `shade_tree_bootnode_announces_total` | counter | `result` (accepted\|rejected), `reason` (on reject) | `packages/node/bootnode/server.mjs` |
+| `shade_tree_bootnode_directory_fetches_total` | counter | none | `packages/node/bootnode/server.mjs` |
+| `shade_tree_bootnode_directory_delta_fetches_total` | counter | `result` | `packages/node/bootnode/server.mjs` |
+| `shade_tree_bootnode_live_gateways` | gauge | none | `packages/node/bootnode/server.mjs` |
+| `shade_tree_bootnode_connections` | gauge | none | `packages/node/bootnode/server.mjs` |
+| `shade_tree_gateway_tunnels_total` | counter | `result` (pass\|drop), `reason` (on drop) | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_slashes_total` | counter | none | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_tunnel_closes_total` | counter | `reason` (idle-timeout\|payload-limit\|upstream-error) | `packages/node/gateway/gateway.mjs` (separate from `tunnels_total` because these tunnels already counted as pass) |
+| `shade_tree_gateway_active_tunnels` | gauge | none | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_connections` | gauge | none | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_agent_to_destination_payload_bytes_total` | counter | none | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_destination_to_agent_payload_bytes_total` | counter | none | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_verify_seconds` | histogram | `le` (on `_bucket`) | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_upstream_connect_seconds` | histogram | `le` (on `_bucket`) | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_trusted_roots` | gauge | `source` (invited\|staked\|paid) | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_root_source_degraded` | gauge | `source` | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_gateway_paid_access_leaves` | gauge | none | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_proxy_tunnels_total` | counter | `result`, bounded `reason` | `packages/node/client/shim.mjs` |
+| `shade_tree_proxy_active_tunnels` | gauge | none | `packages/node/client/shim.mjs` |
+| `shade_tree_proxy_connect_seconds` | histogram | `le` (on `_bucket`) | `packages/node/client/shim.mjs` |
+| `shade_tree_proxy_proof_seconds` | histogram | `le` (on `_bucket`) | `packages/node/client/shim.mjs` |
+| `shade_tree_proxy_tor_dial_seconds` | histogram | `le` (on `_bucket`) | `packages/node/client/shim.mjs` |
+| `shade_tree_proxy_failovers_total` | counter | none | `packages/node/client/shim.mjs` |
+| `shade_tree_proxy_canopy_refresh_total` | counter | `result` (query\|verified\|cache\|error) | `packages/node/client/shim.mjs` |
+| `shade_tree_proxy_candidates` | gauge | none | `packages/node/client/shim.mjs` |
+| `shade_tree_heartbeat_attempts_total` | counter | `outcome` (accepted\|rejected\|egress-unhealthy\|transport-error) | `packages/node/bootnode/heartbeat.mjs` |
+| `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
+| `shade_tree_heartbeat_egress_check_up` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
+| `shade_tree_registrar_payments_total` | counter | `protocol` (unknown\|x402\|mpp), `result` (challenged\|inserted\|replayed\|rejected\|failed), bounded `reason` on non-success outcomes | `packages/node/payments/registrar.mjs` |
+| `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `packages/node/payments/registrar.mjs` |
+| `shade_tree_registrar_txs_total` | counter | `kind` (settle\|insert), `result` (ok\|failed) | `packages/node/payments/registrar.mjs` |
+| `shade_tree_registrar_orders` / `shade_tree_registrar_inflight` | gauge | none | `packages/node/payments/registrar.mjs` |
+| `shade_tree_rpc_failovers_total` | counter | `endpoint` (list index that failed; never the URL) | `packages/node/lib/rpc-safety.mjs` (any role with `SHADE_TREE_RPC_URL`) |
 | `shade_tree_build_info` | gauge | `role`, `version`, `commit` (running checkout, or `unknown`) | every long-running role |
 | `shade_tree_process_start_time_seconds` | gauge | none | every long-running role |
 | `shade_tree_process_uptime_seconds` | gauge | none | every long-running role |
 | `shade_tree_process_resident_memory_bytes` | gauge | none | every long-running role |
 
 Histograms expose `_bucket`, `_sum`, and `_count` series in seconds. Buckets are
-`DEFAULT_LATENCY_BUCKETS` in `lib/metrics.mjs`. Node metrics keep the
+`DEFAULT_LATENCY_BUCKETS` in `packages/node/lib/metrics.mjs`. Node metrics keep the
 `shade_tree_gateway_*` prefix for dashboard compatibility.
 
 `shade_tree_registrar_payments_total` increments once for every completed
 `POST /pay`, including the headerless 402 challenge and early HTTP rejects.
 Requests rejected before a payment rail is selected use `protocol="unknown"`.
-The reason vocabulary is closed in `payments/registrar.mjs`; unexpected library
+The reason vocabulary is closed in `packages/node/payments/registrar.mjs`; unexpected library
 or payer-controlled strings collapse to `reason="other"`.
 
 `shade_tree_bootnode_live_gateways` means announced within the Elder Tree TTL.

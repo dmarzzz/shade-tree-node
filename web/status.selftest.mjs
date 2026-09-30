@@ -1,7 +1,7 @@
 // End-to-end test of the fleet status page against a MOCK bootnode (no Tor, no chain).
 //
 // It stands up a local http server that speaks the real bootnode /health + /directory shapes,
-// signing the directory with lib/directory.mjs signDirectory over gateways whose onions are
+// signing the directory with packages/node/lib/directory.mjs signDirectory over gateways whose onions are
 // derived from real ed25519 keys (so verifyDirectory's onion<->pubkey binding holds). Then it
 // runs the actual status server against it and pins the contract:
 //   - /api/status reports the right fleetSize,
@@ -16,7 +16,7 @@
 
 import http from "node:http";
 import { generateKeyPairSync } from "node:crypto";
-import { signDirectory, pubkeyToOnion } from "../lib/directory.mjs";
+import { signDirectory, pubkeyToOnion } from "../packages/node/lib/directory.mjs";
 import { makeStatusServer, buildStatus } from "./status-server.mjs";
 
 let failures = 0;

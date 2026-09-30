@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # T-RUST-3 integration harness: prove the Rust client's RESILIENT operational loop
-# (client/shade-tree-client.mjs parity) — GATEWAY FAILOVER and LAST-KNOWN-GOOD directory
+# (packages/node/client/shade-tree-client.mjs parity) — GATEWAY FAILOVER and LAST-KNOWN-GOOD directory
 # caching — against the REAL JS gateway, with NO Tor (plain-TCP, always-green like
 # egress-run.sh). Two layers:
 #
@@ -8,7 +8,7 @@
 #     entry is a DEAD address (nothing listening) and whose SECOND is the real
 #     gateway. The client builds ONE RLN envelope, fails to dial the first, ROTATES,
 #     and the SECOND gateway ACCEPTS the SAME envelope end-to-end (deterministic
-#     retry). Mirrors the connect() failover loop in client/shade-tree-client.mjs.
+#     retry). Mirrors the connect() failover loop in packages/node/client/shade-tree-client.mjs.
 #
 #   LAYER B (LAST-KNOWN-GOOD): `shade-tree fetch-directory` verifies a fresh signed
 #     directory and writes the LKG cache; a SUBSEQUENT fetch whose FRESH source is
@@ -97,7 +97,7 @@ echo "LAYER B OK (fresh->cache, LKG fallback, rollback refused, select-from-cach
 
 echo
 echo "== LAYER A: GATEWAY FAILOVER (dead first candidate -> second ACCEPTS) =="
-echo "== deriving identity + member set (lib/rln.mjs) =="
+echo "== deriving identity + member set (packages/node/lib/rln.mjs) =="
 node "$HERE/egress-derive.mjs" "$WORK"
 IDENTITY="$WORK/identity.json"
 MEMBERS="$WORK/members.json"
@@ -114,7 +114,7 @@ node "$HERE/wait-log.mjs" "$WORK/sink.log" "[sink] up" 15000
 
 # Start the real gateway. Allow ONLY our local sink target; default epoch length.
 SHADE_TREE_EGRESS_ALLOW="$TARGET" SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 SHADE_TREE_EPOCH_SECONDS=120 \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
 GW_PID=$!; track "$GW_PID"; disown "$GW_PID" 2>/dev/null || true
 node "$HERE/wait-log.mjs" "$WORK/gw.log" "gateway up on" 20000
 

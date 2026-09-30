@@ -9,10 +9,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, resolve, sep } from "node:path";
 import { AbiCoder, Interface } from "ethers";
-import { isOnion, isEd25519PubHex, isEthAddress } from "../../lib/config.mjs";
-import { isNetworkName } from "../../lib/network-record.mjs";
-import { jsonRpcCall } from "../../lib/rpc-safety.mjs";
-import { artifactIdOf, isArtifactId } from "../../lib/zk-artifacts.mjs";
+import { isOnion, isEd25519PubHex, isEthAddress } from "../../packages/node/lib/config.mjs";
+import { isNetworkName } from "../../packages/node/lib/network-record.mjs";
+import { jsonRpcCall } from "../../packages/node/lib/rpc-safety.mjs";
+import { artifactIdOf, isArtifactId } from "../../packages/node/lib/zk-artifacts.mjs";
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const SHA256_RE = /^[0-9a-f]{64}$/;
@@ -263,7 +263,7 @@ export function validatePinnedCheckout(record, { repoRoot }) {
   const commitCheck = git("cat-file", "-e", `${commit}^{commit}`);
   if (commitCheck.status !== 0) return { ok: false, errors: [{ field: "services.node.commit", problem: "is not a commit available in the controller checkout" }] };
 
-  for (const path of ["bootnode/server.mjs", "gateway/gateway.mjs", "bootnode/heartbeat.mjs", "bootnode/deploy/bootstrap.sh"]) {
+  for (const path of ["packages/node/bootnode/server.mjs", "packages/node/gateway/gateway.mjs", "packages/node/bootnode/heartbeat.mjs", "packages/node/bootnode/deploy/bootstrap.sh"]) {
     if (git("cat-file", "-e", `${commit}:${path}`).status !== 0) bad("services", `pinned commit does not contain ${path}`);
   }
   if (record?.admission?.roots?.staked?.profile === "public-stake-v1" && git("cat-file", "-e", `${commit}:${PUBLIC_STAKE_BYTECODE_MANIFEST}`).status !== 0) {

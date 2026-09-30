@@ -30,7 +30,7 @@ node scripts/ceremony/pse-check.mjs --work /tmp/pse --circom circom/target/relea
 | PSE initial and final zkeys match pinned SHA-256 | pass | pass |
 | Initial zkey key material byte-identical to a local build (circom v2.1.5 `--O2`, Hermez `powersOfTau28_hez_final_13`) | pass, sections 1–9 | pass, sections 1–9 |
 | Contribution chain verifies from the initial zkey (`snarkjs zkey verifyFromInit`) | 60 + beacon | 62 + beacon |
-| JS prover (`lib/rln.mjs` via `SHADE_TREE_ZK_PROVER_ARTIFACTS`) proves, gateway `verifyEnvelope` accepts | pass | n/a |
+| JS prover (`packages/node/lib/rln.mjs` via `SHADE_TREE_ZK_PROVER_ARTIFACTS`) proves, gateway `verifyEnvelope` accepts | pass | n/a |
 | Rust prover (`shadenet-rln-probe`) proves at tier 8 and tier 32 slot 20, JS gateway accepts | pass | n/a |
 | Cross-implementation over-spend reconstructs the identity secret | pass | n/a |
 | Local WASM witness proves under PSE's final zkey and verifies under its key | pass | pass |

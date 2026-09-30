@@ -5,20 +5,20 @@
 // Tor, chain, or sleeps. It exercises three engines under high iteration counts and asserts
 // they stay CORRECT and BOUNDED under volume:
 //
-//   A. replay cache (gateway/gateway.mjs makeSpentSet) -- thousands of distinct + duplicate
+//   A. replay cache (packages/node/gateway/gateway.mjs makeSpentSet) -- thousands of distinct + duplicate
 //      envelopes across many epochs: assert every genuine in-window replay is caught, dedup
 //      is exact under volume, slashing fires exactly once per over-spend, and the resident
 //      cache stays SIZE-BOUNDED (epoch pruning via sweep() reclaims aged entries -- no
 //      unbounded growth as total volume climbs).
 //
-//   B. weighted selection (lib/directory.mjs selectionOrder / pickGateway) -- a large fleet
+//   B. weighted selection (packages/node/lib/directory.mjs selectionOrder / pickGateway) -- a large fleet
 //      drawn tens of thousands of times under a SEEDED rng: assert the empirical distribution
 //      is roughly proportional to weight (within tolerance), the MAX_WEIGHT clamp holds (a
 //      gateway self-assigning a huge weight cannot capture the fleet), a floored-to-zero
 //      weight is never picked, and selectionOrder always returns a full de-duplicated
 //      permutation of the fleet.
 //
-//   C. bootnode registry (bootnode/server.mjs makeRegistry) under an announce storm -- mint
+//   C. bootnode registry (packages/node/bootnode/server.mjs makeRegistry) under an announce storm -- mint
 //      more onions than maxEntries and assert the DoS caps hold: the entry count never
 //      exceeds maxEntries (a flood is refused, not resident), a self-attested huge weight is
 //      clamped to MAX_WEIGHT, and a re-announce inside minReannounceSec is rate-limited.
@@ -35,17 +35,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash, createPublicKey } from "node:crypto";
 
-import { makeSpentSet } from "../gateway/gateway.mjs";
+import { makeSpentSet } from "../packages/node/gateway/gateway.mjs";
 import {
   MAX_WEIGHT,
   pickGateway,
   selectionOrder,
   ed25519PrivateKey,
   pubkeyToOnion,
-} from "../lib/directory.mjs";
-import { buildAnnounce } from "../bootnode/announce.mjs";
-import { makeRegistry, loadOrMintSigner } from "../bootnode/server.mjs";
-import { MockStakeVerifier } from "../lib/gateway-registry.mjs";
+} from "../packages/node/lib/directory.mjs";
+import { buildAnnounce } from "../packages/node/bootnode/announce.mjs";
+import { makeRegistry, loadOrMintSigner } from "../packages/node/bootnode/server.mjs";
+import { MockStakeVerifier } from "../packages/node/lib/gateway-registry.mjs";
 
 let failures = 0;
 function ok(name) { console.log("  PASS  " + name); }
@@ -56,7 +56,7 @@ async function test(name, fn) { try { await fn(); ok(name); } catch (e) { bad(na
 const HEAVY = process.env.SHADE_TREE_SOAK === "1";
 const X = HEAVY ? 10 : 1;
 
-// A controllable clock (matches gateway/replay-cache.selftest.mjs): now() reads `t`.
+// A controllable clock (matches packages/node/gateway/replay-cache.selftest.mjs): now() reads `t`.
 function makeClock(t = 1_000_000) {
   const c = { t };
   return { now: () => c.t, advance: (ms) => { c.t += ms; }, set: (v) => { c.t = v; } };
@@ -267,7 +267,7 @@ await test("selection: a floored-to-zero (negative) weight is never picked; sele
 // ============================================================================
 
 // Mint a gateway onion identity IN-MEMORY (no disk) from a deterministic seed, matching
-// bootnode/keygen.mjs's derivation so onion == pubkeyToOnion(pub) and buildAnnounce can sign.
+// packages/node/bootnode/keygen.mjs's derivation so onion == pubkeyToOnion(pub) and buildAnnounce can sign.
 function mintOnion(i) {
   const seedHex = createHash("sha256").update("shade-tree-soak-onion:" + i).digest().toString("hex"); // 32 bytes
   const pubDer = createPublicKey(ed25519PrivateKey(seedHex)).export({ format: "der", type: "spki" });

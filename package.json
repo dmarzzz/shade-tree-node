@@ -9,11 +9,11 @@
   "//imports": "Wire-code crypto primitives: node:crypto in Node, @noble in browser bundles (lib/crypto-*.mjs).",
   "imports": {
     "#crypto": {
-      "browser": "./lib/crypto-browser.mjs",
-      "default": "./lib/crypto-node.mjs"
+      "browser": "./packages/node/lib/crypto-browser.mjs",
+      "default": "./packages/node/lib/crypto-node.mjs"
     }
   },
-  "//browser": "Bundlers only: lib/directory.mjs loadDirectory lazily imports these in Node; a browser bundle never reaches it.",
+  "//browser": "Bundlers only: packages/node/lib/directory.mjs loadDirectory lazily imports these in Node; a browser bundle never reaches it.",
   "browser": {
     "node:fs/promises": false,
     "node:path": false
@@ -23,16 +23,17 @@
     "packages/sdk"
   ],
   "bin": {
-    "shade-tree-node": "bin/shade-tree.mjs"
+    "shade-tree-node": "packages/node/bin/shade-tree.mjs"
   },
   "//exports": "Public SDK surface (T-FEAT-3). Subpath imports resolve by package name once published; internal relative imports (./…) are unaffected. See docs/SDK.md.",
   "exports": {
-    "./client": "./client/shade-tree-client.mjs",
+    "./packages/node/client": "./packages/node/client/shade-tree-client.mjs",
     "./package.json": "./package.json"
   },
   "//files": "Git installs use this runtime allowlist today. Publishing stays gated by private:true until Gate 1+2 clear. The Rust client ships separately as a crate (T-RUST-4).",
   "files": [
     "assets/",
+    "packages/node/",
     "bin/",
     "bootnode/",
     "client/",
@@ -51,11 +52,11 @@
   ],
   "scripts": {
     "enroll": "node group/enroll.mjs",
-    "gateway": "node gateway/gateway.mjs",
-    "shim": "node client/shim.mjs",
-    "bootnode": "node bootnode/server.mjs",
-    "keygen": "node bootnode/keygen.mjs",
-    "heartbeat": "node bootnode/heartbeat.mjs",
+    "gateway": "node packages/node/gateway/gateway.mjs",
+    "shim": "node packages/node/client/shim.mjs",
+    "bootnode": "node packages/node/bootnode/server.mjs",
+    "keygen": "node packages/node/bootnode/keygen.mjs",
+    "heartbeat": "node packages/node/bootnode/heartbeat.mjs",
     "doctor": "node scripts/doctor.mjs",
     "demo": "node demo/server.mjs",
     "test": "node scripts/test-all.mjs",

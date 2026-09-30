@@ -24,7 +24,7 @@ The test harnesses establish that:
 - Public signals use the same `[y, root, nullifier, x, externalNullifier]`
   order and values.
 - Rust proofs verify with the checked-in `verification_key.json` and are
-  accepted by `lib/rln.mjs:verifyEnvelope`.
+  accepted by `packages/node/lib/rln.mjs:verifyEnvelope`.
 - Two Rust shares for one reused slot reconstruct the same `identitySecret`
   in JavaScript.
 - The native depth-20 Poseidon tree produces the same roots and paths as the

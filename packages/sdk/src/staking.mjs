@@ -3,7 +3,7 @@
 // and bond comes from the network record; the client refuses to send if the chain disagrees.
 
 import { Interface, getAddress, id as topicOf } from "ethers";
-import { identityCommitmentOf, leafFromIdentityCommitment, parseCommitment, rateCommitment, tierLimit } from "../../../lib/identity-core.mjs";
+import { identityCommitmentOf, leafFromIdentityCommitment, parseCommitment, rateCommitment, tierLimit } from "../../node/lib/identity-core.mjs";
 import { resolveNetwork, tierFor } from "./network.mjs";
 import { exitContext, withdrawContext } from "./contexts.mjs";
 import { proveAction } from "./exit-proof.mjs";

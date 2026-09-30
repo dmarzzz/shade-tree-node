@@ -1,12 +1,12 @@
 // Layer-2 acceptance (the real interop criterion): assemble the wire envelope from
-// the RUST-generated proof exactly as client/shade-tree-client.mjs buildEnvelope does, and
-// assert lib/rln.mjs verifyEnvelope ACCEPTS it — including check 2b target-binding
+// the RUST-generated proof exactly as packages/node/client/shade-tree-client.mjs buildEnvelope does, and
+// assert packages/node/lib/rln.mjs verifyEnvelope ACCEPTS it — including check 2b target-binding
 // (recomputing x from the envelope's target+nonce) and the Groth16 verify against the
 // repo's verification_key.json.
 //
 // Usage: node verify-envelope.mjs <rust-envelope.json>
 import { readFileSync } from "node:fs";
-import { verifyEnvelope, EPOCH_SECONDS, cleanUp } from "../../../lib/rln.mjs";
+import { verifyEnvelope, EPOCH_SECONDS, cleanUp } from "../../../packages/node/lib/rln.mjs";
 
 const r = JSON.parse(readFileSync(process.argv[2], "utf8"));
 

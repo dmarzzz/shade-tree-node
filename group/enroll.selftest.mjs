@@ -19,7 +19,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { identityFor, identityCommitmentOf, rateCommitmentOf, FIELD } from "../lib/rln.mjs";
+import { identityFor, identityCommitmentOf, rateCommitmentOf, FIELD } from "../packages/node/lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");

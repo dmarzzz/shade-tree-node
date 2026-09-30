@@ -12,11 +12,11 @@ superseded by the 402 rails** (payment settles off the tree contract, in a stabl
 to the operator). The on-chain tree, the off-chain redemption, Layer 0 and Layer 2 stand as
 written.
 
-Code: `payments/registrar.mjs` (the operator's 402 service), `payments/wire.mjs` (both wire
-formats), `payments/eip3009.mjs` (the settlement typed data), `group/pay.mjs` (`shade-tree pay`),
+Code: `packages/node/payments/registrar.mjs` (the operator's 402 service), `packages/node/payments/wire.mjs` (both wire
+formats), `packages/node/payments/eip3009.mjs` (the settlement typed data), `group/pay.mjs` (`shade-tree pay`),
 `contracts/PaidAccessSet.sol` (the tree, PR #50), `test/Eip3009Token.sol` (a test stablecoin).
-Tests: `payments/wire.selftest.mjs` (fast, chainless; includes the x402 spec's worked-example
-signature as a cross-implementation golden), `payments/registrar.selftest.mjs` (anvil: both
+Tests: `packages/node/payments/wire.selftest.mjs` (fast, chainless; includes the x402 spec's worked-example
+signature as a cross-implementation golden), `packages/node/payments/registrar.selftest.mjs` (anvil: both
 rails end to end via `shade-tree pay`, replay/idempotency, the adversarial matrix, slow-loris, crash
 recovery), `test/Eip3009Token.t.sol` (Foundry). Live receipts: `docs/history/GO-LIVE-LOG-2026-08-17.md`
 "(payments)".
@@ -85,7 +85,7 @@ then `insert(commitment, limit)` (gas again). The token contract burns `(from, n
 (`authorizationState`), which is the replay primitive both protocols lean on; x402 uses a fresh
 random nonce, MPP binds it to the challenge (`keccak256(id ‖ realm)`).
 
-**What the registrar verifies before it spends any gas** (`payments/registrar.mjs`
+**What the registrar verifies before it spends any gas** (`packages/node/payments/registrar.mjs`
 `makeEngine.verifyAndSettle`, in order): wire shape (version/scheme/network/asset/payTo/amount
 → tier; MPP: HMAC id, realm, expiry, digest, `type=authorization`, nonce binding); the body's
 `limit` equals the tier paid for and the `commitment` is a field element; `validAfter ≤ now <
@@ -115,7 +115,7 @@ using one is optional (an operator could point a Coinbase-style facilitator at t
 `accepts` — nothing in the wire format changes). MPP's "server" role is the same process. So the
 "no facilitator party" rule of this document holds exactly: the buyer touches the chain (to
 hold the stablecoin) and the operator (to buy), nobody else. There is no x402 SDK dependency:
-the wire format is ~300 lines implemented straight from the specs (`payments/wire.mjs`), which
+the wire format is ~300 lines implemented straight from the specs (`packages/node/payments/wire.mjs`), which
 keeps `ethers` the only crypto dependency, avoids pulling a facilitator client into an onion
 service, and lets the same parse surface serve both rails and be fuzzed in one place.
 
@@ -167,7 +167,7 @@ Circle's Sepolia USDC (`0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`) implements 
 live run uses the test stablecoin `test/Eip3009Token.sol` ("Test USD"/tUSD, 6 decimals, same
 EIP-3009 surface) deployed at `network/sepolia/contracts.json` `payAsset`. **Real USDC is a
 one-env swap**: `SHADE_TREE_PAY_ASSET=0x1c7D…7238` (the registrar probes the domain and adapts).
-`payments/deploy-test-asset.mjs` deploys/mints the test token.
+`packages/node/payments/deploy-test-asset.mjs` deploys/mints the test token.
 
 ---
 
@@ -179,8 +179,8 @@ The registrar above sells the leaf; this is what happens to it afterwards — ho
 | Layer | What it is now | Code |
 |---|---|---|
 | **0 — identity decorrelation** | Unchanged: the buyer's choice of hop into a fresh address / account (Railgun, Privacy Pools, a CEX, a bridge; none mandated), now applied to the 402 payment as well as to any on-chain footprint. Nothing to build; documented in the leak ledger + THREAT-MODEL §5. | — |
-| **1 — payment + binding** | 402-settled off-chain payment (x402/MPP) → operator inserts the buyer's rateCommitment `Poseidon2(Poseidon1(identitySecret), limit)` into `PaidAccessSet`: the structural sibling of `StakedReputationSet` (T-DEV-9 on-chain depth-20 Poseidon tree, `currentRoot()` at storage slot 3, tiered leaf, `limitOf` / `leafCount` / `allowedLimits` / `DEFAULT_LIMIT`, `slash(commitment, secret, limit, receiver)` zeroes the leaf — no bond, no exit/withdraw). Contract: `contracts/PaidAccessSet.sol` (T-FEAT-7 1/3, PR #50; live on Sepolia at `0x4e8C2Bf5d3c5454A04837401095fce2646484111`). Off-chain readers: `lib/root-provider.mjs:TOPIC.inserted / TOPIC.deposit / TOPIC.paidSlashed` (the paid events, `(commitment indexed, limit, index, root)`), `reconstructGroup`, `loadGroupFromContract`. | `contracts/PaidAccessSet.sol`, `lib/root-provider.mjs` |
-| **2 — access** | Unchanged envelope + proof. The gateway trusts the UNION of its root sources — `members.json` (static), each `SHADE_TREE_GROUP_CONTRACT` (now a comma list) and `SHADE_TREE_PAID_ACCESS_CONTRACT` (sugar that appends) — one `RootProvider` per contract, node or light, unioned by `CompositeRootProvider`; `SHADE_TREE_ROOTS=static,onchain` selects (default = both when configured). Slashing ROUTES to the contract that holds the leaf. Anonymity floor `SHADE_TREE_PAID_MIN_LEAVES` (default 8) is logged + gauged, never enforced. Client: leaf discovery across the same sources; Rust bridge `shade-tree leaves`. | `gateway/gateway.mjs:initRoots / resolveRootSources / describeRootSources / makeRoutingSlasher / makeOnchainSlasher.holds / PAID_MIN_LEAVES`, `lib/root-provider.mjs:CompositeRootProvider / configuredContracts / parseContractList / makeRootProvider`, `client/shade-tree-client.mjs:makeLeafSourceLoader`, `group/leaves.mjs`, `lib/config.mjs:isEthAddressList / isRootSourceList` |
+| **1 — payment + binding** | 402-settled off-chain payment (x402/MPP) → operator inserts the buyer's rateCommitment `Poseidon2(Poseidon1(identitySecret), limit)` into `PaidAccessSet`: the structural sibling of `StakedReputationSet` (T-DEV-9 on-chain depth-20 Poseidon tree, `currentRoot()` at storage slot 3, tiered leaf, `limitOf` / `leafCount` / `allowedLimits` / `DEFAULT_LIMIT`, `slash(commitment, secret, limit, receiver)` zeroes the leaf — no bond, no exit/withdraw). Contract: `contracts/PaidAccessSet.sol` (T-FEAT-7 1/3, PR #50; live on Sepolia at `0x4e8C2Bf5d3c5454A04837401095fce2646484111`). Off-chain readers: `packages/node/lib/root-provider.mjs:TOPIC.inserted / TOPIC.deposit / TOPIC.paidSlashed` (the paid events, `(commitment indexed, limit, index, root)`), `reconstructGroup`, `loadGroupFromContract`. | `contracts/PaidAccessSet.sol`, `packages/node/lib/root-provider.mjs` |
+| **2 — access** | Unchanged envelope + proof. The gateway trusts the UNION of its root sources — `members.json` (static), each `SHADE_TREE_GROUP_CONTRACT` (now a comma list) and `SHADE_TREE_PAID_ACCESS_CONTRACT` (sugar that appends) — one `RootProvider` per contract, node or light, unioned by `CompositeRootProvider`; `SHADE_TREE_ROOTS=static,onchain` selects (default = both when configured). Slashing ROUTES to the contract that holds the leaf. Anonymity floor `SHADE_TREE_PAID_MIN_LEAVES` (default 8) is logged + gauged, never enforced. Client: leaf discovery across the same sources; Rust bridge `shade-tree leaves`. | `packages/node/gateway/gateway.mjs:initRoots / resolveRootSources / describeRootSources / makeRoutingSlasher / makeOnchainSlasher.holds / PAID_MIN_LEAVES`, `packages/node/lib/root-provider.mjs:CompositeRootProvider / configuredContracts / parseContractList / makeRootProvider`, `packages/node/client/shade-tree-client.mjs:makeLeafSourceLoader`, `group/leaves.mjs`, `packages/node/lib/config.mjs:isEthAddressList / isRootSourceList` |
 
 Startup lines (ABI-of-record for scripts): `roots: members.json + staked(0x…) + paid(0x…)`,
 `paid-access anonymity set: N leaves (floor K=SHADE_TREE_PAID_MIN_LEAVES)` (WARN below the floor,
@@ -191,14 +191,14 @@ never refuse), `slash: routing over primary(0x…) + staked(0x…) + paid(0x…)
 
 **Decisions on the four open items** (below, "Buildable today vs open"):
 
-1. *Live root vs pinned per-epoch snapshot* → **live**, exactly as the staked set: the gateway reads the confirmed root (`finalized`, or `head - SHADE_TREE_CONFIRMATIONS`) and keeps the freshness ring (`SHADE_TREE_FRESHNESS_ROOTS`, current + 2 prior), so a proof built against a just-superseded root still verifies and a reorg is bounded by the confirmation depth. No separate pin was needed (`lib/root-provider.mjs:NodeRootProvider / LightClientRootProvider`, unchanged; the paid set is just one more child).
+1. *Live root vs pinned per-epoch snapshot* → **live**, exactly as the staked set: the gateway reads the confirmed root (`finalized`, or `head - SHADE_TREE_CONFIRMATIONS`) and keeps the freshness ring (`SHADE_TREE_FRESHNESS_ROOTS`, current + 2 prior), so a proof built against a just-superseded root still verifies and a reorg is bounded by the confirmation depth. No separate pin was needed (`packages/node/lib/root-provider.mjs:NodeRootProvider / LightClientRootProvider`, unchanged; the paid set is just one more child).
 2. *One deposit = one access period vs an ongoing budget* → **subscription**: nullifier scoped to the epoch, fresh `limit` budget every epoch, for as long as the leaf lives (until slashed). Expiry is a follow-up (the contract could zero a leaf after N epochs; nothing in the gateway changes).
 3. *Anonymity-set floor K* → **logged, not enforced**: `SHADE_TREE_PAID_MIN_LEAVES` (8). `leafCount()` (total leaves ever inserted; slashed slots never reused) is read at startup and on every root refresh; below the floor the gateway WARNs and keeps serving. It is a deployment parameter, not a proven bound — say it, do not hide it.
 4. *Wiring the Layer-0 hop and the payment to one decorrelated address* → **a wiring note, unchanged by the pivot**: pay the 402 from a fresh address / account funded through the hop; the registrar's insert tx carries only the commitment + tier, never the payer. THREAT-MODEL §5 lists the residual (payment-side) linkability.
 
 **Leak ledger, updated:** in addition to the rows below — the **tier bucket is public** at insertion (the `limit` in the `Inserted` event; the same is already true of a stake's `bondFor(limit)`), the insert tx is public (it names the commitment, not the payer), the 402 payment is visible to its rail, and **which root a proof opens (static / staked / paid) is visible to the gateway** (the root is a public signal) — the paid crowd is `leafCount()`, hence the floor.
 
-**Verified by:** `test/paid-access.selftest.mjs` (anvil: the real staked set + the real `PaidAccessSet` from its forge artifact, the REAL gateway, REAL proofs — static, staked and paid members all egress with three roots trusted at once; unknown root → `gate:wrong-group-root`; a paid over-spender is slashed on the PAID contract, leaf zeroed, root changed, staked set untouched; the floor WARN; `shade-tree leaves` round-trips the root), `gateway/root-sources.selftest.mjs`, `client/leaf-source.selftest.mjs`, `group/leaves.selftest.mjs`, `lib/root-provider.selftest.mjs`.
+**Verified by:** `test/paid-access.selftest.mjs` (anvil: the real staked set + the real `PaidAccessSet` from its forge artifact, the REAL gateway, REAL proofs — static, staked and paid members all egress with three roots trusted at once; unknown root → `gate:wrong-group-root`; a paid over-spender is slashed on the PAID contract, leaf zeroed, root changed, staked set untouched; the floor WARN; `shade-tree leaves` round-trips the root), `packages/node/gateway/root-sources.selftest.mjs`, `packages/node/client/leaf-source.selftest.mjs`, `group/leaves.selftest.mjs`, `packages/node/lib/root-provider.selftest.mjs`.
 
 ## Design of record (2026-08, pre-402): the four requirements and the three layers
 
@@ -245,13 +245,13 @@ sweep() onlyOperator
 There is no on-chain user withdrawal. Funds accumulate and the operator sweeps them. The sweep is an operator-to-operator transaction that says nothing about depositors beyond a count. The commitment's preimage is never spent on chain. It is spent off chain, to the gateway.
 
 **Layer 2: access. Already shipped. Unchanged.**
-The cached epoch-proof and the per-nullifier rate budget in `gateway/gateway.mjs`.
+The cached epoch-proof and the per-nullifier rate budget in `packages/node/gateway/gateway.mjs`.
 
 ## The redemption is the proof you already verify
 
 This is the elegant part. The payment redemption is the exact same proof shape the gateway runs today.
 
-`lib/semaphore.mjs` `checkProof` already does Merkle-membership-in-a-group, plus an epoch nullifier, plus a trusted-root match. The payment redemption is identical, with one swap: the group is the **on-chain deposit tree** instead of the enrolled `members.json`.
+`packages/node/lib/semaphore.mjs` `checkProof` already does Merkle-membership-in-a-group, plus an epoch nullifier, plus a trusted-root match. The payment redemption is identical, with one swap: the group is the **on-chain deposit tree** instead of the enrolled `members.json`.
 
 Over the existing onion, the client sends the gateway a zk proof: "my commitment is a leaf under the current on-chain deposit root, I know its preimage, and here is the nullifier `N = Poseidon(nullifierSecret, epoch)`," revealing nothing about which leaf. The gateway reads the root from its own node, or from many RPC endpoints (no single party), checks `N` is unspent in the per-epoch `Map`, and grants the access budget. You are swapping "membership in the enrolled set" for "membership in the paid-deposit set." Same circuit, same nullifier machinery, same rate-limit map.
 

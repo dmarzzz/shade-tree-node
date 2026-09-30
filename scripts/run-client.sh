@@ -3,7 +3,7 @@
 #
 # Runs the two client-side pieces:
 #   1. a client-only Tor SOCKS (no onion) unless you point at an existing one,
-#   2. client/shim.mjs, the local HTTP proxy that mints a Semaphore proof and
+#   2. packages/node/client/shim.mjs, the local HTTP proxy that mints a Semaphore proof and
 #      dials the gateway's .onion over Tor.
 #
 # Requires:
@@ -38,10 +38,10 @@ else
   export SHADE_TREE_TOR_PORT=9260
 fi
 
-if pgrep -f "client/shim.mjs" >/dev/null; then
+if pgrep -f "packages/node/client/shim.mjs" >/dev/null; then
   echo "shim already running"
 else
-  node client/shim.mjs > shim.log 2>&1 &
+  node packages/node/client/shim.mjs > shim.log 2>&1 &
   echo "shim pid $!"
 fi
 sleep 1

@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { AbiCoder, Interface } from "ethers";
 import * as sdk from "@shadenet/sdk";
 import { proxyConnect } from "@shadenet/sdk/node";
-import { identityFor, identitySecretOf, rateCommitmentOf } from "../../../lib/rln.mjs";
+import { identityFor, identitySecretOf, rateCommitmentOf } from "../../node/lib/rln.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 let failures = 0;
@@ -31,7 +31,7 @@ ok(net1.elders.length === 2 && net1.elders[0].onion === net1.elder.onion && net1
 
 console.log("=== several Elder Trees ===");
 {
-  const { ed25519PubFromSeed, ed25519Sign, canonicalDirectoryBytes, pubkeyToOnion } = await import("../../../lib/directory.mjs");
+  const { ed25519PubFromSeed, ed25519Sign, canonicalDirectoryBytes, pubkeyToOnion } = await import("../../node/lib/directory.mjs");
   const seedA = "11".repeat(32), seedB = "22".repeat(32);
   const [pubA, pubB] = [ed25519PubFromSeed(seedA), ed25519PubFromSeed(seedB)];
   const node = (b) => { const pk = b.repeat(32); return { onion: pubkeyToOnion(pk), pubkey: pk, weight: 100, health: "up" }; };

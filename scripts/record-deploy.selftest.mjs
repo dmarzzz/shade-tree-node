@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deploymentsFromBroadcast, applyDeployment, recordDeploy, parseArgs, CONTRACT_SLOTS } from "./record-deploy.mjs";
-import { validateContractsRecord } from "../lib/network-record.mjs";
+import { validateContractsRecord } from "../packages/node/lib/network-record.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };

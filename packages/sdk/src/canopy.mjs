@@ -1,7 +1,7 @@
 // Canopy verification: the signed directory of Shade Tree nodes, checked with the same code the
-// gateway and the JS client use (lib/directory.mjs), in Node or a browser.
+// gateway and the JS client use (packages/node/lib/directory.mjs), in Node or a browser.
 
-import { verifyDirectory, onionToPubkey, canonicalCaps } from "../../../lib/directory.mjs";
+import { verifyDirectory, onionToPubkey, canonicalCaps } from "../../node/lib/directory.mjs";
 import { resolveNetwork } from "./network.mjs";
 import { ShadeNetError } from "./errors.mjs";
 

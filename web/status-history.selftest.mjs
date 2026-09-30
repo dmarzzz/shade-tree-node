@@ -14,7 +14,7 @@
 
 import http from "node:http";
 import { generateKeyPairSync } from "node:crypto";
-import { signDirectory, pubkeyToOnion } from "../lib/directory.mjs";
+import { signDirectory, pubkeyToOnion } from "../packages/node/lib/directory.mjs";
 import { makeStatusServer } from "./status-server.mjs";
 
 let failures = 0;

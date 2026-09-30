@@ -26,7 +26,7 @@ ExecStart=/usr/bin/node /opt/shade-tree/scripts/uptime-probe.mjs --format nagios
 # (`journalctl -u shade-tree-uptime-probe`) but do not mark the unit failed for the timer's sake.
 SuccessExitStatus=1 2
 TimeoutStartSec=90
-# --- sandbox (same posture as bootnode/deploy/bootstrap.sh units) ---
+# --- sandbox (same posture as packages/node/bootnode/deploy/bootstrap.sh units) ---
 NoNewPrivileges=true
 UMask=0077
 ProtectSystem=strict

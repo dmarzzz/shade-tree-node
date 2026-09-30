@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # T-TEST-1 CI path: the AUTHORITATIVE real-Tor client->gateway ACCEPT, run against the REAL
-# fleet that bootnode/deploy/bootstrap.sh brings up inside a systemd container (the same
+# fleet that packages/node/bootnode/deploy/bootstrap.sh brings up inside a systemd container (the same
 # published-.onion fleet a fresh droplet gets). This is the container analogue of the local
 # test/real-tor-e2e.sh, and it reuses the systemd-in-container machinery documented in
-# bootnode/deploy/E2E-CONTAINER.md.
+# packages/node/bootnode/deploy/E2E-CONTAINER.md.
 #
 # Flow:
 #   1. boot ubuntu:24.04 with real systemd as PID 1,
 #   2. run bootstrap.sh -> tor + shade-tree-bootnode + shade-tree-gateway with REAL v3 onions,
-#   3. derive a member (lib/rln.mjs), point the gateway's PoC root at that single-member set,
+#   3. derive a member (packages/node/lib/rln.mjs), point the gateway's PoC root at that single-member set,
 #      restart the gateway so its membership root matches the proof the client will mint,
 #   4. start a local :443 sink (matches the gateway's default *:443 egress policy),
 #   5. run the JS REFERENCE client (test/real-tor-e2e-client.mjs) INSIDE the container: it
@@ -90,7 +90,7 @@ docker exec \
   -e SHADE_TREE_ADMISSION="open" \
   -e SHADE_TREE_BOOTNODE_PORT="$BOOTNODE_PORT" \
   -e SHADE_TREE_GATEWAY_PORT="$GATEWAY_PORT" \
-  "$CONTAINER" bash /mnt/src/bootnode/deploy/bootstrap.sh
+  "$CONTAINER" bash /mnt/src/packages/node/bootnode/deploy/bootstrap.sh
 
 log "point the gateway's PoC root at a derived member + restart it"
 docker exec -i "$CONTAINER" env SECRET="$SECRET" bash -s <<'PREP'

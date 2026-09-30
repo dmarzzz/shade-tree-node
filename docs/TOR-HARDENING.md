@@ -6,14 +6,14 @@ unchanged by anything here. Tor DoS/deanon defenses are the cheap outer gates,
 the zk proof is the expensive inner gate.
 
 Scope: the droplet runs two v3 onion services (bootnode + gateway) via the
-`/etc/tor/torrc.d-shade-tree` include that `bootnode/deploy/bootstrap.sh` writes
+`/etc/tor/torrc.d-shade-tree` include that `packages/node/bootnode/deploy/bootstrap.sh` writes
 (two `HiddenServiceDir` blocks, each with `HiddenServicePoWDefensesEnabled
 <SHADE_TREE_ENABLE_POW>` — `0` by default, `1` when you opt in; gateway-only boxes get
 one block).
 Clients run a SOCKS-only tor (see `tor/torrc.client`).
 
 A ready-to-copy config fragment lives at
-[`bootnode/deploy/torrc.hardened`](../bootnode/deploy/torrc.hardened). It is a
+[`packages/node/bootnode/deploy/torrc.hardened`](../packages/node/bootnode/deploy/torrc.hardened). It is a
 REFERENCE and is deliberately not wired into `bootstrap.sh`. Apply pieces by
 hand after reading the tradeoffs below.
 
@@ -172,7 +172,7 @@ share one path.
 
 ## Quick apply
 
-1. Read [`bootnode/deploy/torrc.hardened`](../bootnode/deploy/torrc.hardened).
+1. Read [`packages/node/bootnode/deploy/torrc.hardened`](../packages/node/bootnode/deploy/torrc.hardened).
 2. Server: append the `[S]` / `[S-POW]` lines you want to
    `/etc/tor/torrc.d-shade-tree`, then `systemctl restart tor`. Confirm the PoW module
    is present first (`tor --list-modules`).

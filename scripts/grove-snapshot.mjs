@@ -9,9 +9,9 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { createPublicKey } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { observeFleet } from "./uptime-probe.mjs";
-import { attestPublicGroveSnapshot, buildPublicGroveSnapshot } from "../lib/public-grove.mjs";
-import { fetchOverTor } from "../bootnode/fetch.mjs";
-import { publicRelayFromAggregate } from "../lib/relay-telemetry.mjs";
+import { attestPublicGroveSnapshot, buildPublicGroveSnapshot } from "../packages/node/lib/public-grove.mjs";
+import { fetchOverTor } from "../packages/node/bootnode/fetch.mjs";
+import { publicRelayFromAggregate } from "../packages/node/lib/relay-telemetry.mjs";
 
 function option(argv, name, fallback = null) {
   const exact = argv.indexOf(name);

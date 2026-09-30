@@ -13,13 +13,13 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { membersFileFor, parseArgs } from "./leaves.mjs";
-import { newGroup } from "../lib/rln.mjs";
-import { _internals } from "../lib/root-provider.mjs";
+import { newGroup } from "../packages/node/lib/rln.mjs";
+import { _internals } from "../packages/node/lib/root-provider.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
 const HERE = dirname(fileURLToPath(import.meta.url));
-const CLI = join(HERE, "..", "bin", "shade-tree.mjs");
+const CLI = join(HERE, "..", "packages", "node", "bin", "shade-tree.mjs");
 const CONTRACT = "0x" + "ab".repeat(20);
 
 const log = (topic0, commitment, block, logIndex = 0) => ({

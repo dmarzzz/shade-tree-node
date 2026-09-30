@@ -13,8 +13,8 @@ The JavaScript client and node each declare one inclusive range:
 
 | Side | Source of truth | Current range |
 | --- | --- | --- |
-| Client | `CLIENT_PROTO_MIN`, `CLIENT_PROTO_MAX` in `client/shade-tree-client.mjs` | `4..4` |
-| Node | `PROTO_MIN`, `PROTO_MAX` in `gateway/gateway.mjs` | `4..4` |
+| Client | `CLIENT_PROTO_MIN`, `CLIENT_PROTO_MAX` in `packages/node/client/shade-tree-client.mjs` | `4..4` |
+| Node | `PROTO_MIN`, `PROTO_MAX` in `packages/node/gateway/gateway.mjs` | `4..4` |
 
 Signed node capabilities advertise `caps.proto = {min,max}`. The client selects the
 highest overlapping version before it proves or dials. With no advertisement it tries
@@ -82,7 +82,7 @@ trusted-setup and rollback procedure is in [`CEREMONY.md`](CEREMONY.md).
 Golden values live in [`../testdata/vectors.json`](../testdata/vectors.json). Run:
 
 ```bash
-node gateway/version-negotiation.selftest.mjs
-node lib/zk-artifacts.selftest.mjs
+node packages/node/gateway/version-negotiation.selftest.mjs
+node packages/node/lib/zk-artifacts.selftest.mjs
 cargo test --workspace --all-features
 ```

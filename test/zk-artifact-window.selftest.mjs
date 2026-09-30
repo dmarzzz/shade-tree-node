@@ -1,6 +1,6 @@
 // The dual-VK rollout WINDOW, end to end with REAL Groth16 proofs (T-HARD-8). Slow suite
 // (real proving; in scripts/test-all.mjs SLOW_SUITES, skipped by SHADE_TREE_FAST=1). The fast half
-// (ids, config, reasons, caps, client pick) is lib/zk-artifacts.selftest.mjs.
+// (ids, config, reasons, caps, client pick) is packages/node/lib/zk-artifacts.selftest.mjs.
 //
 // Two genuinely DIFFERENT artifact sets are needed to prove the acceptance criterion
 // ("old-artifact and new-artifact proofs both accepted inside the window; outside it the old
@@ -39,11 +39,11 @@ import * as snarkjs from "snarkjs";
 import {
   toField, identityFor, groupFromIdentities, requestSignal, proveForSlot, verifyEnvelope, currentEpoch, EPOCH_SECONDS,
   loadArtifactSet, loadProverSets, _setProverSets, _setArtifactSet, cleanUp,
-} from "../lib/rln.mjs";
-import { artifactIdOfFile, builtinArtifactId, RLN_DIR, BUILTIN_VKEY_PATH } from "../lib/zk-artifacts.mjs";
-import { buildGatewayCaps } from "../bootnode/heartbeat.mjs";
-import { canonicalCaps } from "../lib/directory.mjs";
-import { buildEnvelope, makeSlotPool } from "../client/shade-tree-client.mjs";
+} from "../packages/node/lib/rln.mjs";
+import { artifactIdOfFile, builtinArtifactId, RLN_DIR, BUILTIN_VKEY_PATH } from "../packages/node/lib/zk-artifacts.mjs";
+import { buildGatewayCaps } from "../packages/node/bootnode/heartbeat.mjs";
+import { canonicalCaps } from "../packages/node/lib/directory.mjs";
+import { buildEnvelope, makeSlotPool } from "../packages/node/client/shade-tree-client.mjs";
 
 let failures = 0;
 function ok(name) { console.log("  PASS  " + name); }

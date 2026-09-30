@@ -4,7 +4,7 @@ version = "0.6.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
-description = "Trust-critical Shade Tree wire-format checks (onion<->ed25519 binding, canonical byte encodings, ed25519 verify, request-signal). Rust port of the JS reference (lib/directory.mjs, bootnode/announce.mjs, lib/rln.mjs)."
+description = "Trust-critical Shade Tree wire-format checks (onion<->ed25519 binding, canonical byte encodings, ed25519 verify, request-signal). Rust port of the JS reference (packages/node/lib/directory.mjs, packages/node/bootnode/announce.mjs, packages/node/lib/rln.mjs)."
 publish = false
 
 [dependencies]

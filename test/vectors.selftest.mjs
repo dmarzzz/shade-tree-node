@@ -7,7 +7,7 @@
 //
 // ed25519 (RFC 8032) is deterministic, so directory + announce signatures are pinned exactly.
 // RLN Groth16 proofs are NOT deterministic (random blinding), so they are verified for equivalence
-// elsewhere (lib/rln.selftest.mjs), not byte-pinned here.
+// elsewhere (packages/node/lib/rln.selftest.mjs), not byte-pinned here.
 //
 //   node test/vectors.selftest.mjs
 
@@ -15,13 +15,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createPublicKey } from "node:crypto";
-import { ed25519Sign, ed25519PrivateKey, pubkeyToOnion, onionToPubkey, canonicalDirectoryBytes, signDirectory, signDirectoryThreshold, verifyDirectory, CAPS_DOMAIN, canonicalCaps, canonicalCapsBytes, signCaps, verifyCapsSig, ADMIT_PATHS, PAY_PROTOCOLS, MAX_CAPS_PAY_TIERS } from "../lib/directory.mjs";
-import { canonicalAnnounceBytes, operatorAuthMessage, verifyOperatorSig } from "../bootnode/announce.mjs";
-import { calculateSignalHash, requestSignal } from "../lib/rln.mjs";
-import { canonicalReceiptBytes, buildReceipt, RECEIPT_DOMAIN } from "../lib/receipt.mjs";
-import { acceptEnvelopeVersion } from "../gateway/gateway.mjs";
-import { selectProtoVersion } from "../client/shade-tree-client.mjs";
-import { artifactIdOf, selectArtifact, resolveArtifact, ARTIFACT_ID_RE, isArtifactId } from "../lib/zk-artifacts.mjs";
+import { ed25519Sign, ed25519PrivateKey, pubkeyToOnion, onionToPubkey, canonicalDirectoryBytes, signDirectory, signDirectoryThreshold, verifyDirectory, CAPS_DOMAIN, canonicalCaps, canonicalCapsBytes, signCaps, verifyCapsSig, ADMIT_PATHS, PAY_PROTOCOLS, MAX_CAPS_PAY_TIERS } from "../packages/node/lib/directory.mjs";
+import { canonicalAnnounceBytes, operatorAuthMessage, verifyOperatorSig } from "../packages/node/bootnode/announce.mjs";
+import { calculateSignalHash, requestSignal } from "../packages/node/lib/rln.mjs";
+import { canonicalReceiptBytes, buildReceipt, RECEIPT_DOMAIN } from "../packages/node/lib/receipt.mjs";
+import { acceptEnvelopeVersion } from "../packages/node/gateway/gateway.mjs";
+import { selectProtoVersion } from "../packages/node/client/shade-tree-client.mjs";
+import { artifactIdOf, selectArtifact, resolveArtifact, ARTIFACT_ID_RE, isArtifactId } from "../packages/node/lib/zk-artifacts.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const V = JSON.parse(readFileSync(join(HERE, "..", "testdata", "vectors.json"), "utf8"));

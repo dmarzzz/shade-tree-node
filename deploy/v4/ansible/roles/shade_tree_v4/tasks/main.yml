@@ -419,7 +419,7 @@
   ansible.builtin.command:
     argv:
       - bash
-      - "{{ shade_tree_install_dir }}/bootnode/deploy/bootstrap.sh"
+      - "{{ shade_tree_install_dir }}/packages/node/bootnode/deploy/bootstrap.sh"
   environment:
     SHADE_TREE_REPO: "{{ shade_tree_service_pin.repository }}"
     SHADE_TREE_REF: "{{ shade_tree_service_pin.commit }}"
@@ -483,7 +483,7 @@
   when: shade_tree_runs_node | bool
 
 # OPS-12: role secrets reach the services through ImportCredential=SHADE_TREE_* (rendered by
-# bootstrap.sh) and lib/credentials.mjs, so they never appear in Environment=, `systemctl show`
+# bootstrap.sh) and packages/node/lib/credentials.mjs, so they never appear in Environment=, `systemctl show`
 # or /proc/<pid>/environ.
 - name: Install the slash key as a systemd credential
   ansible.builtin.copy:

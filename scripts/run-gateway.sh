@@ -3,7 +3,7 @@
 #
 # Runs the two server-side pieces and nothing else:
 #   1. Tor, publishing the gateway as a v3 onion service (./tor/torrc),
-#   2. gateway/gateway.mjs, the Shade Tree tunnel gateway (loopback only).
+#   2. packages/node/gateway/gateway.mjs, the Shade Tree tunnel gateway (loopback only).
 #
 # It deliberately does NOT start the client shim and does NOT need SHADE_TREE_SECRET:
 # the droplet never holds a member secret. It only needs group/members.json (the
@@ -22,13 +22,13 @@ fi
 # Bring up Tor + the onion service. Prints the gateway onion when published.
 bash scripts/start-tor.sh
 
-if pgrep -f "gateway/gateway.mjs" >/dev/null; then
+if pgrep -f "packages/node/gateway/gateway.mjs" >/dev/null; then
   echo "gateway already running"
 else
   # Comfortable per-member budget for a demo (redemptions / member / epoch; epoch
   # defaults to a day). Lower it (e.g. SHADE_TREE_RATE_LIMIT=3) to show the limiter drop.
   export SHADE_TREE_RATE_LIMIT="${SHADE_TREE_RATE_LIMIT:-100}"
-  node gateway/gateway.mjs > gateway.log 2>&1 &
+  node packages/node/gateway/gateway.mjs > gateway.log 2>&1 &
   echo "gateway pid $! (rate budget ${SHADE_TREE_RATE_LIMIT}/member/epoch)"
 fi
 sleep 1

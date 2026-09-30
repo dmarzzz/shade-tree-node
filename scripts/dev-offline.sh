@@ -38,7 +38,7 @@ SHADE_TREE_GATEWAY_PORT="$NODE_PORT" \
 SHADE_TREE_EPOCH_SECONDS="$EPOCH_SECONDS" \
 SHADE_TREE_SPENT_STATE_FILE=off \
 SHADE_TREE_BANNER=never \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/node.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/node.log" 2>&1 &
 PIDS+=($!)
 node "$INTEROP/wait-log.mjs" "$WORK/node.log" "gateway up on" 30000 || { cat "$WORK/node.log"; exit 1; }
 

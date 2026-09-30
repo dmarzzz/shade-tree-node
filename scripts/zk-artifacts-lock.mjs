@@ -1,7 +1,7 @@
 // ZK artifact provenance lock (T-HARD-1, autonomous half).
 //
 // (Re)generates testdata/zk-artifacts.lock.json: sha256 + byte size + role + provenance for
-// every ZK artifact the code loads (gateway/client via lib/rln.mjs, the Rust `live` binary via
+// every ZK artifact the code loads (gateway/client via packages/node/lib/rln.mjs, the Rust `live` binary via
 // include_bytes! in crates/shadenet-rln/src/prover.rs, the Solidity verifiers, and the exit-auth
 // proof fixture bound to the withdraw VK). test/zk-artifacts.selftest.mjs recomputes every hash
 // against this file, so `npm test` (ci.yml) fails on any silent artifact swap.
@@ -36,11 +36,11 @@ export const PROVENANCES = new Set([PROVENANCE_DEV, PROVENANCE_CEREMONY]);
 // for the reader (which code path reads the bytes) — not used for verification.
 export const ARTIFACTS = [
   { path: "circuits/rln/rln.wasm", circuit: "rln", role: "witness-calculator (circom wasm, RLN(20,16))",
-    loadedBy: ["lib/rln.mjs proveForSlot (client)", "crates/shadenet-rln/src/prover.rs (embedded, live binary)", "crates/shadenet-rln/src/main.rs (probe)"] },
+    loadedBy: ["packages/node/lib/rln.mjs proveForSlot (client)", "crates/shadenet-rln/src/prover.rs (embedded, live binary)", "crates/shadenet-rln/src/main.rs (probe)"] },
   { path: "circuits/rln/rln_final.zkey", circuit: "rln", role: "groth16 proving key (phase-2 output)",
-    loadedBy: ["lib/rln.mjs proveForSlot (client)", "crates/shadenet-rln/src/prover.rs (embedded, live binary)"] },
+    loadedBy: ["packages/node/lib/rln.mjs proveForSlot (client)", "crates/shadenet-rln/src/prover.rs (embedded, live binary)"] },
   { path: "circuits/rln/verification_key.json", circuit: "rln", role: "groth16 verification key (exported from rln_final.zkey)",
-    loadedBy: ["lib/rln.mjs verifyEnvelope (gateway)", "crates/shadenet-rln/src/prover.rs (embedded self-check)", "crates/shadenet-rln/interop/verify-envelope.mjs"] },
+    loadedBy: ["packages/node/lib/rln.mjs verifyEnvelope (gateway)", "crates/shadenet-rln/src/prover.rs (embedded self-check)", "crates/shadenet-rln/interop/verify-envelope.mjs"] },
   { path: "circuits/rln/Verifier.sol", circuit: "rln", role: "solidity groth16 verifier (snarkjs export of rln_final.zkey; provenance copy, not deployed)",
     loadedBy: ["contracts/RlnGroth16Verifier.sol is this file + a header comment"] },
   { path: "contracts/RlnGroth16Verifier.sol", circuit: "rln", role: "solidity groth16 verifier for the RLN membership circuit (VK == verification_key.json); NOT wired on-chain yet",
@@ -80,7 +80,7 @@ export function measure(entry) {
 
 // ---- artifact ids (T-HARD-8) ------------------------------------------------------------
 // Each circuit's artifact SET is named by a content-derived id: `<circuit>-<sha256(vkey)[0:16]>`
-// (lib/zk-artifacts.mjs artifactIdOf), i.e. literally the vkey's lock hash prefix. The gateway
+// (packages/node/lib/zk-artifacts.mjs artifactIdOf), i.e. literally the vkey's lock hash prefix. The gateway
 // accepts a set of ids (SHADE_TREE_ZK_ARTIFACTS), the envelope carries one, so a ceremony swap can run
 // as a dual-VK window. The lock records `circuits.<c>.artifactId` (checked == derived from the
 // vkey on disk) and, for rln, `previousArtifactId`: when a regeneration sees the rln vkey hash

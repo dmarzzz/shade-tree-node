@@ -38,21 +38,21 @@ The receipt's **only** keys are `{v, onion, epoch, ok, sig}`. Nothing else is pr
 
 The signed bytes are a fixed **domain prefix** followed by a fixed-field-order JSON payload
 (same whitespace-independent style as `canonicalAnnounceBytes` / `canonicalDirectoryBytes` in
-`lib/directory.mjs`):
+`packages/node/lib/directory.mjs`):
 
 ```
 Shade Tree egress success receipt v1\n{"v":1,"onion":"...","epoch":"12345","ok":true}
 ```
 
-The onion-control key **also** signs the gateway's *announce* (`bootnode/announce.mjs`), which is
+The onion-control key **also** signs the gateway's *announce* (`packages/node/bootnode/announce.mjs`), which is
 bare versioned JSON with no such prefix. The receipt-only domain string
 (`RECEIPT_DOMAIN`) makes a receipt signature **impossible to confuse** with an announce or
 directory signature by that same key: a receipt sig never validates as an announce, and an
-announce's `onionSig` never validates as a receipt. (Proven in `gateway/receipt.selftest.mjs`.)
+announce's `onionSig` never validates as a receipt. (Proven in `packages/node/gateway/receipt.selftest.mjs`.)
 
 ## Verification
 
-`verifyReceipt(rec, { onion, epoch, epochSkew })` in `lib/receipt.mjs`:
+`verifyReceipt(rec, { onion, epoch, epochSkew })` in `packages/node/lib/receipt.mjs`:
 
 1. version is `1`, `ok === true`, `onion` is present;
 2. if `onion` is supplied, `rec.onion` must equal it — **bind the receipt to the gateway the
@@ -120,8 +120,8 @@ A malformed/invalid receipt is reported (`valid:false` + `reason`) but **never**
 
 ## Files
 
-- `lib/receipt.mjs` — `buildReceipt` / `verifyReceipt` / `canonicalReceiptBytes` (pure, shared).
-- `gateway/gateway.mjs` — `receiptsEnabled()`, `successAck()`, the onion-seed signer; emits the
+- `packages/node/lib/receipt.mjs` — `buildReceipt` / `verifyReceipt` / `canonicalReceiptBytes` (pure, shared).
+- `packages/node/gateway/gateway.mjs` — `receiptsEnabled()`, `successAck()`, the onion-seed signer; emits the
   receipt on egress success behind the flag.
-- `client/shade-tree-client.mjs` — verifies + surfaces the receipt.
-- `gateway/receipt.selftest.mjs` — round-trip, tamper, domain-separation, privacy, default-off.
+- `packages/node/client/shade-tree-client.mjs` — verifies + surfaces the receipt.
+- `packages/node/gateway/receipt.selftest.mjs` — round-trip, tamper, domain-separation, privacy, default-off.

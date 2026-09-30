@@ -31,7 +31,7 @@ const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { conso
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
-const CLI = join(ROOT, "bin", "shade-tree.mjs");
+const CLI = join(ROOT, "packages", "node", "bin", "shade-tree.mjs");
 const ARTIFACT = join(ROOT, "out", "GatewayRegistry.sol", "GatewayRegistry.json");
 
 const REG = "0x1111111111111111111111111111111111111111";

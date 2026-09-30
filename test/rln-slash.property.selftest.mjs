@@ -1,7 +1,7 @@
-// Property test for the RLN slash math in lib/rln.mjs. Run: `node test/rln-slash.property.selftest.mjs`
+// Property test for the RLN slash math in packages/node/lib/rln.mjs. Run: `node test/rln-slash.property.selftest.mjs`
 // No chain, no network: builds an in-memory RLN group, produces REAL Groth16 proofs against
 // circuits/rln/{rln.wasm,rln_final.zkey,verification_key.json}, and asserts the Shamir-slash
-// invariants over MANY randomized rounds. Same house style as lib/rln.selftest.mjs (ok/failures
+// invariants over MANY randomized rounds. Same house style as packages/node/lib/rln.selftest.mjs (ok/failures
 // counter, PASS/FAIL summary, cleanUp() so the snarkjs worker threads exit).
 //
 // The slash property, restated per round over random (epoch, slot, nonce):
@@ -30,7 +30,7 @@ import {
   toField,
   K_SLOTS,
   cleanUp,
-} from "../lib/rln.mjs";
+} from "../packages/node/lib/rln.mjs";
 
 let pass = 0;
 let failures = 0;

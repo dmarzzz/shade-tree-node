@@ -13,14 +13,14 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CAPS_DOMAIN, PRE_V4_CAPS_DOMAIN, ADMIT_PATHS } from "../lib/directory.mjs";
-import { RECEIPT_DOMAIN } from "../lib/receipt.mjs";
-import { GROVE_SCHEMA, GROVE_ATTESTATION_KEY_ID } from "../lib/public-grove.mjs";
+import { CAPS_DOMAIN, PRE_V4_CAPS_DOMAIN, ADMIT_PATHS } from "../packages/node/lib/directory.mjs";
+import { RECEIPT_DOMAIN } from "../packages/node/lib/receipt.mjs";
+import { GROVE_SCHEMA, GROVE_ATTESTATION_KEY_ID } from "../packages/node/lib/public-grove.mjs";
 import {
   GROVE_RELAY_SCHEMA, RELAY_COUNTER_SCHEMA, RELAY_REPORT_STATE_SCHEMA, RELAY_REPORT_SCHEMA,
   RELAY_AGGREGATE_SCHEMA, RELAY_ELDER_STATE_SCHEMA,
-} from "../lib/relay-telemetry.mjs";
-import { GROVE_SETTLEMENT_SCHEMA } from "../lib/grove-onchain.mjs";
+} from "../packages/node/lib/relay-telemetry.mjs";
+import { GROVE_SETTLEMENT_SCHEMA } from "../packages/node/lib/grove-onchain.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 let failures = 0;
@@ -42,56 +42,56 @@ const FROZEN = [
   ]],
   // RLN request signal: its hash is the circuit's public x.
   ["shade-tree:v4\\n", [
-    "lib/rln.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
+    "packages/node/lib/rln.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
     "testdata/vectors.json",
   ]],
   // Onion-signed and personal_sign domains.
   ["Shade Tree gateway capabilities v1\\n", [
-    "lib/directory.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
+    "packages/node/lib/directory.mjs", "crates/shadenet-proto/src/lib.rs", "crates/shadenet-proto/tests/conformance.rs",
     "testdata/vectors.json",
   ]],
   ["Shade Tree gateway operator authorization\\nonion=", [
-    "bootnode/announce.mjs", "crates/shadenet-proto/src/lib.rs", "testdata/vectors.json",
+    "packages/node/bootnode/announce.mjs", "crates/shadenet-proto/src/lib.rs", "testdata/vectors.json",
   ]],
   ["Shade Tree egress success receipt v1\\n", [
-    "lib/receipt.mjs", "crates/shadenet-proto/src/lib.rs", "testdata/vectors.json",
+    "packages/node/lib/receipt.mjs", "crates/shadenet-proto/src/lib.rs", "testdata/vectors.json",
   ]],
-  ["RGOE gateway capabilities v1\\n", ["lib/directory.mjs"]],
+  ["RGOE gateway capabilities v1\\n", ["packages/node/lib/directory.mjs"]],
   // Rate-policy scope inside onion-signed caps and the bundled network record.
   ['"grove-v4"', [
-    "lib/directory.mjs", "lib/network-record.mjs", "bootnode/heartbeat.mjs", "client/shade-tree-client.mjs",
+    "packages/node/lib/directory.mjs", "packages/node/lib/network-record.mjs", "packages/node/bootnode/heartbeat.mjs", "packages/node/client/shade-tree-client.mjs",
     "deploy/v4/preflight.mjs", "crates/shadenet/src/dircache.rs",
   ]],
   ['"scope": "grove-v4"', ["network/sepolia/deployment.json"]],
   // Signed caps `admits` values, in anonymity order.
   ['["invited", "staked", "paid"]', [
-    "lib/directory.mjs", "lib/admission.mjs", "deploy/v4/preflight.mjs", "crates/shadenet-proto/src/lib.rs",
+    "packages/node/lib/directory.mjs", "packages/node/lib/admission.mjs", "deploy/v4/preflight.mjs", "crates/shadenet-proto/src/lib.rs",
   ]],
   // Ed25519-signed public snapshot schemas and the pinned attestation key id.
   ['"shade-tree-public-grove-v1"', [
-    "lib/public-grove.mjs", "docs/post/api/_grove-contract.mjs", "docs/post/grove/network.js",
+    "packages/node/lib/public-grove.mjs", "docs/post/api/_grove-contract.mjs", "docs/post/grove/network.js",
     "docs/post/grove/network.fallback.json", "scripts/site-smoke.mjs",
   ]],
   ['"shade-tree-public-grove-v2"', [
-    "lib/relay-telemetry.mjs", "docs/post/api/_grove-v2-contract.mjs", "docs/post/grove/network.js",
+    "packages/node/lib/relay-telemetry.mjs", "docs/post/api/_grove-v2-contract.mjs", "docs/post/grove/network.js",
     "docs/post/openapi-v2.json", "scripts/site-smoke.mjs",
   ]],
   ["const: shade-tree-public-grove-v1", ["specs/data-api.openapi.yaml"]],
   ["const: shade-tree-public-grove-v2", ["specs/data-api.openapi.yaml"]],
   ['"grove-2026-08"', [
-    "lib/public-grove.mjs", "docs/post/api/_grove-contract.mjs", "docs/post/api/_grove-v2-contract.mjs",
+    "packages/node/lib/public-grove.mjs", "docs/post/api/_grove-contract.mjs", "docs/post/api/_grove-v2-contract.mjs",
     "docs/post/grove/network.js", "docs/post/grove/network.fallback.json", "docs/post/openapi-v2.json",
   ]],
   ["const: grove-2026-08", ["specs/data-api.openapi.yaml"]],
   // Onion-signed relay telemetry and published settlement schemas.
-  ['"shade-tree-relay-counter-v1"', ["lib/relay-telemetry.mjs"]],
-  ['"shade-tree-relay-report-state-v1"', ["lib/relay-telemetry.mjs"]],
-  ['"shade-tree-relay-report-v1"', ["lib/relay-telemetry.mjs"]],
-  ['"shade-tree-relay-aggregate-v1"', ["lib/relay-telemetry.mjs"]],
-  ['"shade-tree-relay-elder-state-v1"', ["lib/relay-telemetry.mjs"]],
-  ['"shade-tree-registrar-settlements-v1"', ["lib/grove-onchain.mjs"]],
+  ['"shade-tree-relay-counter-v1"', ["packages/node/lib/relay-telemetry.mjs"]],
+  ['"shade-tree-relay-report-state-v1"', ["packages/node/lib/relay-telemetry.mjs"]],
+  ['"shade-tree-relay-report-v1"', ["packages/node/lib/relay-telemetry.mjs"]],
+  ['"shade-tree-relay-aggregate-v1"', ["packages/node/lib/relay-telemetry.mjs"]],
+  ['"shade-tree-relay-elder-state-v1"', ["packages/node/lib/relay-telemetry.mjs"]],
+  ['"shade-tree-registrar-settlements-v1"', ["packages/node/lib/grove-onchain.mjs"]],
   ['"signed-registrar-chain-verified-v1"', [
-    "lib/grove-onchain.mjs", "docs/post/api/_grove-onchain-contract.mjs", "docs/post/grove/onchain.js",
+    "packages/node/lib/grove-onchain.mjs", "docs/post/api/_grove-onchain-contract.mjs", "docs/post/grove/onchain.js",
     "docs/post/openapi-v2.json",
   ]],
 ];

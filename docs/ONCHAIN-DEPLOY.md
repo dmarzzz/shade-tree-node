@@ -265,7 +265,7 @@ env explicitly on the units (the JSON is machine-local and gitignored). For memb
 slashing wire `SHADE_TREE_GROUP_CONTRACT` (`StakedReputationSet`) + `SHADE_TREE_RPC_URL` per
 `network/README.md`.
 
-Then turn on staking end to end (per `bootnode/deploy/README.md`):
+Then turn on staking end to end (per `packages/node/bootnode/deploy/README.md`):
 
 1. Deploy (this runbook) and set the four vars above on the `shade-tree-bootnode` unit.
 2. Stake the operator: `shade-tree register-gateway` with the operator key funded on that chain.
@@ -350,7 +350,7 @@ block as in the historical Sepolia record). A current, non-retired named record 
 `SHADE_TREE_PAID_ACCESS_CONTRACT`; otherwise pin the v4 paid-set address explicitly.
 
 Smoke (operator key): `cast send <addr> "insert(uint256,uint256)" <leaf> 8 --private-key …`,
-then `currentRoot()` == `lib/rln.mjs newGroup([leaf]).root`, `limitOf(leaf)` 8, `leafCount()`
+then `currentRoot()` == `packages/node/lib/rln.mjs newGroup([leaf]).root`, `limitOf(leaf)` 8, `leafCount()`
 1; negatives by static call (`--from` a non-operator ⇒ `NotOperator`, tier 16 ⇒ `BadLimit`,
 re-insert ⇒ `AlreadyInserted`, `slash` at the other tier ⇒ `BadLimit`, wrong secret ⇒
 `BadSecret`). The Sepolia run: `network/sepolia/integration-report-paid-access.md`.

@@ -8,7 +8,7 @@
 //
 // After staking, authorize your onion off chain and hand it to the heartbeat:
 //   SHADE_TREE_GW_OPERATOR_KEY=<this key> shade-tree-node heartbeat --bootnode <onion>
-// (the heartbeat signs operatorAuthMessage(onion, operator) durably; see bootnode/heartbeat.mjs).
+// (the heartbeat signs operatorAuthMessage(onion, operator) durably; see packages/node/bootnode/heartbeat.mjs).
 //
 // Config:
 //   SHADE_TREE_RPC_URL           JSON-RPC endpoint            (default: deployed.rpcUrl or anvil)
@@ -20,8 +20,8 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { networkDefault } from "../lib/network-record.mjs";
-import { makeBoundedJsonRpcProvider, registrationKey, waitForTransactionReceipt } from "../lib/rpc-safety.mjs";
+import { networkDefault } from "../packages/node/lib/network-record.mjs";
+import { makeBoundedJsonRpcProvider, registrationKey, waitForTransactionReceipt } from "../packages/node/lib/rpc-safety.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEPLOYED_PATH = join(HERE, "..", "contracts", "deployed.local.json");

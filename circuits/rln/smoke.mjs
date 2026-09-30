@@ -33,7 +33,7 @@ const verificationKey = JSON.parse(
 
 const RLN_IDENTIFIER = 1n; // app id; any unique bigint
 const TREE_DEPTH = 20; // circom-rln RLN(20,16)
-const USER_MESSAGE_LIMIT = 8n; // matches lib/rln.mjs K_SLOTS=8
+const USER_MESSAGE_LIMIT = 8n; // matches packages/node/lib/rln.mjs K_SLOTS=8
 const EPOCH = 42n;
 
 function assert(cond, msg) {

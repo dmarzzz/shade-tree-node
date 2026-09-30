@@ -102,7 +102,7 @@ services:
     network_mode: "service:tor"
     environment:
       # No SHADE_TREE_GROUP_CONTRACT in the demo -> gateway falls back to its local
-      # members.json root source (see gateway/gateway.mjs). Egress is direct
+      # members.json root source (see packages/node/gateway/gateway.mjs). Egress is direct
       # clearnet from the gateway; it does not use Tor SOCKS itself.
       SHADE_TREE_STAKE_MODE: "mock"
     command: ["gateway"]
@@ -152,7 +152,7 @@ services:
         done
         export SHADE_TREE_BOOTNODE_ONION="$(cat /shared/bootnode.onion)"
         echo "client: bootnode onion = $$SHADE_TREE_BOOTNODE_ONION"
-        exec node /app/bin/shade-tree.mjs client
+        exec node /app/packages/node/bin/shade-tree.mjs client
     stop_grace_period: 20s
     restart: unless-stopped
 

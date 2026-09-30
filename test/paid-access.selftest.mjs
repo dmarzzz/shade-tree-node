@@ -40,7 +40,7 @@ const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { conso
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
-const CLI = join(ROOT, "bin", "shade-tree.mjs");
+const CLI = join(ROOT, "packages", "node", "bin", "shade-tree.mjs");
 const ANVIL_KEY_0 = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // deployer + staker
 const ANVIL_KEY_1 = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"; // gateway slasher hot key
 const ANVIL_ADDR_2 = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"; // slash receiver
@@ -92,7 +92,7 @@ async function main() {
   const work = mkdtempSync(join(tmpdir(), "shade-tree-paid-"));
   const targets = [await localTarget(), await localTarget()];
   const targetList = targets.map((t) => `127.0.0.1:${t.port}`);
-  // The static members.json this gateway trusts (SHADE_TREE_MEMBERS_FILE) — set BEFORE lib/rln.mjs loads.
+  // The static members.json this gateway trusts (SHADE_TREE_MEMBERS_FILE) — set BEFORE packages/node/lib/rln.mjs loads.
   const membersFile = join(work, "members.json");
   process.env.SHADE_TREE_MEMBERS_FILE = membersFile;
   process.env.SHADE_TREE_CONFIRMATIONS = "1";
@@ -139,8 +139,8 @@ async function main() {
 
     // ---- 2. three members: static S (tier 8), staked A (tier 8), paid P (tier 32) --------------
     const { memberOf, sendEnvelope, startGateway, stakeViaCli } = await import("../scripts/integration-tiers.mjs");
-    const { groupFromIdentities, newGroup, currentEpoch, requestSignal, proveForSlot } = await import("../lib/rln.mjs");
-    const { makeSlotPool, buildEnvelope, makeLeafSourceLoader } = await import("../client/shade-tree-client.mjs");
+    const { groupFromIdentities, newGroup, currentEpoch, requestSignal, proveForSlot } = await import("../packages/node/lib/rln.mjs");
+    const { makeSlotPool, buildEnvelope, makeLeafSourceLoader } = await import("../packages/node/client/shade-tree-client.mjs");
     const seed = () => "0x" + randomBytes(32).toString("hex");
     const S = memberOf(seed(), 8), A = memberOf(seed(), 8), P = memberOf(seed(), 32);
     writeFileSync(membersFile, JSON.stringify({ version: 2, members: [S.leaf] }, null, 2) + "\n");

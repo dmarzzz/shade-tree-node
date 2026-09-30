@@ -9,7 +9,7 @@ import {
   settlementSigningPayload,
   validateLiveOnchainTarget,
   validPublicOnchainActivity,
-} from "../lib/grove-onchain.mjs";
+} from "../packages/node/lib/grove-onchain.mjs";
 
 const NOW = new Date("2026-08-25T12:00:00.000Z");
 const BLOCK_TIME = "2026-08-25T06:00:00.000Z";

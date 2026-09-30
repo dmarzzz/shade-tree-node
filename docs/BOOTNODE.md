@@ -4,12 +4,12 @@ The proof of concept pinned one gateway. The [fleet directory](FLEET.md) made th
 *signed static file*. The **Elder Tree**, called the bootnode in code and wire docs,
 makes it live: nodes announce themselves, the bootnode holds live ones for a TTL, and it
 serves the union as a signed directory called the **canopy directory**.
-[`lib/directory.mjs`](../lib/directory.mjs) already knows how to verify that shape. It is the
+[`packages/node/lib/directory.mjs`](../packages/node/lib/directory.mjs) already knows how to verify that shape. It is the
 dynamic realization of roadmap milestone 3.
 
 ## What it is
 
-A small HTTP service (`bootnode/server.mjs`) published as its **own v3 onion service**, so
+A small HTTP service (`packages/node/bootnode/server.mjs`) published as its **own v3 onion service**, so
 Proxies reach it through a Tor SOCKS dial with no exit node. The
 bootnode never learns a client IP.
 
@@ -50,7 +50,7 @@ by default, and onion-only entries still rely on the pinned directory signer for
 
 ## The announce
 
-`bootnode/announce.mjs` builds it; the bootnode and clients verify it. Shape:
+`packages/node/bootnode/announce.mjs` builds it; the bootnode and clients verify it. Shape:
 
 ```jsonc
 {
@@ -83,7 +83,7 @@ judgment. See [`GatewayRegistry.sol`](../contracts/GatewayRegistry.sol).
 
 ## The onion identity
 
-`shade-tree keygen <hsDir>` (`bootnode/keygen.mjs`) mints one ed25519 seed and writes both:
+`shade-tree keygen <hsDir>` (`packages/node/bootnode/keygen.mjs`) mints one ed25519 seed and writes both:
 
 - Tor's HS key files (`hs_ed25519_secret_key`, `hs_ed25519_public_key`, `hostname`) so Tor
   publishes exactly this onion, and
@@ -107,7 +107,7 @@ something that is not a JSON object), or `announce failed: <err> (will retry nex
 bootnode was unreachable over Tor). Every outcome is retried on the next `--interval`; a rejected
 or unreachable gateway simply ages out via the TTL. Operator configuration is resolved once at
 startup and fails fast on any misconfiguration (see `docs/CONFIG.md`, `SHADE_TREE_GW_OPERATOR*`);
-`bootnode/heartbeat.selftest.mjs` pins operator resolution, the announce bytes against
+`packages/node/bootnode/heartbeat.selftest.mjs` pins operator resolution, the announce bytes against
 `testdata/vectors.json`, every failure path, and that no seed or operator key ever reaches a log.
 
 ### Surviving a restart
@@ -146,7 +146,7 @@ SHADE_TREE_BOOTNODE_FED_INTERVAL=60 \
 
 ### Gossip re-verifies announcements
 
-A pull loop (`bootnode/federation.mjs`, a self-unref'd timer) periodically fetches each peer's
+A pull loop (`packages/node/bootnode/federation.mjs`, a self-unref'd timer) periodically fetches each peer's
 `GET /directory` over Tor, and for **each listed onion** pulls that gateway's stored signed announce
 from the peer's `GET /gateway/<onion>`. Every pulled announce is then re-run through the **same real
 `verifyAnnounce` path a direct announce takes** (`registry.admitGossip`) before it is merged:
@@ -179,15 +179,15 @@ from the peer's `GET /gateway/<onion>`. Every pulled announce is then re-run thr
   peers, exposing no new endpoint and no new linkability/DoS surface. Persistence + sweep are
   unchanged: a merged entry is written through and re-verified on reload like any other.
 
-*Accept (proven offline in `bootnode/federation.selftest.mjs`, injected fetch + clock):* two bootnodes
+*Accept (proven offline in `packages/node/bootnode/federation.selftest.mjs`, injected fetch + clock):* two bootnodes
 converge on the same live set; the forged/tampered/unstaked/stale rejection matrix; dedup + no-shorten;
 the caps; fail-soft over a dark peer; and a no-peer registry directory byte-identical to a
 federation-free one.
 
 ## Deploying it (`bootstrap.sh` tunables that concern the bootnode)
 
-`bootnode/deploy/bootstrap.sh` brings up bootnode + gateway on one box by default. Two knobs change
-that shape (full table: `bootnode/deploy/README.md`, `docs/CONFIG.md` "Deploy"):
+`packages/node/bootnode/deploy/bootstrap.sh` brings up bootnode + gateway on one box by default. Two knobs change
+that shape (full table: `packages/node/bootnode/deploy/README.md`, `docs/CONFIG.md` "Deploy"):
 
 | env | default | meaning |
 |---|---|---|
@@ -197,7 +197,7 @@ that shape (full table: `bootnode/deploy/README.md`, `docs/CONFIG.md` "Deploy"):
 ## Endpoint hardening (T-HARD-4)
 
 The registry's DoS controls (`maxEntries`, `minReannounceSec`, the weight clamp) bound *what is
-resident*. Two more levers are bounded at the endpoint itself (`bootnode/server.mjs`):
+resident*. Two more levers are bounded at the endpoint itself (`packages/node/bootnode/server.mjs`):
 
 ### The global announce token bucket
 
@@ -238,7 +238,7 @@ headers within `SHADE_TREE_BOOTNODE_HEADERS_TIMEOUT_MS` (10 s), whole request wi
 (8 KiB) → `431`; enforced every `SHADE_TREE_BOOTNODE_CONN_CHECK_MS` (1 s). The 64 KiB body cap on
 `/announce` is unchanged.
 
-*Accept (proven in `bootnode/hardening.selftest.mjs`, real sockets + a verify spy):* a
+*Accept (proven in `packages/node/bootnode/hardening.selftest.mjs`, real sockets + a verify spy):* a
 fresh-onion burst gets exactly `burst` verifies and the rest are `429` with verify never called;
 cheap rejects consume no token; reload is exempt; N gateways at heartbeat cadence (random phase
 and lockstep) never hit the bucket at default sizing; slow-loris headers/body are cut with
@@ -254,15 +254,15 @@ Load the member secret into `SHADE_TREE_SECRET` as shown in the
 shade-tree proxy --bootnode <elder-onion> --dir-signer <directory-signer-pubkey>
 ```
 
-The client fetches `/directory` over Tor (`bootnode/fetch.mjs`), verifies it against the
+The client fetches `/directory` over Tor (`packages/node/bootnode/fetch.mjs`), verifies it against the
 pinned signer, and feeds it into the existing weighted rotation + failover
-(`client/selection.mjs`). Everything downstream, including the per-tunnel RLN proof and
+(`packages/node/client/selection.mjs`). Everything downstream, including the per-tunnel RLN proof and
 gateway and slot rotation, is unchanged. The bootnode only changes *how the fleet is discovered*.
 
 ## Verify it end to end (no Tor, no chain)
 
 ```bash
-node bootnode/selftest.mjs
+node packages/node/bootnode/selftest.mjs
 ```
 
 Mints real onion identities, runs the real HTTP bootnode, and asserts every adversarial case

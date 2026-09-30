@@ -5,7 +5,7 @@ It shows whether the bootnode is up, how many gateways are live, each gateway's 
 and whether the signed directory verifies against a **pinned** signer.
 
 It is a *cache viewer*, not a trust root: the signature check is the real
-[`lib/directory.mjs`](../lib/directory.mjs) `verifyDirectory` path, so a lying bootnode shows up
+[`packages/node/lib/directory.mjs`](../packages/node/lib/directory.mjs) `verifyDirectory` path, so a lying bootnode shows up
 as `signerOk: false`, not as a forged fleet.
 
 ## Run it
@@ -34,7 +34,7 @@ node web/status-server.mjs
 
 | Var                   | Meaning                                                    | Default       |
 | --------------------- | ---------------------------------------------------------- | ------------- |
-| `SHADE_TREE_BOOTNODE_ONION` | bootnode v3 onion, reached over Tor (`bootnode/fetch.mjs`) | —             |
+| `SHADE_TREE_BOOTNODE_ONION` | bootnode v3 onion, reached over Tor (`packages/node/bootnode/fetch.mjs`) | —             |
 | `SHADE_TREE_BOOTNODE_URL`   | *or* a plain-http bootnode base URL (local/dev)            | —             |
 | `SHADE_TREE_DIR_SIGNER`     | pinned directory-signer pubkey (hex)                       | — (unverified)|
 | `SHADE_TREE_STATUS_PORT`    | loopback port for this page                                | `8090`        |
@@ -95,8 +95,8 @@ only in signed announces, never on chain). So this page never emits an operator 
 - **Read-only, no auth.** Everything served is already-public, privacy-scrubbed data.
 - **Loopback by default.** It binds `127.0.0.1`, so it is off the network until an operator
   chooses to front it (e.g. behind an authenticated reverse proxy or its own onion).
-- **No new dependencies.** `node:http` plus the existing `bootnode/fetch.mjs` (Tor) and
-  `lib/directory.mjs` (verify).
+- **No new dependencies.** `node:http` plus the existing `packages/node/bootnode/fetch.mjs` (Tor) and
+  `packages/node/lib/directory.mjs` (verify).
 
 ## Test
 

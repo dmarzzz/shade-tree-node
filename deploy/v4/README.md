@@ -4,7 +4,7 @@ This directory implements the target-independent parts of deployment-plan gates 
 not contain an inventory, provider address, onion, key, contract, or deployment claim. It has
 not provisioned or changed a provider.
 
-The layer reuses [`bootnode/deploy/bootstrap.sh`](../../bootnode/deploy/bootstrap.sh) for the
+The layer reuses [`packages/node/bootnode/deploy/bootstrap.sh`](../../packages/node/bootnode/deploy/bootstrap.sh) for the
 Tor configuration and hardened systemd units, then adds the things a live v4 rollout must not
 infer: a reviewed network record, immutable source pins, firewall policy, restored identity
 continuity, admission authorization, and postflight checks.

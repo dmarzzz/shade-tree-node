@@ -4,7 +4,7 @@
 to check fleet health from OUTSIDE, over Tor. It is not a server and arms nothing: a cron job or a
 hosted uptime service (with a tor-capable runner) invokes it on an interval and reads its exit code.
 
-Unlike the loopback `/health` on the bootnode (`bootnode/server.mjs`, reachable only on 127.0.0.1
+Unlike the loopback `/health` on the bootnode (`packages/node/bootnode/server.mjs`, reachable only on 127.0.0.1
 or through the onion), this prober reaches the bootnode the way a client does — a SOCKS dial
 through the local Tor daemon, no exit node, the bootnode never learns the monitor's IP — then
 verifies the served directory against the **pinned** signer and rejects issue times outside a
@@ -86,7 +86,7 @@ scheduler on a tor-capable runner **outside** the fleet. Three shipped options, 
 | plain cron | `crontab.example` | 5 min | one line, appends nagios lines to `/var/log/shade-tree-uptime.log` |
 
 All three read the same inputs: `SHADE_TREE_BOOTNODE_ONION` + `SHADE_TREE_DIR_SIGNER`, **or**
-`SHADE_TREE_NETWORK=<name>` (resolved from `network/<name>/bootnode.json`, `lib/network-record.mjs`).
+`SHADE_TREE_NETWORK=<name>` (resolved from `network/<name>/bootnode.json`, `packages/node/lib/network-record.mjs`).
 Neither input is secret (an onion and a public key). `uptime-probe.env.example` is the
 `/etc/shade-tree/uptime-probe.env` template the systemd unit and cron line source.
 

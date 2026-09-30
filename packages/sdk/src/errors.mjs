@@ -30,7 +30,7 @@ export class ShadeNetError extends Error {
 
 export const isShadeNetError = (e, code) => e instanceof ShadeNetError && (code === undefined || e.code === code);
 
-// Map an error from the JS client (client/shade-tree-client.mjs) or the wire code onto a code.
+// Map an error from the JS client (packages/node/client/shade-tree-client.mjs) or the wire code onto a code.
 // The original error stays on `cause`.
 export function toShadeNetError(error) {
   if (error instanceof ShadeNetError) return error;

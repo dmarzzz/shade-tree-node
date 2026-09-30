@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { artifactIdOf } from "../../lib/zk-artifacts.mjs";
+import { artifactIdOf } from "../../packages/node/lib/zk-artifacts.mjs";
 import { loadDeploymentRecord, validateDeploymentRecord, validatePinnedCheckout, validatePublicStakeOnchain } from "./preflight.mjs";
 import { AbiCoder, Interface } from "ethers";
 

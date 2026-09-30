@@ -8,7 +8,7 @@ import {
   buildPublicOnchainActivity,
   collectOnchainActivity,
   validateLiveOnchainTarget,
-} from "../lib/grove-onchain.mjs";
+} from "../packages/node/lib/grove-onchain.mjs";
 
 const STAKED = new Interface([
   "event MemberRegistered(uint256 indexed commitment,uint64 indexed index,uint256 limit)",

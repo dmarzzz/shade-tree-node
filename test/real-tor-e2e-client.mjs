@@ -1,4 +1,4 @@
-// T-TEST-1 client runner: drive the JS REFERENCE client (client/shade-tree-client.mjs) through a
+// T-TEST-1 client runner: drive the JS REFERENCE client (packages/node/client/shade-tree-client.mjs) through a
 // REAL published .onion gateway over Tor SOCKS, mint a real RLN membership proof per request,
 // and assert the gateway ACCEPTS (ok ack + open tunnel). The gateway proxies the CONNECT to a
 // local sink; the harness (test/real-tor-e2e.sh) asserts the sink received the connection.
@@ -14,8 +14,8 @@
 //
 // Exit 0 + `{"accept":true,...}` on an accepted egress; nonzero + `{"accept":false,...}` otherwise.
 
-import { ShadeTreeClient } from "../client/shade-tree-client.mjs";
-import { cleanUp } from "../lib/semaphore.mjs";
+import { ShadeTreeClient } from "../packages/node/client/shade-tree-client.mjs";
+import { cleanUp } from "../packages/node/lib/semaphore.mjs";
 
 const target = process.argv[2] || "127.0.0.1:9443";
 const secret = process.env.SHADE_TREE_SECRET;

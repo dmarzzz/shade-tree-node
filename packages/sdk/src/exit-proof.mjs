@@ -7,7 +7,7 @@
 //   abi.encode(uint256[2] a, uint256[2][2] b, uint256[2] c, uint256 identityCommitment)
 
 import { AbiCoder } from "ethers";
-import { identityCommitmentOf, canonicalField } from "../../../lib/identity-core.mjs";
+import { identityCommitmentOf, canonicalField } from "../../node/lib/identity-core.mjs";
 import { contextToField } from "./contexts.mjs";
 import { ShadeNetError } from "./errors.mjs";
 

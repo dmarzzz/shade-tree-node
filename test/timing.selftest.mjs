@@ -1,4 +1,4 @@
-// Timing / side-channel sanity check for the RLN VERIFY path in lib/rln.mjs.
+// Timing / side-channel sanity check for the RLN VERIFY path in packages/node/lib/rln.mjs.
 // Run: `node test/timing.selftest.mjs`
 //
 // THREAT: the gateway verifies a member's proof on every request. If verifyEnvelope's
@@ -12,7 +12,7 @@
 // ONE real Groth16 proof per member for a FIXED (target, nonce) so every envelope is valid
 // and differs only in which member proved, then times verifyEnvelope many times per member.
 //
-// Same house style as lib/rln.selftest.mjs (ok/failures counter, PASS/FAIL summary,
+// Same house style as packages/node/lib/rln.selftest.mjs (ok/failures counter, PASS/FAIL summary,
 // cleanUp() so the snarkjs worker threads exit).
 //
 // COST NOTE: proof GENERATION is ~0.4s and is serialized behind rln.mjs's snark mutex, so we
@@ -39,7 +39,7 @@ import {
   groupFromIdentities,
   toField,
   cleanUp,
-} from "../lib/rln.mjs";
+} from "../packages/node/lib/rln.mjs";
 
 let pass = 0;
 let failures = 0;

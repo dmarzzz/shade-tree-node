@@ -138,11 +138,11 @@ funding address. The onion→stake binding is an off-chain operator signature
 decremented, even on withdraw/slash/re-register. A re-registered commitment gets a fresh
 higher index. Confirmed by `test_Register_AppendOnlyIndex` and
 `test_ReRegister_AfterWithdraw` (re-register yields index 1). This backs the off-chain
-tree rebuild in `lib/root-provider.mjs`.
+tree rebuild in `packages/node/lib/root-provider.mjs`.
 
 **I8. Membership leaf == the crypto side's rate commitment, at the member's tier.**
 `RateCommitmentHasher.commitmentOf(s, limit) == Poseidon(2)([Poseidon(1)([s]), limit])` must
-equal `poseidon-lite`'s `poseidon2([poseidon1([s]), BigInt(limit)])` (`lib/rln.mjs
+equal `poseidon-lite`'s `poseidon2([poseidon1([s]), BigInt(limit)])` (`packages/node/lib/rln.mjs
 deriveCommitment(s, limit)`), and `commitmentOf(s) == commitmentOf(s, 8)`. If these drift, a
 reconstructed secret would slash the wrong leaf (silent `BadSecret`). Pinned on-chain by
 `test/Poseidon.t.sol` (five JS↔Solidity vectors at K=8), `test_Slash_RateCommitmentLeaf_RevealedSecret_Pays`,
@@ -173,13 +173,13 @@ a new deployment). The tier mappings are declared AFTER the tree state so
 also pins a two-tier tree's root to the JS `newGroup` golden).
 
 **I11. On-chain root == off-chain reconstruction, across both event generations.**
-`currentRoot` after any register / exit / slash sequence equals `lib/root-provider.mjs
+`currentRoot` after any register / exit / slash sequence equals `packages/node/lib/root-provider.mjs
 reconstructRoot` over the emitted events (zero-in-place removal at the leaf's immutable
 index): `test_Root_RegisterThreeSlashMiddle_EqualsReconstructRoot` (rln-v3-style single tier)
 and `test_Root_MixedTiers_EqualsJsNewGroup` (rln-v4, mixed tiers). rln-v4's
 `MemberRegistered(commitment, index, limit)` / `MemberSlashed(commitment, receiver, limit)`
 have a different topic0 from rln-v3's; the reconstruction accepts both and treats them
-identically (`lib/root-provider.selftest.mjs` §8), and the anvil end-to-end suite
+identically (`packages/node/lib/root-provider.selftest.mjs` §8), and the anvil end-to-end suite
 `test/onchain-tiers.selftest.mjs` checks on-chain `currentRoot()` == NodeRootProvider
 (events) == LightClientRootProvider (eth_getProof of slot 3) == JS `groupFromIdentities`.
 

@@ -23,7 +23,7 @@ import {
   ed25519Sign,
   signDirectory,
   pubkeyToOnion,
-} from "../lib/directory.mjs";
+} from "../packages/node/lib/directory.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROBE = join(HERE, "uptime-probe.mjs");
@@ -209,7 +209,7 @@ async function main() {
     ok(oldNagios.status === 2 && oldNagios.stdout.trim() === "CRITICAL: directory verification failed", "hosted failure is fixed and identifier-free");
     ok(!oldNagios.stdout.includes(preV4Prefix), "Nagios verification failure omits the gateway prefix");
 
-    // 7. SHADE_TREE_NETWORK RECORD (lib/network-record.mjs) ------------------------
+    // 7. SHADE_TREE_NETWORK RECORD (packages/node/lib/network-record.mjs) ------------------------
     // Explicit env wins over the record (the mock URL + signer still drive the probe); a record
     // that resolves NO bootnode (network/sepolia/bootnode.json is pending, or an unknown network)
     // is a misconfig -> unhealthy, never a throw / hang.

@@ -352,7 +352,7 @@ application during the livestream.
 
 | Consumer | Future integration inventory |
 | --- | --- |
-| JavaScript proving / gateway verification | RLN WASM, zkey, JSON verification key; `lib/rln.mjs` and accepted-key configuration |
+| JavaScript proving / gateway verification | RLN WASM, zkey, JSON verification key; `packages/node/lib/rln.mjs` and accepted-key configuration |
 | Rust client releases | Embedded RLN WASM, zkey, JSON verification key, and lock; rebuild actual `live` binaries |
 | RLN Solidity provenance copy | `circuits/rln/Verifier.sol` and `contracts/RlnGroth16Verifier.sol`; membership remains verified off-chain |
 | Withdraw proving / fixtures | Withdraw WASM, zkey, JSON verification key; regenerate `testdata/withdraw-proof.json` |
@@ -376,7 +376,7 @@ RLN proving and verification keys must come from the same final zkey. Existing
 `rln-<sha256(verification_key.json)[0:16]>` and lets gateways accept multiple
 keys through `SHADE_TREE_ZK_ARTIFACTS`. The legacy mapping is
 `SHADE_TREE_ZK_ARTIFACT_LEGACY`; Rust clients embed their artifacts and lock.
-See [lib/zk-artifacts.mjs](../lib/zk-artifacts.mjs).
+See [packages/node/lib/zk-artifacts.mjs](../packages/node/lib/zk-artifacts.mjs).
 
 **Accepting the old development verification key preserves its forgery risk.**
 A dual-key transition is a compatibility option, not a secure boundary. A later

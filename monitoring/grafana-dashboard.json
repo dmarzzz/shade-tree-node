@@ -28,7 +28,7 @@
       }
     ]
   },
-  "description": "Shade Tree: bootnode discovery + gateway fleet health. Every panel is built only on metrics emitted by lib/metrics.mjs and registered in bootnode/server.mjs and gateway/gateway.mjs (T-MON-2).",
+  "description": "Shade Tree: bootnode discovery + gateway fleet health. Every panel is built only on metrics emitted by packages/node/lib/metrics.mjs and registered in packages/node/bootnode/server.mjs and packages/node/gateway/gateway.mjs (T-MON-2).",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -217,7 +217,7 @@
     {
       "type": "timeseries",
       "title": "Announce rate by result / reason",
-      "description": "rate(shade_tree_bootnode_announces_total[5m]) split by result (accepted|rejected) and reason. Rejected announces are the gate working; a spike in a specific reject reason is the signal (see AnnounceRejectionSpike alert). Reject reasons come from bootnode/announce.mjs + registry (rate-limited, registry-full, bad signature, etc.).",
+      "description": "rate(shade_tree_bootnode_announces_total[5m]) split by result (accepted|rejected) and reason. Rejected announces are the gate working; a spike in a specific reject reason is the signal (see AnnounceRejectionSpike alert). Reject reasons come from packages/node/bootnode/announce.mjs + registry (rate-limited, registry-full, bad signature, etc.).",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
       "id": 4,

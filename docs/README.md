@@ -40,7 +40,7 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | Doc | What it is |
 |-----|------------|
 | [`OPERATOR.md`](OPERATOR.md) | Shade Tree node and Elder Tree runbook: deploy, day-2 health, keys, slash response, retirement |
-| [`../bootnode/deploy/README.md`](../bootnode/deploy/README.md) | The one-command bootstrap and every tunable it accepts |
+| [`../packages/node/bootnode/deploy/README.md`](../packages/node/bootnode/deploy/README.md) | The one-command bootstrap and every tunable it accepts |
 | [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md) | The v4 topology, rollout gates, safe order, and health checks |
 | [`BOOTNODE.md`](BOOTNODE.md) | Elder Tree discovery: announce, signed canopy directory, per-node capabilities, trust boundary |
 | [`FLEET.md`](FLEET.md) | Per-tunnel node selection, weights, failover, canopy-wide budget |

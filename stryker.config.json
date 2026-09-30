@@ -7,15 +7,15 @@
 
   "//commandRunner": "Chain of ONLY the fast selftests that cover the scoped files. gateway.mjs -> egress-policy + replay-cache; gateway-registry.mjs -> gateway-registry; directory.mjs -> directory + directory-rotation; announce.mjs -> bootnode/selftest (exercises buildAnnounce/verifyAnnounce via makeServer). Any failing selftest short-circuits (&&) => mutant KILLED. Deliberately excludes the slow real-Groth16 suites (rln, rln-slash, timing).",
   "commandRunner": {
-    "command": "node gateway/egress-policy.selftest.mjs && node gateway/replay-cache.selftest.mjs && node lib/gateway-registry.selftest.mjs && node lib/directory.selftest.mjs && node lib/directory-rotation.selftest.mjs && node bootnode/selftest.mjs"
+    "command": "node packages/node/gateway/egress-policy.selftest.mjs && node packages/node/gateway/replay-cache.selftest.mjs && node packages/node/lib/gateway-registry.selftest.mjs && node packages/node/lib/directory.selftest.mjs && node packages/node/lib/directory-rotation.selftest.mjs && node packages/node/bootnode/selftest.mjs"
   },
 
-  "//mutate": "High-value pure files with thorough fast tests. lib/rln.mjs is intentionally EXCLUDED — mutating it forces the slow real-proof suite. Narrow the set on the CLI for a quick smoke run, e.g. `npx stryker run --mutate lib/gateway-registry.mjs`.",
+  "//mutate": "High-value pure files with thorough fast tests. packages/node/lib/rln.mjs is intentionally EXCLUDED — mutating it forces the slow real-proof suite. Narrow the set on the CLI for a quick smoke run, e.g. `npx stryker run --mutate packages/node/lib/gateway-registry.mjs`.",
   "mutate": [
-    "lib/gateway-registry.mjs",
-    "gateway/gateway.mjs",
-    "lib/directory.mjs",
-    "bootnode/announce.mjs"
+    "packages/node/lib/gateway-registry.mjs",
+    "packages/node/gateway/gateway.mjs",
+    "packages/node/lib/directory.mjs",
+    "packages/node/bootnode/announce.mjs"
   ],
 
   "//coverageAnalysis": "The command runner cannot map mutants to individual tests, so run the full selftest chain for every mutant.",

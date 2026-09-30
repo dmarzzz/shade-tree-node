@@ -59,7 +59,7 @@ SHADE_TREE_GATEWAY_PORT="$GW_PORT" \
 SHADE_TREE_EGRESS_ALLOW="$TARGET" \
 SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
 SHADE_TREE_BANNER=never \
-  node "$REPO/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
 GW_PID=$!
 node "$HERE/wait-log.mjs" "$WORK/gateway.log" "gateway up on" 30000
 

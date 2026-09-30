@@ -1,7 +1,7 @@
 // leaves — export an on-chain set's ORDERED leaves as a members.json (T-FEAT-7): the bridge for
 // the Rust client, whose `shade-tree egress --members <f>` reads only the static `{ version, members[] }`
 // file. A StakedReputationSet / PaidAccessSet keeps its tree on chain and in its event log; this
-// rebuilds it exactly as the gateway does (lib/root-provider.mjs reconstructGroup: append at the
+// rebuilds it exactly as the gateway does (packages/node/lib/root-provider.mjs reconstructGroup: append at the
 // contract's index, ZERO IN PLACE on slash/exit) and writes the leaf array INCLUDING the in-place
 // zeros, so the Rust tree (crates/shadenet-rln, same zero value) reproduces the on-chain root.
 //
@@ -14,7 +14,7 @@
 
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { loadGroupFromContract, parseContractList } from "../lib/root-provider.mjs";
+import { loadGroupFromContract, parseContractList } from "../packages/node/lib/root-provider.mjs";
 
 const USAGE = "usage: shade-tree leaves --contract <addr> [--out <path>] [--from-block <n>]   (rpc: SHADE_TREE_RPC_URL / --rpc-url)";
 

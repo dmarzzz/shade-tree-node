@@ -2,7 +2,7 @@
 // scripts/onion-identity.mjs — onion-identity continuity for a rebuilt gateway/bootnode box.
 //
 // When a box is destroyed and rebuilt, the SAME .onion MUST come back or the signed directory
-// (lib/directory.mjs) and every client that pinned that onion break. This tool lets an operator:
+// (packages/node/lib/directory.mjs) and every client that pinned that onion break. This tool lets an operator:
 //
 //   1. DERIVE + PRINT the .onion address a Tor v3 secret key resolves to, so they can verify a
 //      restored key is the EXPECTED onion BEFORE cutting Tor over to it (a bad key = a new,
@@ -11,7 +11,7 @@
 //      layout + perms — reconstructing `hs_ed25519_public_key` and `hostname` FROM the secret key,
 //      so a single backed-up secret (all scripts/backup.mjs stores) is sufficient to rebuild.
 //
-// It uses ONLY node:crypto + the repo's existing onion encoder (lib/directory.mjs#pubkeyToOnion).
+// It uses ONLY node:crypto + the repo's existing onion encoder (packages/node/lib/directory.mjs#pubkeyToOnion).
 //
 //   node scripts/onion-identity.mjs derive  <secret_key_file>
 //   node scripts/onion-identity.mjs restore <secret_key_file> <hsDir> [--force]
@@ -27,9 +27,9 @@
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { pubkeyToOnion } from "../lib/directory.mjs";
+import { pubkeyToOnion } from "../packages/node/lib/directory.mjs";
 
-// Tor HS v3 file constants (must match bootnode/keygen.mjs, which mints these files).
+// Tor HS v3 file constants (must match packages/node/bootnode/keygen.mjs, which mints these files).
 const TAG_SECRET = "== ed25519v1-secret: type0 =="; // 29 bytes, NUL-padded to 32 in the file
 const TAG_PUBLIC = "== ed25519v1-public: type0 ==";
 const TAG_LEN = 32;

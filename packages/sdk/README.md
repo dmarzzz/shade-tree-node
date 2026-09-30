@@ -96,7 +96,7 @@ const { nodes, signer, issued } = verifyCanopy(directoryJson, { network: "sepoli
 // nodes: [{ onion, pubkey, weight, health, caps }]
 ```
 
-This runs the gateway's own verification code (`lib/directory.mjs`): the pinned signer or an
+This runs the gateway's own verification code (`packages/node/lib/directory.mjs`): the pinned signer or an
 M-of-N threshold, the onion-to-key binding of every entry, and each entry's onion-signed
 capabilities. In a browser the same code runs on a `@noble` crypto backend. The shared vectors
 test checks both builds byte for byte.
@@ -157,5 +157,5 @@ npm test --workspace @shadenet/sdk          # behaviour, vectors (Node + browser
 node packages/sdk/scripts/pack.mjs --dry-run
 ```
 
-In this repository, `src/` imports the shared wire code from `../../lib`, so there is one JS
+In this repository, `src/` imports the shared wire code from `../node/lib`, so there is one JS
 implementation. `scripts/pack.mjs` bundles `dist/` for publishing.

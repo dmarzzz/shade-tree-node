@@ -12,12 +12,12 @@ fi
 
 bash scripts/start-tor.sh
 
-if pgrep -f "gateway/gateway.mjs" >/dev/null; then echo "gateway already running"; else
-  node gateway/gateway.mjs > gateway.log 2>&1 & echo "gateway pid $!"
+if pgrep -f "packages/node/gateway/gateway.mjs" >/dev/null; then echo "gateway already running"; else
+  node packages/node/gateway/gateway.mjs > gateway.log 2>&1 & echo "gateway pid $!"
 fi
 sleep 1
-if pgrep -f "client/shim.mjs" >/dev/null; then echo "shim already running"; else
-  node client/shim.mjs > shim.log 2>&1 & echo "shim pid $!"
+if pgrep -f "packages/node/client/shim.mjs" >/dev/null; then echo "shim already running"; else
+  node packages/node/client/shim.mjs > shim.log 2>&1 & echo "shim pid $!"
 fi
 sleep 1
 echo ""

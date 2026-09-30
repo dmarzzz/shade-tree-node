@@ -13,7 +13,7 @@
 // This composes the EXISTING flows — it never reimplements crypto. The member path spawns
 // `group/enroll.mjs --commitment-only` (the real self-enrollment; the secret is generated on
 // THIS machine and never leaves it) and reformats its output into a scripted guide. The gateway
-// path calls generateOnionIdentity() from bootnode/keygen.mjs.
+// path calls generateOnionIdentity() from packages/node/bootnode/keygen.mjs.
 //
 // Stream contract (mirrors enroll's commitment-only mode, so the secret is never captured by a
 // pipe or scrolled into a shared log):
@@ -25,8 +25,8 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { generateOnionIdentity } from "../bootnode/keygen.mjs";
-import { K_SLOTS, normLimit, identityFor, identityCommitmentOf } from "../lib/rln.mjs";
+import { generateOnionIdentity } from "../packages/node/bootnode/keygen.mjs";
+import { K_SLOTS, normLimit, identityFor, identityCommitmentOf } from "../packages/node/lib/rln.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ENROLL = join(HERE, "enroll.mjs");

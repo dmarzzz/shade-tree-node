@@ -7,7 +7,7 @@ Node, with the same error codes as the Rust SDK. `createClient` in `@shadenet/sd
 
 `ShadeTreeClient` is the programmatic form of the Shade Tree client. It creates
 access proofs, chooses a node, and opens a raw HTTPS tunnel without starting
-the local proxy. The proxy in `client/shim.mjs` uses the same class.
+the local proxy. The proxy in `packages/node/client/shim.mjs` uses the same class.
 
 This document covers the shipped JavaScript API. There is no public
 in-process Rust API yet. Rust applications should use the live binary's

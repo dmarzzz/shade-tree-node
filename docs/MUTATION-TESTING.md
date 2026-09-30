@@ -23,12 +23,12 @@ cover them. The `mutate` glob in the config is:
 
 | Mutated file | Why it is high-value | Covering fast selftest(s) |
 | --- | --- | --- |
-| `lib/gateway-registry.mjs` | Stake gate — decides which gateways an `admission=stake` policy admits (mock + on-chain `eth_call` encode/decode). | `lib/gateway-registry.selftest.mjs` |
-| `gateway/gateway.mjs` | Egress guard — `makeEgressPolicy` + `validTarget` (allow/deny host:port matching) and `makeSpentSet` (proof replay defense). | `gateway/egress-policy.selftest.mjs`, `gateway/replay-cache.selftest.mjs` |
-| `lib/directory.mjs` | Signed gateway directory — verification, onion→pubkey derivation. | `lib/directory.selftest.mjs`, `lib/directory-rotation.selftest.mjs` |
-| `bootnode/announce.mjs` | Announce record build/verify — canonical bytes, operator sig, staleness/replay checks. | `bootnode/selftest.mjs` (exercises `buildAnnounce`/`verifyAnnounce` via `makeServer`) |
+| `packages/node/lib/gateway-registry.mjs` | Stake gate — decides which gateways an `admission=stake` policy admits (mock + on-chain `eth_call` encode/decode). | `packages/node/lib/gateway-registry.selftest.mjs` |
+| `packages/node/gateway/gateway.mjs` | Egress guard — `makeEgressPolicy` + `validTarget` (allow/deny host:port matching) and `makeSpentSet` (proof replay defense). | `packages/node/gateway/egress-policy.selftest.mjs`, `packages/node/gateway/replay-cache.selftest.mjs` |
+| `packages/node/lib/directory.mjs` | Signed gateway directory — verification, onion→pubkey derivation. | `packages/node/lib/directory.selftest.mjs`, `packages/node/lib/directory-rotation.selftest.mjs` |
+| `packages/node/bootnode/announce.mjs` | Announce record build/verify — canonical bytes, operator sig, staleness/replay checks. | `packages/node/bootnode/selftest.mjs` (exercises `buildAnnounce`/`verifyAnnounce` via `makeServer`) |
 
-**Deliberately excluded:** `lib/rln.mjs` (and the `rln`, `rln-slash`, `timing` suites).
+**Deliberately excluded:** `packages/node/lib/rln.mjs` (and the `rln`, `rln-slash`, `timing` suites).
 Mutating RLN forces the slow real-Groth16 proof suites, which would make a run take
 hours. Those keep their own `*.selftest.mjs` real-proof coverage; they are just not
 mutation-tested here. If you add RLN to the scope, expect a very long run and raise the
@@ -50,7 +50,7 @@ npm run mutation:test
 Quick smoke run on a single small file (proves the config works in ~2 min):
 
 ```
-npx stryker run --mutate lib/gateway-registry.mjs
+npx stryker run --mutate packages/node/lib/gateway-registry.mjs
 ```
 
 Reports:
@@ -86,7 +86,7 @@ the survivors.
 
 ## Known survivors (test-gap follow-ups)
 
-A smoke run on `lib/gateway-registry.mjs` scored **66.07%** (74 killed / 38 survived, 0
+A smoke run on `packages/node/lib/gateway-registry.mjs` scored **66.07%** (74 killed / 38 survived, 0
 errors). The survivors cluster in the **on-chain `OnchainStakeVerifier`** path, which the
 selftest exercises against a stubbed `fetch` but does not assert exhaustively. Examples
 worth a follow-up test (do NOT change source to satisfy the mutant — add the assertion):

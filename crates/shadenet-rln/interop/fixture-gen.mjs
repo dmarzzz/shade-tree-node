@@ -14,7 +14,7 @@ import {
   identityFor, identitySecretOf, rateCommitmentOf, newGroup,
   externalNullifierFor, requestSignal, proveForSlot, K_SLOTS, RLN_IDENTIFIER,
   calculateSignalHash, cleanUp,
-} from "../../../lib/rln.mjs";
+} from "../../../packages/node/lib/rln.mjs";
 
 const SECRET = "12345678901234567890"; // fixed app seed secret (field element)
 const EPOCH = 42n;

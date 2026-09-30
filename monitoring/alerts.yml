@@ -1,15 +1,15 @@
 # Prometheus alerting rules for Shade Tree (T-MON-3).
 #
 # Every expr references a metric that actually exists:
-#   - shade_tree_bootnode_announces_total{result,reason}   (counter, bootnode/server.mjs)
-#   - shade_tree_bootnode_directory_fetches_total           (counter, bootnode/server.mjs)
-#   - shade_tree_bootnode_live_gateways                     (gauge,   bootnode/server.mjs)
-#   - shade_tree_gateway_tunnels_total{result,reason}      (counter, gateway/gateway.mjs)
-#   - shade_tree_gateway_slashes_total                      (counter, gateway/gateway.mjs)
-#   - shade_tree_gateway_active_tunnels                     (gauge,   gateway/gateway.mjs)
-#   - shade_tree_gateway_root_source_degraded               (gauge,   gateway/gateway.mjs)
-#   - shade_tree_gateway_verify_seconds_bucket/_sum/_count  (histogram, gateway/gateway.mjs)
-#   - shade_tree_heartbeat_last_success_timestamp_seconds   (gauge,   bootnode/heartbeat.mjs)
+#   - shade_tree_bootnode_announces_total{result,reason}   (counter, packages/node/bootnode/server.mjs)
+#   - shade_tree_bootnode_directory_fetches_total           (counter, packages/node/bootnode/server.mjs)
+#   - shade_tree_bootnode_live_gateways                     (gauge,   packages/node/bootnode/server.mjs)
+#   - shade_tree_gateway_tunnels_total{result,reason}      (counter, packages/node/gateway/gateway.mjs)
+#   - shade_tree_gateway_slashes_total                      (counter, packages/node/gateway/gateway.mjs)
+#   - shade_tree_gateway_active_tunnels                     (gauge,   packages/node/gateway/gateway.mjs)
+#   - shade_tree_gateway_root_source_degraded               (gauge,   packages/node/gateway/gateway.mjs)
+#   - shade_tree_gateway_verify_seconds_bucket/_sum/_count  (histogram, packages/node/gateway/gateway.mjs)
+#   - shade_tree_heartbeat_last_success_timestamp_seconds   (gauge,   packages/node/bootnode/heartbeat.mjs)
 #   - up                                              (synthetic, from the scrape itself)
 #
 # Thresholds are grounded in docs/SLO.md. Numbers flagged [NEEDS DATA] in the SLO doc
