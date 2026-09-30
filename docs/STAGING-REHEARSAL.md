@@ -15,7 +15,7 @@ This is the M7 exit of [the roadmap](../../shadenet-launch/ROADMAP.md): every la
 | 4 | Elder failover | pass |
 | 5 | RPC outage on a node | pass |
 | 6 | Alert round trip to Matrix | pass (synthetic and real) |
-| 7 | Release from a tag, fleet roll | see section 7 |
+| 7 | Release from a tag, fleet roll | pass |
 | 8 | Production deploy script, fork dry run | pass |
 | 9 | Uptime-probe flap | runner-side; explained in section 9 |
 
@@ -138,7 +138,14 @@ The RELEASE track tagged `v0.7.0-rc.1` = `db56701` (after PR #207). The staging 
 |---|---|
 | orbital-one (second Elder) | `shade_tree_build_info{commit="db5670…",role="elder",version="0.7.0-rc.1"}`, `ExecStart=… /opt/shade-tree/packages/node/bootnode/server.mjs` |
 | shade-node-v4-05 | `shade_tree_build_info{commit="db5670…",role="node",version="0.7.0-rc.1"}`, `ExecStart=… /opt/shade-tree/packages/node/gateway/gateway.mjs` |
-| shade-elder-v4-02, shade-node-v4-04, shade-node-v4-06, the Lab | see the addendum |
+| shade-elder-v4-02 | `shade_tree_build_info{commit="db5670…",role="elder",version="0.7.0-rc.1"}`, `ExecStart=… /opt/shade-tree/packages/node/bootnode/server.mjs` |
+| shade-node-v4-04, shade-node-v4-06 | `shade_tree_build_info{commit="db5670…",role="node",version="0.7.0-rc.1"}`, `ExecStart=… /opt/shade-tree/packages/node/gateway/gateway.mjs` |
+| the Lab | re-pinned by the wrapper (`shade_tree_lab_runner` ok=26 changed=3); `/health` ok |
+| fleet e2e (`scripts/shade-tree-v4-e2e.sh`) | exit 0: canopy verified (3 nodes), staked proof-gated requests through the nodes ok |
+| a client after the roll | `canopy verified nodes=3 sources=2`, `fetch: HTTP 200 via keo2oo4n…onion:80 (epoch 29846670)` |
+| the tag's release workflow (run 36770369044) | one job failed on a runner network error installing rustup (`fetch failed`), re-run: **success**, every target, attestations and checksums |
+
+After the roll: the vendored `shade_tree_v4` role in agent-devops was removed and the wrapper now requires the upstream role in the pinned checkout (agent-devops #25); the ten `packages/node` entry-point shims from #202 are removed (#208). Not done, listed: per-host age recipients for the SOPS files (more than an hour of work; do it with the M8 roll).
 
 ## 8. Production deploy script, fork dry run
 
@@ -156,9 +163,7 @@ The hosted probe (`uptime-probe.yml` on a GitHub runner, over Tor) failed 17 tim
 
 ## Left for M8
 
-- Fleet roll to a release tag that carries PR #207 (the member-set replay fix), so a node restart cannot build a wrong root from a partial RPC answer.
+- The record's RPC. `ethereum-sepolia-rpc.publicnode.com` answered three different historical reads with nothing today (empty `eth_getLogs` pages, a `null` receipt, a 429). Both fixes above make the clients and the preflight notice; the M8 record should still name an endpoint with full history first and keep publicnode as a fallback, or the fleet wrapper's fallback list should be in the record.
 - Nodes announce to every Elder in the record; the Lab runner reads the record's `elders[]`.
 - A second node off DigitalOcean (needs Dan's Hetzner or Vultr token), the DigitalOcean token rotation, per-host age recipients.
 - The staging seats sponsored today (Hermes on orbital-one, the SearXNG stack, the browser identity) stay in the staging set; they are not production seats.
-
-## Addendum: with the fixed client binary
