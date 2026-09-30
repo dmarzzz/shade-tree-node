@@ -12,7 +12,7 @@ through][research-note].
 [![release][release-badge]][release-url]
 [![MIT][license-badge]][license-url]
 
-Add Shade Tree to an agent. Run a Shade Tree node to provide cover. The two
+Add ShadeNet to an agent. Run a Shade Tree node to provide cover. The two
 sides meet through a proof-gated Tor onion service, one admitted CONNECT tunnel
 at a time.
 
@@ -20,6 +20,8 @@ at a time.
 
 [Site][site] · [Canopy][canopy] · [Research][research-note] · [Docs](docs/README.md) ·
 [Protocol](specs/protocol.md) · [Security](SECURITY.md)
+
+ShadeNet is not affiliated with Shade Network or Shade Protocol.
 
 > [!WARNING]
 > Research preview. The code is unaudited and the included ZK artifacts are for
@@ -52,60 +54,53 @@ and filename, and installs without sudo into `~/.local/bin`:
 
 ```sh
 curl -q -fsSL --proto '=https' --proto-redir '=https' \
-  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | sh
-shade-tree --version
+  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.0-rc.1 sh
+shadenet --version
 ```
 
 Automatic mode first tries the selected release's self-contained `-live` agent
 and falls back to its verifier-only binary only when that live asset is absent.
 On Apple Silicon it detects Rosetta shells and still selects the native arm64
-live build. Intel macOS has a `-live` binary from v0.7.0-rc.1 on (v0.6.0 ships
-only the verifier there). Pin v0.6.0 with
-`... | SHADE_TREE_VERSION=v0.6.0 sh`, or read the
-[installer options and manual verification steps](crates/INSTALL.md). Checksums
+live build. Until v0.7.0 is the latest release, pin it with `SHADENET_VERSION=v0.7.0-rc.1` as
+above: v0.6.0 installs only the older `shade-tree` binary, without `init`, `status` or
+`mcp`, and has no Intel macOS live build. The
+[installer options and manual verification steps](crates/INSTALL.md) cover the rest. Checksums
 provide transfer integrity; GitHub attestations provide the stronger build
 provenance check.
 
-The bundled Sepolia canopy defaults to public staked tier 1: 0.1 Sepolia ETH buys
-one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload
-ceiling. Create an owner-only identity locally, then let the client verify and
-register its public leaf with a separately funded testnet wallet:
+The bundled Sepolia canopy defaults to public staked tier 1: the bond in the
+current network record (`shadenet init` prints it; the [Get access][stake] page
+shows it) buys one CONNECT tunnel per fixed 60-second epoch with a 40 MiB
+combined payload ceiling. `init` creates an owner-only identity, a proxy token
+and `config.toml`; then stake the leaf from a separately funded testnet key, or
+have a sponsor stake it from the Get access page:
 
 ```bash
-shade-tree enroll --out identity.json
+shadenet init
 chmod 600 funded-sepolia.key
-shade-tree register-member --identity identity.json --key-file funded-sepolia.key
-shade-tree member-status --identity identity.json --json
+shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet status --wait        # returns once the registration is final
 ```
 
-`enroll` generates identity material; it does not add the leaf to a canopy.
-The current contract, RPC, deployment block, tier, Elder, signer, and rate policy
-are bundled defaults; explicit settings still select another canopy. After the
-registration block reaches Sepolia finality, start the self-contained Proxy:
+The current contract, RPC, deployment block, tiers, Elders, signer, and rate
+policy are bundled defaults; `--network path/to/deployment.json` selects another
+canopy. Start the self-contained Proxy and, in another terminal, route only the
+agent process:
 
 ```bash
-(umask 077; set -C; shade-tree proxy-token > proxy-token.txt)
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-shade-tree proxy \
-  --identity identity.json \
-  --listen 127.0.0.1:8118
+shadenet proxy
+shadenet run --no-proxy api.openai.com -- your-agent
 ```
 
-In another terminal, route only the agent process:
-
-```bash
-IFS= read -r SHADE_TREE_PROXY_TOKEN < proxy-token.txt
-export SHADE_TREE_PROXY_TOKEN
-shade-tree run --proxy http://127.0.0.1:8118 -- your-agent
-```
-
-`shade-tree run` passes proxy variables only to its child and refuses to launch
+`shadenet run` passes proxy variables only to its child and refuses to launch
 if the authenticated Proxy preflight fails. It puts the local token only in the
-child's proxy URLs; the raw `SHADE_TREE_PROXY_TOKEN` and other operator settings
-are removed from the child environment. Software that ignores proxy variables
-must be configured with the authenticated URL
-`http://shade-tree:$SHADE_TREE_PROXY_TOKEN@127.0.0.1:8118`. Rust applications
+child's proxy URLs; the raw `SHADENET_PROXY_TOKEN` and other operator settings
+are removed from the child environment. Keep the model API host on
+`--no-proxy`: it has its own network path and would waste tunnels. Software that
+ignores proxy variables must be configured with the authenticated URL
+`http://shadenet:$SHADENET_PROXY_TOKEN@127.0.0.1:8118`. Agents that speak MCP
+can use `shadenet mcp` instead (`shadenet_fetch`, `shadenet_status`,
+`shadenet_search`). Rust applications
 can use the [`shadenet` SDK crate](crates/README.md); JavaScript applications can import
 [`ShadeTreeClient`](docs/SDK.md). The exact public semantics and their non-atomic
 cross-gateway caveat are recorded in
@@ -114,9 +109,9 @@ cross-gateway caveat are recorded in
 The same live binary can reclaim an unslashed bond without revealing the identity secret:
 
 ```bash
-shade-tree exit-member --identity identity.json --key-file gas.key
-# Wait until `member-status` reports its withdrawal time has passed.
-shade-tree withdraw-member --identity identity.json \
+shadenet exit-member --identity ~/.config/shadenet/identity.json --key-file gas.key
+# Wait until `shadenet member-status` reports its withdrawal time has passed.
+shadenet withdraw-member --identity ~/.config/shadenet/identity.json \
   --recipient 0xFRESH_SEPOLIA_ADDRESS --key-file gas.key
 ```
 
@@ -236,6 +231,7 @@ Tree is open source under the [MIT license](LICENSE).
 [release-url]: https://github.com/dmarzzz/shade-tree-node/releases/latest
 [license-badge]: https://img.shields.io/badge/license-MIT-59624f.svg
 [license-url]: LICENSE
+[stake]: https://shade-tree-node.vercel.app/stake/
 [site]: https://shade-tree-node.vercel.app
 [canopy]: https://shade-tree-node.vercel.app/canopy/
 [research-note]: https://shade-tree-node.vercel.app/research/
