@@ -10,8 +10,8 @@ This is the M7 exit of [the roadmap](../../shadenet-launch/ROADMAP.md): every la
 |---|---|---|
 | 0 | 24 h staking cycle: register → exit → withdraw → slash | pass |
 | 1 | Stake from the browser, then use the seat | pass |
-| 2 | Sponsor an agent seat; Hermes fetches through the canopy | pass (proxy + MCP tool); the model-driven call passed after the fix below |
-| 3 | SearXNG through the canopy | see section 3 |
+| 2 | Sponsor an agent seat; Hermes fetches through the canopy | pass (proxy, MCP tool, a model-driven Hermes call) with the fixed client |
+| 3 | SearXNG through the canopy | pass with the fixed client and the fixed example |
 | 4 | Elder failover | pass |
 | 5 | RPC outage on a node | pass |
 | 6 | Alert round trip to Matrix | pass (synthetic and real) |
@@ -71,8 +71,11 @@ registerIdentity(863386500828661417758995861961915864619808562268714853273542530
 |---|---|
 | proxy CONNECT (curl through `127.0.0.1:8118`) | `{"ip":"161.35.146.3"} http=200` |
 | MCP `shadenet_status` over stdio | `admitted: true`, `admissionSet: 0xf117…7B7E`, canopy `eligible: 3` |
-| MCP `shadenet_fetch` over stdio | refused `gate:wrong-group-root` with the unfixed binary (each `shadenet mcp` start re-scans the set and hit the empty page); see the addendum below for the fixed binary |
-| Hermes one-shot (`hermes chat --oneshot -q "Call the shadenet_fetch tool …"`) | Hermes called `mcp__shadenet__shadenet_fetch` (the wiring works end to end); same refusal with the unfixed binary |
+| MCP `shadenet_fetch` over stdio | refused `gate:wrong-group-root` with the unfixed binary (each `shadenet mcp` start re-scans the set and hit the empty page) |
+| Hermes one-shot, unfixed binary | Hermes called `mcp__shadenet__shadenet_fetch` (the wiring works end to end); the same refusal came back |
+| Hermes one-shot, fixed binary (`694ddd0`, the release-workflow build of the fix) | `hermes chat --oneshot -q "Call the shadenet_fetch tool with url https://api.ipify.org?format=json …"` → `{"ip":"137.184.43.116"}` (a Shade Tree node's address, not orbital-one's) |
+
+The fixed client, run three times against the same RPC from a laptop: `5 live leaves in 7 slots; root 1502159…8493` twice (the nodes' root), then `eth_getLogs: RPC HTTP 429 Too Many Requests`, a loud failure instead of a wrong tree.
 
 ## 3. SearXNG through the canopy
 
@@ -84,7 +87,19 @@ Three defects in the example, all fixed in PR #207:
 - The proxy's home (`./state`) was created group-writable on a host with umask 002, and Arti refuses to start: `Incorrect permissions: "${HOME}/" is u=rwx,g=rwx,o=rx; must be g-w`. The README and compose header now say `mkdir -m 0755 state`.
 - `request_timeout: 8.0` is shorter than a cold tunnel (canopy fetch, proof, onion rendezvous); raised to 20 s. `SEARXNG_PORT` for a host where 8080 is taken.
 
-Result: see the addendum. SearXNG itself answered (`/search?format=json` HTTP 200, 20 results from its default engines); the engines routed through the proxy timed out on the unfixed binary for the reason in section 2.
+With the unfixed binary the routed engines timed out (section 2). With the image rebuilt from the fixed binary (`shadenet:dev-694ddd0`) and a fresh `state` directory:
+
+```
+canopy verified nodes=3 sources=2
+/search?q=…&format=json&engines=google      HTTP 200, 10 results
+/search?q=…&format=json&engines=duckduckgo  HTTP 200, 0 results, unresponsive: CAPTCHA (DuckDuckGo's answer to the node's address)
+/search?q=…&format=json&engines=bing        HTTP 200, 0 results (engine parse; the tunnel opened)
+tunnel accepted gateway=keo2oo4n…onion:80 target=html.duckduckgo.com:443
+tunnel accepted gateway=2kuuulht…onion:80 target=www.google.com:443
+tunnel accepted gateway=a6cuyv5v…onion:80 target=www.bing.com:443
+```
+
+Three engines, three different nodes, three proof-gated tunnels; Google answered through ShadeNet.
 
 ## 4. Elder failover
 
@@ -115,7 +130,15 @@ Synthetic: `POST /api/v2/alerts` (`RehearsalRoundTrip`, `endsAt` +3 min) to the 
 
 ## 7. Release from a tag; fleet roll
 
-See the addendum.
+The RELEASE track tagged `v0.7.0-rc.1` = `db56701` (after PR #207). The staging record was re-pinned to that commit (`scripts/record-canopy.mjs --network sepolia-staging --commit db5670…`, then `scripts/shade-tree-v4-record.sh sepolia-staging m7/rehearsal-report` in agent-devops), and the fleet rolled with `scripts/shade-tree-v4-deploy.sh` and, for the second Elder, the tag's `bootstrap.sh` with `SHADE_TREE_REF=db5670…`.
+
+**What failed first.** The role's fail-closed preflight on the controller (`deploy/v4/preflight.mjs --require-stake-profile public-stake-v1`) failed on some hosts with `onchain.deployTx: deployment receipt is missing (via ethereum-sepolia-rpc.publicnode.com)`: the same RPC pool answered `eth_getTransactionReceipt` for the 13 000-block-old deploy transaction with `null` from a pruned backend; the next call succeeded. Each host's preflight is a separate call, so a four-host roll needed several attempts. The preflight now retries a missing receipt up to four times before calling it a finding (this PR); the roll finished with `SHADE_TREE_SOURCE_ROOT` at the pinned commit with that retry applied.
+
+| Host | Evidence |
+|---|---|
+| orbital-one (second Elder) | `shade_tree_build_info{commit="db5670…",role="elder",version="0.7.0-rc.1"}`, `ExecStart=… /opt/shade-tree/packages/node/bootnode/server.mjs` |
+| shade-node-v4-05 | `shade_tree_build_info{commit="db5670…",role="node",version="0.7.0-rc.1"}`, `ExecStart=… /opt/shade-tree/packages/node/gateway/gateway.mjs` |
+| shade-elder-v4-02, shade-node-v4-04, shade-node-v4-06, the Lab | see the addendum |
 
 ## 8. Production deploy script, fork dry run
 
