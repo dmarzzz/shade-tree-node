@@ -17,8 +17,12 @@ cd examples/searxng
 shadenet init --dir ./shadenet --offline                 # identity.json + proxy-token here
 shadenet register-member --identity ./shadenet/identity.json --key-file funded-sepolia.key
 shadenet status --identity ./shadenet/identity.json --wait   # until the stake is final
+mkdir -m 0755 state                                     # the proxy's home: Arti refuses a group-writable one
 SHADENET_UID=$(id -u) SHADENET_GID=$(id -g) docker compose up -d
 ```
+
+If 8080 is taken on the host, set `SEARXNG_PORT`. On a staging canopy, put the record next to the
+identity (`cp deployment.json ./shadenet/`) and set `SHADENET_NETWORK=/config/deployment.json`.
 
 Open <http://127.0.0.1:8080>. `docker compose logs shadenet` shows the proxy's
 JSON logs; its status endpoint is reachable from the host only through the

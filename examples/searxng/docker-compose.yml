@@ -1,6 +1,7 @@
 # SearXNG with its reputation-blocked engines routed through ShadeNet.
 #
 #   shadenet init --dir ./shadenet --offline          # identity + token for this stack
+#   mkdir -m 0755 state                                # Arti refuses a group-writable state home
 #   shadenet register-member --identity ./shadenet/identity.json --key-file funded.key
 #   SHADENET_UID=$(id -u) SHADENET_GID=$(id -g) docker compose up -d
 #   open http://127.0.0.1:8080

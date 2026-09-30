@@ -351,7 +351,13 @@ export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall
     const chainId = BigInt(await call("eth_chainId", []));
     if (chainId !== 11_155_111n) bad("onchain.chainId", `RPC reports ${chainId}, expected Sepolia 11155111`);
 
-    const receipt = await call("eth_getTransactionReceipt", [root.deployTx]);
+    // A public RPC pool can answer a historical receipt with null from a pruned backend (seen
+    // on the M7 fleet roll, 2026-09-30, 13 000 blocks after the deploy); a second call lands on
+    // another backend. Only a receipt that stays missing is a finding.
+    let receipt = null;
+    for (let attempt = 0; attempt < 4 && !receipt; attempt++) {
+      receipt = await call("eth_getTransactionReceipt", [root.deployTx]);
+    }
     if (!receipt) bad("onchain.deployTx", "deployment receipt is missing");
     else {
       if (BigInt(receipt.status ?? 0) !== 1n) bad("onchain.deployTx", "deployment transaction did not succeed");

@@ -11,7 +11,7 @@ search:
   formats: [html, json] # json is what `shadenet mcp --searxng-url` uses
 
 outgoing:
-  request_timeout: 8.0 # a cold tunnel is canopy + proof + onion rendezvous
+  request_timeout: 20.0 # a cold tunnel is canopy + proof + onion rendezvous (10 to 20 s the first time)
   max_request_timeout: 30.0
   networks:
     shadenet:
