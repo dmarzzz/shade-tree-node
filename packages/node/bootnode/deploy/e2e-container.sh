@@ -30,7 +30,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC="$(cd "$HERE/../.." && pwd)"          # repo root
+SRC="$(cd "$HERE/../../../.." && pwd)"          # repo root
 IMAGE="${E2E_IMAGE:-ubuntu:24.04}"
 CONTAINER="shade-tree-e2e-$$"
 BOOTNODE_PORT="${SHADE_TREE_BOOTNODE_PORT:-8877}"

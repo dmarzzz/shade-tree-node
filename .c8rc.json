@@ -1,12 +1,12 @@
 {
   "all": true,
   "include": [
-    "lib/**",
-    "bootnode/**",
-    "client/**",
+    "packages/node/lib/**",
+    "packages/node/bootnode/**",
+    "packages/node/client/**",
     "group/**",
-    "gateway/**",
-    "bin/**"
+    "packages/node/gateway/**",
+    "packages/node/bin/**"
   ],
   "exclude": [
     "**/*.selftest.mjs",
@@ -16,8 +16,12 @@
     "node_modules/**",
     "experiments/**",
     "demo/**",
-    "out/**"
+    "out/**",
+    "packages/node/lib/entry-shim.mjs"
   ],
-  "reporter": ["text", "lcov"],
+  "reporter": [
+    "text",
+    "lcov"
+  ],
   "clean": true
 }
