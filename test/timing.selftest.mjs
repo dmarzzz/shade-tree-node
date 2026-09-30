@@ -90,6 +90,7 @@ async function main() {
       nullifier: p.nullifier,
       externalNullifier: p.externalNullifier,
       share: p.share,
+      artifact: p.artifact, // T-HARD-8: name the set, as every real client does
     });
   }
 

@@ -1,5 +1,11 @@
 # Reproduce the circuit inputs
 
+> **Scope note (2026-09-30).** These are the build pins of the *fallback* kit: circom 2.2.2 `--O1`
+> and `powersOfTau28_hez_final_14.ptau`. The keys the repo ships were adopted from PSE's ceremony
+> and were built with circom 2.1.5 `--O2` and `powersOfTau28_hez_final_13.ptau`; their rebuild is
+> reproduced by `scripts/ceremony/pse-check.mjs` and recorded in `PSE-VERIFICATION.md`. The hash
+> table below no longer matches `circuits/rln/*.wasm`.
+
 This builds the public inputs for a community phase-2 ceremony over the **existing**
 Shade Tree RLN and withdrawal circuits. It does not generate a circuit-specific
 proving key, contribute entropy, apply a beacon, publish artifacts, or activate a

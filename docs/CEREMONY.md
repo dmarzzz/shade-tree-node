@@ -6,13 +6,16 @@ payment semantics. A successful ceremony would give these circuit artifacts a
 public, independently checkable contribution history. **It would not make Shade
 Tree production grade, audited, or suitable for real funds or sensitive anonymity.**
 
-**Status: preparation only. No community ceremony has run, no artifacts have been
-rotated, and no deployment is authorized by this runbook.** The checked-in
-`circuits/rln/` keys remain development artifacts. Their provenance lock remains
-`dev-testnet-untrusted`, `UNTRUSTED-TESTNET`, and `ceremony.status: "not-run"`.
-The existing development contribution process is not evidence of an honest
-secret contribution. See [ARTIFACTS.md](../circuits/rln/ARTIFACTS.md) and
-[the lock](../testdata/zk-artifacts.lock.json).
+**Status: superseded for the launch by the adoption of PSE's RLN ceremony (2026-09-30,
+launch decision D3).** The checked-in `circuits/rln/` keys are PSE's `rln-20` and
+`rln-withdraw` outputs; the lock says `trust: "CEREMONY"`, `provenance: "ceremony"` and
+`ceremony.status: "complete"`, with the evidence in
+[ceremony/PSE-ADOPTION.md](ceremony/PSE-ADOPTION.md) and
+[ceremony/PSE-VERIFICATION.md](ceremony/PSE-VERIFICATION.md). This runbook and the kit in
+`scripts/ceremony/` stay as the **fallback**: a ShadeNet-run community phase 2 for the case
+that a circuit changes or the owner prefers a setup of his own. Nothing below has run as a real
+event, and running it still requires the human roster it describes. See
+[ARTIFACTS.md](../circuits/rln/ARTIFACTS.md) and [the lock](../testdata/zk-artifacts.lock.json).
 
 Use these companion documents:
 
@@ -32,12 +35,16 @@ compiler, dependencies, source, R1CS, and WASM outputs. A compiler version strin
 alone is not a reproducible-build attestation. An independent builder should
 reproduce and compare both circuits before anyone contributes.
 
-The phase-1 input is the existing BN254
-`powersOfTau28_hez_final_14.ptau`, SHA-256:
+The phase-1 input of this fallback kit is the BN254 `powersOfTau28_hez_final_14.ptau`
+(the circom 2.2.2 `--O1` build of RLN(20,16) needs power 14), SHA-256:
 
 ```text
 489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d
 ```
+
+(The adopted PSE keys were set up from `powersOfTau28_hez_final_13.ptau`, SHA-256
+`95751b5207f20aa822f01109902315c01c15250303feacea2b8aa7dc9fdfeefd`, which the lock's `ptau`
+block now records.)
 
 Verify the fetched file against this pin and run the Powers of Tau verification
 described in [BUILD.md](ceremony/BUILD.md). Compare its published upstream

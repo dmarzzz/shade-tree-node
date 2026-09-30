@@ -40,7 +40,7 @@ import {
   toField, identityFor, groupFromIdentities, requestSignal, proveForSlot, verifyEnvelope, currentEpoch, EPOCH_SECONDS,
   loadArtifactSet, loadProverSets, _setProverSets, _setArtifactSet, cleanUp,
 } from "../packages/node/lib/rln.mjs";
-import { artifactIdOfFile, builtinArtifactId, RLN_DIR, BUILTIN_VKEY_PATH } from "../packages/node/lib/zk-artifacts.mjs";
+import { artifactIdOfFile, builtinArtifactId, lockArtifactIds, RLN_DIR, BUILTIN_VKEY_PATH } from "../packages/node/lib/zk-artifacts.mjs";
 import { buildGatewayCaps } from "../packages/node/bootnode/heartbeat.mjs";
 import { canonicalCaps } from "../packages/node/lib/directory.mjs";
 import { buildEnvelope, makeSlotPool } from "../packages/node/client/shade-tree-client.mjs";
@@ -69,7 +69,10 @@ const UNKNOWN = "rln-ffffffffffffffff";
 assert.notEqual(OLD, NEW);
 
 // The gateway's two window configurations, from the SAME env shape an operator would set.
-const ENV_OPEN = { SHADE_TREE_ZK_ARTIFACTS: `${NEW}=${join(NEW_DIR, "verification_key.json")},${OLD}=${BUILTIN_VKEY_PATH}` };
+// Since the PSE adoption the lock records a retired previous set (the dev keys), so a field-less
+// envelope maps to THAT id unless the window names its own old id: an operator opening a window
+// on top of a rotated lock sets SHADE_TREE_ZK_ARTIFACT_LEGACY to the set being phased out.
+const ENV_OPEN = { SHADE_TREE_ZK_ARTIFACTS: `${NEW}=${join(NEW_DIR, "verification_key.json")},${OLD}=${BUILTIN_VKEY_PATH}`, SHADE_TREE_ZK_ARTIFACT_LEGACY: OLD };
 const ENV_CLOSED = { SHADE_TREE_ZK_ARTIFACTS: `${NEW}=${join(NEW_DIR, "verification_key.json")}`, SHADE_TREE_ZK_ARTIFACT_LEGACY: OLD };
 const OPEN = loadArtifactSet({ env: ENV_OPEN });
 const CLOSED = loadArtifactSet({ env: ENV_CLOSED });
@@ -183,17 +186,22 @@ await test("HEARTBEAT: the signed ad built from the gateway's own env names exac
 });
 
 // ---- default (nothing configured) is byte-equivalent -----------------------------------------------
-await test("DEFAULT: with no artifact config on either side, prove -> verify round-trips (single built-in set, legacy accepted)", async () => {
+await test("DEFAULT: with no artifact config on either side, prove -> verify round-trips under the built-in id; a field-less envelope is the lock's retired previous set", async () => {
   _setProverSets(null); // back to env-default prover sets (built-in only)
   _setArtifactSet(null);
   const p = await proveForSlot(secret, epoch, 2, requestSignal(TARGET, "dflt"), { group });
   assert.equal(p.artifact, OLD);
   const env = { v: 4, target: TARGET, nonce: "dflt", proof: p.proof, nullifier: p.nullifier, externalNullifier: p.externalNullifier, share: p.share };
+  // Since the PSE adoption the lock records previousArtifactId (the dev set), so with no window
+  // configured a field-less envelope names THAT set and is retired: precise reason, no SNARK run.
+  const previous = lockArtifactIds().previous;
+  assert.match(previous, /^rln-[0-9a-f]{16}$/);
   const r = await verifyEnvelope(env, roots, nowMs);
-  assert.equal(r.ok, true, r.reason);
-  assert.equal(r.artifact, OLD);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, `artifact-retired:${previous}`);
   const r2 = await verifyEnvelope({ ...env, artifact: OLD }, roots, nowMs);
   assert.equal(r2.ok, true, r2.reason);
+  assert.equal(r2.artifact, OLD);
 });
 
 cleanUp();

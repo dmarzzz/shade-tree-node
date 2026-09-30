@@ -273,8 +273,14 @@ fn main() {
     );
     println!("[5] Rust proof VERIFIES against repo verification_key.json ✓");
 
-    // (6) emit snarkjs-shaped JSON for the JS verifyEnvelope harness.
+    // (6) emit snarkjs-shaped JSON for the JS verifyEnvelope harness. Like the real client, name
+    // the artifact set the proof was made with (T-HARD-8: `<circuit>-<sha256(vkey file)[0:16]>`);
+    // a field-less envelope maps to the gateway's legacy id, which is the RETIRED previous set
+    // once a ceremony has rotated the keys.
+    let vkey_bytes = std::fs::read(&vkey_path).expect("read vkey bytes");
+    let artifact = shadenet_proto::artifact_id_of("rln", &vkey_bytes);
     let out = serde_json::json!({
+        "artifact": artifact,
         "target": fixture.target,
         "nonce": fixture.nonce,
         "epoch": fixture.epoch,

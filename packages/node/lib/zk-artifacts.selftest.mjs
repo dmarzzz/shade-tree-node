@@ -30,7 +30,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
 import { Duplex } from "node:stream";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   artifactIdOf, artifactIdOfFile, builtinArtifactId, isArtifactId, parseArtifactSpec, loadArtifactSet,
   resolveArtifact, selectArtifact, loadProverSets, lockArtifactIds, BUILTIN_VKEY_PATH, RLN_DIR, LOCK_PATH,
@@ -61,6 +61,8 @@ const ALT_VKEY_PATH = join(work, "alt_verification_key.json");
 writeFileSync(ALT_VKEY_PATH, readFileSync(BUILTIN_VKEY_PATH, "utf8") + "\n");
 const ALT = artifactIdOfFile(ALT_VKEY_PATH);
 const UNKNOWN = "rln-ffffffffffffffff";
+const PREVIOUS = "rln-0b25f824a04da3a8"; // the dev set retired by the PSE adoption (lock circuits.rln.previousArtifactId)
+const PREVIOUS_VKEY_PATH = join(dirname(LOCK_PATH), "..", "circuits/rln/previous/verification_key.json");
 
 console.log("ZK artifact-version negotiation (T-HARD-8), fast half:");
 
@@ -71,18 +73,19 @@ await test("artifact id = <circuit>-<sha256(vkey bytes)[0:16]>; built-in id == l
   assert.equal(BUILTIN, lock.circuits.rln.artifactId);
   assert.equal(BUILTIN, "rln-" + lock.artifacts["circuits/rln/verification_key.json"].sha256.slice(0, 16));
   assert.equal(lockArtifactIds().current, BUILTIN);
-  assert.equal(lockArtifactIds().previous, null, "no ceremony has rotated the set yet");
+  assert.equal(lockArtifactIds().previous, PREVIOUS, "the PSE adoption (2026-09-30) rotated the set; the dev id is the recorded previous id");
+  assert.equal(PREVIOUS, artifactIdOfFile(PREVIOUS_VKEY_PATH), "circuits/rln/previous/ holds the retired dev vkey under its own id");
   assert.notEqual(ALT, BUILTIN, "one extra byte => a different id (content-derived)");
   assert.equal(isArtifactId(BUILTIN), true);
   for (const junk of ["", "Rln-x", "rln x", "a".repeat(65), 42, null, undefined, {}]) assert.equal(isArtifactId(junk), false, JSON.stringify(junk));
 });
 
 // ---- accepted set config -----------------------------------------------------------------
-await test("default (SHADE_TREE_ZK_ARTIFACTS unset) == the built-in set under its own id, legacy accepted", () => {
+await test("default (SHADE_TREE_ZK_ARTIFACTS unset) == the built-in set under its own id; legacy = the rotated-out dev id, NOT accepted", () => {
   const set = loadArtifactSet({ env: {} });
   assert.deepEqual(set.ids, [BUILTIN]);
-  assert.equal(set.legacyId, BUILTIN);
-  assert.equal(set.legacyAccepted, true);
+  assert.equal(set.legacyId, PREVIOUS, "a field-less envelope means the previous set once a ceremony has rotated the keys");
+  assert.equal(set.legacyAccepted, false, "the default (no window) gateway retires the dev set");
   assert.equal(set.explicit, false);
   assert.ok(Array.isArray(set.accepted.get(BUILTIN).vkey.IC), "vkey parsed");
   const live = getArtifactSet(); // the process-wide default the gateway/verifyEnvelope use
@@ -96,12 +99,16 @@ await test("parseArtifactSpec: `id=path` pairs, bare paths, whitespace; bad id /
   assert.throws(() => parseArtifactSpec(`${BUILTIN}=`), /missing vkey path/);
 });
 
-await test("dual-VK window: SHADE_TREE_ZK_ARTIFACTS=<new>=..,<old>=.. accepts both; legacy = old by default (built-in)", () => {
-  const set = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${ALT}=${ALT_VKEY_PATH},${BUILTIN}=${BUILTIN_VKEY_PATH}` } });
-  assert.deepEqual(set.ids, [ALT, BUILTIN].sort());
+await test("dual-VK window: SHADE_TREE_ZK_ARTIFACTS=<new>=..,<old>=.. accepts both; legacy = the lock's previous id by default", () => {
+  const set = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${BUILTIN}=${BUILTIN_VKEY_PATH},${PREVIOUS}=${PREVIOUS_VKEY_PATH}` } });
+  assert.deepEqual(set.ids, [BUILTIN, PREVIOUS].sort());
   assert.equal(set.explicit, true);
-  assert.equal(set.legacyId, BUILTIN);
-  assert.equal(set.legacyAccepted, true, "inside the window the legacy id is accepted");
+  assert.equal(set.legacyId, PREVIOUS);
+  assert.equal(set.legacyAccepted, true, "inside the window the legacy id is accepted (this is what the deployment records open)");
+  const synthetic = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${ALT}=${ALT_VKEY_PATH},${BUILTIN}=${BUILTIN_VKEY_PATH}` } });
+  assert.deepEqual(synthetic.ids, [ALT, BUILTIN].sort());
+  assert.equal(synthetic.legacyId, PREVIOUS, "the legacy id comes from the lock, not from the window's membership");
+  assert.equal(synthetic.legacyAccepted, false);
   // bare path => id derived
   const set2 = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: ALT_VKEY_PATH } });
   assert.deepEqual(set2.ids, [ALT]);
@@ -128,7 +135,9 @@ await test("FAIL CLOSED at load: mislabeled id, missing file, non-vkey JSON, dup
 });
 
 // ---- resolveArtifact ---------------------------------------------------------------------
-const OPEN = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${ALT}=${ALT_VKEY_PATH},${BUILTIN}=${BUILTIN_VKEY_PATH}` } });   // window open, legacy=BUILTIN
+// Synthetic window "new = ALT, old = BUILTIN": name the old id explicitly, because since the PSE
+// adoption the lock's previous id (the real retired dev set) is what a field-less envelope means.
+const OPEN = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${ALT}=${ALT_VKEY_PATH},${BUILTIN}=${BUILTIN_VKEY_PATH}`, SHADE_TREE_ZK_ARTIFACT_LEGACY: BUILTIN } });   // window open, legacy=BUILTIN
 const CLOSED = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${ALT}=${ALT_VKEY_PATH}`, SHADE_TREE_ZK_ARTIFACT_LEGACY: BUILTIN } }); // window closed
 
 await test("resolveArtifact inside the window: absent -> legacy(old) ok; explicit old ok; explicit new ok", () => {

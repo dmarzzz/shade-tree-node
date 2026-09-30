@@ -1,6 +1,6 @@
 # Adopting PSE's RLN ceremony (decision D3)
 
-Status: test passed 2026-09-28 · adoption not yet applied · decision owner: Dan (H3)
+Status: test passed 2026-09-28 · **re-verified on an independent toolchain and applied 2026-09-30** ([PSE-VERIFICATION.md](PSE-VERIFICATION.md)) · open: an outside verifier's signed statement (runbook H3 step 2)
 
 Launch decision D3 was: adopt PSE's finalized RLN trusted setup if an interop swap passes, and
 run our own phase 2 only where it does not. The swap passes for **both** circuits, the RLN
@@ -64,14 +64,18 @@ Findings worth knowing:
 | local `rln.wasm` (circom 2.1.5 `--O2`) | `fa9586db68a9566fd9b3af6e8d7c66f5567b35647aa63a426f220375e9fa8c04` |
 | local `withdraw.wasm` (circom 2.1.5 `--O2`) | `239bd578deea5eebf3cde5a9aeba22ba799d23d0aff6b9a8b153afd8d2cc191e` |
 
-## What H3 becomes
+## What H3 became
 
-Instead of recruiting contributors and running an event, H3 is:
+Instead of recruiting contributors and running an event, H3 was:
 
-1. Dan confirms adopting PSE's setup for both circuits.
-2. One independent verifier (outside the core team) reruns `pse-check.mjs` and relates the
-   beacon generator to PSE's published beacon value, then publishes a signed statement.
-3. The adoption PR: replace `circuits/rln/{rln.wasm, rln_final.zkey, verification_key.json,
+1. Dan said "take your best shot" at H3 (2026-09-30); the adoption is applied on that basis and is
+   his to revert if he prefers his own ceremony (the kit stays).
+2. **Done 2026-09-30, but by this project, not an outsider:** `pse-check.mjs` re-run on a freshly
+   built circom 2.1.5 and a fresh `circom-rln` clone; PSE's published R1CS/WASM byte-identical to
+   the rebuild; Firestore hashes and contribution records checked; beacon generator ==
+   sha256(published beacon value). A signed statement from one verifier outside the core team is
+   still open; link it in the lock's `ceremony.independentVerifierStatement`.
+3. **Done 2026-09-30 (this PR):** replace `circuits/rln/{rln.wasm, rln_final.zkey, verification_key.json,
    withdraw.wasm, withdraw_final.zkey, withdraw_verification_key.json}`, regenerate
    `contracts/RlnGroth16Verifier.sol` and `contracts/WithdrawGroth16Verifier.sol`, the withdraw
    fixture, the pinned bytecode manifest and `testdata/zk-artifacts.lock.json` (`trust`,
@@ -79,7 +83,17 @@ Instead of recruiting contributors and running an event, H3 is:
    contribution counts, the beacon and the pinned hashes above), `circuits/rln/ARTIFACTS.md`,
    and the Rust embedded artifacts. Run the JS and Rust interop and `forge test`.
 4. M8's production deploy then runs `scripts/deploy-contracts.mjs --network sepolia`, which
-   refuses to broadcast until the lock records a completed ceremony.
+   refuses to broadcast until the lock records a completed ceremony (it now does). The staging
+   fleet still runs the dev set `rln-0b25f824a04da3a8`; the roll to the ceremony set
+   `rln-ae43614cd02ebe95` is a dual-VK window per `docs/CEREMONY.md` §6 (gateways accept both ids,
+   `previousArtifactId` = the dev id, retire it after the window).
+
+## Archive
+
+Two mirrors of PSE's files, the ptau, the Firestore snapshots and the verification transcripts:
+the GitHub release [`ceremony-pse-rln-2026-09-30`](https://github.com/dmarzzz/shade-tree-node/releases/tag/ceremony-pse-rln-2026-09-30)
+and the R2 bucket `flightdeck-private` under `shadenet/ceremony/pse-rln-2026-09-30/`. Hashes in
+the lock's `ceremony.archive`.
 
 The community ceremony kit (`scripts/ceremony/`, `EVENT.md`) stays as the fallback if Dan
 prefers a ShadeNet-specific setup or a later circuit change needs one.

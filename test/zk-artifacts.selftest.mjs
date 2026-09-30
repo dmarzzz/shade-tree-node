@@ -4,9 +4,9 @@
 // Solidity Groth16 verifiers, the exit-auth proof fixture) against testdata/zk-artifacts.lock.json
 // and FAILS on any mismatch or missing lock entry — so a silently swapped wasm/zkey/vkey/verifier
 // cannot land through `npm test` (ci.yml). Also asserts the lock's `provenance` declaration: today
-// every artifact is "dev-testnet-untrusted" (circom-rln dev phase-2, circuits/rln/ARTIFACTS.md).
-// After the human-run ceremony (docs/CEREMONY.md), the operator regenerates the lock with
-// `--provenance=ceremony` AND flips EXPECTED_PROVENANCE below in the same commit — this test is
+// every artifact is "ceremony" (PSE's RLN Trusted Setup Ceremony, adopted 2026-09-30; before that
+// it was "dev-testnet-untrusted", circom-rln's dev phase-2). A key rotation regenerates the lock
+// with `--provenance=...` AND flips EXPECTED_PROVENANCE below in the same commit — this test is
 // deliberately loud about which regime the tree is in.
 //
 // Cross-consistency (the artifacts must move as a SET):
@@ -25,12 +25,12 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  ROOT, LOCK_PATH, ARTIFACTS, PROVENANCE_DEV, PROVENANCES, checkLock, readLock, measure, buildLock, artifactIdFor, VKEY_OF,
+  ROOT, LOCK_PATH, ARTIFACTS, PROVENANCE_DEV, PROVENANCE_CEREMONY, PROVENANCES, checkLock, readLock, measure, buildLock, artifactIdFor, VKEY_OF,
 } from "../scripts/zk-artifacts-lock.mjs";
 import { artifactIdOfFile, builtinArtifactId, lockArtifactIds } from "../packages/node/lib/zk-artifacts.mjs";
 
 // FLIP THIS to "ceremony" in the same commit that pins ceremony output (docs/CEREMONY.md §7).
-const EXPECTED_PROVENANCE = PROVENANCE_DEV;
+const EXPECTED_PROVENANCE = PROVENANCE_CEREMONY; // flipped with the PSE adoption (docs/ceremony/PSE-ADOPTION.md)
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
@@ -156,8 +156,11 @@ for (const [circuit, vkPath] of Object.entries(VKEY_OF)) {
   ok(declared === artifactIdFor(circuit, lock.artifacts[vkPath].sha256), `circuits.${circuit}.artifactId is literally the vkey's lock sha256 prefix`);
 }
 ok(builtinArtifactId() === lock?.circuits?.rln?.artifactId, "lib/zk-artifacts builtinArtifactId() (what a default gateway accepts / client sends) == lock rln artifactId");
-ok(lock?.circuits?.rln?.previousArtifactId === null, "previousArtifactId is null (no ceremony has rotated the rln set); lockArtifactIds().previous mirrors it");
-ok(lockArtifactIds()?.previous === null && lockArtifactIds()?.current === lock?.circuits?.rln?.artifactId, "lockArtifactIds() reads {current, previous} from the lock");
+// The PSE adoption (2026-09-30) rotated the rln set: the dev id stays recorded as the default legacy
+// id for the dual-VK window (docs/CEREMONY.md §6). Retiring it means setting this back to null.
+const EXPECTED_PREVIOUS_RLN_ID = "rln-0b25f824a04da3a8";
+ok(lock?.circuits?.rln?.previousArtifactId === EXPECTED_PREVIOUS_RLN_ID, `previousArtifactId is the retired dev set ${EXPECTED_PREVIOUS_RLN_ID} (rotated by the ceremony adoption); lockArtifactIds().previous mirrors it`);
+ok(lockArtifactIds()?.previous === EXPECTED_PREVIOUS_RLN_ID && lockArtifactIds()?.current === lock?.circuits?.rln?.artifactId, "lockArtifactIds() reads {current, previous} from the lock");
 // rotation memory: rebuilding the lock over a prev whose rln id differs keeps that id as previousArtifactId
 const rotated = buildLock({ prev: { ...lock, circuits: { ...lock.circuits, rln: { ...lock.circuits.rln, artifactId: "rln-0123456789abcdef", previousArtifactId: null } } } });
 ok(rotated.circuits.rln.previousArtifactId === "rln-0123456789abcdef" && rotated.circuits.rln.artifactId === lock.circuits.rln.artifactId,
@@ -186,7 +189,11 @@ badProv.artifacts["circuits/rln/rln.wasm"].provenance = "trust-me";
 ok(checkLock(badProv).some((p) => p.startsWith("bad provenance for circuits/rln/rln.wasm")), "unknown provenance value is reported");
 const halfCeremony = JSON.parse(JSON.stringify(lock));
 halfCeremony.trust = "CEREMONY";
-ok(checkLock(halfCeremony).some((p) => p.startsWith("trust must be UNTRUSTED-TESTNET")), "trust=CEREMONY with dev artifacts is reported");
+halfCeremony.artifacts["circuits/rln/rln.wasm"].provenance = PROVENANCE_DEV;
+ok(checkLock(halfCeremony).some((p) => p.startsWith("trust must be UNTRUSTED-TESTNET")), "trust=CEREMONY with one dev artifact is reported");
+const halfDev = JSON.parse(JSON.stringify(lock));
+halfDev.trust = "UNTRUSTED-TESTNET";
+ok(checkLock(halfDev).some((p) => p.startsWith("trust must be CEREMONY")), "trust=UNTRUSTED-TESTNET with all-ceremony artifacts is reported");
 const badId = JSON.parse(JSON.stringify(lock));
 badId.circuits.rln.artifactId = "rln-0000000000000000";
 ok(checkLock(badId).some((p) => p.startsWith("circuits.rln.artifactId")), "a hand-edited rln artifactId is reported (id must be the vkey hash prefix)");
