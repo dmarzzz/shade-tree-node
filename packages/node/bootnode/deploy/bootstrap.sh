@@ -812,8 +812,14 @@ EOF
       echo "Environment=SHADE_TREE_TOR_PORT=9050"
       echo "EnvironmentFile=-/etc/shade-tree/fleet-tally.env"
     fi
-    # ADR 0011: session-ticket books; off by default so the golden unit is unchanged.
-    [ "$SHADE_TREE_SESSION_TICKETS" = "1" ] && echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
+    # ADR 0011: session-ticket books; off by default so the golden unit is unchanged. Books are
+    # bound to the onion, so the gateway needs the same identity file the heartbeat signs with
+    # (without it gateway.mjs fails closed: "session tickets DISABLED" while the heartbeat still
+    # advertises the cap, found on the 2026-09-30 staging roll).
+    if [ "$SHADE_TREE_SESSION_TICKETS" = "1" ]; then
+      echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
+      echo "Environment=SHADE_TREE_GW_IDENTITY=${GW_HS}/identity.local.json"
+    fi
     [ "$ADMIT_INVITED" = "1" ] && [ -n "$SHADE_TREE_MEMBERS_RUNTIME_FILE" ] && echo "Environment=SHADE_TREE_MEMBERS_FILE=${SHADE_TREE_MEMBERS_RUNTIME_FILE}"
     # Admission policy companions (T-FEAT-9): the contracts + RPC behind each admitted on-chain
     # path (SHADE_TREE_HELIOS=1 implies staked). Only rendered when the policy needs them.

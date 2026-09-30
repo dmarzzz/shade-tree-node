@@ -186,6 +186,7 @@ async function main() {
     const ticketsGateway = await readFile(join(tickets.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
     const ticketsHeartbeat = await readFile(join(tickets.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
     ok(tickets.status === 0 && unitEnv(ticketsGateway, "SHADE_TREE_SESSION_TICKETS") === "1" && unitEnv(ticketsHeartbeat, "SHADE_TREE_SESSION_TICKETS") === "1", "SHADE_TREE_SESSION_TICKETS=1 reaches the gateway and the heartbeat units");
+    ok(unitEnv(ticketsGateway, "SHADE_TREE_GW_IDENTITY") !== null && unitEnv(ticketsGateway, "SHADE_TREE_GW_IDENTITY") === unitEnv(ticketsHeartbeat, "SHADE_TREE_GW_IDENTITY") && unitEnv(nodeDef, "SHADE_TREE_GW_IDENTITY") === null, "with tickets on the gateway binds books to the same onion identity file the heartbeat signs with (absent by default)");
     const ticketsBad = render(work, "session-tickets-bad", { SHADE_TREE_SESSION_TICKETS: "maybe" });
     ok(ticketsBad.status !== 0 && /SHADE_TREE_SESSION_TICKETS must be 1 or 0/.test(ticketsBad.stderr), "bad session-ticket switch rejected up front");
     for (const [key, value] of [["SHADE_TREE_EPOCH_SECONDS", "0"], ["SHADE_TREE_ROOT_FRESHNESS_SECONDS", "nope"], ["SHADE_TREE_TIERS", "1,,8"]]) {
