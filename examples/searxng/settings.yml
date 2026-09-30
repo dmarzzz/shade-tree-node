@@ -20,8 +20,6 @@ outgoing:
           - http://shadenet:__SHADENET_TOKEN__@127.0.0.1:8118
       enable_http: false # nodes egress to 443 only; never spend a tunnel on http://
       retries: 0 # a retry is another tunnel
-      keepalive_expiry: 55.0 # reuse an open tunnel within the 60 s epoch
-      max_keepalive_connections: 4
 
 # Only engines that block Tor or datacenter IPs go through ShadeNet. Every engine routed here costs
 # one tunnel per query (less with keep-alive), so keep the list short and match it to your tier.

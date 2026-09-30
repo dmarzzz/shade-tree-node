@@ -4,7 +4,8 @@ import { createServer } from "node:http";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "docs", "post");
+// SITE_ROOT serves another built tree (a staging page from build-stake-site.mjs with SHADENET_SITE_OUT).
+const ROOT = process.env.SITE_ROOT ? resolve(process.env.SITE_ROOT) : resolve(dirname(fileURLToPath(import.meta.url)), "..", "docs", "post");
 const HOST = process.env.SITE_HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || process.env.SITE_PORT || 4173);
 

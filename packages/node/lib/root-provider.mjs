@@ -282,22 +282,33 @@ export function NodeRootProvider({
     // eth_getLogs the Member*/Deposit/Slashed events up to the confirmation-depth block (chunked
     // + paged, fetchMemberLogs; the start block is this contract's own, fromBlockFor).
     let logs;
+    let replay;
     const incremental = tag === "finalized" && observedAtBlock != null && scanned && observedAtBlock >= scanned.to;
     const previousLogCount = incremental ? scanned.logs.length : Number.POSITIVE_INFINITY;
     try {
-      if (incremental) {
-        const fresh = observedAtBlock > scanned.to ? await fetchMemberLogs({ contract: addr, rpcUrl, fromBlock: hexBlock(scanned.to + 1), toBlock }) : [];
-        logs = scanned.logs.concat(fresh);
-      } else {
-        logs = await fetchMemberLogs({ contract: addr, rpcUrl, fromBlock: fromBlockFor(addr), toBlock });
-      }
+      // The replay is checked against the contract's own counters (replayVerified): a public RPC
+      // pool can answer a wide eth_getLogs with an EMPTY page from a pruned backend, and a root
+      // built from that would admit nobody the other nodes admit.
+      ({ logs, replay } = await replayVerified({
+        contract: addr,
+        rpcUrl,
+        toBlock,
+        trackFrom: previousLogCount,
+        fetchAll: async (chunk) => {
+          if (incremental && chunk === LOGS_CHUNK()) {
+            const fresh = observedAtBlock > scanned.to ? await fetchMemberLogs({ contract: addr, rpcUrl, fromBlock: hexBlock(scanned.to + 1), toBlock, chunk }) : [];
+            return scanned.logs.concat(fresh);
+          }
+          return fetchMemberLogs({ contract: addr, rpcUrl, fromBlock: fromBlockFor(addr), toBlock, chunk });
+        },
+      }));
     } catch (e) {
       scanned = null;
       throw e;
     }
     scanned = tag === "finalized" && observedAtBlock != null ? { to: observedAtBlock, logs } : null;
 
-    const { root, active, transitions } = reconstructGroup(logs, { trackFrom: previousLogCount });
+    const { root, active, transitions } = replay;
     // Never timestamp historical transitions as if they happened at recovery time. After the
     // previous observation has aged past F, or an incremental finalized scan was invalidated and
     // required a full replay, we cannot safely infer when the replayed transitions happened from
@@ -432,9 +443,71 @@ export async function fetchMemberLogs({ contract, rpcUrl = RPC_URL(), fromBlock,
 // straight into makeSlotPool's loadGroupFn. `fromBlock` defaults to the contract's own start
 // block (fromBlockFor: SHADE_TREE_FROM_BLOCKS / SHADE_TREE_FROM_BLOCK / the network record's deploy block).
 export async function loadGroupFromContract({ contract, rpcUrl = RPC_URL(), fromBlock, blockTag = "latest" } = {}) {
-  const logs = await fetchMemberLogs({ contract, rpcUrl, fromBlock, toBlock: blockTag });
-  const { group, liveIndex, root, active } = reconstructGroup(logs);
+  let toBlock = blockTag;
+  try { const n = await blockNumber(blockTag, rpcUrl); if (n != null) toBlock = hexBlock(n); } catch {}
+  const { replay } = await replayVerified({
+    contract,
+    rpcUrl,
+    toBlock,
+    fetchAll: (chunk) => fetchMemberLogs({ contract, rpcUrl, fromBlock, toBlock, chunk }),
+  });
+  const { group, liveIndex, root, active } = replay;
   return { group, root, count: active, leaves: Array.from(liveIndex.keys()), contract };
+}
+
+// ---- Replay verification against the contract's counters --------------------------------------
+// StakedReputationSet publishes `nextIndex()` (slots ever assigned) and `activeCount()` (members
+// live now). A replay of the event log MUST reproduce both; if it does not, the log scan was
+// incomplete. Seen live (M7 rehearsal, 2026-09-30): a public Sepolia RPC pool answered a 10 000-
+// block eth_getLogs with an empty array (a pruned backend), so the Rust client built a 3-slot
+// tree and every tunnel was refused `gate:wrong-group-root`. Smaller pages reached a backend with
+// the history. PaidAccessSet has no counters: the check is skipped when the calls return no word.
+const NEXT_INDEX_SELECTOR = "0xfc7e9c6f";   // nextIndex()
+const ACTIVE_COUNT_SELECTOR = "0x4331ed1f"; // activeCount()
+
+export async function contractCounters(contract, block, rpcUrl = RPC_URL()) {
+  const values = [];
+  for (const data of [NEXT_INDEX_SELECTOR, ACTIVE_COUNT_SELECTOR]) {
+    let word;
+    try {
+      word = await rpc("eth_call", [{ to: contract, data }, block], rpcUrl);
+    } catch (e) {
+      if (/revert/i.test(String((e && e.message) || e))) return null;
+      throw e;
+    }
+    if (typeof word !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(word)) return null;
+    values.push(Number(BigInt(word)));
+  }
+  return { nextIndex: values[0], activeCount: values[1] };
+}
+
+export function replayMatchesCounters(replay, counters) {
+  if (!counters) return true;
+  return replay.group.members.length === counters.nextIndex && replay.active === counters.activeCount;
+}
+
+// replayVerified({ contract, rpcUrl, toBlock, fetchAll, chunk, trackFrom }) -> { logs, replay, counters }:
+// `fetchAll(chunk)` returns the full ordered log set paged at `chunk` blocks; a replay that
+// disagrees with the counters is re-fetched with halved pages (a full rescan, no transitions)
+// down to LOGS_CHUNK_FLOOR, then fails closed with a message naming the RPC.
+export async function replayVerified({ contract, rpcUrl = RPC_URL(), toBlock, fetchAll, chunk = LOGS_CHUNK(), trackFrom = Number.POSITIVE_INFINITY, counters = undefined }) {
+  if (counters === undefined) counters = await contractCounters(contract, toBlock, rpcUrl);
+  let size = chunk;
+  let logs = await fetchAll(size);
+  let replay = reconstructGroup(logs, { trackFrom });
+  while (!replayMatchesCounters(replay, counters)) {
+    if (size <= LOGS_CHUNK_FLOOR) {
+      throw new Error(
+        `member log incomplete from ${rpcUrl}: ${replay.group.members.length} slots / ${replay.active} live replayed from logs, ` +
+        `the contract reports nextIndex ${counters.nextIndex} / activeCount ${counters.activeCount} at ${toBlock} ` +
+        `(the RPC dropped logs even in ${size}-block pages; use another RPC)`
+      );
+    }
+    size = Math.max(LOGS_CHUNK_FLOOR, Math.floor(size / 2));
+    logs = await fetchAll(size);
+    replay = reconstructGroup(logs, { trackFrom: Number.POSITIVE_INFINITY });
+  }
+  return { logs, replay, counters };
 }
 
 // Rebuild the admission tree from ordered Member* logs and compute the depth-20 RLN root
