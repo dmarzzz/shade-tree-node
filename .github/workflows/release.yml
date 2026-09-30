@@ -563,25 +563,37 @@ jobs:
           prerelease: ${{ contains(needs.set-version.outputs.version, '-') }}
           make_latest: ${{ !contains(needs.set-version.outputs.version, '-') }}
 
-      # Homebrew tap: with a HOMEBREW_TAP_TOKEN secret (fine-grained, contents:write on
-      # dmarzzz/homebrew-shadenet only), a final release commits its formula to the tap.
-      # Without the secret, or for a prerelease, this prints a notice and does nothing.
+      # Homebrew tap: a final release commits its formula to dmarzzz/homebrew-shadenet.
+      # Credential, in order: HOMEBREW_TAP_DEPLOY_KEY (an SSH deploy key with write access
+      # on the tap repo only; set 2026-09-30) or HOMEBREW_TAP_TOKEN (fine-grained,
+      # contents:write on the tap only). Without either, or for a prerelease, this prints a
+      # notice and does nothing.
       - name: Update the Homebrew tap
         shell: bash
         env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
           TAP_REPO: ${{ github.repository_owner }}/homebrew-shadenet
         run: |
-          if [[ -z "$HOMEBREW_TAP_TOKEN" ]]; then
-            echo "::notice::HOMEBREW_TAP_TOKEN unset: copy dist/shadenet.rb to ${TAP_REPO} Formula/ by hand"
+          if [[ -z "$HOMEBREW_TAP_DEPLOY_KEY" && -z "$HOMEBREW_TAP_TOKEN" ]]; then
+            echo "::notice::no tap credential: copy dist/shadenet.rb to ${TAP_REPO} Formula/ by hand"
             exit 0
           fi
           if [[ "$RELEASE_VERSION" == *-* ]]; then
             echo "::notice::prerelease ${RELEASE_VERSION}: the tap keeps the last final release"
             exit 0
           fi
-          git clone --depth 1 "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          if [[ -n "$HOMEBREW_TAP_DEPLOY_KEY" ]]; then
+            umask 077
+            mkdir -p "$HOME/.ssh"
+            printf '%s\n' "$HOMEBREW_TAP_DEPLOY_KEY" > "$HOME/.ssh/tap_deploy_key"
+            ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+            export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/tap_deploy_key -o IdentitiesOnly=yes"
+            git clone --depth 1 "git@github.com:${TAP_REPO}.git" tap
+          else
+            git clone --depth 1 "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          fi
           mkdir -p tap/Formula
           cp dist/shadenet.rb tap/Formula/shadenet.rb
           cd tap

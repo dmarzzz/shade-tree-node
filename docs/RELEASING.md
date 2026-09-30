@@ -55,7 +55,7 @@ are otherwise verified the same way.
 |---|---|---|
 | `APPLE_CERT_P12_BASE64`, `APPLE_CERT_PASSWORD`, `APPLE_SIGNING_IDENTITY` | repository secrets | Developer ID signing |
 | `APPLE_NOTARY_KEY_P8_BASE64`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER_ID` | repository secrets | notarization (App Store Connect API key) |
-| `dmarzzz/homebrew-shadenet` tap repository + `HOMEBREW_TAP_TOKEN` (fine-grained, contents:write on the tap only) | GitHub + repository secret | `brew install dmarzzz/shadenet/shadenet`; each final release commits its `shadenet.rb` to `Formula/`. Without the token, copy it by hand |
+| `dmarzzz/homebrew-shadenet` tap repository (exists since 2026-09-30) + `HOMEBREW_TAP_DEPLOY_KEY` (SSH deploy key with write access on the tap only; set) or `HOMEBREW_TAP_TOKEN` (fine-grained, contents:write on the tap only) | GitHub + repository secret | `brew install dmarzzz/shadenet/shadenet`; each final release commits its `shadenet.rb` to `Formula/`. Without a credential, copy it by hand |
 | GHCR package visibility | package settings, after the first tag | make `ghcr.io/dmarzzz/shadenet` public |
 | crates.io and npm tokens | repository secrets | real publishing, once packages opt in |
 
