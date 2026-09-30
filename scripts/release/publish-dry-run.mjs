@@ -27,7 +27,7 @@ function lastError(out) {
   const cause = lines.findIndex((l) => l.startsWith("Caused by:"));
   const picked = cause >= 0
     ? lines.slice(cause + 1).filter((l) => l.trim()).slice(0, 2)
-    : lines.filter((l) => l.startsWith("error")).slice(0, 1);
+    : lines.filter((l) => /^(error|npm error)\b/.test(l)).slice(0, 1);
   return picked.join(" ").replace(/\s+/g, " ").replaceAll("|", "/").trim().slice(0, 200);
 }
 
@@ -55,7 +55,10 @@ for (const ws of rootPkg.workspaces ?? []) {
     rows.push([`npm ${pkg.name}`, "private", "not published"]);
     continue;
   }
-  const r = run("npm", ["publish", "--dry-run", "--workspace", ws]);
+  // npm refuses to publish a prerelease (1.2.3-rc.1) onto the "latest" dist-tag without an
+  // explicit --tag; a real publish would use the same tag, so the rehearsal matches it.
+  const tag = pkg.version.includes("-") ? ["--tag", "next"] : [];
+  const r = run("npm", ["publish", "--dry-run", "--workspace", ws, ...tag]);
   rows.push([`npm ${pkg.name}`, "publishable", r.ok ? "dry-run ok" : `FAIL: ${lastError(r.out)}`]);
   if (!r.ok) failed++;
 }
