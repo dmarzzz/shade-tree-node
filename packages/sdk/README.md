@@ -29,7 +29,7 @@ Every address, tier, bond and signer comes from a deployment record
 import { resolveNetwork, tierFor } from "@shadenet/sdk";
 
 const net = resolveNetwork("sepolia");     // or resolveNetwork(recordObject)
-net.staked.contract;                       // "0xEB67…4275"
+net.staked.contract;                       // "0xDEB2…4bBC"
 net.staked.tiers;                          // [{ limit: 1, bondWei: 100000000000000000n }, …]
 net.staked.defaultLimit;                   // 1
 net.elder.canopySigner;                    // pinned Ed25519 key (hex)

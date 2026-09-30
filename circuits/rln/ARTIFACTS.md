@@ -79,7 +79,7 @@ of ids (`SHADE_TREE_ZK_ARTIFACTS`) so a ceremony swap runs as a dual-VK window (
 
 | Circuit | Artifact id | Previous id |
 |---|---|---|
-| `rln` | `rln-ae43614cd02ebe95` | `rln-0b25f824a04da3a8` (the dev set; retire it after the fleet rolls) |
+| `rln` | `rln-ae43614cd02ebe95` | `rln-0b25f824a04da3a8` (the dev set; retired 2026-09-30 with the production launch record, its vkey file removed) |
 | `withdraw` | `withdraw-4e7e70a99310989a` | `withdraw-dd6bfa937405972f` (the dev set) |
 
 `Verifier.sol` is `contract Groth16Verifier`, `pragma solidity >=0.7.0 <0.9.0`,

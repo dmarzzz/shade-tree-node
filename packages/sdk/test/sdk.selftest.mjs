@@ -23,8 +23,8 @@ async function code(fn) {
 
 console.log("=== network record ===");
 const net1 = sdk.resolveNetwork("sepolia");
-ok(net1.staked.contract === "0xEB67Abf066c11D78856BccC63476ed14d51e4275", "staked contract from deployment.json");
-ok(net1.staked.tiers.map((t) => t.limit).join(",") === "1,8" && net1.staked.tiers[0].bondWei === 100000000000000000n, "tiers and bonds from the record");
+ok(net1.staked.contract === "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC", "staked contract from deployment.json");
+ok(net1.staked.tiers.map((t) => t.limit).join(",") === "1,8" && net1.staked.tiers[0].bondWei === 10000000000000000n, "tiers and bonds from the record");
 ok(net1.elder.canopySigner.length === 64, "canopy signer pinned from the record");
 ok(await code(() => sdk.resolveNetwork("nope")) === "InvalidInput", "unknown network -> InvalidInput");
 ok(net1.elders.length === 2 && net1.elders[0].onion === net1.elder.onion && net1.elders[1].onion.startsWith("k54vz4zu"), "every Elder Tree from elders[] (primary first)");
@@ -120,7 +120,7 @@ function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 
         const tx = params[0];
         const fn = iface.parseTransaction({ data: tx.data });
         const enc = (v) => iface.encodeFunctionResult(fn.name, [v]);
-        if (fn.name === "bondFor") return enc(bond ?? { 1: 100000000000000000n, 8: 800000000000000000n }[Number(fn.args[0])] ?? 0n);
+        if (fn.name === "bondFor") return enc(bond ?? { 1: 10000000000000000n, 8: 80000000000000000n }[Number(fn.args[0])] ?? 0n);
         if (fn.name === "isActive") return enc(active);
         if (fn.name === "limitOf") return enc(limit);
         if (fn.name === "withdrawableAt") return enc(withdrawableAt);
@@ -134,22 +134,24 @@ function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 
   };
 }
 const FROM = "0x000000000000000000000000000000000000dEaD";
+// ShadeNet sets (registerInput: identityCommitment) take the identity commitment and derive the leaf on chain.
+const idc = sdk.identityCommitmentOf(id.identitySecret).toString();
 {
   const w = mockWallet();
   const s = sdk.createStaking({ provider: w });
-  const r = await s.stake({ commitment: id.leaf, from: FROM });
+  const r = await s.stake({ commitment: idc, from: FROM });
   const tx = iface.parseTransaction({ data: w.sent[0].data });
-  ok(tx.name === "register" && tx.args[0].toString() === id.leaf && tx.args[1] === 1n, "stake sends register(leaf, 1)");
-  ok(BigInt(w.sent[0].value) === 100000000000000000n && w.sent[0].to === net1.staked.contract, "stake sends the record's bond to the record's contract");
+  ok(tx.name === "registerIdentity" && tx.args[0].toString() === idc && tx.args[1] === 1n, "stake sends registerIdentity(identityCommitment, 1)");
+  ok(BigInt(w.sent[0].value) === 10000000000000000n && w.sent[0].to === net1.staked.contract, "stake sends the record's bond to the record's contract");
   ok((await r.wait()).status === "0x1", "wait() returns the receipt");
 }
 {
   const w = mockWallet();
-  await sdk.createStaking({ provider: w }).sponsor({ commitment: id.leaf, limit: 8, from: FROM });
+  await sdk.createStaking({ provider: w }).sponsor({ commitment: idc, limit: 8, from: FROM });
   const tx = iface.parseTransaction({ data: w.sent[0].data });
-  ok(tx.args[1] === 8n && BigInt(w.sent[0].value) === 800000000000000000n, "sponsor at tier 8 sends register(leaf, 8) with the tier-8 bond");
+  ok(tx.name === "registerIdentity" && tx.args[1] === 8n && BigInt(w.sent[0].value) === 80000000000000000n, "sponsor at tier 8 sends registerIdentity(identityCommitment, 8) with the tier-8 bond");
 }
-ok(await code(() => sdk.createStaking({ provider: mockWallet({ bond: 1n }) }).stake({ commitment: id.leaf, from: FROM })) === "Rpc", "bond disagreeing with the record -> refuse (Rpc)");
+ok(await code(() => sdk.createStaking({ provider: mockWallet({ bond: 1n }) }).stake({ commitment: idc, from: FROM })) === "Rpc", "bond disagreeing with the record -> refuse (Rpc)");
 ok((await sdk.createStaking({ provider: mockWallet({ active: true }) }).stake({ commitment: id.leaf, from: FROM })).alreadyActive === true, "already active -> nothing sent");
 ok(await code(() => sdk.createStaking({ provider: mockWallet({ chain: 1n }) }).stake({ commitment: id.leaf, from: FROM })) !== null, "wrong chain is refused");
 {

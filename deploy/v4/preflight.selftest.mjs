@@ -1,7 +1,7 @@
 // Pure/controller-side tests for the Protocol v4 deployment record gate.
 
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,7 +85,13 @@ ok(fields(validateDeploymentRecord(drift, { repoRoot: ROOT })).includes("service
 const unsafeProduction = copy(live); unsafeProduction.security.scope = "production";
 ok(fields(validateDeploymentRecord(unsafeProduction, { repoRoot: ROOT })).includes("security"), "untrusted proof artifacts cannot be labeled production");
 const falseTrust = copy(live); falseTrust.security = { proofArtifacts: "trusted-ceremony", scope: "production", decisionRef: "not-real" };
-ok(fields(validateDeploymentRecord(falseTrust, { repoRoot: ROOT })).includes("security.proofArtifacts"), "production trust claim must match a completed trusted ceremony in the artifact lock");
+// The repository lock records the PSE ceremony (complete) since 2026-09-30, so the negative case
+// checks against a root whose lock still says UNTRUSTED-TESTNET.
+const untrustedRoot = mkdtempSync(join(tmpdir(), "preflight-untrusted-"));
+mkdirSync(join(untrustedRoot, "testdata"), { recursive: true });
+writeFileSync(join(untrustedRoot, "testdata", "zk-artifacts.lock.json"), JSON.stringify({ trust: "UNTRUSTED-TESTNET", ceremony: { status: "not-run" } }));
+ok(fields(validateDeploymentRecord(falseTrust, { repoRoot: untrustedRoot })).includes("security.proofArtifacts"), "production trust claim must match a completed trusted ceremony in the artifact lock");
+ok(!fields(validateDeploymentRecord(falseTrust, { repoRoot: ROOT })).includes("security.proofArtifacts"), "the repository lock (PSE ceremony, complete) backs a trusted-ceremony claim");
 
 console.log("admission fail-closed rules:");
 const staked = copy(live);

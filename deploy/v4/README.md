@@ -19,8 +19,9 @@ Populate only operator-verified public values:
 
 - `protocol`: the accepted v4 envelope range (`min` must be 4).
 - `security`: the proof-artifact trust decision, rollout scope, and its review reference. The
-  current `UNTRUSTED-TESTNET` lock can describe only a `disposable-research` fleet; a production
-  record is rejected until the lock records `TRUSTED-CEREMONY` with a completed ceremony.
+  an `UNTRUSTED-TESTNET` lock can describe only a `disposable-research` fleet; a production
+  record is rejected until the lock records `CEREMONY` with a completed ceremony (the value
+  `scripts/zk-artifacts-lock.mjs` writes once no artifact is dev-provenance).
 - `services`: credential-free HTTPS repository and a full 40-hex commit for Elder, node, and
   heartbeat. The current deployer packages all three from one checkout, so all pins must match.
 - `elder`: the restored Elder onion, pinned Canopy signer, and operator-admission policy.

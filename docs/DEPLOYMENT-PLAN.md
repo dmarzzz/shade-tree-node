@@ -1,6 +1,6 @@
 # Protocol v4 deployment plan
 
-**Status:** disposable v4 research canopy live · production blocked on trusted setup · 2026-08-26
+**Status:** ShadeNet research preview launched on Sepolia (M8) · proof keys from the PSE trusted setup · 2026-09-30
 
 This is the current rollout boundary. The older `DEPLOYMENT.md`, `GO-LIVE.md`, and legacy
 Sepolia contract/directory files describe the retired pre-v4 fleet. The current disposable v4
@@ -32,10 +32,10 @@ in source) verifies the v4 proof before it opens destination egress.
   SSH inventory, OpenTofu state, and private identity backups remain outside this repository.
 - The v4 canopy admits invited members and public Sepolia stakers (`admission.paths` in the
   record) and accepts only the artifact ids pinned in its record. Its `security.proofArtifacts`
-  stays `untrusted-testnet` while the dev set `rln-0b25f824a04da3a8` is still accepted alongside
-  the ceremony set `rln-ae43614cd02ebe95` (adopted from PSE's RLN ceremony on 2026-09-30,
-  `docs/ceremony/PSE-ADOPTION.md`); it flips to `trusted-ceremony` when the dual-VK window
-  closes. Until then this is disposable research infrastructure, not production and not
+  is `trusted-ceremony`: the ShadeNet launch record (M8, 2026-09-30) accepts only the ceremony
+  set `rln-ae43614cd02ebe95` (adopted from PSE's RLN ceremony, `docs/ceremony/PSE-ADOPTION.md`);
+  the dev set `rln-0b25f824a04da3a8` was retired and its vkey file removed when the dual-VK window
+  closed. Until then this is disposable research infrastructure, not production and not
   suitable for real funds or sensitive traffic. Production deploys were blocked on trusted setup
   until that adoption and stay blocked on final economics (H2) and the M8 deploy.
 - The Elder's signed canopy directory has three fresh Protocol v4 announcements. Signer-pinned probes over
@@ -77,8 +77,9 @@ in source) verifies the v4 proof before it opens destination egress.
    RPC, and required slashing/operator keys are all present. Missing configuration
    stops before the first remote mutation.
 
-Production still requires the trusted-setup decision in issue #6 and an explicit
-production review. Any additional provider target needs the same ownership, firewall,
+The trusted-setup requirement of issue #6 is met by the PSE ceremony adoption
+(`docs/ceremony/PSE-ADOPTION.md`); an outside verifier's signed statement is still pending, and
+`security.scope` stays `disposable-research` until an explicit production review. Any additional provider target needs the same ownership, firewall,
 identity-backup, rollback, and preflight evidence; none is safe to infer from the legacy fleet.
 
 ## Repeatable rollout order

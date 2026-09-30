@@ -17,22 +17,22 @@
     "crossGateway": "best-effort-fleet-tally"
   },
   "security": {
-    "proofArtifacts": "untrusted-testnet",
+    "proofArtifacts": "trusted-ceremony",
     "scope": "disposable-research",
-    "decisionRef": "operator-approved disposable v4 research Grove, 2026-08-25; dual-VK window opened 2026-09-30 with the PSE ceremony set (H3), dev set still accepted until the window closes"
+    "decisionRef": "ShadeNet launch (M8) 2026-09-30: contracts deployed from network/sepolia/economics.json (H2 final) with the PSE RLN ceremony verifier (H3, docs/ceremony/PSE-VERIFICATION.md); the dual-VK window closed here, only the ceremony artifact rln-ae43614cd02ebe95 is accepted"
   },
   "services": {
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "37a0f16351da8aa0377364221e3964233730eef4"
+      "commit": "18f92f9aeb03af21c97a072d3b87f042bf3a6005"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "37a0f16351da8aa0377364221e3964233730eef4"
+      "commit": "18f92f9aeb03af21c97a072d3b87f042bf3a6005"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "37a0f16351da8aa0377364221e3964233730eef4"
+      "commit": "18f92f9aeb03af21c97a072d3b87f042bf3a6005"
     }
   },
   "elder": {
@@ -67,30 +67,32 @@
       },
       "staked": {
         "profile": "public-stake-v1",
+        "registerInput": "identityCommitment",
         "chainId": 11155111,
-        "contract": "0xEB67Abf066c11D78856BccC63476ed14d51e4275",
-        "deployTx": "0x27d187dc35ea6d333a1cc91effcc78883534964b4818601937f96ce2b7a2719c",
+        "contract": "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC",
+        "deployTx": "0x56c572442f96714b71c393fc4e35b07bd36ef11928c580f0f5835e26f008f21f",
         "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
         "rpcUrls": [
           "https://rpc.sepolia.ethpandaops.io",
           "https://ethereum-sepolia-rpc.publicnode.com"
         ],
-        "deployBlock": 11624622,
-        "hasher": "0x4Aef86FA47026432567E6F1cE5d5Bb46c62d8d23",
-        "withdrawVerifier": "0x2a905423D252e39d73d37156C28503aD8650C952",
+        "deployBlock": 11817836,
+        "hasher": "0x7fcb0e768ea138129fec90c10e95fb6a5534980c",
+        "withdrawVerifier": "0x76d88a50803565496a5acc0c5fc85ef43e4f66ff",
         "defaultLimit": 1,
         "tiers": [
           {
             "limit": 1,
-            "bondWei": "100000000000000000"
+            "bondWei": "10000000000000000"
           },
           {
             "limit": 8,
-            "bondWei": "800000000000000000"
+            "bondWei": "80000000000000000"
           }
         ],
         "unbondingSeconds": 86400,
-        "minUnbondingSeconds": 3720
+        "minUnbondingSeconds": 3720,
+        "slashRewardDivisor": 10
       },
       "paid": null
     },
@@ -105,15 +107,11 @@
         "id": "rln-ae43614cd02ebe95",
         "verificationKeyPath": "circuits/rln/verification_key.json",
         "sha256": "ae43614cd02ebe951f44465924eff9882d1321b20f0cc129406bc5fa2547fe11"
-      },
-      {
-        "id": "rln-0b25f824a04da3a8",
-        "verificationKeyPath": "circuits/rln/previous/verification_key.json",
-        "sha256": "0b25f824a04da3a85f128baa6fdaa33d10baa7dd18c5e6f5935089661c68622c"
       }
     ],
-    "legacy": "rln-0b25f824a04da3a8"
+    "legacy": null
   },
   "created": "2026-09-02",
-  "note": "Disposable public-stake-v1 Protocol v4 research Grove: zero-config clients use the permissionless Sepolia staking path (tier 1 = 0.1 ETH, one 60-second slot, 40 MiB combined tunnel payload); invited admission remains available when selected explicitly. One stake-gated Elder and three dedicated Shade Tree nodes are managed from agent-devops and pinned to 37a0f16351da8aa0377364221e3964233730eef4. Contracts and proof artifacts are explicitly untrusted Sepolia testnet material."
+  "note": "ShadeNet research preview on Sepolia: zero-config clients use the permissionless staking path (tier 1 = 0.01 ETH, tier 8 = 0.08 ETH, one 60-second slot, 40 MiB combined tunnel payload, session tickets on; see docs/ECONOMICS.md); invited admission remains available when selected explicitly. Two Elder Trees and the Shade Tree nodes are managed from agent-devops and pinned to services.*.commit. Proof artifacts are the PSE RLN trusted-setup output; the staking contract is Sepolia testnet material and its ETH has no value.",
+  "sessionTickets": true
 }
