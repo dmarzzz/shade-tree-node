@@ -3,7 +3,7 @@ export default {
   "network": "sepolia-staging",
   "chainId": 11155111,
   "contract": "0xf117FDEA83ac57d15D9394A2B56873C32d227B7E",
-  "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+  "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
   "deployBlock": 11803707,
   "tiers": [
     {
