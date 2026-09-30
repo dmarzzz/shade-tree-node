@@ -24,15 +24,15 @@
   "services": {
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "1a750e6f26606c7481eed7030a0aefe8eab8e4d2"
+      "commit": "db567013498a4a262134924da8bfe571e975595f"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "1a750e6f26606c7481eed7030a0aefe8eab8e4d2"
+      "commit": "db567013498a4a262134924da8bfe571e975595f"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "1a750e6f26606c7481eed7030a0aefe8eab8e4d2"
+      "commit": "db567013498a4a262134924da8bfe571e975595f"
     }
   },
   "elder": {
@@ -52,25 +52,24 @@
         "profile": "public-stake-v1",
         "registerInput": "identityCommitment",
         "chainId": 11155111,
-        "contract": "0xf117FDEA83ac57d15D9394A2B56873C32d227B7E",
-        "deployTx": "0x8025d1d0b07e0276fc7fbeaf88e7ff084b057e98713c3fc866acdbc22e1cae58",
+        "contract": "0x5bfFCc2731228B470182b00fc07C6862a8849deF",
+        "deployTx": "0x16f23c78a081ab899c308f3790df7bae93a26b477c0f21b7a5690dea8505e242",
         "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
         "rpcUrls": [
-          "https://rpc.sepolia.ethpandaops.io",
-          "https://ethereum-sepolia-rpc.publicnode.com"
+          "https://rpc.sepolia.ethpandaops.io"
         ],
-        "deployBlock": 11803707,
-        "hasher": "0x7335C0b25d36Bc20fcF414c1C64dd3Da6dd455f9",
-        "withdrawVerifier": "0x3E2bC08f106a76D2FF5F5a9fDE8607051aA36196",
+        "deployBlock": 11817365,
+        "hasher": "0x8Ff007A0Aa17a1Dc12a1309ce3c25d75d05607Bf",
+        "withdrawVerifier": "0x9eAf0Ccebb0Fb6824c3ee1Aba81BA9805aBeDfc2",
         "defaultLimit": 1,
         "tiers": [
           {
             "limit": 1,
-            "bondWei": "1000000000000000"
+            "bondWei": "10000000000000000"
           },
           {
             "limit": 8,
-            "bondWei": "8000000000000000"
+            "bondWei": "80000000000000000"
           }
         ],
         "unbondingSeconds": 86400,
@@ -95,7 +94,7 @@
     "legacy": null
   },
   "created": "2026-09-28",
-  "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. Canopy: 2 Elder Trees at 1a750e6f2660, recorded by scripts/record-canopy.mjs.",
+  "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. Canopy: 2 Elder Trees at db567013498a, recorded by scripts/record-canopy.mjs.",
   "elders": [
     {
       "onion": "a4xt55gef66pifqebadjobjpy2drsoa63bdok4toisvenmyehslaz4id.onion",
