@@ -2,7 +2,7 @@
 
 Date: 2026-09-30 · Canopy: `sepolia-staging` (StakedReputationSet `0xf117FDEA83ac57d15D9394A2B56873C32d227B7E`, Sepolia block 11803707) · Fleet at `4c98573` (shade-elder-v4-02, shade-node-v4-04/05/06, the Lab, the second Elder on orbital-one) · Client binaries: the release-workflow build of main `e8776f1` (run 36504554404), then the build of `m7/rehearsal` (run 36768147231) once the member-set fix existed.
 
-This is the M7 exit of [the roadmap](../../shadenet-launch/ROADMAP.md): every launch-gate line run against the staging canopy with dev keys and placeholder economics, before any human gate. Each section gives the command, the result and the evidence. Nothing here touched the production record (`network/sepolia`).
+This is the M7 exit of the launch roadmap: every launch-gate line run against the staging canopy with dev keys and placeholder economics, before any human gate. Each section gives the command, the result and the evidence. Nothing here touched the production record (`network/sepolia`).
 
 ## Summary
 
