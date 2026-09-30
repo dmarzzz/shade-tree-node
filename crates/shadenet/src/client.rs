@@ -1098,89 +1098,103 @@ impl Client {
             )));
         }
         let epoch = self.current_epoch();
-        let slots = match &self.config.slots {
-            Slots::UnsafeForSlashingTest(message_id) => {
-                if *message_id >= limit {
-                    return Err(Error::Config(format!(
-                        "slot {message_id} is outside this tier (0..{limit})"
-                    )));
-                }
-                transport::SlotPolicy::UnsafeForSlashingTest {
-                    message_id: *message_id,
-                }
-            }
-            _ => transport::SlotPolicy::CrashSafe {
-                cursor: self
-                    .slot_path(&identity.leaf)?
-                    .ok_or_else(|| Error::Internal("no slot path".into()))?,
-            },
-        };
         let ours = self.client_artifact().await?;
         let artifact =
             shadenet_proto::select_artifact(advertised.as_deref(), std::slice::from_ref(&ours))
                 .map_err(|e| Error::Artifact(e.to_string()))?;
-        let nonce = self.config.nonce.clone().unwrap_or_else(random_nonce);
         // With session tickets on, the proof initializes a book at the first session-capable
-        // candidate instead of buying one tunnel; the first ticket then opens this tunnel.
-        let session = if self.config.session_tickets {
-            self.session_candidate(&gateways).await
-        } else {
-            None
-        };
-        let gateways = match &session {
-            Some(gateway) => vec![gateway.clone()],
-            None => gateways,
-        };
-        tracing::debug!(%target, epoch, limit, %artifact, candidates = gateways.len(), session = session.is_some(), "building RLN envelope");
-        let request = transport::ConnectRequest {
-            gateways,
-            proof: transport::ProofRequest {
-                identity_secret: identity.secret.to_string(),
-                member_leaf: identity.leaf.clone(),
-                members,
-                target: target.to_string(),
-                nonce,
-                epoch,
-                rln_identifier: self.config.rln_identifier.clone(),
-                user_message_limit: limit,
-                circuits_dir: self
-                    .config
-                    .circuits_dir
-                    .as_ref()
-                    .map(|dir| dir.display().to_string()),
-            },
-            slots,
-            artifact,
-            session: None,
-        };
-        if let Some(gateway) = session {
-            return self.session_init(target, gateway, request).await;
-        }
-        let outcome = self.transport.connect(request).await;
-        match &outcome {
-            Ok(connected) => self.report_health(&connected.attempts),
-            Err(transport::Error::GatewayRefused { attempts, .. })
-            | Err(transport::Error::AllCandidatesFailed { attempts }) => {
-                self.report_health(attempts)
-            }
-            Err(_) => {}
-        }
-        match outcome {
-            Ok(connected) => {
-                let receipt = connected.ack.get("receipt").cloned();
-                tracing::info!(gateway = %connected.gateway.label(), %target, "tunnel accepted");
-                Ok(Tunnel {
-                    stream: connected.stream,
-                    early_data: connected.early_data,
-                    gateway: connected.gateway.label(),
-                    target: connected.proof.target,
-                    nullifier: connected.proof.nullifier,
+        // candidate instead of buying one tunnel; the first ticket then opens this tunnel. A node
+        // that answers `session-unsupported` (a canopy mid-roll, or a pinned onion whose record
+        // predates H2) is remembered and this same call falls back to the v4 path at once.
+        let mut allow_session = self.config.session_tickets;
+        loop {
+            let slots = match &self.config.slots {
+                Slots::UnsafeForSlashingTest(message_id) => {
+                    if *message_id >= limit {
+                        return Err(Error::Config(format!(
+                            "slot {message_id} is outside this tier (0..{limit})"
+                        )));
+                    }
+                    transport::SlotPolicy::UnsafeForSlashingTest {
+                        message_id: *message_id,
+                    }
+                }
+                _ => transport::SlotPolicy::CrashSafe {
+                    cursor: self
+                        .slot_path(&identity.leaf)?
+                        .ok_or_else(|| Error::Internal("no slot path".into()))?,
+                },
+            };
+            let nonce = self.config.nonce.clone().unwrap_or_else(random_nonce);
+            let session = if allow_session {
+                self.session_candidate(&gateways).await
+            } else {
+                None
+            };
+            let candidates = match &session {
+                Some(gateway) => vec![gateway.clone()],
+                None => gateways.clone(),
+            };
+            tracing::debug!(%target, epoch, limit, %artifact, candidates = candidates.len(), session = session.is_some(), "building RLN envelope");
+            let request = transport::ConnectRequest {
+                gateways: candidates,
+                proof: transport::ProofRequest {
+                    identity_secret: identity.secret.to_string(),
+                    member_leaf: identity.leaf.clone(),
+                    members: members.clone(),
+                    target: target.to_string(),
+                    nonce,
                     epoch,
-                    receipt,
-                    session: None,
-                })
+                    rln_identifier: self.config.rln_identifier.clone(),
+                    user_message_limit: limit,
+                    circuits_dir: self
+                        .config
+                        .circuits_dir
+                        .as_ref()
+                        .map(|dir| dir.display().to_string()),
+                },
+                slots,
+                artifact: artifact.clone(),
+                session: None,
+            };
+            if let Some(gateway) = session {
+                match self.session_init(target, gateway, request).await {
+                    Err(Error::NodeRefused {
+                        gateway, reason, ..
+                    }) if reason == "session-unsupported" => {
+                        tracing::info!(%gateway, %target, "node has no session tickets; falling back to one proof per tunnel");
+                        allow_session = false;
+                        continue;
+                    }
+                    outcome => return outcome,
+                }
             }
-            Err(error) => Err(self.map_transport_error(error).await),
+            let outcome = self.transport.connect(request).await;
+            match &outcome {
+                Ok(connected) => self.report_health(&connected.attempts),
+                Err(transport::Error::GatewayRefused { attempts, .. })
+                | Err(transport::Error::AllCandidatesFailed { attempts }) => {
+                    self.report_health(attempts)
+                }
+                Err(_) => {}
+            }
+            return match outcome {
+                Ok(connected) => {
+                    let receipt = connected.ack.get("receipt").cloned();
+                    tracing::info!(gateway = %connected.gateway.label(), %target, "tunnel accepted");
+                    Ok(Tunnel {
+                        stream: connected.stream,
+                        early_data: connected.early_data,
+                        gateway: connected.gateway.label(),
+                        target: connected.proof.target,
+                        nullifier: connected.proof.nullifier,
+                        epoch,
+                        receipt,
+                        session: None,
+                    })
+                }
+                Err(error) => Err(self.map_transport_error(error).await),
+            };
         }
     }
 
