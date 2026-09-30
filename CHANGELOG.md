@@ -4,7 +4,12 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
-Work toward the ShadeNet research preview on Sepolia. Signed and hashed v4 wire strings are
+Nothing yet.
+
+## 0.7.0-rc.1 — ShadeNet research preview, release candidate
+
+First release cut from a tag under the ShadeNet name; a prerelease, so it never becomes
+"Latest" and the fleet rolls to it on staging only. Work toward the ShadeNet research preview on Sepolia. Signed and hashed v4 wire strings are
 unchanged (`test/wire-freeze.selftest.mjs`). The contracts change and take effect with a fresh
 deployment: staging is live (`network/sepolia-staging/`); production waits for the economics
 and the trusted setup.

@@ -1,6 +1,6 @@
 [package]
 name = "shadenet"
-version = "0.6.0"
+version = "0.7.0-rc.1"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
@@ -37,7 +37,7 @@ live = [
 session-tickets = []
 
 [dependencies]
-shadenet-proto = { path = "../shadenet-proto", version = "0.6.0" }
+shadenet-proto = { path = "../shadenet-proto", version = "0.7.0-rc.1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
@@ -54,7 +54,7 @@ k256 = { version = "0.14", features = ["ecdsa"] }
 sha3 = "0.12"
 num-bigint = "0.4"
 
-shadenet-rln = { path = "../shadenet-rln", version = "0.6.0", optional = true }
+shadenet-rln = { path = "../shadenet-rln", version = "0.7.0-rc.1", optional = true }
 # Embedded Tor. `compression` stays off (one onion, one JSON line) and `static-sqlite` bundles
 # SQLite so the binary never links the host's libsqlite3.
 arti-client = { version = "0.46", default-features = false, features = ["tokio", "rustls", "onion-service-client", "static-sqlite", "hs-pow-full"], optional = true }
