@@ -229,3 +229,34 @@ role.
 - The record's RPC is now a failover list (`rpcUrls`, section 10); keep a full-history endpoint first at M8.
 - A second node off DigitalOcean (needs Dan's Hetzner or Vultr token), the DigitalOcean token rotation, per-host age recipients.
 - The staging seats sponsored today (Hermes on orbital-one, the SearXNG stack, the browser identity) stay in the staging set; they are not production seats.
+
+## 10. H2 economics on staging (2026-09-30, late)
+
+The H2 decision (`docs/ECONOMICS.md`, PR #212: tier 1 = 0.01 Sepolia ETH, tier 8 = 0.08, session
+tickets on, unbonding 24 h, slash 1/10, 24 sponsor seats) was rehearsed on staging in two halves,
+because the deployer ran out of testnet ETH between them.
+
+**Contracts with the H2 numbers.** `scripts/staging-up.sh` deployed a second staging set from
+`network/sepolia-staging/economics.json` (now a mirror of production's file):
+`StakedReputationSet 0x5bfFCc2731228B470182b00fc07C6862a8849deF` at block 11817365, read back
+against the pinned manifest, all four contracts `exact_match` on Sourcify (Etherscan skipped: no API
+key on the controller). The staking smoke ran with the 0.01 ETH bond: register, exit with a real
+Groth16 proof, slash with the 1/10 bounty and the 90 % burn to `address(0)` all passed; the withdraw
+resumes after chain time 1790890320 (2026-10-01 21:32Z) with `scripts/staging-up.sh --resume` (the
+state file is in the controller's `cache/`). The first smoke attempt died on `nonce has already been
+used` after both registrations (ethpandaops answered the exit with a stale nonce); the rerun
+registered two fresh identities, so the set holds two orphan tier-1 leaves (0.02 ETH, secrets not
+persisted) besides the smoke's exited and slashed ones.
+
+**Why the canopy did not move to it.** Re-pointing the canopy at the new set needs the Lab, Hermes
+and SearXNG seats re-sponsored there (0.01 ETH each plus gas). After two smoke runs the deployer
+held 0.0029 ETH and no other key on the box holds 0.01 (kf 0.0059, slasher 0.005, registry owner
+0.0092). The record for the new set is parked as `network/sepolia-staging/deployment.h2-pending.json`
++ `contracts-deploy.h2-pending.json`; with about 0.05 Sepolia ETH on the deployer the re-point is:
+copy the pending files over `deployment.json`/`contracts-deploy.json`, `record-canopy` with the
+current commit and `--elders-from sepolia-staging`, sponsor the three seats, then the roll below.
+
+**Session tickets on, on the live staging canopy.** The switch is a record field, so it was turned
+on where the seats already are: `deployment.json` `sessionTickets: true`, re-pinned and rolled
+(PR #219, agent-devops #26).
+
