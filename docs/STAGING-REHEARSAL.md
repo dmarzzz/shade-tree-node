@@ -161,9 +161,71 @@ deploy-contracts: fork rehearsal passed; nothing written under network/
 
 The hosted probe (`uptime-probe.yml` on a GitHub runner, over Tor) failed 17 times between 2026-09-28 19:52Z and 2026-09-29 12:52Z with `CRITICAL: bootnode unreachable`, then went green for the following 30 hours (200 runs checked). Prometheus on orbital-one has the second vantage point for the same window: the Lab's probe (`shade_tree_probe_ok`) was 1 throughout except one 15-minute sample during the fleet roll, and both Elders' `up` were 1 throughout. The Elder was reachable; the GitHub runner's Tor client was not reaching the onion. Nothing on our side changed when it stopped. The hosted probe stays the coarse signal it is documented as; the Lab timer is the SLI.
 
-## Left for M8
+## 10. Every Elder hears every node (ADR 0012), rolled and proved
 
-- The record's RPC. `ethereum-sepolia-rpc.publicnode.com` answered three different historical reads with nothing today (empty `eth_getLogs` pages, a `null` receipt, a 429). Both fixes above make the clients and the preflight notice; the M8 record should still name an endpoint with full history first and keep publicnode as a fallback, or the fleet wrapper's fallback list should be in the record.
-- Nodes announce to every Elder in the record; the Lab runner reads the record's `elders[]`.
+Follow-up to section 4 ("nodes announce to one Elder") and "Left for M8" (the record's RPC). Landed as #213
+(`SHADE_TREE_BOOTNODE_ONIONS` heartbeat fan-out, JS client Elder fallback, `admission.roots.staked.rpcUrls`),
+#215 (staging re-pin to `f9bfc22`), #217 (preflight: a fallback RPC is checked for current state only);
+agent-devops: the deploy wrapper exports the Elder list to the Lab, the operator-config helper returns the
+record's `rpcUrls`, the Lab's e2e probe finds the client under `packages/node`.
+
+**Fleet roll to `f9bfc22`** (`scripts/shade-tree-v4-deploy.sh`, three passes; the orbital-one Elder with the
+pinned `bootstrap.sh`):
+
+| Host | Evidence |
+|---|---|
+| shade-node-v4-04, -05, -06 | `shade_tree_build_info{commit="f9bfc22…",role="heartbeat",version="0.7.0-rc.1"}` (later `1a750e6…` from the economics roll), `shade_tree_heartbeat_elders_total 2`, `shade_tree_heartbeat_elders_accepted 2`; unit `Environment=SHADE_TREE_BOOTNODE_ONIONS=a4xt55…onion,k54vz4…onion` |
+| shade-elder-v4-02 | `build_info{commit="f9bfc22…",role="elder"}` (later `1a750e6…`), `shade_tree_bootnode_live_gateways 3` |
+| orbital-one (second Elder) | `build_info{commit="f9bfc22…",role="elder"}`, `SHADE_TREE_RPC_URL=https://rpc.sepolia.ethpandaops.io,https://ethereum-sepolia-rpc.publicnode.com`, `live_gateways 3` |
+| the Lab | `runner.env` / `staked.env`: `SHADE_TREE_BOOTNODE_ONIONS=<both>`, `SHADE_TREE_DIR_SIGNER=<both canopy signers>`; checkout `f9bfc22` |
+
+**What the roll found.**
+
+- Every heartbeat on the fleet was still the pre-roll process: `build_info{commit="4c98573",version="0.6.0"}`
+  while the gateways ran `db56701`. `bootstrap.sh` used `systemctl enable --now` for the heartbeat, a no-op on a
+  running unit (the Elder had the same gap, #200). Fixed in #213: enable, then restart unconditionally.
+- Two of three node rolls failed on the controller with `onchain.deployTx: deployment receipt is missing (via
+  ethereum-sepolia-rpc.publicnode.com)`: with `rpcUrls` the preflight ran the full history check against the
+  fallback too, and the pooled endpoint answered the old receipt with `null` even after the four retries from
+  #209. #217: the primary keeps the receipt and constructor-input checks; a fallback is checked for chain id,
+  bytecode, tiers and linked libraries only. The third pass rolled with `SHADE_TREE_SOURCE_ROOT` at the pin plus
+  that change.
+- The Lab's operator e2e probe imported `client/shade-tree-client.mjs`, removed with the shims in #208; it now
+  looks under `packages/node/client` first (agent-devops).
+- The first e2e after the roll was refused `gate:wrong-group-root` on every node with every RPC. Not a
+  regression: at block 11817369 (about 21:37Z) the deployer registered a new tier-1 member (the Get access
+  rehearsal running in parallel), so `currentRoot()` at `latest` differed from `finalized` for two epochs and
+  the nodes trust the finalized root. The same e2e passed once `finalized` caught up (21:47Z).
+
+**Baseline after the roll.** `scripts/shade-tree-v4-e2e.sh` at 22:09Z, the fleet on the economics pin `1a750e6` (session tickets on, set
+`0xf117…7B7E`, `rpcUrls` in the record): `{"ok":true,"leafSource":"staked","limit":1,"canopy":{"verified":true,"count":3},…}`,
+every node `gate: accepted`, HTTP 200. Before the window: orbital-one `shade_tree_bootnode_live_gateways 3`,
+every node `shade_tree_heartbeat_elders_accepted 2` of `2`.
+
+**Elder-down, past the TTL.** `sudo systemctl stop shade-tree-bootnode` on shade-elder-v4-02 at 22:11:20Z; started again at 22:33:25Z (1143 s
+down, past the 900 s directory TTL). Sampled every 60 s:
+
+| t | orbital-one `live_gateways` | nodes `elders_accepted/elders_total` |
+|---|---|---|
+| 22:12Z to 22:13Z | 3 | 2/2, 2/2, 2/2 (last announces before the stop) |
+| 22:14Z to 22:30Z | 3, every sample | 1/2, 1/2, 1/2 (the primary refuses, the second Elder accepts) |
+| 22:33Z (+1143 s) | 3 | 1/2, 1/2, 1/2 |
+| 22:39Z, 5 min after the restart | 3 (elder-02 also `live_gateways 3`) | 2/2, 2/2, 2/2 |
+
+At +1143 s, with the primary still down, `scripts/shade-tree-v4-e2e.sh` passed: the Lab's client logged
+`{"level":"warn","component":"proxy","msg":"Canopy served by a fallback Elder Tree","elder":2,"of":2}` and
+returned `{"ok":true,…,"canopy":{"verified":true,"count":3},"nodes":[… "gate":"accepted","httpStatus":200 …]}`
+for all three nodes. In section 4 the same outage left the second Elder's directory to age out; now every
+node keeps announcing to it, so its canopy stayed complete for the whole window. The `BootnodeDown` alert
+fired and resolved as in section 4.
+
+Left for M8: the Elder-side federation still lists the primary only for a joining Elder
+(`SHADE_TREE_BOOTNODE_PEERS`); the orbital-one Elder is still installed with `bootstrap.sh` by hand (not the
+v4 role), so a record re-pin has to be applied there separately; the `shadenet_client` record copy on
+orbital-one (`/home/mindagent/.config/shadenet/deployment.json`) is refreshed only by the `shadenet_client`
+role.
+
+## Left for M8
+- The record's RPC is now a failover list (`rpcUrls`, section 10); keep a full-history endpoint first at M8.
 - A second node off DigitalOcean (needs Dan's Hetzner or Vultr token), the DigitalOcean token rotation, per-host age recipients.
 - The staging seats sponsored today (Hermes on orbital-one, the SearXNG stack, the browser identity) stay in the staging set; they are not production seats.
