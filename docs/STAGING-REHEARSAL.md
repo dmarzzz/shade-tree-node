@@ -260,3 +260,41 @@ current commit and `--elders-from sepolia-staging`, sponsor the three seats, the
 on where the seats already are: `deployment.json` `sessionTickets: true`, re-pinned and rolled
 (PR #219, agent-devops #26).
 
+Three rolls were needed; the first two each found a real gap between "the record says
+`sessionTickets: true`" and a node that actually serves books:
+
+| Roll | Pin | What the fleet did | Finding |
+|---|---|---|---|
+| 1 | `1a750e6` | units unchanged: no `SHADE_TREE_SESSION_TICKETS`, no session cap, client fell back to v4 | the v4 role passed the switch to `bootstrap.sh`, which never rendered it (#221) |
+| 2 | `dd14e92` | units and processes carry the switch, heartbeats advertise `session`, but every gateway logged `session tickets requested … onion identity is unavailable; session tickets DISABLED` and refused books `session-unsupported` | the gateway unit had no `SHADE_TREE_GW_IDENTITY`; the heartbeat unit did (#225) |
+| 3 | `e1c7825` | all three gateways log `session tickets enabled` (`classes: ["research-v1"], maxSessions 256`) | pass |
+
+Roll 3 evidence (2026-09-30 22:58Z to 23:03Z, set `0xf117…7B7E`, commit `e1c7825d`):
+
+- `shade_tree_build_info{commit="e1c7825d"}` on shade-elder-v4-02, nodes 04/05/06 (gateway and
+  heartbeat) and the orbital-one Elder; the Lab re-pinned by the wrapper.
+- Rust client (`shadenet 0.7.0-rc.1`, record with `sessionTickets: true`) from orbital-one, one-shot
+  `shadenet fetch https://api.ipify.org?format=json`: `session book opened` at
+  `2kuu…onion` (node-05), `ticket accepted`, `fetch: HTTP 200 … (epoch 29846819)`, body
+  `{"ip":"137.184.43.116"}`.
+- Node-05 counters after that call: `shade_tree_gateway_sessions_total{result="pass"} 1`,
+  `shade_tree_gateway_tickets_total{result="pass"} 1`.
+- The Hermes proxy on orbital-one (`shadenet proxy` user service, Basic proxy auth): three sites
+  in a row through one proxy, `api.ipify.org` 200, `example.com` 200, `www.wikipedia.org` timed out
+  at 120 s (Tor; not retried). Node-05 counters afterwards: sessions `pass` 2, tickets `pass` 3,
+  so the proxy's two tunnels rode one book (one proof, two tickets).
+- Fleet e2e (`scripts/shade-tree-v4-e2e.sh`): exit 0, canopy verified with 3 nodes, staked
+  proof-gated requests through every node (the JS Lab client keeps one proof per tunnel; the v4
+  path is unchanged with the switch on). Two earlier runs at 22:43Z and 22:49Z, two to eight
+  minutes after the roll-2 gateway restarts, timed out at 100 s on the staked fetch; the nodes'
+  fleet-tally onion pushes timed out in the same window, so the onion descriptors were still
+  republishing. Rerun after settling passed.
+- Also fixed on the way: `scripts/install.sh` could not tell glibc from musl on aarch64 Ubuntu
+  (#220), the committed Get access page and its Playwright baselines had to be regenerated once
+  the staging record said tickets on (#222), and the roll-3 preflight hit the public RPC flake on
+  three of four hosts (rerun passed; the local preflight passed three times in a row).
+
+Left from this section: the Rust client fails a one-shot `fetch` on the first
+`session-unsupported` instead of retrying that node on the v4 path (the JS client and a second
+call in the same process do fall back); the H2-priced set re-point (about 0.05 Sepolia ETH);
+`www.wikipedia.org` through the proxy was not retried.
