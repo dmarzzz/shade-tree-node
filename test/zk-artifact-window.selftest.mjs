@@ -69,7 +69,10 @@ const UNKNOWN = "rln-ffffffffffffffff";
 assert.notEqual(OLD, NEW);
 
 // The gateway's two window configurations, from the SAME env shape an operator would set.
-const ENV_OPEN = { SHADE_TREE_ZK_ARTIFACTS: `${NEW}=${join(NEW_DIR, "verification_key.json")},${OLD}=${BUILTIN_VKEY_PATH}` };
+// Since the PSE adoption the lock records a retired previous set (the dev keys), so a field-less
+// envelope maps to THAT id unless the window names its own old id: an operator opening a window
+// on top of a rotated lock sets SHADE_TREE_ZK_ARTIFACT_LEGACY to the set being phased out.
+const ENV_OPEN = { SHADE_TREE_ZK_ARTIFACTS: `${NEW}=${join(NEW_DIR, "verification_key.json")},${OLD}=${BUILTIN_VKEY_PATH}`, SHADE_TREE_ZK_ARTIFACT_LEGACY: OLD };
 const ENV_CLOSED = { SHADE_TREE_ZK_ARTIFACTS: `${NEW}=${join(NEW_DIR, "verification_key.json")}`, SHADE_TREE_ZK_ARTIFACT_LEGACY: OLD };
 const OPEN = loadArtifactSet({ env: ENV_OPEN });
 const CLOSED = loadArtifactSet({ env: ENV_CLOSED });
