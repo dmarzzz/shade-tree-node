@@ -2,7 +2,8 @@
 
 The public Protocol v4 profile is deliberately narrow:
 
-- stake exactly **0.1 Sepolia ETH** at tier `1`;
+- stake exactly the record's tier-1 bond at tier `1` (0.1 Sepolia ETH on the pre-launch contract;
+  **0.01 Sepolia ETH** from the ShadeNet launch deploy, see [ECONOMICS.md](ECONOMICS.md));
 - receive **one new HTTPS `CONNECT` tunnel per fixed 60-second epoch**;
 - relay at most **40 MiB (41,943,040 bytes) of combined payload** through that slot;
 - recover the stake after the ZK-authorized 24-hour exit window unless the member is slashed.
@@ -32,8 +33,8 @@ external nullifier and a new protocol version.
 | parameter | public value |
 |---|---:|
 | network | Sepolia (`11155111`) |
-| tier-1 bond | `0.1 ETH` |
-| tier-8 bond | `0.8 ETH` |
+| tier-1 bond | from the record: `0.1 ETH` pre-launch, `0.01 ETH` at launch (H2) |
+| tier-8 bond | from the record: `0.8 ETH` pre-launch, `0.08 ETH` at launch (H2) |
 | allowed limits | `[1, 8]` |
 | default member limit | `1` |
 | epoch | fixed `60 seconds` |

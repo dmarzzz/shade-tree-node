@@ -20,6 +20,9 @@ The deployer is `0x62c448057273fceE5785dd5b57e40d0ff19554b1`. It owns nothing af
 
 ## H2: set the economics
 
+**Set on 2026-09-30** (`status: "final"`); the reasoning and the source of every number are in
+[ECONOMICS.md](ECONOMICS.md). To override, edit the file and rerun the two commands below.
+
 **The one file:** `network/sepolia/economics.json`. Every price in the product comes from it:
 the contract's constructor, the deployment record, the Get access page, `@shadenet/sdk`, the Rust
 client's bundled profile and the docs tables.

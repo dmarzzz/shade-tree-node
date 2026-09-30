@@ -49,9 +49,11 @@ attestations and source builds.
 ## 2. Get admitted
 
 A member is admitted by staking its public leaf. For the bundled public Sepolia
-canopy the current record admits tier 1 (one CONNECT tunnel per fixed 60-second
-epoch, 40 MiB per tunnel) for a 0.1 Sepolia ETH bond, and tier 8 for 0.8.
-`shadenet init` prints the values in force, read from the network record.
+canopy the record admits tier 1 (one CONNECT tunnel per fixed 60-second
+epoch, 40 MiB per slot; a six-tunnel book at one node when the record turns
+session tickets on) and tier 8 (eight slots). The bonds in force come from the record;
+`shadenet init` prints them. The launch numbers and their reasoning are in
+[ECONOMICS.md](ECONOMICS.md).
 
 ```sh
 shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key

@@ -30,7 +30,9 @@ ok(errs((e) => { e.slash.rewardDivisor = 1; }).some((m) => m.startsWith("slash")
 ok(errs((e) => { e.network = "mainnet"; }).some((m) => m.startsWith("network")), "the file must name its own network");
 
 const env = deployEnv(econ, { gatewayRegistry: "0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868", deployOut: "/tmp/x.json", rpcUrl: "https://rpc" });
-ok(env.SHADE_TREE_BOND_WEI === "800000000000000000" && env.SHADE_TREE_TIER_LIMITS === "1" && env.SHADE_TREE_TIER_BONDS_WEI === "100000000000000000", "tier 8 becomes BOND; the other tiers become the extra table");
+const tier8 = econ.tiers.find((t) => t.limit === 8);
+const extra = econ.tiers.filter((t) => t.limit !== 8);
+ok(env.SHADE_TREE_BOND_WEI === tier8.bondWei && env.SHADE_TREE_TIER_LIMITS === extra.map((t) => t.limit).join(",") && env.SHADE_TREE_TIER_BONDS_WEI === extra.map((t) => t.bondWei).join(","), "tier 8 becomes BOND; the other tiers become the extra table");
 ok(env.SHADE_TREE_SLASH_REWARD_DIVISOR === "10" && env.SHADE_TREE_UNBONDING === "86400" && env.SHADE_TREE_MIN_UNBONDING === "3720", "slash split, unbonding and the F+E+C floor are passed through");
 ok(env.SHADE_TREE_DEPLOY_REAL_VERIFIER === "1" && env.SHADE_TREE_DEPLOY_REGISTRY === "0" && env.SHADE_TREE_PUBLIC_STAKE_PROFILE === "1", "public profile: real verifier, registry reused");
 ok(!Object.keys(env).some((k) => /KEY/.test(k)), "no key rides in the economics env");
@@ -43,7 +45,8 @@ ok(parseArgs(["--network", "sepolia-staging", "--broadcast", "--verify"]).verify
 const devLock = { trust: "UNTRUSTED-TESTNET", ceremony: { status: "not-run" } };
 const doneLock = { trust: "CEREMONY", ceremony: { status: "complete" } };
 const finalEcon = { ...copy(econ), status: "final" };
-ok(/H2/.test(productionGate({ network: "sepolia", broadcast: true }, econ, doneLock) || ""), "production refuses placeholder economics (H2)");
+const placeholderEcon = { ...copy(econ), status: "placeholder" };
+ok(/H2/.test(productionGate({ network: "sepolia", broadcast: true }, placeholderEcon, doneLock) || ""), "production refuses placeholder economics (H2)");
 ok(/H3/.test(productionGate({ network: "sepolia", broadcast: true }, finalEcon, devLock) || ""), "production refuses dev proving keys (H3)");
 ok(productionGate({ network: "sepolia", broadcast: true }, finalEcon, doneLock) === null, "production proceeds with final economics and ceremony keys");
 ok(productionGate({ network: "sepolia", fork: true, broadcast: false }, econ, devLock) === null, "a fork rehearsal of production is always allowed");
