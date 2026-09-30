@@ -48,6 +48,10 @@
     # Session tickets (ADR 0011): the record's H2 switch; every node and heartbeat of the canopy
     # runs with the same value, so the signed `session` capability matches what the node enforces.
     shade_tree_session_tickets: "{{ shade_tree_deployment.sessionTickets | default(false) | bool }}"
+    # ADR 0012: the record's RPC failover list is the runtime RPC unless the operator passes one.
+    shade_tree_rpc_url: "{{ shade_tree_rpc_url if (shade_tree_rpc_url | length > 0) else ((shade_tree_staked_root.rpcUrls | default([shade_tree_staked_root.rpcUrl | default('')])) | select('string') | select | join(',')) }}"
+    # ADR 0012: every Elder Tree of the record; a node announces to each of them.
+    shade_tree_elder_onions: "{{ (shade_tree_deployment.elders | default([shade_tree_deployment.elder])) | map(attribute='onion') | join(',') }}"
 
 - name: Verify public profile and the exact runtime RPC against Sepolia before mutation
   ansible.builtin.command:
@@ -431,6 +435,7 @@
     SHADE_TREE_ELDER_ONLY: "{{ '1' if shade_tree_target_mode == 'elder' else '0' }}"
     SHADE_TREE_BOOTNODE_ONION: "{{ shade_tree_deployment.elder.onion if shade_tree_target_mode == 'node' else '' }}"
     SHADE_TREE_BOOTNODE_SIGNER: "{{ shade_tree_deployment.elder.canopySigner if shade_tree_target_mode == 'node' else '' }}"
+    SHADE_TREE_BOOTNODE_ONIONS: "{{ shade_tree_elder_onions if shade_tree_target_mode == 'node' else '' }}"
     SHADE_TREE_ADMIT: "{{ shade_tree_admit }}"
     SHADE_TREE_MEMBERS_FILE: "{{ '/etc/shade-tree/members.source.json' if shade_tree_invited_admission else '' }}"
     SHADE_TREE_GROUP_CONTRACT: "{{ shade_tree_deployment.admission.roots.staked.contract if shade_tree_deployment.admission.roots.staked is not none else '' }}"

@@ -41,7 +41,20 @@ applyClientNetworkEnv(process.env);
 //                           bootnode's signer key. This is the dynamic fleet.
 //   - SHADE_TREE_DIRECTORY      : static signed JSON file (group/sign-directory.mjs). The offline path.
 // Bootnode wins if both are set. Either way, verifyDirectory + last-known-good caching apply.
-const BOOTNODE_ONION = process.env.SHADE_TREE_BOOTNODE_ONION || null;
+// ADR 0012: every Elder Tree of the canopy, in order. SHADE_TREE_BOOTNODE_ONION (the primary) comes
+// first; SHADE_TREE_BOOTNODE_ONIONS (filled from the record's elders[]) adds the rest. A live fetch
+// tries them in order and the first verifiable directory wins, so one dead Elder never costs the
+// canopy. Single-Elder configurations are unchanged.
+function parseOnionList(primary, listed) {
+  const out = [];
+  for (const onion of [primary, ...String(listed || "").split(",")]) {
+    const v = typeof onion === "string" ? onion.trim() : "";
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+const BOOTNODE_ONIONS = parseOnionList(process.env.SHADE_TREE_BOOTNODE_ONION, process.env.SHADE_TREE_BOOTNODE_ONIONS);
+const BOOTNODE_ONION = BOOTNODE_ONIONS[0] || null;
 const DIRECTORY_PATH = process.env.SHADE_TREE_DIRECTORY || null;
 const CACHE_PATH =
   process.env.SHADE_TREE_DIRECTORY_CACHE ||
@@ -467,10 +480,16 @@ export function setVerifyDeps({ fetchAnnounce, stake } = {}) {
 // Default announce fetch: the bootnode's stored, signed announce for one onion, over Tor.
 // Only meaningful in live-discovery mode (SHADE_TREE_BOOTNODE_ONION); a static-file directory has no
 // bootnode to ask, so re-verification is a live-discovery feature.
-function defaultFetchAnnounce(onion) {
+async function defaultFetchAnnounce(onion) {
   if (!BOOTNODE_ONION) throw new Error("stake re-verification needs SHADE_TREE_BOOTNODE_ONION (no bootnode to fetch the signed announce from)");
   const full = onion.endsWith(".onion") ? onion : onion + ".onion";
-  return fetchOverTor(BOOTNODE_ONION, `/gateway/${encodeURIComponent(full)}`, { torHost: TOR_HOST, torPort: TOR_PORT });
+  // ADR 0012: any Elder Tree holds the stored announce; try them in order.
+  let lastErr = null;
+  for (const elder of BOOTNODE_ONIONS) {
+    try { return await fetchOverTor(elder, `/gateway/${encodeURIComponent(full)}`, { torHost: TOR_HOST, torPort: TOR_PORT }); }
+    catch (e) { lastErr = e; }
+  }
+  throw lastErr;
 }
 
 function stakeVerifier() {
@@ -547,12 +566,33 @@ export function _setCanopyFetch(fetchFn) { _fetchCanopy = fetchFn || fetchOverTo
 // the previously-cached good fleet, never to nothing and never to an unverified list.
 // Events fire only when this function performs a real refresh. A selection served from the
 // in-memory refresh window emits nothing.
+// ADR 0012: the live directory from the first Elder Tree that answers with a VERIFIABLE canopy,
+// in record order. An unreachable Elder or an unverifiable answer moves on to the next; only when
+// every Elder fails does the caller fall back to the last-known-good cache. Logs and errors name
+// positions, never addresses (canopy events stay address-free).
+async function fetchCanopyFromElders(path) {
+  let lastErr = null;
+  for (let i = 0; i < BOOTNODE_ONIONS.length; i++) {
+    try {
+      const doc = await _fetchCanopy(BOOTNODE_ONIONS[i], path, { torHost: TOR_HOST, torPort: TOR_PORT });
+      const v = verifyDirectory(doc, PINNED_SIGNER);
+      if (!v.ok) throw new Error(v.reason);
+      if (i > 0) clientLog.warn("Canopy served by a fallback Elder Tree", { elder: i + 1, of: BOOTNODE_ONIONS.length });
+      return doc;
+    } catch (e) {
+      lastErr = e;
+      if (i + 1 < BOOTNODE_ONIONS.length) clientLog.warn("Elder Tree unavailable; trying the next", { elder: i + 1, of: BOOTNODE_ONIONS.length, reason: "unavailable-or-invalid" });
+    }
+  }
+  throw lastErr || new Error("no Elder Tree configured");
+}
+
+export function _elderCount() { return BOOTNODE_ONIONS.length; }
+
 async function loadFromBootnode(onEvent) {
   emitCanopy(onEvent, "query");
   try {
-    const fresh = await _fetchCanopy(BOOTNODE_ONION, "/directory", { torHost: TOR_HOST, torPort: TOR_PORT });
-    const v = verifyDirectory(fresh, PINNED_SIGNER);
-    if (!v.ok) throw new Error(v.reason);
+    const fresh = await fetchCanopyFromElders("/directory");
     if (CACHE_PATH) {
       try { await mkdir(dirname(CACHE_PATH), { recursive: true }); await writeFile(CACHE_PATH, JSON.stringify(fresh, null, 2) + "\n"); } catch {}
     }

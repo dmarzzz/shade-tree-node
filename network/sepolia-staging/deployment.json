@@ -54,7 +54,11 @@
         "chainId": 11155111,
         "contract": "0xf117FDEA83ac57d15D9394A2B56873C32d227B7E",
         "deployTx": "0x8025d1d0b07e0276fc7fbeaf88e7ff084b057e98713c3fc866acdbc22e1cae58",
-        "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+        "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
+        "rpcUrls": [
+          "https://rpc.sepolia.ethpandaops.io",
+          "https://ethereum-sepolia-rpc.publicnode.com"
+        ],
         "deployBlock": 11803707,
         "hasher": "0x7335C0b25d36Bc20fcF414c1C64dd3Da6dd455f9",
         "withdrawVerifier": "0x3E2bC08f106a76D2FF5F5a9fDE8607051aA36196",

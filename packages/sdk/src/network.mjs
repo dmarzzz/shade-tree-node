@@ -22,6 +22,8 @@ function stakedProfile(record) {
     chainId: Number(staked.chainId),
     contract: staked.contract,
     rpcUrl: staked.rpcUrl,
+    // ADR 0012: failover order; rpcUrl is always the first entry.
+    rpcUrls: Object.freeze(Array.isArray(staked.rpcUrls) && staked.rpcUrls.length ? [...staked.rpcUrls] : [staked.rpcUrl]),
     deployBlock: staked.deployBlock ?? null,
     withdrawVerifier: staked.withdrawVerifier ?? null,
     defaultLimit: Number(staked.defaultLimit),

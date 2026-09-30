@@ -31,21 +31,32 @@ const word = (v) => `0x${BigInt(v).toString(16).padStart(64, "0")}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A minimal read-only EIP-1193 provider over HTTP JSON-RPC (for status checks without a wallet).
+// `url` may be a list (ADR 0012, the record's rpcUrls): a transport failure or a non-2xx answer
+// moves to the next endpoint; a JSON-RPC error is the chain's answer and is not retried elsewhere.
 export function jsonRpcProvider(url, { fetchImpl = globalThis.fetch } = {}) {
+  const urls = (Array.isArray(url) ? url : [url]).filter(Boolean);
+  if (!urls.length) throw new ShadeNetError("InvalidInput", "jsonRpcProvider needs at least one URL");
   let nextId = 1;
   return {
     async request({ method, params = [] }) {
       let body;
-      try {
-        const res = await fetchImpl(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
-        });
-        body = await res.json();
-      } catch (cause) {
-        throw new ShadeNetError("Rpc", `RPC ${method} failed: ${cause?.message ?? cause}`, { cause });
+      let lastCause = null;
+      for (const endpoint of urls) {
+        try {
+          const res = await fetchImpl(endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: nextId++, method, params }),
+          });
+          if (res.ok === false) throw new Error(`HTTP ${res.status}`);
+          body = await res.json();
+          lastCause = null;
+          break;
+        } catch (cause) {
+          lastCause = cause;
+        }
       }
+      if (lastCause) throw new ShadeNetError("Rpc", `RPC ${method} failed: ${lastCause?.message ?? lastCause}`, { cause: lastCause });
       if (body.error) throw new ShadeNetError("Rpc", `RPC ${method}: ${body.error.message}`, { rpcError: body.error });
       return body.result;
     },
@@ -57,7 +68,7 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
   const profile = net.staked;
   if (!profile) throw new ShadeNetError("InvalidInput", `${net.name} has no staked admission profile`);
   const contract = getAddress(profile.contract);
-  const reader = readProvider ?? provider ?? jsonRpcProvider(profile.rpcUrl);
+  const reader = readProvider ?? provider ?? jsonRpcProvider(profile.rpcUrls ?? [profile.rpcUrl]);
   const shadenet = profile.registerInput === "identityCommitment";
 
   async function rpc(p, method, params) {
@@ -88,7 +99,7 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
         chainId: hexQuantity(profile.chainId),
         chainName: net.name,
         nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-        rpcUrls: [profile.rpcUrl],
+        rpcUrls: [...(profile.rpcUrls ?? [profile.rpcUrl])],
       }]);
     }
     const now = BigInt(await rpc(p, "eth_chainId", []));

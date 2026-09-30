@@ -36,6 +36,14 @@ export const FIELD_MOD =
 
 // A v3 .onion: 56 base32 chars (+optional `.onion`) whose embedded ed25519 key + checksum
 // decode. Reuse onionToPubkey so "valid onion" means exactly what the fleet code means by it.
+// SHADE_TREE_BOOTNODE_ONIONS: every Elder Tree of the canopy, comma-separated, 1..8 v3 onions
+// (ADR 0012). The heartbeat announces to each; the client falls back through them in order.
+export function isOnionList(v) {
+  if (typeof v !== "string") return false;
+  const parts = v.split(",").map((p) => p.trim());
+  return parts.length >= 1 && parts.length <= 8 && parts.every((p) => p !== "" && isOnion(p)) && new Set(parts).size === parts.length;
+}
+
 export function isOnion(v) {
   if (typeof v !== "string") return false;
   try {
@@ -51,6 +59,14 @@ export function isOnion(v) {
 // silently fail signature verification, so reject it here).
 export function isEd25519PubHex(v) {
   return typeof v === "string" && /^[0-9a-fA-F]{64}$/.test(v.trim());
+}
+
+// SHADE_TREE_DIR_SIGNER on the client: one pinned signer, or a comma-separated allowlist of up to
+// eight (one per Elder Tree of the record, ADR 0012; selection.mjs parsePinnedSigners).
+export function isEd25519PubHexList(v) {
+  if (typeof v !== "string") return false;
+  const parts = v.split(",").map((p) => p.trim());
+  return parts.length >= 1 && parts.length <= 8 && parts.every(isEd25519PubHex);
 }
 
 // A 32-byte private key (SHADE_TREE_SLASH_KEY / SHADE_TREE_REGISTER_KEY / SHADE_TREE_GW_OPERATOR_KEY): 64 hex,
@@ -330,7 +346,8 @@ export const ROLE_SPECS = {
       ...OPERATOR_FIELDS,
       ["SHADE_TREE_ONION", isOnion, P_ONION],
       ["SHADE_TREE_BOOTNODE_ONION", isOnion, P_ONION],
-      ["SHADE_TREE_DIR_SIGNER", isEd25519PubHex, P_ED],
+      ["SHADE_TREE_BOOTNODE_ONIONS", isOnionList, "must be 1..8 distinct v3 .onion addresses, comma-separated"],
+      ["SHADE_TREE_DIR_SIGNER", isEd25519PubHexList, `${P_ED} (or up to eight, comma-separated: one per Elder Tree)`],
       ["SHADE_TREE_SHIM_PORT", isPort, P_PORT],
       ["SHADE_TREE_TOR_PORT", isPort, P_PORT],
       // T-FEAT-7 leaf discovery: which sets to look for this member's leaf in (after members.json).
@@ -353,7 +370,7 @@ export const ROLE_SPECS = {
       checkMetricsPortCollision(env, errors, "SHADE_TREE_SHIM_PORT", 8888, "Proxy backend");
       const hasPin = present(env, "SHADE_TREE_ONION");
       const hasDir = present(env, "SHADE_TREE_DIRECTORY");
-      const hasBoot = present(env, "SHADE_TREE_BOOTNODE_ONION");
+      const hasBoot = present(env, "SHADE_TREE_BOOTNODE_ONION") || present(env, "SHADE_TREE_BOOTNODE_ONIONS");
       const hasSigner = present(env, "SHADE_TREE_DIR_SIGNER");
 
       if (!hasPin && !hasDir && !hasBoot) {

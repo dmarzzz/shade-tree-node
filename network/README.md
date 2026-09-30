@@ -33,6 +33,26 @@ use the union of the verified node lists; an unreachable Elder only removes its 
 JavaScript SDK exposes `network.elders`, `verifyCanopy` (tries each Elder's signer, or pin one with
 `{ elder }`) and `mergeCanopies`. Version 1 records (one `elder`) remain valid.
 
+Nodes announce to every Elder too (ADR 0012): `SHADE_TREE_NETWORK` (and the bootstrap preset)
+turn `elders[]` into `SHADE_TREE_BOOTNODE_ONIONS`, the heartbeat POSTs one signed announce per
+Elder each interval, and the JS client (`packages/node/client`, so the Lab runner and
+`@shadenet/sdk/node`) tries the Elders in record order and takes the first directory that
+verifies. With the primary Elder down, the second one keeps a fresh canopy instead of ageing out
+after its TTL.
+
+### RPC failover (`admission.roots.staked.rpcUrls`)
+
+The staked root names its execution RPC twice: `rpcUrl` (one endpoint, kept for readers that
+know one) and `rpcUrls` (the same endpoint first, then fallbacks, at most five). Every reader
+takes the list: `SHADE_TREE_NETWORK` fills `SHADE_TREE_RPC_URL` with it comma-separated (the node,
+the heartbeat and the JS client already try such a list in order), the Rust client replays the
+member set from the first endpoint that returns complete history, `@shadenet/sdk` moves to the
+next endpoint on a transport failure, and `deploy/v4/preflight.mjs` checks each one on chain.
+Put a full-history endpoint first: during the M7 rehearsal a pooled public RPC answered
+`eth_getLogs`, a deploy receipt and archive reads with nothing, and every client that trusted
+it built a wrong member tree. `scripts/deploy-contracts.mjs` writes the list from
+`SHADE_TREE_RPC_URL` / `--rpc-url` (comma-separated; default ethpandaops then publicnode).
+
 Local anvil deploys write `contracts/deployed.local.json` (gitignored) instead — only
 real networks get a committed `network/<name>/` record.
 

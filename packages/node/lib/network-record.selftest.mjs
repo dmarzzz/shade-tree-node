@@ -233,8 +233,13 @@ function main() {
     ok("gatewayRegistry" in r.contracts.contracts, "sepolia contracts.json carries the gatewayRegistry slot");
     ok(r.contracts.status === "retired" && r.bootnode?.status === "retired", "pre-v4 Sepolia records are retained as retired migration evidence");
     const d = envDefaultsFromRecords(r);
-    ok(d.SHADE_TREE_BOOTNODE_ONION === r.deployment.elder.onion && d.SHADE_TREE_DIR_SIGNER === r.deployment.elder.canopySigner,
+    ok(d.SHADE_TREE_BOOTNODE_ONION === r.deployment.elder.onion && d.SHADE_TREE_DIR_SIGNER.split(",")[0] === r.deployment.elder.canopySigner,
       "current v4 deployment supplies Elder onion + signer while retired records supply nothing");
+    // ADR 0012: every Elder Tree and every canopy signer of the record reach the client.
+    ok(d.SHADE_TREE_BOOTNODE_ONIONS === r.deployment.elders.map((e) => e.onion).join(",") && d.SHADE_TREE_DIR_SIGNER === r.deployment.elders.map((e) => e.canopySigner).join(","),
+      "elders[] become SHADE_TREE_BOOTNODE_ONIONS and the union of canopy signers becomes SHADE_TREE_DIR_SIGNER");
+    ok(d.SHADE_TREE_RPC_URL === r.deployment.admission.roots.staked.rpcUrls.join(",") && d.SHADE_TREE_RPC_URL.startsWith(r.deployment.admission.roots.staked.rpcUrl + ","),
+      "the record's rpcUrls become the comma-separated SHADE_TREE_RPC_URL failover list, rpcUrl first");
     ok(networkEnvDefaults("sepolia").SHADE_TREE_BOOTNODE_ONION === r.deployment.elder.onion,
       "selecting Sepolia resolves the current v4 Elder, not retired discovery");
     const s = JSON.stringify(r.bootnode);

@@ -35,18 +35,21 @@ import { validateDeploymentRecord as preflightRecord, validatePublicStakeOnchain
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SEPOLIA = 11155111;
 const MIN_UNBONDING = 3720; // ratePolicy root freshness 60 + epoch 60 + slash confirmation 3600
-const PUBLIC_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+// ADR 0012: the record carries an RPC failover list. A full-history endpoint goes first (publicnode
+// answered eth_getLogs / receipts with nothing during the M7 rehearsal); publicnode stays as fallback.
+const PUBLIC_RPCS = ["https://rpc.sepolia.ethpandaops.io", "https://ethereum-sepolia-rpc.publicnode.com"];
+const rpcList = (v) => String(v).split(",").map((s) => s.trim()).filter(Boolean);
 const ANVIL_KEY_0 = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 const fail = (message) => { console.error(`deploy-contracts: ${message}`); process.exit(1); };
 
 export function parseArgs(argv) {
-  const opts = { network: null, rpcUrl: process.env.SHADE_TREE_RPC_URL || PUBLIC_RPC, gatewayRegistry: null, fork: false, broadcast: false, verify: false, keyFromSops: null };
+  const opts = { network: null, rpcUrls: rpcList(process.env.SHADE_TREE_RPC_URL || PUBLIC_RPCS.join(",")), gatewayRegistry: null, fork: false, broadcast: false, verify: false, keyFromSops: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => { const v = argv[++i]; if (v == null || v.startsWith("--")) throw new Error(`${arg} needs a value`); return v; };
     if (arg === "--network") opts.network = value();
-    else if (arg === "--rpc-url") opts.rpcUrl = value();
+    else if (arg === "--rpc-url") opts.rpcUrls = rpcList(value());
     else if (arg === "--gateway-registry") opts.gatewayRegistry = value();
     else if (arg === "--key-from-sops") opts.keyFromSops = value();
     else if (arg === "--fork") opts.fork = true;
@@ -176,8 +179,8 @@ async function main() {
   const gatewayRegistry = opts.gatewayRegistry || liveRecord.elder?.gatewayRegistry;
   if (!/^0x[0-9a-fA-F]{40}$/.test(gatewayRegistry || "")) fail("no GatewayRegistry to record; pass --gateway-registry");
 
-  const fork = opts.fork ? await startFork(opts.rpcUrl) : null;
-  const url = fork ? fork.url : opts.rpcUrl;
+  const fork = opts.fork ? await startFork(opts.rpcUrls[0]) : null;
+  const url = fork ? fork.url : opts.rpcUrls[0];
   try {
     const chainId = Number(BigInt(await rpc(url, "eth_chainId")));
     if (chainId !== SEPOLIA) fail(`RPC chain id ${chainId} is not Sepolia`);
@@ -197,7 +200,7 @@ async function main() {
     const libs = Object.entries(manifest.libraryAddresses).flatMap(([name, address]) => ["--libraries", `contracts/${name}.sol:${name}:${address}`]);
     const forge = spawnSync("forge", ["script", "contracts/script/DeployRegistry.s.sol:DeployRegistry", "--rpc-url", url, "--broadcast", "--slow", ...libs], {
       cwd: ROOT, encoding: "utf8", timeout: 900_000,
-      env: { ...process.env, ...deployEnv(econ, { gatewayRegistry, deployOut, rpcUrl: opts.rpcUrl }), SHADE_TREE_DEPLOYER_KEY: key },
+      env: { ...process.env, ...deployEnv(econ, { gatewayRegistry, deployOut, rpcUrl: opts.rpcUrls[0] }), SHADE_TREE_DEPLOYER_KEY: key },
     });
     if (forge.status !== 0) fail(`forge script failed:\n${(forge.stdout || "").split("\n").slice(-25).join("\n")}\n${forge.stderr || ""}`);
     const deployed = JSON.parse(readFileSync(deployOut, "utf8"));
@@ -215,7 +218,9 @@ async function main() {
       chainId: SEPOLIA,
       contract: deployed.stakedReputationSet,
       deployTx: setTx.hash,
-      rpcUrl: opts.rpcUrl,
+      rpcUrl: opts.rpcUrls[0],
+      // ADR 0012: failover order for every reader of the record (nodes, both SDKs, the site).
+      rpcUrls: opts.rpcUrls,
       deployBlock: Number(BigInt(receipt.blockNumber)),
       hasher: deployed.hasher,
       withdrawVerifier: deployed.verifier,
