@@ -106,7 +106,7 @@ try {
   const shown = (await page.locator("[data-leaf]").textContent({ timeout: 30_000 })).replace(/\D/g, "");
   if (!/^\d{70,80}$/.test(shown)) throw new Error(`no commitment on the page: ${shown}`);
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "download identity.json" }).click();
+  await page.getByRole("button", { name: "download identity file" }).click();
   const download = await downloadPromise;
   const identityPath = join(out, "identity.json");
   await download.saveAs(identityPath);

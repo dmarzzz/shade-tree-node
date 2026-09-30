@@ -1,7 +1,8 @@
 // The Get access page's only source of numbers and addresses: the bundled network record.
 // Every price, tier, rate and address on /stake/ comes from here, so a redeploy (new contract,
 // new economics) is a rebuild, not a copy edit. esbuild inlines the JSON at bundle time.
-import deployment from "../network/sepolia/deployment.json" with { type: "json" };
+import deployment from "./record.mjs";
+export { SITE_NETWORK, CLIENT_RELEASE } from "./record.mjs";
 
 const staked = deployment.admission?.roots?.staked;
 if (!staked) throw new Error("deployment.json has no staked admission root; the Get access page needs one.");
@@ -35,6 +36,12 @@ export const RATE = Object.freeze({
   payloadBytesPerSlot: deployment.ratePolicy.payloadBytesPerSlot,
   payloadMiB: deployment.ratePolicy.payloadBytesPerSlot / MIB,
 });
+
+// H2's switch (ADR 0011): with session tickets on, one slot opens a session at one node instead of
+// one tunnel. The book's shape is the research-v1 class in docs/design/SESSION-TICKETS.md, not a
+// record value, so it lives here as a constant next to the switch that turns it on.
+export const SESSION_TICKETS = deployment.sessionTickets === true || staked.sessionTickets === true;
+export const SESSION_CLASS = Object.freeze({ tickets: 6, lifetimeSeconds: 90 });
 
 export const SECURITY = Object.freeze({
   proofArtifacts: deployment.security?.proofArtifacts || "unknown",

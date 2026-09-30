@@ -3,8 +3,15 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { AbiCoder, Interface, solidityPackedKeccak256 } from "ethers";
+import { AbiCoder, Interface } from "ethers";
 import { groth16 } from "snarkjs";
+import { exitContext, withdrawContext } from "../../packages/sdk/src/contexts.mjs";
+
+const IFACE = new Interface([
+  "function members(uint256 commitment) view returns (uint256 bond, uint64 index, uint64 exitInitiatedAt, uint32 limit)",
+  "function exitContext(uint256 commitment) view returns (bytes32)",
+  "function withdrawContext(uint256 commitment, address recipient) view returns (bytes32)",
+]);
 
 async function openHomepage(page) {
   await page.goto("/", { waitUntil: "networkidle" });
@@ -86,12 +93,17 @@ test("primary static routes and the branded 404 resolve", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /This path leaves the canopy/i })).toBeVisible();
 });
 
+const RECORD = JSON.parse(readFileSync(new URL("../../network/sepolia-staging/deployment.json", import.meta.url), "utf8"));
+const STAKED = RECORD.admission.roots.staked;
+const TIER1 = STAKED.tiers.find((t) => t.limit === 1);
+const TIER8 = STAKED.tiers.find((t) => t.limit === 8);
+const eth = (wei) => { const v = BigInt(wei); const whole = v / 10n ** 18n; const frac = (v % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, ""); return frac ? `${whole}.${frac}` : `${whole}`; };
 const ACCOUNT = "0x1000000000000000000000000000000000000001";
 const TX_HASH = `0x${"ab".repeat(32)}`;
 
 // A scripted EIP-1193 wallet. `overrides` swaps single methods to drive error paths.
-async function mockWallet(page, overrides = {}) {
-  await page.addInitScript(({ account, hash, overrides }) => {
+async function mockWallet(page, overrides = {}, callResults = {}) {
+  await page.addInitScript(({ account, hash, overrides, tier1Bond, callResults }) => {
     const calls = [];
     window.__walletCalls = calls;
     const fixed = {
@@ -116,12 +128,13 @@ async function mockWallet(page, overrides = {}) {
         if (method === "eth_call") {
           const data = params[0]?.data || "";
           const state = window.__memberState || {};
+          for (const [selector, result] of Object.entries(callResults)) if (data.startsWith(selector)) return result;
           if (data.startsWith("0x82afd23b") && state.active) return `0x${"0".repeat(63)}1`;
           if (data.startsWith("0xd57b50e7") && state.limit) return `0x${BigInt(state.limit).toString(16).padStart(64, "0")}`;
           if (data.startsWith("0xde259775")) return `0x${BigInt(state.withdrawableAt || 0).toString(16).padStart(64, "0")}`;
           if (data.startsWith("0xe0b91f92")) {
             const limit = BigInt(`0x${data.slice(10)}`);
-            return `0x${(limit * 100000000000000000n).toString(16).padStart(64, "0")}`;
+            return `0x${(limit * BigInt(tier1Bond)).toString(16).padStart(64, "0")}`;
           }
           if (data.startsWith("0x82afd23b") || data.startsWith("0xd57b50e7")) return `0x${"0".repeat(64)}`;
           return "0x";
@@ -129,14 +142,14 @@ async function mockWallet(page, overrides = {}) {
         throw new Error(`unexpected wallet method ${method}`);
       },
     };
-  }, { account: ACCOUNT, hash: TX_HASH, overrides });
+  }, { account: ACCOUNT, hash: TX_HASH, overrides, tier1Bond: TIER1.bondWei, callResults });
 }
 
 async function createAndSave(page) {
   await page.getByRole("button", { name: "create identity" }).click();
   await expect(page.locator("[data-leaf]")).toHaveText(/^\d{70,80}$/);
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "download identity.json" }).click();
+  await page.getByRole("button", { name: "download identity file" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^shadenet-identity-[0-9]{8}\.json$/);
   // Downloading is not proof of saving: the confirmation stays a deliberate click.
@@ -151,21 +164,31 @@ test("Get access creates a compatible identity, stakes the pinned transaction, a
   await expect(page.locator("[data-live-set]")).toHaveText(/3 staked members today/);
   await createAndSave(page);
 
+  // The rail follows the visitor: tier done, identity done, saved, now staking.
+  await expect(page.locator('[data-rail-step="stake"]')).toHaveAttribute("data-state", "current");
+  await expect(page.locator('[data-rail-step="tier"]')).toHaveAttribute("data-state", "done");
+  // The hand-off commands name the file the page just downloaded.
+  const fileName = (await page.locator("[data-file-name]").first().textContent()).trim();
+  expect(fileName).toMatch(/^shadenet-identity-[0-9]{8}\.json$/);
+  await expect(page.locator("[data-handoff-note]")).toContainText(fileName);
+
   await page.getByRole("button", { name: "connect wallet" }).first().click();
-  const stakeButton = page.getByRole("button", { name: /^stake 0\.1 Sepolia ETH$/ });
+  // The wallet's balance is judged before any stake: the mock holds 2 ETH.
+  await expect(page.locator("[data-balance]")).toHaveText(/enough for tier 1/);
+  const stakeButton = page.getByRole("button", { name: new RegExp(`^stake ${eth(TIER1.bondWei).replace(".", "\\.")} Sepolia ETH$`) });
   await expect(stakeButton).toBeEnabled();
   await stakeButton.click();
   await expect(page.locator("[data-status]")).toHaveText(/Stake confirmed/);
   await expect(page.locator("[data-finality]")).toHaveText(/Finalized|finality/);
+  await expect(page.locator('[data-rail-step="finality"]')).toHaveAttribute("data-state", /current|done/);
 
   const sent = await page.evaluate(() => window.__walletCalls.find((call) => call.method === "eth_sendTransaction"));
-  expect(sent.params[0].to.toLowerCase()).toBe("0xeb67abf066c11d78856bccc63476ed14d51e4275");
-  expect(sent.params[0].value).toBe("0x16345785d8a0000");
+  expect(sent.params[0].to.toLowerCase()).toBe(STAKED.contract.toLowerCase());
+  expect(BigInt(sent.params[0].value)).toBe(BigInt(TIER1.bondWei));
   // The bundled record decides the ABI: ShadeNet sets (registerInput "identityCommitment") take
   // registerIdentity(idc, limit) and derive the leaf (launch audit 2.1.4); the v4 set takes
   // register(leaf, limit). Either way the page sends the value it shows.
-  const record = JSON.parse(readFileSync(new URL("../../network/sepolia/deployment.json", import.meta.url), "utf8"));
-  const shadenet = record.admission.roots.staked.registerInput === "identityCommitment";
+  const shadenet = STAKED.registerInput === "identityCommitment";
   expect(sent.params[0].data).toMatch(shadenet ? /^0x9b7b5b80/ : /^0xd66d6c10/);
   const shown = BigInt((await page.locator("[data-leaf]").textContent()).trim());
   expect(BigInt(`0x${sent.params[0].data.slice(10, 74)}`)).toBe(shown);
@@ -183,22 +206,22 @@ test("Get access stakes the chosen higher tier at its own bond", async ({ page }
   await page.getByRole("radio", { name: /tier 8/ }).first().check();
   await createAndSave(page);
   await page.getByRole("button", { name: "connect wallet" }).first().click();
-  await page.getByRole("button", { name: /^stake 0\.8 Sepolia ETH$/ }).click();
+  await page.getByRole("button", { name: new RegExp(`^stake ${eth(TIER8.bondWei).replace(".", "\\.")} Sepolia ETH$`) }).click();
   await expect(page.locator("[data-status]")).toHaveText(/Stake confirmed/);
   const sent = await page.evaluate(() => window.__walletCalls.find((call) => call.method === "eth_sendTransaction"));
-  expect(BigInt(sent.params[0].value)).toBe(800000000000000000n);
+  expect(BigInt(sent.params[0].value)).toBe(BigInt(TIER8.bondWei));
 });
 
 test("Get access error paths are announced as alerts and send nothing", async ({ page }) => {
   await mockWallet(page, { eth_chainId: "0x1" });
   await page.goto("/stake/", { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "connect wallet" }).first().click();
-  await expect(page.getByRole("alert")).toHaveText(/Sepolia \(11155111\) is required/);
+  await expect(page.getByRole("alert")).toHaveText(/The wallet is not on Sepolia\. Switch the wallet's network to Sepolia/);
 
   await page.locator("[data-identity-file]").setInputFiles({ name: "bad.json", mimeType: "application/json", buffer: Buffer.from('{"identitySecret":"1","leaf":"1","limit":3}') });
   await expect(page.getByRole("alert")).toHaveText(/offers tiers/);
 
-  await page.getByRole("button", { name: "I’m sponsoring" }).click();
+  await page.getByRole("button", { name: "I’m sponsoring someone" }).click();
   await page.locator("[data-sponsor-leaf]").fill("0123");
   await expect(page.getByRole("button", { name: /stake .* for this commitment/ })).toBeDisabled();
   const sent = await page.evaluate(() => window.__walletCalls.some((call) => call.method === "eth_sendTransaction"));
@@ -210,9 +233,53 @@ test("Get access reports a reverted stake without claiming admission", async ({ 
   await page.goto("/stake/", { waitUntil: "networkidle" });
   await createAndSave(page);
   await page.getByRole("button", { name: "connect wallet" }).first().click();
-  await page.getByRole("button", { name: /^stake 0\.1 Sepolia ETH$/ }).click();
-  await expect(page.getByRole("alert")).toHaveText(/reverted/);
-  await expect(page.locator("[data-finality]")).toBeHidden();
+  await page.getByRole("button", { name: new RegExp(`^stake ${eth(TIER1.bondWei).replace(".", "\\.")} Sepolia ETH$`) }).click();
+  await expect(page.getByRole("alert")).toHaveText(/Sepolia rejected the transaction/);
+  await expect(page.locator("[data-finality-panel]")).toBeHidden();
+});
+
+test("an empty wallet is told how much it is short before anything is sent", async ({ page }) => {
+  await mockWallet(page, { eth_getBalance: "0x1" });
+  await page.goto("/stake/", { waitUntil: "networkidle" });
+  await createAndSave(page);
+  await page.getByRole("button", { name: "connect wallet" }).first().click();
+  await expect(page.locator("[data-balance]")).toHaveText(/needs .* plus about .* gas, so about .* more/);
+  await page.getByRole("button", { name: /^stake .* Sepolia ETH$/ }).click();
+  await expect(page.getByRole("alert")).toHaveText(/Not enough Sepolia ETH in this wallet\. This wallet has 0\.000000000000000001 Sepolia ETH/);
+  const sent = await page.evaluate(() => window.__walletCalls.some((call) => call.method === "eth_sendTransaction"));
+  expect(sent).toBe(false);
+});
+
+test("a cancelled wallet prompt is explained in plain words", async ({ page }) => {
+  await mockWallet(page);
+  await page.addInitScript(() => {
+    const original = window.ethereum.request.bind(window.ethereum);
+    window.ethereum.request = async (args) => {
+      if (args.method === "eth_sendTransaction") { const e = new Error("User rejected the request."); e.code = 4001; throw e; }
+      return original(args);
+    };
+  });
+  await page.goto("/stake/", { waitUntil: "networkidle" });
+  await createAndSave(page);
+  await page.getByRole("button", { name: "connect wallet" }).first().click();
+  await expect(page.locator("[data-balance]")).toHaveText(/enough for tier 1/);
+  await page.getByRole("button", { name: /^stake .* Sepolia ETH$/ }).click();
+  await expect(page.getByRole("alert")).toHaveText(/You cancelled in the wallet\. Nothing was sent\./);
+});
+
+test("hand-off tabs switch by click and arrow keys and copy the commands", async ({ page }) => {
+  await page.goto("/stake/", { waitUntil: "networkidle" });
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(5);
+  await tabs.nth(1).click();
+  await expect(page.getByRole("tabpanel", { name: "Hermes" })).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "CLI" })).toBeHidden();
+  await tabs.nth(1).press("ArrowRight");
+  await expect(page.getByRole("tabpanel", { name: "Claude Code / Codex" })).toBeVisible();
+  await page.getByRole("tab", { name: "CLI" }).click();
+  await page.getByRole("button", { name: /Copy: Install the ShadeNet client/ }).click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toMatch(/SHADENET_VERSION=v\d+\.\d+\.\d+.* sh$/);
 });
 
 test("an imported identity can check status but cannot stake again", async ({ page }) => {
@@ -225,7 +292,7 @@ test("an imported identity can check status but cannot stake again", async ({ pa
   };
   await page.locator("[data-identity-file]").setInputFiles({ name: "identity.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(identity)) });
   await page.getByRole("button", { name: "connect wallet" }).first().click();
-  await expect(page.getByRole("button", { name: /^stake 0\.1 Sepolia ETH$/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /^stake .* Sepolia ETH$/ })).toBeDisabled();
   await page.getByRole("button", { name: "check status through my wallet" }).click();
   await expect(page.locator("[data-member-state]")).toHaveText(/Not registered/);
 });
@@ -242,12 +309,22 @@ for (const [action, memberState, button, selector] of [
 ]) {
   test(`Get access proves ${action} in the tab and sends it`, async ({ page }) => {
     test.slow();
-    await mockWallet(page);
+    // ShadeNet sets bind the proof to chain, set and leaf index (audit 2.2.1); the mock answers
+    // members(), exitContext() and withdrawContext() the way the contract would.
+    const recipient = "0x2000000000000000000000000000000000000002";
+    const binding = { chainId: STAKED.chainId, contract: STAKED.contract, index: 3 };
+    const leaf = BigInt(VECTOR_IDENTITY.leaf);
+    const shadenetSet = STAKED.registerInput === "identityCommitment";
+    await mockWallet(page, {}, shadenetSet ? {
+      [IFACE.getFunction("members").selector]: IFACE.encodeFunctionResult("members", [BigInt(TIER1.bondWei), 3n, 0n, 1n]),
+      [IFACE.getFunction("exitContext").selector]: exitContext(leaf, binding),
+      [IFACE.getFunction("withdrawContext").selector]: withdrawContext(leaf, recipient, binding),
+    } : {});
     await page.addInitScript((state) => { window.__memberState = state; }, memberState);
     await page.goto("/stake/", { waitUntil: "networkidle" });
     await page.locator("[data-identity-file]").setInputFiles({ name: "identity.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(VECTOR_IDENTITY)) });
     await page.getByRole("button", { name: "connect wallet" }).first().click();
-    if (action === "withdraw") await page.locator("[data-withdraw-to]").fill("0x2000000000000000000000000000000000000002");
+    if (action === "withdraw") await page.locator("[data-withdraw-to]").fill(recipient);
     await page.getByRole("button", { name: button }).click();
     await expect(page.locator("[data-status]")).toHaveText(action === "exit" ? /Exit started/ : /Withdrawn/, { timeout: 90_000 });
     const sent = await page.evaluate(() => window.__walletCalls.find((call) => call.method === "eth_sendTransaction"));
@@ -258,8 +335,8 @@ for (const [action, memberState, button, selector] of [
     const args = iface.parseTransaction({ data: sent.params[0].data }).args;
     const [a, b, c, idc] = AbiCoder.defaultAbiCoder().decode(["uint256[2]", "uint256[2][2]", "uint256[2]", "uint256"], args.proof);
     const context = action === "exit"
-      ? solidityPackedKeccak256(["string", "uint256"], ["SHADE_TREE_EXIT", BigInt(VECTOR_IDENTITY.leaf)])
-      : solidityPackedKeccak256(["string", "uint256", "address"], ["SHADE_TREE_WITHDRAW", BigInt(VECTOR_IDENTITY.leaf), args.recipient]);
+      ? exitContext(leaf, shadenetSet ? binding : null)
+      : withdrawContext(leaf, args.recipient, shadenetSet ? binding : null);
     const FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
     const vkey = JSON.parse(readFileSync(new URL("../../circuits/rln/withdraw_verification_key.json", import.meta.url), "utf8"));
     const proof = {
@@ -275,11 +352,16 @@ for (const [action, memberState, button, selector] of [
 
 test("Get access sections match their approved visual baselines", async ({ page }) => {
   await page.goto("/stake/", { waitUntil: "networkidle" });
-  await expect(page.locator(".stake-intro")).toHaveScreenshot("stake-intro.png", { timeout: 30_000 });
-  const tiers = page.locator(".tier-table");
+  // Mono system fonts differ between macOS and Linux Chromium; one reviewed baseline per platform.
+  const os = process.platform === "darwin" ? "-macos" : "";
+  await expect(page.locator(".stake-hero-copy")).toHaveScreenshot(`stake-intro${os}.png`, { timeout: 30_000 });
+  const tiers = page.locator('[data-step-panel="tier"]');
   await tiers.scrollIntoViewIfNeeded();
-  await expect(tiers).toHaveScreenshot("stake-tiers.png", { timeout: 30_000 });
+  await expect(tiers).toHaveScreenshot(`stake-tiers${os}.png`, { timeout: 30_000 });
   const trail = page.locator("[data-member-steps]");
   await trail.scrollIntoViewIfNeeded();
-  await expect(trail).toHaveScreenshot("stake-steps.png", { timeout: 30_000 });
+  await expect(trail).toHaveScreenshot(`stake-steps${os}.png`, { timeout: 30_000 });
+  const handoff = page.locator("[data-handoff]");
+  await handoff.scrollIntoViewIfNeeded();
+  await expect(handoff).toHaveScreenshot(`stake-handoff${os}.png`, { timeout: 30_000 });
 });
