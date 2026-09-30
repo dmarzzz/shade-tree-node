@@ -179,6 +179,15 @@ async function main() {
       const bad = render(work, "payload-bad", { SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES: value });
       ok(bad.status !== 0 && re.test(bad.stderr), `bad payload ceiling rejected up front: ${JSON.stringify(value)}`);
     }
+    // 12. SHADE_TREE_SESSION_TICKETS (ADR 0011): off by default (golden unchanged); =1 lands in BOTH the
+    //     gateway and the heartbeat unit so the signed `session` cap matches what the node enforces.
+    ok(unitEnv(nodeDef, "SHADE_TREE_SESSION_TICKETS") === null && unitEnv(hbDef, "SHADE_TREE_SESSION_TICKETS") === null, "default units carry no session-ticket switch");
+    const tickets = render(work, "session-tickets", { SHADE_TREE_SESSION_TICKETS: "1" });
+    const ticketsGateway = await readFile(join(tickets.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
+    const ticketsHeartbeat = await readFile(join(tickets.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
+    ok(tickets.status === 0 && unitEnv(ticketsGateway, "SHADE_TREE_SESSION_TICKETS") === "1" && unitEnv(ticketsHeartbeat, "SHADE_TREE_SESSION_TICKETS") === "1", "SHADE_TREE_SESSION_TICKETS=1 reaches the gateway and the heartbeat units");
+    const ticketsBad = render(work, "session-tickets-bad", { SHADE_TREE_SESSION_TICKETS: "maybe" });
+    ok(ticketsBad.status !== 0 && /SHADE_TREE_SESSION_TICKETS must be 1 or 0/.test(ticketsBad.stderr), "bad session-ticket switch rejected up front");
     for (const [key, value] of [["SHADE_TREE_EPOCH_SECONDS", "0"], ["SHADE_TREE_ROOT_FRESHNESS_SECONDS", "nope"], ["SHADE_TREE_TIERS", "1,,8"]]) {
       const bad = render(work, `rate-bad-${key}`, { [key]: value });
       ok(bad.status !== 0 && bad.stderr.includes(key), `bad public rate parameter rejected up front: ${key}=${value}`);
@@ -275,6 +284,14 @@ async function main() {
     ok(unitEnv(preGw, "SHADE_TREE_EPOCH_SECONDS") === String(record.ratePolicy.epochSeconds) && unitEnv(preGw, "SHADE_TREE_TIERS") === st.tiers.map((t) => t.limit).join(","), "preset: epoch + tiers from the record");
     ok(unitEnv(preGw, "SHADE_TREE_ADMIT") === "staked", "preset: a joiner without a members file admits staked only");
     ok(unitEnv(preHb, "SHADE_TREE_BOOTNODE_ONION") === record.elder.onion, "preset: heartbeat announces to the record's Elder");
+    // ADR 0011: the record's H2 switch reaches both units through the preset.
+    ok(unitEnv(preGw, "SHADE_TREE_SESSION_TICKETS") === (record.sessionTickets === true ? "1" : null), "preset: session-ticket switch mirrors the record");
+    const ticketRecordPath = join(await mkdtemp(join(work, "..", "record-tickets-")), "record.json"); // outside <work>: the stray-file check scans it
+    await writeFile(ticketRecordPath, JSON.stringify({ ...record, sessionTickets: true }));
+    const preTickets = render(work, "preset-tickets", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: ticketRecordPath });
+    const preTicketsGw = await readFile(join(preTickets.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
+    const preTicketsHb = await readFile(join(preTickets.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
+    ok(preTickets.status === 0 && unitEnv(preTicketsGw, "SHADE_TREE_SESSION_TICKETS") === "1" && unitEnv(preTicketsHb, "SHADE_TREE_SESSION_TICKETS") === "1", "preset: a record with sessionTickets true starts gateway and heartbeat with the switch on");
     const preOverride = render(work, "preset-override", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath, SHADE_TREE_EPOCH_SECONDS: "120", SHADE_TREE_ROOT_FRESHNESS_SECONDS: "120" });
     ok(unitEnv(await readFile(join(preOverride.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8"), "SHADE_TREE_EPOCH_SECONDS") === "120", "preset: explicit env wins over the record");
     const retired = join(tmpdir(), `shade-retired-${process.pid}.json`);
