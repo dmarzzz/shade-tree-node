@@ -90,20 +90,20 @@
       <article class="step" data-step-panel="tier">
         <p class="step-index" aria-hidden="true">01</p>
         <h2>Choose a tier</h2>
-        <p>A tunnel is one HTTPS connection to one site. Each tier gets that many new tunnels per minute, canopy-wide, and each tunnel carries up to 40 MiB in both directions combined. A search plus five result pages is about six tunnels. The tier is part of the identity, so pick it first.</p>
+        <p>A session is one visit to a node: it opens up to 6 HTTPS connections to different sites within 90 seconds and carries up to 40 MiB in both directions combined. Each tier gets that many new sessions per minute, canopy-wide. A search plus five result pages is about one session. The tier is part of the identity, so pick it first.</p>
         <fieldset class="tier-pick">
           <legend class="sr-only">Tier</legend>
           <label class="tier-row">
             <input type="radio" name="tier" value="1" data-tier checked>
             <span class="tier-name">tier 1</span>
             <span class="tier-bond">0.001 ETH</span>
-            <span class="tier-buys">1 new tunnel per minute, 40 MiB each</span>
+            <span class="tier-buys">1 session per minute, up to 6 connections, 40 MiB</span>
           </label>
           <label class="tier-row">
             <input type="radio" name="tier" value="8" data-tier>
             <span class="tier-name">tier 8</span>
             <span class="tier-bond">0.008 ETH</span>
-            <span class="tier-buys">8 new tunnels per minute, 40 MiB each</span>
+            <span class="tier-buys">8 sessions per minute, up to 6 connections, 40 MiB</span>
           </label>
         </fieldset>
         <p class="fine">The bond is refundable collateral, not a fee: exit whenever you like and withdraw it after 24 hours. Sending two different requests from the same slot in one minute reveals your secret and lets anyone slash the bond. A valid slash pays 1/10 of the bond to whoever reports it and burns the rest. To change tier later, stake a new identity and exit the old one.</p>
@@ -175,13 +175,13 @@
             <input type="radio" name="sponsor-tier" value="1" data-sponsor-tier checked>
             <span class="tier-name">tier 1</span>
             <span class="tier-bond">0.001 ETH</span>
-            <span class="tier-buys">1 new tunnel per minute, 40 MiB each</span>
+            <span class="tier-buys">1 session per minute, up to 6 connections, 40 MiB</span>
           </label>
           <label class="tier-row">
             <input type="radio" name="sponsor-tier" value="8" data-sponsor-tier>
             <span class="tier-name">tier 8</span>
             <span class="tier-bond">0.008 ETH</span>
-            <span class="tier-buys">8 new tunnels per minute, 40 MiB each</span>
+            <span class="tier-buys">8 sessions per minute, up to 6 connections, 40 MiB</span>
           </label>
       </fieldset>
       <p class="fine"><strong>Know the tradeoff:</strong> your wallet, amount, commitment, and timing are public. The member controls the bearer credential and chooses the eventual refund recipient. Misuse can slash your sponsored bond.</p>
@@ -343,7 +343,7 @@ console.log(await staking.memberStatus(identity.leaf));   // { state, limit, wit
 
     <section class="stake-boundary" aria-labelledby="boundary-title">
       <h2 id="boundary-title">Honest boundary</h2>
-      <p>Tier 1 buys 1 new tunnel per fixed 60-second epoch, capped at 40 MiB combined traffic each. Registration becomes usable after Sepolia finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. Exit and withdraw are proof-authorised and return the testnet bond to a fresh recipient after 24 hours. The proof setup is untrusted testnet material until the trusted-setup ceremony runs. Never use mainnet ETH or sensitive traffic.</p>
+      <p>Tier 1 buys 1 session per fixed 60-second epoch, capped at 40 MiB combined traffic each and 6 connections per session. Registration becomes usable after Sepolia finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. Exit and withdraw are proof-authorised and return the testnet bond to a fresh recipient after 24 hours. The proof setup is untrusted testnet material until the trusted-setup ceremony runs. Never use mainnet ETH or sensitive traffic.</p>
     </section>
       </div>
     </div>
