@@ -66,6 +66,7 @@ production waits for the economics and the trusted setup.
 ### Build, CI and release
 
 - Rust workspace moved to `crates/` with `shadenet-*` crates (#131).
+- The JS node moved to `packages/node/` with shims at the old paths for one minor release (#202).
 - Required checks: real-Tor e2e, bootstrap e2e, `cargo deny`, `cargo audit`; one Node lane per PR
   and the full matrix nightly (#153, #179); main CI is never cancelled (#183).
 - Release assets for `shadenet`, Intel Mac live build, signing, Homebrew formula, GHCR image and
