@@ -1,7 +1,7 @@
 # ShadeNet launch report (M8)
 
 Date: 2026-09-30. Production network: Sepolia, record `network/sepolia/deployment.json`.
-This is the [roadmap's launch gate](../../shadenet-launch/ROADMAP.md) line by line, with the
+This is the launch gate of the ShadeNet roadmap (the `Launch gate` list in `~/shadenet-launch/ROADMAP.md`, mirrored by [LAUNCH-RUNBOOK.md](LAUNCH-RUNBOOK.md)) line by line, with the
 evidence for each, written by the M8 launch agent. Lines marked *pending* name the one thing
 that unblocks them.
 
