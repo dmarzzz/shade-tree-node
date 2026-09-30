@@ -168,6 +168,15 @@ const publicRpc = async (_url, method, params) => {
 ok((await validatePublicStakeOnchain(publicStake, { rpcCall: publicRpc, bytecodeManifest: publicBytecodeManifest })).ok, "public profile receipt, pinned runtime bytecode, constructor, and getters match the record");
 let actualRuntimeRpc = null;
 const runtimeRpc = async (url, method, params) => { actualRuntimeRpc = url; return publicRpc(url, method, params); };
+{
+  // ADR 0012: a fallback endpoint with pruned history (null receipt, null tx) passes the
+  // state-only check, and the primary still fails closed on the same answers.
+  const pruned = async (url, method, params) => (method === "eth_getTransactionReceipt" || method === "eth_getTransactionByHash") ? null : runtimeRpc(url, method, params);
+  const fallback = await validatePublicStakeOnchain(publicStake, { rpcCall: pruned, rpcUrl: "https://fallback.example.test", bytecodeManifest: publicBytecodeManifest, history: false });
+  ok(fallback.ok, `a fallback endpoint with pruned deploy history passes the state-only check (${fallback.errors.map((e) => e.field).join(",") || "no errors"})`);
+  const primary = await validatePublicStakeOnchain(publicStake, { rpcCall: pruned, rpcUrl: "https://primary.example.test", bytecodeManifest: publicBytecodeManifest });
+  ok(!primary.ok && primary.errors.some((e) => e.field === "onchain.deployTx"), "the primary endpoint still fails closed on a missing receipt");
+}
 ok((await validatePublicStakeOnchain(publicStake, { rpcCall: runtimeRpc, rpcUrl: "https://runtime-rpc.example.test", bytecodeManifest: publicBytecodeManifest })).ok && actualRuntimeRpc === "https://runtime-rpc.example.test",
   "rollout can preflight the exact operator runtime RPC instead of only the public record RPC");
 const wrongChainRpc = async (url, method, params) => method === "eth_chainId" ? "0x1" : publicRpc(url, method, params);

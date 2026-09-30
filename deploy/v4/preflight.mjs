@@ -341,7 +341,11 @@ function linkedAddress(runtime, ranges, name) {
   return values[0];
 }
 
-export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall, rpcUrl = null, repoRoot = null, bytecodeManifest = null } = {}) {
+// `history: false` (ADR 0012, a FALLBACK endpoint of the record's rpcUrls) skips the two reads
+// that need the deploy transaction's history (its receipt and its input): a pooled fallback that
+// has pruned history still serves current state, which is all a fallback is for (root reads at
+// latest). The primary endpoint is always checked with history.
+export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall, rpcUrl = null, repoRoot = null, bytecodeManifest = null, history = true } = {}) {
   const root = record?.admission?.roots?.staked;
   if (root?.profile !== "public-stake-v1") return { ok: true, errors: [] };
   const errors = [];
@@ -362,11 +366,11 @@ export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall
     // on the M7 fleet roll, 2026-09-30, 13 000 blocks after the deploy); a second call lands on
     // another backend. Only a receipt that stays missing is a finding.
     let receipt = null;
-    for (let attempt = 0; attempt < 4 && !receipt; attempt++) {
+    for (let attempt = 0; attempt < 4 && !receipt && history; attempt++) {
       receipt = await call("eth_getTransactionReceipt", [root.deployTx]);
     }
-    if (!receipt) bad("onchain.deployTx", "deployment receipt is missing");
-    else {
+    if (!receipt && history) bad("onchain.deployTx", "deployment receipt is missing");
+    else if (receipt) {
       if (BigInt(receipt.status ?? 0) !== 1n) bad("onchain.deployTx", "deployment transaction did not succeed");
       if (BigInt(receipt.blockNumber ?? 0) !== BigInt(root.deployBlock)) bad("onchain.deployBlock", "receipt block does not match the record");
       if (String(receipt.contractAddress || "").toLowerCase() !== root.contract.toLowerCase()) bad("onchain.contract", "receipt contractAddress does not match the record");
@@ -397,7 +401,7 @@ export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall
     const tier8 = tiers.find((tier) => tier.limit === 8);
     const extra = tiers.filter((tier) => tier.limit !== 8);
     const divisor = BigInt(root.slashRewardDivisor ?? 10);
-    const tx = await call("eth_getTransactionByHash", [root.deployTx]);
+    const tx = history ? await call("eth_getTransactionByHash", [root.deployTx]) : null;
     const constructorArgs = AbiCoder.defaultAbiCoder().encode(
       ["uint256", "uint256", "uint256", "address", "address", "uint256[]", "uint256[]", "uint256"],
       [
@@ -407,7 +411,7 @@ export async function validatePublicStakeOnchain(record, { rpcCall = jsonRpcCall
       ],
     ).slice(2).toLowerCase();
     const input = String(tx?.input || tx?.data || "").toLowerCase();
-    if (!tx || tx.to != null || !input.endsWith(constructorArgs)) {
+    if (history && (!tx || tx.to != null || !input.endsWith(constructorArgs))) {
       bad("onchain.deployTx", "contract-creation input does not pin the public-stake-v1 constructor parameters");
     }
 
@@ -496,8 +500,10 @@ async function main() {
     if (rpcUrls.length > 5) throw new Error("--rpc-url takes at most five comma-separated endpoints");
     const chain = { ok: true, errors: [] };
     if (shape.ok && pin.ok && flags.requireLive) {
-      for (const rpcUrl of rpcUrls) {
-        const one = await validatePublicStakeOnchain(record, { repoRoot: flags.repoRoot, rpcUrl });
+      for (const [i, rpcUrl] of rpcUrls.entries()) {
+        // The primary endpoint carries the full history check; a fallback (ADR 0012) is checked
+        // for current state only, since a pooled fallback may have pruned the deploy history.
+        const one = await validatePublicStakeOnchain(record, { repoRoot: flags.repoRoot, rpcUrl, history: i === 0 });
         chain.ok &&= one.ok;
         const via = rpcUrls.length > 1 ? ` (via ${new URL(rpcUrl).host})` : "";
         chain.errors.push(...one.errors.map((e) => ({ ...e, problem: `${e.problem}${via}` })));
