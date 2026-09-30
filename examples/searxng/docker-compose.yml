@@ -26,7 +26,7 @@ services:
       - ./shadenet:/config:ro
       - ./state:/state
     ports:
-      - "127.0.0.1:8080:8080" # SearXNG's port; SearXNG lives in this network namespace
+      - "127.0.0.1:${SEARXNG_PORT:-8080}:8080" # SearXNG's port (SEARXNG_PORT if 8080 is taken); SearXNG lives in this network namespace
     restart: unless-stopped
 
   # Renders the proxy token and a fresh secret into SearXNG's settings once per start.
