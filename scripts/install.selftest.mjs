@@ -107,6 +107,8 @@ function shimHost(root, { sysname, machine, ldd = null, translated = null }) {
   chmodSync(join(bin, "uname"), 0o755);
   if (ldd === "musl") writeFileSync(join(bin, "ldd"), `#!/bin/sh\necho "musl libc (x86_64)" >&2\nexit 1\n`);
   if (ldd === "gnu") writeFileSync(join(bin, "ldd"), `#!/bin/sh\necho "ldd (GNU libc) 2.39"\n`);
+  // Ubuntu's wording: no "GNU", no lowercase "glibc" (orbital-one, 2026-09-30).
+  if (ldd === "ubuntu") writeFileSync(join(bin, "ldd"), `#!/bin/sh\necho "ldd (Ubuntu GLIBC 2.39-0ubuntu8.9) 2.39"\n`);
   if (ldd) chmodSync(join(bin, "ldd"), 0o755);
   if (translated !== null) {
     writeFileSync(join(bin, "sysctl"), `#!/bin/sh\ncase "$*" in *sysctl.proc_translated*) echo "${translated}"; exit 0;; *) exit 1;; esac\n`);
@@ -232,6 +234,7 @@ async function main() {
     const HOSTS = [
       { target: "x86_64-unknown-linux-gnu", sysname: "Linux", machine: "x86_64", ldd: "gnu" },
       { target: "aarch64-unknown-linux-gnu", sysname: "Linux", machine: "aarch64", ldd: "gnu" },
+      { target: "aarch64-unknown-linux-gnu", sysname: "Linux", machine: "aarch64", ldd: "ubuntu" },
       { target: "x86_64-unknown-linux-musl", sysname: "Linux", machine: "amd64", ldd: "musl" },
       { target: "aarch64-unknown-linux-musl", sysname: "Linux", machine: "arm64", ldd: "musl" },
       { target: "x86_64-apple-darwin", sysname: "Darwin", machine: "x86_64", translated: "0" },

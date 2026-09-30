@@ -192,14 +192,18 @@ detect_libc() {
   # Positive identification only. glibc's ldd says "GNU libc"; musl's says "musl libc" (on
   # stderr, exit 1). Without ldd, the dynamic loader's file name is the next best witness.
   # No guess otherwise: a GNU binary "installs fine" on a musl host and then fails to exec.
+  # Ubuntu's ldd says "ldd (Ubuntu GLIBC 2.39-...)": match case-insensitively.
   if command -v ldd >/dev/null 2>&1; then
-    case "$(ldd --version 2>&1 || true)" in
+    case "$(ldd --version 2>&1 | tr '[:upper:]' '[:lower:]' || true)" in
       *musl*) printf musl; return ;;
-      *GNU*|*glibc*) printf gnu; return ;;
+      *gnu*|*glibc*) printf gnu; return ;;
     esac
   fi
-  if [ -f /etc/alpine-release ] || ls /lib/ld-musl-*.so* >/dev/null 2>&1; then printf musl; return; fi
-  if ls /lib/ld-linux*.so* /lib64/ld-linux*.so* /lib/*/ld-linux*.so* >/dev/null 2>&1; then printf gnu; return; fi
+  [ -f /etc/alpine-release ] && { printf musl; return; }
+  # One glob per test: `ls a* b*` exits non-zero when any pattern has no match, even if
+  # another one does, which hid /lib/ld-linux-aarch64.so.1 behind the missing /lib64.
+  for f in /lib/ld-musl-*.so*; do [ -e "$f" ] && { printf musl; return; }; done
+  for f in /lib/ld-linux*.so* /lib64/ld-linux*.so* /lib/*/ld-linux*.so*; do [ -e "$f" ] && { printf gnu; return; }; done
   printf ''
 }
 
