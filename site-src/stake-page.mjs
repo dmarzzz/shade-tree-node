@@ -13,6 +13,8 @@ import {
   RATE,
   REGISTER_INPUT,
   SECURITY,
+  SESSION_CLASS,
+  SESSION_TICKETS,
   SLASH_REWARD_DIVISOR,
   TIERS,
   UNBONDING_SECONDS,
@@ -49,7 +51,23 @@ const artifactsLine = SECURITY.proofArtifacts === "untrusted-testnet"
 const FILE_PLACEHOLDER = "shadenet-identity-XXXXXXXX.json";
 const fileName = () => `<span data-file-name>${FILE_PLACEHOLDER}</span>`;
 
-const tunnels = (n) => `${n} new ${n === 1 ? "tunnel" : "tunnels"} ${perEpoch}`;
+// What one slot buys, in the words a first-time reader needs, for either setting of the switch.
+export function describeSlot({ sessionTickets = SESSION_TICKETS, epochWords = perEpoch, payload = mib, klass = SESSION_CLASS } = {}) {
+  if (sessionTickets) {
+    return {
+      unit: (n) => `${n} ${n === 1 ? "session" : "sessions"} ${epochWords}`,
+      each: `up to ${klass.tickets} connections, ${payload}`,
+      lede: `A session is one visit to a node: it opens up to ${klass.tickets} HTTPS connections to different sites within ${klass.lifetimeSeconds} seconds and carries up to ${payload} in both directions combined. Each tier gets that many new sessions ${epochWords}, canopy-wide. A search plus five result pages is about one session.`,
+    };
+  }
+  return {
+    unit: (n) => `${n} new ${n === 1 ? "tunnel" : "tunnels"} ${epochWords}`,
+    each: `${payload} each`,
+    lede: `A tunnel is one HTTPS connection to one site. Each tier gets that many new tunnels ${epochWords}, canopy-wide, and each tunnel carries up to ${payload} in both directions combined. A search plus five result pages is about six tunnels.`,
+  };
+}
+const slot = describeSlot();
+const tunnels = (n) => slot.unit(n);
 
 function tierRows(name, attr) {
   return TIERS.map((tier) => {
@@ -59,7 +77,7 @@ function tierRows(name, attr) {
             <input type="radio" name="${name}" value="${n}" ${attr}${checked}>
             <span class="tier-name">tier ${n}</span>
             <span class="tier-bond">${formatEth(tier.bondWei)} ETH</span>
-            <span class="tier-buys">${tunnels(n)}, ${mib} each</span>
+            <span class="tier-buys">${tunnels(n)}, ${slot.each}</span>
           </label>`;
   }).join("\n");
 }
@@ -206,7 +224,7 @@ ${siteNav("stake", { indent: "  " })}
       <article class="step" data-step-panel="tier">
         <p class="step-index" aria-hidden="true">01</p>
         <h2>Choose a tier</h2>
-        <p>A tunnel is one HTTPS connection to one site. Each tier gets that many new tunnels ${perEpoch}, canopy-wide, and each tunnel carries up to ${mib} in both directions combined. A search plus five result pages is about six tunnels. The tier is part of the identity, so pick it first.</p>
+        <p>${slot.lede} The tier is part of the identity, so pick it first.</p>
         <fieldset class="tier-pick">
           <legend class="sr-only">Tier</legend>
 ${tierRows("tier", "data-tier")}
@@ -360,7 +378,7 @@ ${tierRows("sponsor-tier", "data-sponsor-tier")}
 
     <section class="stake-boundary" aria-labelledby="boundary-title">
       <h2 id="boundary-title">Honest boundary</h2>
-      <p>Tier ${Number(baseTier.limit)} buys ${Number(baseTier.limit) === 1 ? "one new HTTPS tunnel" : `${Number(baseTier.limit)} new HTTPS tunnels`} per fixed ${RATE.epochSeconds}-second epoch, capped at ${mib} combined traffic each. Registration becomes usable after ${CHAIN_NAME} finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. Exit and withdraw are proof-authorised and return the testnet bond to a fresh recipient after ${unbonding}. ${artifactsLine} Never use mainnet ETH or sensitive traffic.</p>
+      <p>Tier ${Number(baseTier.limit)} buys ${slot.unit(Number(baseTier.limit)).replace(perEpoch, `per fixed ${RATE.epochSeconds}-second epoch`)}, capped at ${mib} combined traffic each${SESSION_TICKETS ? ` and ${SESSION_CLASS.tickets} connections per session` : ""}. Registration becomes usable after ${CHAIN_NAME} finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. Exit and withdraw are proof-authorised and return the testnet bond to a fresh recipient after ${unbonding}. ${artifactsLine} Never use mainnet ETH or sensitive traffic.</p>
     </section>
       </div>
     </div>

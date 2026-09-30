@@ -37,6 +37,12 @@ export const RATE = Object.freeze({
   payloadMiB: deployment.ratePolicy.payloadBytesPerSlot / MIB,
 });
 
+// H2's switch (ADR 0011): with session tickets on, one slot opens a session at one node instead of
+// one tunnel. The book's shape is the research-v1 class in docs/design/SESSION-TICKETS.md, not a
+// record value, so it lives here as a constant next to the switch that turns it on.
+export const SESSION_TICKETS = deployment.sessionTickets === true || staked.sessionTickets === true;
+export const SESSION_CLASS = Object.freeze({ tickets: 6, lifetimeSeconds: 90 });
+
 export const SECURITY = Object.freeze({
   proofArtifacts: deployment.security?.proofArtifacts || "unknown",
   status: deployment.status,

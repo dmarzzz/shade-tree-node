@@ -20,7 +20,7 @@ import {
 import { CLIENT_RELEASE, SITE_NETWORK, formatEth, formatDuration } from "../site-src/profile.mjs";
 import { explainError, formatExplanation } from "../site-src/stake-errors.mjs";
 import { describeSetSize } from "../site-src/stake-live.mjs";
-import { PROVER_MB, renderStakePage } from "../site-src/stake-page.mjs";
+import { PROVER_MB, describeSlot, renderStakePage } from "../site-src/stake-page.mjs";
 import { GET as stakeHead, readStakeHead, STAKE_HEAD_SCHEMA } from "../docs/post/api/stake-head.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -161,6 +161,11 @@ check("wallet preflight (SDK) pins chain, code, bond, active state, simulation, 
 ].every((needle) => sdkStaking.includes(needle)) && /bond !== tier\.bondWei/.test(sdkStaking) && /createStaking\(/.test(source));
 check("the stake entry stays small", bundle.length < 150_000);
 check("rendering is deterministic", renderStakePage() === renderStakePage());
+const tunnelWords = describeSlot({ sessionTickets: false });
+const sessionWords = describeSlot({ sessionTickets: true });
+check("what a slot buys reads right with session tickets off and on (H2's switch)", tunnelWords.unit(1) === "1 new tunnel per minute" && /six tunnels/.test(tunnelWords.lede)
+  && sessionWords.unit(8) === "8 sessions per minute" && /up to 6 HTTPS connections to different sites within 90 seconds/.test(sessionWords.lede) && /about one session/.test(sessionWords.lede)
+  && html.includes(describeSlot().lede));
 
 const build = spawnSync(process.execPath, [join(ROOT, "scripts/build-stake-site.mjs"), "--check"], { encoding: "utf8" });
 check("committed page, bundle, API profile and shared nav are reproducible from reviewed source", build.status === 0);
