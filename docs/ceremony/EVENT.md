@@ -1,9 +1,10 @@
 # ShadeNet community ceremony event worksheet
 
-> **Fallback only.** Launch decision D3 adopts PSE's finalized RLN setup for both circuits
-> (`PSE-ADOPTION.md`); this worksheet is kept ready in case the owner prefers a ShadeNet-specific
-> setup or a later circuit change needs one. The fields an agent can fill without people are
-> filled; roster, date and channels stay **PENDING** for the owner.
+> **Fallback only; not run.** PSE's finalized RLN setup was adopted for both circuits on
+> 2026-09-30 (`PSE-ADOPTION.md`, `PSE-VERIFICATION.md`), so no ShadeNet community event took
+> place. This worksheet is kept ready in case the owner prefers a ShadeNet-specific setup or a
+> later circuit change needs one. The fields an agent can fill without people are filled; roster,
+> date and channels stay **PENDING** for the owner.
 
 **Draft event plan — details below are pending.** This document schedules no
 event, sends no invitations, publishes no artifacts, and starts no ceremony.

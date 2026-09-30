@@ -19,7 +19,7 @@
   "security": {
     "proofArtifacts": "untrusted-testnet",
     "scope": "disposable-research",
-    "decisionRef": "operator-approved disposable v4 research Grove, 2026-08-25"
+    "decisionRef": "operator-approved disposable v4 research Grove, 2026-08-25; dual-VK window opened 2026-09-30 with the PSE ceremony set (H3), dev set still accepted until the window closes"
   },
   "services": {
     "elder": {
@@ -102,12 +102,17 @@
   "artifacts": {
     "accepted": [
       {
-        "id": "rln-0b25f824a04da3a8",
+        "id": "rln-ae43614cd02ebe95",
         "verificationKeyPath": "circuits/rln/verification_key.json",
+        "sha256": "ae43614cd02ebe951f44465924eff9882d1321b20f0cc129406bc5fa2547fe11"
+      },
+      {
+        "id": "rln-0b25f824a04da3a8",
+        "verificationKeyPath": "circuits/rln/previous/verification_key.json",
         "sha256": "0b25f824a04da3a85f128baa6fdaa33d10baa7dd18c5e6f5935089661c68622c"
       }
     ],
-    "legacy": null
+    "legacy": "rln-0b25f824a04da3a8"
   },
   "created": "2026-09-02",
   "note": "Disposable public-stake-v1 Protocol v4 research Grove: zero-config clients use the permissionless Sepolia staking path (tier 1 = 0.1 ETH, one 60-second slot, 40 MiB combined tunnel payload); invited admission remains available when selected explicitly. One stake-gated Elder and three dedicated Shade Tree nodes are managed from agent-devops and pinned to 37a0f16351da8aa0377364221e3964233730eef4. Contracts and proof artifacts are explicitly untrusted Sepolia testnet material."

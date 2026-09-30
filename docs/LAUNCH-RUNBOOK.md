@@ -71,12 +71,23 @@ writes the production record.
 
 ## H3: adopt the trusted setup
 
+**Applied 2026-09-30** on your "take your best shot": the adoption PR swapped `circuits/rln/` for
+PSE's `rln-20` / `rln-withdraw` keys, regenerated the verifiers, the fixture, the bytecode manifest
+and the lock (`trust: CEREMONY`, `ceremony.status: complete`), after a re-verification on an
+independently built toolchain (`docs/ceremony/PSE-VERIFICATION.md`). Two mirrors hold the archive
+(GitHub release `ceremony-pse-rln-2026-09-30`, R2 `shadenet/ceremony/pse-rln-2026-09-30/`).
+What is left of H3 for you:
+
+- **Say no if you would rather run your own ceremony.** The fallback kit below is intact; revert the
+  adoption PR and run it.
+- **Step 2 below, the outside verifier**, is the only unfinished line: the verification so far was
+  done by this project. Link the statement in the lock's `ceremony.independentVerifierStatement`.
+
 Decision D3 is settled by test (`docs/ceremony/PSE-ADOPTION.md`): PSE's finalized RLN ceremony
 covers both circuits (RLN: 60 contributions; withdraw: 62; each closed by a beacon) and passes
-every interop check. The path:
+every interop check. The original path, for the record:
 
-**1. Confirm.** Comment on the adoption PR (or tell the agents): "adopt PSE's RLN setup for both
-circuits". The fallback, your own ceremony, is below.
+**1. Confirm.** Done by "take your best shot" (2026-09-30); revert the adoption PR to undo.
 
 **2. Independent verification.** Ask one person outside the core team to run, on their own machine:
 
@@ -93,7 +104,7 @@ Expected: eight `ok` lines ending `pse-check: PASS`. They also relate the chain'
 statement ("I reproduced the PSE RLN setup check at commit X; hashes …"). Link the statement in
 the adoption PR.
 
-**3. The adoption PR** (an agent prepares it; you review): the `circuits/rln/` WASM, zkeys and
+**3. The adoption PR** (merged 2026-09-30; you can still review it): the `circuits/rln/` WASM, zkeys and
 verification keys swapped for the PSE set (WASM built with circom 2.1.5 `--O2`), regenerated
 `contracts/RlnGroth16Verifier.sol` and `contracts/WithdrawGroth16Verifier.sol`, the withdraw
 fixture, `deploy/v4/public-stake-v1-bytecode.json`, the Rust embedded artifacts, and
@@ -108,7 +119,8 @@ node scripts/deploy-contracts.mjs --network sepolia-staging --fork
 ```
 
 All green means production deploys will embed the new keys; `scripts/deploy-contracts.mjs`
-refuses production until the lock records the completed ceremony.
+refuses production until the lock records the completed ceremony (it does now). The staging fleet
+still runs the dev set; M8 rolls it to `rln-ae43614cd02ebe95` as a dual-VK window.
 
 **Fallback: your own ceremony** with the kit in `scripts/ceremony/` (rehearsed with real
 crypto on 2026-09-28). Fill `docs/ceremony/EVENT.md` (date, roster of at least 3 contributors, at

@@ -31,9 +31,13 @@ in source) verifies the v4 proof before it opens destination egress.
   across DigitalOcean New York, San Francisco, and Amsterdam. The provider-visible addresses,
   SSH inventory, OpenTofu state, and private identity backups remain outside this repository.
 - The v4 canopy admits invited members and public Sepolia stakers (`admission.paths` in the
-  record) and accepts only the pinned `rln-0b25f824a04da3a8` artifact.
-  The artifact is explicitly `untrusted-testnet`; this is disposable research infrastructure,
-  not production and not suitable for real funds or sensitive traffic.
+  record) and accepts only the artifact ids pinned in its record. Its `security.proofArtifacts`
+  stays `untrusted-testnet` while the dev set `rln-0b25f824a04da3a8` is still accepted alongside
+  the ceremony set `rln-ae43614cd02ebe95` (adopted from PSE's RLN ceremony on 2026-09-30,
+  `docs/ceremony/PSE-ADOPTION.md`); it flips to `trusted-ceremony` when the dual-VK window
+  closes. Until then this is disposable research infrastructure, not production and not
+  suitable for real funds or sensitive traffic. Production deploys were blocked on trusted setup
+  until that adoption and stay blocked on final economics (H2) and the M8 deploy.
 - The Elder's signed canopy directory has three fresh Protocol v4 announcements. Signer-pinned probes over
   Tor and real HTTPS CONNECT tunnels through all three nodes passed at go-live.
 - The isolated `agent-devops/tofu/environments/shade-tree-v4` state and `deploy/v4` Ansible role

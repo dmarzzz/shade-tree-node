@@ -75,7 +75,7 @@
     "groth16": {
       "artifact": "WithdrawGroth16Verifier.sol/WithdrawGroth16Verifier.json",
       "runtimeBytes": 1439,
-      "normalizedSha256": "bbd87c35664965b741d426b1b9728bbdc6606bd7f374dc3e7f383b22597f58b6",
+      "normalizedSha256": "ddc3e50150f70a78d89b4f3cd08118af65c386ed0cc9d0536c69f33107350dfa",
       "zeroRanges": [
         { "start": 1386, "length": 53 }
       ]

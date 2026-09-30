@@ -58,14 +58,15 @@ export const ARTIFACTS = [
 ];
 
 // The upstream phase-1 (Powers of Tau) file the current artifacts were built from. It is NOT
-// in the repo (~300MB); the hash is recorded so a verifier can confirm the ptau they fetch is
-// the same one. Source: circuits/rln/ARTIFACTS.md.
+// in the repo (~9.5MB); the hash is recorded so a verifier can confirm the ptau they fetch is
+// the same one. Source: docs/ceremony/PSE-ADOPTION.md, scripts/ceremony/pse-check.mjs.
 export const PTAU = {
-  file: "powersOfTau28_hez_final_14.ptau",
-  power: 14,
-  sha256: "489be9e5ac65d524f7b1685baac8a183c6e77924fdb73d2b8105e335f277895d",
+  file: "powersOfTau28_hez_final_13.ptau",
+  power: 13,
+  sha256: "95751b5207f20aa822f01109902315c01c15250303feacea2b8aa7dc9fdfeefd",
+  blake2b512: "58efc8bf2834d04768a3d7ffcd8e1e23d461561729beaac4e3e7a47829a1c9066d5320241e124a1a8e8aa6c75be0ba66f65bc8239a0542ed38e11276f6fdb4d9",
   ceremony: "Hermez / Perpetual Powers of Tau (BN254), phase-1 only",
-  note: "not stored in-repo; verify the fetched file's sha256 against this value before any phase-2 (docs/CEREMONY.md)",
+  note: "not stored in-repo; the phase-1 input of PSE's RLN ceremony (rln-20: power 13; rln-withdraw: PSE used the power-8 prefix of the same transcript, and a power-13 rebuild is byte-identical in every key section). Verify a fetched file against this sha256 before any phase-2 (docs/CEREMONY.md).",
 };
 
 export function sha256File(abs) {

@@ -19,7 +19,7 @@
   "security": {
     "proofArtifacts": "untrusted-testnet",
     "scope": "disposable-research",
-    "decisionRef": "sepolia-staging: ShadeNet staging rehearsal contracts (M1)"
+    "decisionRef": "sepolia-staging: ShadeNet staging rehearsal contracts (M1); dual-VK window opened 2026-09-30 with the PSE ceremony set (H3), dev set still accepted until the window closes"
   },
   "services": {
     "elder": {
@@ -87,12 +87,17 @@
   "artifacts": {
     "accepted": [
       {
-        "id": "rln-0b25f824a04da3a8",
+        "id": "rln-ae43614cd02ebe95",
         "verificationKeyPath": "circuits/rln/verification_key.json",
+        "sha256": "ae43614cd02ebe951f44465924eff9882d1321b20f0cc129406bc5fa2547fe11"
+      },
+      {
+        "id": "rln-0b25f824a04da3a8",
+        "verificationKeyPath": "circuits/rln/previous/verification_key.json",
         "sha256": "0b25f824a04da3a85f128baa6fdaa33d10baa7dd18c5e6f5935089661c68622c"
       }
     ],
-    "legacy": null
+    "legacy": "rln-0b25f824a04da3a8"
   },
   "created": "2026-09-28",
   "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. Canopy: 2 Elder Trees at 1a750e6f2660, recorded by scripts/record-canopy.mjs.",
