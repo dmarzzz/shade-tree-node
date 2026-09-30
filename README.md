@@ -208,9 +208,8 @@ allowance per RLN epoch slot on each node; reaching it closes the tunnel. Read t
 
 | Path | Role |
 | --- | --- |
-| [`client/`](client/) | Local proxy, discovery, and node rotation |
-| [`gateway/`](gateway/) | Proof gate and destination tunnel |
-| [`bootnode/`](bootnode/) | Elder Tree discovery service and operator tools |
+| [`packages/node/`](packages/node/) | The JS node: `gateway/` (proof gate and destination tunnel), `bootnode/` (Elder Tree discovery service and operator tools), `client/` (local proxy, discovery, node rotation), `lib/` |
+| [`packages/sdk/`](packages/sdk/) | `@shadenet/sdk`, the JavaScript SDK (browser and Node) |
 | [`crates/`](crates/) | Rust binary, reusable egress/protocol crates, and RLN prover |
 | [`contracts/`](contracts/) | Optional Sepolia membership and operator sets |
 | [`network/`](network/) | Signed test-network records |

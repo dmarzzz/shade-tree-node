@@ -47,7 +47,7 @@ jobs:
       - id: gate
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/ci-changes.sh '^(crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|packages/node/|bootnode/|gateway/|client/|lib/|group/|circuits/|testdata/|network/|package(-lock)?\.json$|test/real-tor-e2e|\.github/workflows/real-tor-e2e\.yml$|scripts/ci-changes\.sh$)'
+        run: bash scripts/ci-changes.sh '^(crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|packages/node/|group/|circuits/|testdata/|network/|package(-lock)?\.json$|test/real-tor-e2e|\.github/workflows/real-tor-e2e\.yml$|scripts/ci-changes\.sh$)'
 
   real-tor-e2e:
     name: real-Tor client tunnel e2e (systemd fleet)
