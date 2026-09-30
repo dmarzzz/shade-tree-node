@@ -84,6 +84,7 @@ const page = await context.newPage();
 page.on("pageerror", (e) => console.error("[page error]", e.message));
 await page.exposeFunction("__shadenetWalletRpc", (method, params) => walletRpc(method, params ?? []));
 await page.addInitScript(() => {
+  /* global window */
   window.ethereum = {
     isShadeNetRehearsalWallet: true,
     on() {},

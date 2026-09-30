@@ -23,6 +23,16 @@ const REMOVED: &[&str] = &[
     "0x0a39eb0fcb6a37e10a529e106ae887cbd1721626fa57900170ed0c2437af3797",
     "0xac0c8be2061774c705c517af2a774ab5cb33a2d7fe7054dd4a2728433026029c",
 ];
+// `nextIndex()` and `activeCount()` of StakedReputationSet: the contract's own slot and live
+// counters. A reconstruction that disagrees with them was built from an incomplete log
+// scan (M7 rehearsal 2026-09-30: a public RPC pool answered a 10 000-block eth_getLogs with an
+// EMPTY array from a pruned backend, so the client built a 3-slot tree, presented a root no
+// node knew, and every tunnel was refused `gate:wrong-group-root`). PaidAccessSet has no such
+// views; the check is skipped when the calls do not return a word.
+const NEXT_INDEX_SELECTOR: &str = "0xfc7e9c6f";
+const ACTIVE_COUNT_SELECTOR: &str = "0x4331ed1f";
+const MIN_CHUNK: u64 = 64;
+
 const ALL_TOPICS: &[&str] = &[
     REGISTERED[0],
     REGISTERED[1],
@@ -70,6 +80,12 @@ fn log_order(log: &Value) -> (BigUint, BigUint) {
     )
 }
 
+/// An error whose cause is a partial log scan (a gap in the contract's append-only indices or a
+/// disagreement with its counters). The fetcher retries such a scan with smaller pages.
+pub fn is_incomplete(error: &str) -> bool {
+    error.starts_with("incomplete member log:")
+}
+
 pub fn reconstruct(logs: &[Value], rln_identifier: u64) -> Result<DiscoveredMembers, String> {
     let id = BigUint::from(rln_identifier);
     let empty = MerkleTree::new(&id, TREE_DEPTH, &[]);
@@ -98,6 +114,18 @@ pub fn reconstruct(logs: &[Value], rln_identifier: u64) -> Result<DiscoveredMemb
         if REGISTERED.contains(&topic0.as_str()) {
             if live.contains_key(&commitment) {
                 continue;
+            }
+            // MemberRegistered(uint256 indexed commitment, uint64 indexed index, uint256 limit):
+            // the contract's slot for this leaf. A register that lands past the next free slot
+            // means the scan skipped earlier registrations; appending it would build a tree no
+            // node shares.
+            if let Some(index) = topics.get(2).and_then(Value::as_str).and_then(hex_number) {
+                let expected = BigUint::from(members.len());
+                if index > expected {
+                    return Err(format!(
+                        "incomplete member log: registration of slot {index} arrived with only {expected} slots replayed (the RPC dropped earlier logs)"
+                    ));
+                }
             }
             live.insert(commitment.clone(), members.len());
             members.push(commitment);
@@ -166,6 +194,42 @@ impl Rpc {
     }
 }
 
+/// The contract's `(nextIndex, activeCount)` at `block`, or `None` for a set without those views.
+fn contract_counters(
+    rpc: &mut Rpc,
+    address: &str,
+    block: &str,
+) -> Result<Option<(u64, u64)>, String> {
+    let mut counters = [0u64; 2];
+    for (slot, selector) in [NEXT_INDEX_SELECTOR, ACTIVE_COUNT_SELECTOR]
+        .iter()
+        .enumerate()
+    {
+        let word = match rpc.call(
+            "eth_call",
+            json!([{ "to": address, "data": selector }, block]),
+        ) {
+            Ok(Value::String(word)) => word,
+            Ok(_) => return Ok(None),
+            Err(error) if error.to_ascii_lowercase().contains("revert") => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let raw = word.trim_start_matches("0x");
+        if raw.len() != 64 {
+            return Ok(None);
+        }
+        let value = BigUint::parse_bytes(raw.as_bytes(), 16)
+            .ok_or_else(|| format!("contract counter is not a number: {word}"))?;
+        let digits = value.to_u64_digits();
+        counters[slot] = match digits.len() {
+            0 => 0,
+            1 => digits[0],
+            _ => return Err(format!("contract counter out of range: {word}")),
+        };
+    }
+    Ok(Some((counters[0], counters[1])))
+}
+
 fn range_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     [
@@ -205,11 +269,48 @@ pub fn fetch_members(
         return reconstruct(&[], rln_identifier);
     }
 
-    let mut cursor = from_block;
+    let counters = contract_counters(&mut rpc, &address, to_hex)?;
     let mut chunk = 10_000u64;
+    loop {
+        let logs = scan_logs(&mut rpc, &address, from_block, to, &mut chunk)?;
+        let outcome = reconstruct(&logs, rln_identifier).and_then(|set| match counters {
+            Some((next_index, active))
+                if set.document.members.len() as u64 != next_index || set.live_count as u64 != active =>
+            {
+                Err(format!(
+                    "incomplete member log: {} slots and {} live members replayed from logs, but the contract reports nextIndex {next_index} and activeCount {active} at block {to} (the RPC dropped logs)",
+                    set.document.members.len(),
+                    set.live_count
+                ))
+            }
+            _ => Ok(set),
+        });
+        match outcome {
+            Ok(set) => return Ok(set),
+            // A public RPC pool can answer a wide eth_getLogs with a silently empty page: smaller
+            // pages reach a backend that has the history. Give up only at the floor.
+            Err(error) if is_incomplete(&error) && chunk > MIN_CHUNK => {
+                chunk = (chunk / 2).max(MIN_CHUNK);
+            }
+            Err(error) if is_incomplete(&error) => {
+                return Err(format!("{error}; {rpc_url} returned partial history even in {chunk}-block pages, use another RPC"));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn scan_logs(
+    rpc: &mut Rpc,
+    address: &str,
+    from_block: u64,
+    to: u64,
+    chunk: &mut u64,
+) -> Result<Vec<Value>, String> {
+    let mut cursor = from_block;
     let mut logs = Vec::new();
     while cursor <= to {
-        let end = to.min(cursor.saturating_add(chunk - 1));
+        let end = to.min(cursor.saturating_add(*chunk - 1));
         let filter = json!({
             "address": address,
             "topics": [ALL_TOPICS],
@@ -222,13 +323,13 @@ pub fn fetch_members(
                 cursor = end.saturating_add(1);
             }
             Ok(_) => return Err("eth_getLogs returned a non-array result".into()),
-            Err(e) if range_error(&e) && chunk > 8 => {
-                chunk = (chunk / 2).max(8);
+            Err(e) if range_error(&e) && *chunk > 8 => {
+                *chunk = (*chunk / 2).max(8);
             }
             Err(e) => return Err(e),
         }
     }
-    reconstruct(&logs, rln_identifier)
+    Ok(logs)
 }
 
 #[cfg(test)]
@@ -241,6 +342,31 @@ mod tests {
             "logIndex": format!("0x{index:x}"),
             "topics": [topic, format!("0x{commitment:064x}")],
         })
+    }
+
+    fn log_v4(commitment: u64, index: u64, block: u64) -> Value {
+        json!({
+            "blockNumber": format!("0x{block:x}"),
+            "logIndex": "0x0",
+            "topics": [REGISTERED[1], format!("0x{commitment:064x}"), format!("0x{index:064x}")],
+        })
+    }
+
+    #[test]
+    fn a_register_past_the_next_slot_is_an_incomplete_scan() {
+        // Slots 0..4 dropped by the RPC: the first log seen claims slot 5.
+        let err = reconstruct(&[log_v4(555, 5, 10)], 1).unwrap_err();
+        assert!(is_incomplete(&err), "{err}");
+        assert!(err.contains("slot 5"), "{err}");
+        // A complete scan replays the contract's indices exactly.
+        let ok = reconstruct(&[log_v4(111, 0, 1), log_v4(222, 1, 2)], 1).unwrap();
+        assert_eq!(
+            ok.document.members,
+            vec!["111".to_string(), "222".to_string()]
+        );
+        // A reorg echo (an index already replayed) is tolerated, as before.
+        let echo = reconstruct(&[log_v4(111, 0, 1), log_v4(111, 0, 1)], 1).unwrap();
+        assert_eq!(echo.document.members.len(), 1);
     }
 
     #[test]
