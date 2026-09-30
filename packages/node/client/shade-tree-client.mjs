@@ -25,6 +25,7 @@ import tls from "node:tls";
 import https from "node:https";
 import { SocksClient } from "socks";
 import { currentEpoch, K_SLOTS, normLimit, requestSignal, proveForSlot, loadGroup, cleanUp, clientArtifactIds, selectArtifact } from "../lib/semaphore.mjs";
+import { SESSION_CLASSES, buildTicketBook, sessionSignal, sessionInitFields, ticketFields, policyMatches, normalizeOnion } from "../lib/session-tickets.mjs";
 import * as semaphoreConfig from "../lib/semaphore.mjs";
 // Namespace import (not named): selftests that mock packages/node/lib/rln.mjs need not provide these two; they
 // are only touched by makeLeafSourceLoader when a contract is configured.
@@ -604,6 +605,13 @@ export class ShadeTreeClient {
     // Per-tunnel SOCKS circuit isolation (T-FEAT-17): default ON, harmless without
     // IsolateSOCKSAuth. Disable with { socksIsolation: false } or SHADE_TREE_SOCKS_ISOLATION=0.
     this.socksIsolation = opts.socksIsolation !== false && process.env.SHADE_TREE_SOCKS_ISOLATION !== "0";
+    // Session tickets (ADR 0011): { sessionTickets } or SHADE_TREE_SESSION_TICKETS=1 (the deployment
+    // record's `sessionTickets`, set at H2). OFF by default: one proof, one tunnel, per-tunnel
+    // rotation. ON: one proof buys a research-v1 book of six tickets at ONE node and the next five
+    // tunnels ride cheap ticket envelopes on the same Tor circuit, linkable to that node.
+    this.sessionTickets = opts.sessionTickets != null ? Boolean(opts.sessionTickets) : envFlag(process.env.SHADE_TREE_SESSION_TICKETS);
+    this._books = new Map();          // onion -> live ticket book
+    this._sessionRefused = new Set(); // onions that answered session-unsupported
     // Injectable SOCKS client (tests pass a fake); defaults to the real `socks` lib.
     this._socks = opts.socksClient || SocksClient;
     // Gateway selection: a pinned onion, or a signed directory (fleet rotation). Direct SDK
@@ -717,7 +725,7 @@ export class ShadeTreeClient {
       const adm = await this._admission();
       const requirement = this.ratePolicy ? { rate: this.ratePolicy } : null;
       const cands = await sel.selectCandidates(requirement, adm, { onEvent });
-      if (cands.length) return cands.map((c) => ({ onion: c.onion.replace(/\.onion$/, ""), artifacts: c.artifacts || null, admits: c.admits || null, rate: c.rate || null }));
+      if (cands.length) return cands.map((c) => ({ onion: c.onion.replace(/\.onion$/, ""), artifacts: c.artifacts || null, admits: c.admits || null, rate: c.rate || null, session: c.session || null }));
     }
     try {
       const host = (await readFile(join(HERE, "../../..", "tor", "hs", "hostname"), "utf8")).trim();
@@ -848,6 +856,12 @@ export class ShadeTreeClient {
     }
     emit({ phase: "select", status: "done", leafSource: await this.leafSource().catch(() => null), maxAnon: this.maxAnon, candidates: cands.map((c) => ({ onion: c.onion, admits: c.admits || null })) });
 
+    // Session tickets (ADR 0011): a live book at any candidate spends a ticket before any proof.
+    if (this.sessionTickets) {
+      const spent = await this._sessionSpend(target, cands, emit);
+      if (spent) return spent;
+    }
+
     // Pick one wire profile against the first compatible candidate. Capability knowledge is
     // candidate-local; a disjoint first node is skipped rather than failing the whole client.
     // Unknown nodes remain eligible, and all actual attempts receive the same envelope.
@@ -859,6 +873,14 @@ export class ShadeTreeClient {
     cands = plan.cands;
     const onions = cands.map((c) => c.onion);
     const { pv, pa } = plan;
+
+    // With session tickets on, the proof opens a book at the first session-capable candidate
+    // (its SIGNED caps carry `session` with research-v1; a pinned onion is assumed capable until
+    // it says otherwise) and the first ticket opens this tunnel.
+    if (this.sessionTickets) {
+      const sessionCand = cands.find((c) => !this._sessionRefused.has(c.onion) && (c.session ? c.session.classes.includes("research-v1") : !!(this.onion || onion)));
+      if (sessionCand) return this._sessionInit(target, sessionCand, { pv, pa }, emit);
+    }
 
     emit({ phase: "prove", status: "start", artifact: pa.id });
     let envelope, slot;
@@ -1003,6 +1025,165 @@ export class ShadeTreeClient {
     const tunnel = tunnelStream(sock, rest);
     tunnel.shadeTree = { onion: usedOnion, slot, nullifier: envelope.nullifier, receipt, artifact: envelope.artifact, leafSource: await this.leafSource().catch(() => null) };
     return tunnel;
+  }
+
+  // ---- session tickets (ADR 0011) ------------------------------------------------------------
+  _liveBook(onion) {
+    const book = this._books.get(onion);
+    if (!book) return null;
+    const now = Date.now();
+    const p = book.policy;
+    if (book.unused.length === 0 || now - book.openedAt >= p.lifetimeMs - 1000 || now - book.lastUse >= p.idleTimeoutMs - 1000) {
+      this._books.delete(onion);
+      return null;
+    }
+    return book;
+  }
+
+  // Spend one ticket from a live book at one of `cands`. Resolves null when no usable book
+  // exists (the caller proves as usual); throws only for a failure a new proof cannot fix.
+  async _sessionSpend(target, cands, emit) {
+    for (const cand of cands) {
+      const book = this._liveBook(cand.onion);
+      if (!book) continue;
+      const index = book.unused.shift();
+      const requestNonce = randomBytes(16).toString("hex");
+      const wire = JSON.stringify({ v: book.version, ticket: ticketFields({ ticketBookDigest: book.digest, index, secret: book.secrets[index], requestNonce }), target }) + "\n";
+      const sel = this.onion ? null : await this._sel();
+      emit({ phase: "ticket", status: "start", onion: cand.onion, ticket: index, left: book.unused.length });
+      let sock;
+      try {
+        sock = await this._dial(cand.onion, this.dialAttempts, book.socksAuth);
+        sock.setNoDelay(true);
+      } catch (e) {
+        destroyRejectedSocket(sock);
+        book.unused.unshift(index); // never sent: the node still holds it unused
+        sel?.reportResult?.(cand.onion, { ok: false });
+        emit({ phase: "ticket", status: "error", onion: cand.onion, ticket: index, error: e.message });
+        throw e;
+      }
+      let ack, rest;
+      try {
+        const frame = await exchangeGatewayAck(sock, wire, { timeoutMs: this.gatewayAckTimeoutMs, maxBytes: this.gatewayAckMaxBytes });
+        rest = frame.rest;
+        ack = JSON.parse(frame.line);
+        if (!ack || typeof ack !== "object" || typeof ack.ok !== "boolean") throw new ShadeTreeGatewayAckError("SHADE_TREE_GATEWAY_ACK_INVALID", "gateway returned a malformed acknowledgement");
+      } catch (e) {
+        destroyRejectedSocket(sock);
+        this._books.delete(cand.onion); // ambiguous: the ticket may be burned; a new book is cheaper than guessing
+        sel?.reportResult?.(cand.onion, { ok: false });
+        emit({ phase: "ticket", status: "error", onion: cand.onion, ticket: index, error: e.message, code: e.code });
+        throw e;
+      }
+      if (ack.ok !== true) {
+        destroyRejectedSocket(sock);
+        const err = typeof ack.err === "string" ? ack.err : "";
+        emit({ phase: "ticket", status: "refused", onion: cand.onion, ticket: index, error: err });
+        if (["session-unknown", "session-expired", "session-idle", "session-conflict", "session-unsupported"].includes(err)) {
+          this._books.delete(cand.onion); // the node dropped the book: a fresh proof opens another
+          continue;
+        }
+        if ((err.startsWith("upstream:") && !err.includes("ETIMEDOUT")) || err.startsWith("bad-target") || err === "session-streams" || err === "session-pending") {
+          book.unused.unshift(index); // the node refunded the ticket; the target is the problem
+          throw new Error("gate refused: " + err);
+        }
+        continue; // ticket-spent / mismatch / conflict: that ticket is lost, try the next book or prove
+      }
+      book.lastUse = Date.now();
+      sel?.reportResult?.(cand.onion, { ok: true });
+      emit({ phase: "ticket", status: "done", onion: cand.onion, ticket: index, left: book.unused.length });
+      const tunnel = tunnelStream(sock, rest);
+      tunnel.shadeTree = { onion: cand.onion, session: book.digest, ticket: index, slot: book.slot, nullifier: book.nullifier, receipt: { present: false }, artifact: book.artifact, leafSource: await this.leafSource().catch(() => null) };
+      return tunnel;
+    }
+    return null;
+  }
+
+  // Prove once to open a research-v1 book at `cand`, then spend its first ticket for `target`.
+  async _sessionInit(target, cand, { pv, pa }, emit) {
+    const classId = "research-v1";
+    const policy = SESSION_CLASSES[classId];
+    const secrets = Array.from({ length: policy.tickets }, () => randomBytes(32));
+    const built = buildTicketBook(secrets);
+    const nonce = randomBytes(16).toString("hex");
+    const gateway = normalizeOnion(cand.onion);
+    const signal = sessionSignal({ gateway, classId, nonce, ticketBookDigest: built.ticketBookDigest });
+    emit({ phase: "prove", status: "start", artifact: pa.id, session: classId });
+    const reservation = this.pool.nextSlot();
+    const { epoch, slot } = reservation;
+    let proved;
+    try {
+      const group = await this.pool.ensureGroup();
+      proved = await this._prove(this.secret, epoch, slot, signal, { group, artifact: pa.id ?? undefined, limit: this.pool.K ?? K_SLOTS });
+      reservation.commit?.();
+    } catch (error) {
+      reservation.release?.();
+      emit({ phase: "prove", status: "error", error: error.message, code: error.code, resetAt: error instanceof ShadeTreeEpochBudgetError ? error.resetAt : undefined, retryAfterMs: error instanceof ShadeTreeEpochBudgetError ? error.retryAfterMs : undefined });
+      throw error;
+    }
+    const artifactId = proved.artifact ?? pa.id ?? null;
+    const envelope = {
+      v: pv.version,
+      session: sessionInitFields({ classId, gateway, nonce, commitments: built.commitments, ticketBookDigest: built.ticketBookDigest }),
+      ...(artifactId ? { artifact: artifactId } : {}),
+      proof: proved.proof, nullifier: proved.nullifier, externalNullifier: proved.externalNullifier, share: proved.share,
+    };
+    emit({ phase: "prove", status: "done", slot, nullifier: proved.nullifier, session: classId, artifact: artifactId });
+    const wire = JSON.stringify(envelope) + "\n";
+    // One SOCKS credential for the whole book: every ticket of this session rides the same Tor
+    // circuit identity (the session is linkable to the node by design; no reason to spend circuits).
+    const socksAuth = this.socksIsolation ? socksAuthForTunnel(nonce) : null;
+    const sel = this.onion ? null : await this._sel();
+    emit({ phase: "session", status: "start", onion: cand.onion, class: classId });
+    let sock;
+    try {
+      sock = await this._dial(cand.onion, this.dialAttempts, socksAuth);
+      sock.setNoDelay(true);
+    } catch (e) {
+      destroyRejectedSocket(sock);
+      sel?.reportResult?.(cand.onion, { ok: false });
+      emit({ phase: "session", status: "error", onion: cand.onion, error: e.message });
+      throw e;
+    }
+    let ack;
+    try {
+      const frame = await exchangeGatewayAck(sock, wire, { timeoutMs: this.gatewayAckTimeoutMs, maxBytes: this.gatewayAckMaxBytes });
+      ack = JSON.parse(frame.line);
+      if (!ack || typeof ack !== "object" || typeof ack.ok !== "boolean") throw new ShadeTreeGatewayAckError("SHADE_TREE_GATEWAY_ACK_INVALID", "gateway returned a malformed acknowledgement");
+    } catch (e) {
+      destroyRejectedSocket(sock);
+      sel?.reportResult?.(cand.onion, { ok: false });
+      emit({ phase: "session", status: "error", onion: cand.onion, error: e.message, code: e.code });
+      throw e;
+    } finally {
+      destroyRejectedSocket(sock); // the book, not this socket, is the session handle
+    }
+    if (ack.ok !== true) {
+      if (ack.err === "session-unsupported") this._sessionRefused.add(cand.onion);
+      emit({ phase: "session", status: "refused", onion: cand.onion, error: ack.err });
+      throw this._gateRefusalError(ack, cand.onion);
+    }
+    const echo = ack.session || {};
+    if (echo.ticketBookDigest !== built.ticketBookDigest || !policyMatches(echo.policy, classId)) {
+      // Fail closed: another book or other limits than the compiled class is not a session we hold.
+      emit({ phase: "session", status: "refused", onion: cand.onion, error: "session-policy-mismatch" });
+      throw new Error("gate refused: session-policy-mismatch (the node echoed a different book or policy)");
+    }
+    sel?.reportResult?.(cand.onion, { ok: true });
+    this._books.set(cand.onion, {
+      version: pv.version, digest: built.ticketBookDigest, secrets: built.secrets, commitments: built.commitments, nonce, socksAuth, policy,
+      unused: Array.from({ length: policy.tickets }, (_, i) => i), openedAt: Date.now(), lastUse: Date.now(),
+      slot, nullifier: proved.nullifier, artifact: artifactId,
+    });
+    emit({ phase: "session", status: "opened", onion: cand.onion, class: classId, tickets: policy.tickets });
+    const tunnel = await this._sessionSpend(target, [cand], emit);
+    if (!tunnel) throw new Error("gate refused: session-lost (the node dropped the book before its first ticket)");
+    return tunnel;
+  }
+
+  // Live books as [{ onion, ticketsLeft }], for status.
+  sessionBooks() {
+    return [...this._books.keys()].map((onion) => ({ onion, ticketsLeft: this._liveBook(onion)?.unused.length ?? 0 })).filter((b) => b.ticketsLeft > 0);
   }
 
   // Verify an optional gateway success receipt (T-FEAT-13). Returns a small evidence record

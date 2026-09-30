@@ -77,6 +77,18 @@ pub struct CapsDto {
     pub pay: Option<PayCapsDto>,
     #[serde(default)]
     pub rate: Option<RateCapsDto>,
+    // Session tickets (ADR 0011): `{ version, classes }`, canonicalized by shadenet-proto.
+    #[serde(default)]
+    pub session: Option<SessionCapsDto>,
+}
+
+/// Untrusted `caps.session`; validation lives in `shadenet_proto::canonical_session`.
+#[derive(Deserialize)]
+pub struct SessionCapsDto {
+    #[serde(default)]
+    pub version: i64,
+    #[serde(default)]
+    pub classes: Vec<String>,
 }
 
 /// Untrusted signed fixed-window rate policy. Structural/range validation stays
@@ -262,6 +274,10 @@ impl DirectoryDto {
                             previous_epochs_accepted: rate.previous_epochs_accepted,
                             root_freshness_seconds: rate.root_freshness_seconds,
                             payload_bytes_per_slot: rate.payload_bytes_per_slot,
+                        }),
+                        session: c.session.map(|session| shadenet_proto::SessionCaps {
+                            version: session.version,
+                            classes: session.classes,
                         }),
                     }),
                     caps_sig: g.caps_sig,

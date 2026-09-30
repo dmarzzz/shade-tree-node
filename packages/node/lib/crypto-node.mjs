@@ -18,6 +18,7 @@ export const toHex = (b) => Buffer.from(b).toString("hex");
 export const concatBytes = (parts) => Buffer.concat(parts.map((p) => Buffer.from(p)));
 export const bytesEqual = (a, b) => Buffer.from(a).equals(Buffer.from(b));
 export const sha3_256 = (bytes) => createHash("sha3-256").update(bytes).digest();
+export const sha256 = (bytes) => createHash("sha256").update(bytes).digest();
 
 export function ed25519PublicKey(rawHex) {
   const raw = Buffer.from(rawHex, "hex");

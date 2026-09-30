@@ -176,6 +176,21 @@ export function canonicalRate(rate) {
 }
 
 // The `admits` field alone: [] when nothing valid (caller omits it).
+// Session-ticket capability (session-v1, ADR 0011): `{ version, classes }`. Onion-signed like every
+// other cap, so a directory signer cannot add session support a node did not advertise. version is
+// an integer 1..65535; classes are grammar-checked ids, deduped, sorted, non-empty and bounded.
+// Appended after `rate` so every caps byte string from before session tickets is unchanged.
+export const SESSION_CLASS_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+export const MAX_SESSION_CLASSES = 8;
+export function canonicalSession(session) {
+  if (!session || typeof session !== "object" || Array.isArray(session)) return null;
+  if (!Number.isInteger(session.version) || session.version < 1 || session.version > 65535) return null;
+  if (!Array.isArray(session.classes)) return null;
+  const classes = [...new Set(session.classes.filter((c) => typeof c === "string" && SESSION_CLASS_RE.test(c)))].sort();
+  if (classes.length === 0 || classes.length > MAX_SESSION_CLASSES) return null;
+  return { version: session.version, classes };
+}
+
 export function canonicalAdmits(list) {
   if (!Array.isArray(list)) return [];
   const set = new Set(list.filter((a) => typeof a === "string").map((a) => a.toLowerCase()));
@@ -241,6 +256,8 @@ export function canonicalCaps(caps) {
   if (pay) out.pay = pay;
   const rate = canonicalRate(caps.rate);
   if (rate) out.rate = rate;
+  const session = canonicalSession(caps.session);
+  if (session) out.session = session;
   return out;
 }
 
@@ -248,7 +265,7 @@ export function canonicalCaps(caps) {
 // canonical bytes when empty, keeping absent/empty-caps records byte-identical to before.
 export function hasCaps(caps) {
   const c = canonicalCaps(caps);
-  return c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined;
+  return c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined || c.session !== undefined;
 }
 
 // Domain-separated, onion-bound canonical bytes the ONION key signs to attest its caps.

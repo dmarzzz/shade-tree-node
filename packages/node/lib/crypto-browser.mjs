@@ -7,6 +7,7 @@
 
 import { ed25519 } from "@noble/curves/ed25519";
 import { sha3_256 as nobleSha3 } from "@noble/hashes/sha3";
+import { sha256 as nobleSha256 } from "@noble/hashes/sha256";
 
 const encoder = new TextEncoder();
 const HEX_RE = /^(?:[0-9a-fA-F]{2})*$/;
@@ -32,6 +33,7 @@ export function bytesEqual(a, b) {
   return diff === 0;
 }
 export const sha3_256 = (bytes) => nobleSha3(bytes);
+export const sha256 = (bytes) => nobleSha256(bytes);
 
 function key32(hex, what) {
   const raw = fromHex(hex);

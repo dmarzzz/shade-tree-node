@@ -31,12 +31,20 @@ client's bundled profile and the docs tables.
 | `unbondingSeconds` | seconds | ≥ 3720 (root freshness 60 + epoch 60 + slash confirmation 3600) |
 | `slash.rewardDivisor` | integer | 2..1000; the slasher gets `floor(bond / d)`, the rest is burned (10 = 90% burn) |
 | `sponsorSeats.count`, `sponsorSeats.bondWeiEach` | seats, wei | what M8 funds for agent preview seats (below) |
-| `sessionTickets` | boolean | turns on multi-target session tickets (#103) in the node and clients |
+| `sessionTickets` | boolean | session tickets (#103, ADR 0011): `true` writes `sessionTickets: true` into the record, so the node role starts every node with `SHADE_TREE_SESSION_TICKETS=1`, the heartbeat advertises the signed `session` capability and both SDKs default to it |
 | `status` | `"placeholder"` \| `"final"` | **production refuses to deploy until this is `"final"`** |
 | `decisionRef` | text | who set these numbers and when |
 
 What a slot buys is fixed by the rate policy, not by this file: one new HTTPS tunnel per 60-second
 epoch per slot, up to 40 MiB combined traffic. A tier's `limit` is its slots per epoch.
+
+With `sessionTickets: true` a slot buys a `research-v1` **book** instead: six single-use tunnel
+tickets at one node, valid 90 s (15 s idle), four tunnels open at once, still inside that slot's
+40 MiB and its shaping (64 KiB/s up, 512 KiB/s down, shared by the book). Nothing multiplies: a
+tier-8 member still gets 8 slots per epoch, so at most 8 books = 48 tunnels and 320 MiB per epoch
+instead of 8 tunnels. The trade is linkability: the six tunnels of one book are visibly one
+session to the node that serves them (the proof still hides the member). Leave it `false` to
+keep one proof per tunnel and per-tunnel node rotation.
 
 **Steps:**
 

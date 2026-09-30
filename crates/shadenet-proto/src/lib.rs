@@ -39,6 +39,8 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
+pub mod session;
+
 use data_encoding::Specification;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use k256::ecdsa::{RecoveryId, Signature as Secp256k1Signature, VerifyingKey as Secp256k1Key};
@@ -352,6 +354,51 @@ pub struct Caps {
     /// with every other capability and canonicalizes after `pay` so all older
     /// caps byte strings remain unchanged when it is absent.
     pub rate: Option<RateCaps>,
+    /// Session tickets (session-v1, ADR 0011): `{ version, classes }`. Signed with every
+    /// other capability and canonicalized after `rate`, so older caps byte strings are
+    /// unchanged when it is absent. Mirrors `caps.session`.
+    pub session: Option<SessionCaps>,
+}
+
+/// RAW, untrusted `caps.session`. Validated + normalized only by [`canonical_session`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionCaps {
+    pub version: i64,
+    pub classes: Vec<String>,
+}
+
+/// Canonical `caps.session`: `version` in 1..=65535, class ids grammar-checked
+/// (`session::is_class_id`), deduped, sorted, non-empty and at most
+/// [`MAX_SESSION_CLASSES`] long (`lib/directory.mjs canonicalSession`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CanonicalSession {
+    pub version: u64,
+    pub classes: Vec<String>,
+}
+
+/// Upper bound on advertised session classes (`lib/directory.mjs MAX_SESSION_CLASSES`).
+pub const MAX_SESSION_CLASSES: usize = 8;
+
+/// The `session` field alone: `None` when the advert is malformed (dropped whole).
+pub fn canonical_session(session: &SessionCaps) -> Option<CanonicalSession> {
+    if !(1..=65535).contains(&session.version) {
+        return None;
+    }
+    let mut classes: Vec<String> = session
+        .classes
+        .iter()
+        .filter(|c| session::is_class_id(c))
+        .cloned()
+        .collect();
+    classes.sort_unstable();
+    classes.dedup();
+    if classes.is_empty() || classes.len() > MAX_SESSION_CLASSES {
+        return None;
+    }
+    Some(CanonicalSession {
+        version: session.version as u64,
+        classes,
+    })
 }
 
 /// RAW, untrusted `caps.pay` (T-FEAT-9): `{ protocols, onion?, port, asset, chain, tiers }`.
@@ -418,6 +465,7 @@ pub struct CanonicalCaps {
     pub admits: Option<Vec<String>>,
     pub pay: Option<CanonicalPay>,
     pub rate: Option<CanonicalRate>,
+    pub session: Option<CanonicalSession>,
 }
 
 /// Upper bound on advertised artifact ids (`lib/directory.mjs MAX_CAPS_ARTIFACTS`); a longer
@@ -612,6 +660,9 @@ pub fn canonical_caps(caps: &Caps) -> CanonicalCaps {
     if let Some(rate) = &caps.rate {
         out.rate = canonical_rate(rate);
     }
+    if let Some(session) = &caps.session {
+        out.session = canonical_session(session);
+    }
     out
 }
 
@@ -627,6 +678,7 @@ pub fn has_caps(caps: &Caps) -> bool {
         || c.admits.is_some()
         || c.pay.is_some()
         || c.rate.is_some()
+        || c.session.is_some()
 }
 
 /// Serialize canonical caps as the exact `JSON.stringify(canonicalCaps(caps))` bytes:
@@ -746,6 +798,22 @@ fn canonical_caps_json(cc: &CanonicalCaps) -> String {
         s.push_str(",\"payloadBytesPerSlot\":");
         s.push_str(&rate.payload_bytes_per_slot.to_string());
         s.push('}');
+        first = false;
+    }
+    if let Some(session) = &cc.session {
+        if !first {
+            s.push(',');
+        }
+        s.push_str("\"session\":{\"version\":");
+        s.push_str(&session.version.to_string());
+        s.push_str(",\"classes\":[");
+        for (i, c) in session.classes.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            push_json_string(&mut s, c);
+        }
+        s.push_str("]}");
     }
     s.push('}');
     s

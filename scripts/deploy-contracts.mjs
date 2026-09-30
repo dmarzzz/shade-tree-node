@@ -226,7 +226,7 @@ async function main() {
       slashRewardDivisor: econ.slash.rewardDivisor,
     };
     const commit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout.trim();
-    const record = buildRecord(opts.network, netDir, liveRecord, staked, gatewayRegistry, commit);
+    const record = withEconomicsFlags(buildRecord(opts.network, netDir, liveRecord, staked, gatewayRegistry, commit), econ);
 
     const shape = [...validateClientRecord(record).errors, ...preflightRecord(record, { requireLive: false }).errors];
     if (shape.length) fail(`record is invalid: ${JSON.stringify(shape)}`);
@@ -289,6 +289,12 @@ export function buildRecord(network, netDir, liveRecord, staked, gatewayRegistry
     note: `${network}: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/${network}/economics.json. No canopy is recorded yet.`,
   };
   return { ...base, admission: { ...base.admission, roots: { ...base.admission.roots, staked } } };
+}
+
+// H2's session-ticket switch (ADR 0011) rides in the record next to the economics it belongs to:
+// the node role, the heartbeat and both SDKs read `sessionTickets` from here.
+export function withEconomicsFlags(record, econ) {
+  return { ...record, sessionTickets: econ.sessionTickets === true };
 }
 
 async function verifySources(audit, staked, econ, manifest) {

@@ -45,6 +45,9 @@
     shade_tree_root_freshness_seconds: "{{ shade_tree_rate_policy.rootFreshnessSeconds | default('') }}"
     shade_tree_policy_payload_bytes: "{{ shade_tree_rate_policy.payloadBytesPerSlot | default(shade_tree_tunnel_max_payload_bytes) | int }}"
     shade_tree_staked_deploy_block: "{{ shade_tree_staked_root.deployBlock | default('') }}"
+    # Session tickets (ADR 0011): the record's H2 switch; every node and heartbeat of the canopy
+    # runs with the same value, so the signed `session` capability matches what the node enforces.
+    shade_tree_session_tickets: "{{ shade_tree_deployment.sessionTickets | default(false) | bool }}"
 
 - name: Verify public profile and the exact runtime RPC against Sepolia before mutation
   ansible.builtin.command:
@@ -441,6 +444,7 @@
     SHADE_TREE_ZK_ARTIFACT_LEGACY: "{{ shade_tree_deployment.artifacts.legacy or '' }}"
     SHADE_TREE_GATEWAY_REGION: "{{ shade_tree_gateway_region }}"
     SHADE_TREE_ENABLE_POW: "{{ '1' if shade_tree_enable_pow else '0' }}"
+    SHADE_TREE_SESSION_TICKETS: "{{ '1' if shade_tree_session_tickets else '0' }}"
     SHADE_TREE_LOG_FORMAT: json
     SHADE_TREE_BANNER: never
     SHADE_TREE_BOOTNODE_PORT: "{{ shade_tree_bootnode_port | string }}"

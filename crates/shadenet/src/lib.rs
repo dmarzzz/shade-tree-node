@@ -42,6 +42,7 @@ pub mod eth;
 pub mod health;
 pub mod identity;
 pub mod profile;
+pub mod session;
 pub mod slot;
 
 #[cfg(feature = "live")]

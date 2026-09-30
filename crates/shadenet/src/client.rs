@@ -205,6 +205,8 @@ pub struct Tunnel {
     pub epoch: u64,
     /// The node's signed receipt, when it sent one.
     pub receipt: Option<serde_json::Value>,
+    /// `Some(book digest)` when this tunnel spent a session ticket instead of a proof (ADR 0011).
+    pub session: Option<String>,
 }
 
 impl Tunnel {
@@ -268,6 +270,10 @@ pub struct Client {
     artifact: OnceCell<String>,
     last_error: StdMutex<Option<serde_json::Value>>,
     counters: Counters,
+    /// Live session-ticket books, one per node (ADR 0011); empty unless `session_tickets` is on.
+    sessions: crate::session::SessionPool,
+    /// Nodes that refused a session initialization as unsupported this process lifetime.
+    session_refused: StdMutex<HashSet<String>>,
 }
 
 impl Client {
@@ -317,6 +323,8 @@ impl Client {
             artifact: OnceCell::new(),
             last_error: StdMutex::new(None),
             counters: Counters::default(),
+            sessions: crate::session::SessionPool::new(),
+            session_refused: StdMutex::new(HashSet::new()),
         })
     }
 
@@ -1051,6 +1059,13 @@ impl Client {
             ));
         }
         let (gateways, advertised, demo) = self.candidates(port).await?;
+        // Session tickets (ADR 0011): a live book at any candidate spends a ticket before any
+        // proof; nothing here touches the slot cursor.
+        if self.config.session_tickets {
+            if let Some(tunnel) = self.session_spend(target, &gateways).await? {
+                return Ok(tunnel);
+            }
+        }
         let (members, _set) = self.admitted_members(&identity.leaf, demo.as_ref()).await?;
         let limit = self.tier();
         if !(1..=crate::profile::MAX_LIMIT).contains(&limit) {
@@ -1081,7 +1096,18 @@ impl Client {
             shadenet_proto::select_artifact(advertised.as_deref(), std::slice::from_ref(&ours))
                 .map_err(|e| Error::Artifact(e.to_string()))?;
         let nonce = self.config.nonce.clone().unwrap_or_else(random_nonce);
-        tracing::debug!(%target, epoch, limit, %artifact, candidates = gateways.len(), "building RLN envelope");
+        // With session tickets on, the proof initializes a book at the first session-capable
+        // candidate instead of buying one tunnel; the first ticket then opens this tunnel.
+        let session = if self.config.session_tickets {
+            self.session_candidate(&gateways).await
+        } else {
+            None
+        };
+        let gateways = match &session {
+            Some(gateway) => vec![gateway.clone()],
+            None => gateways,
+        };
+        tracing::debug!(%target, epoch, limit, %artifact, candidates = gateways.len(), session = session.is_some(), "building RLN envelope");
         let request = transport::ConnectRequest {
             gateways,
             proof: transport::ProofRequest {
@@ -1101,7 +1127,11 @@ impl Client {
             },
             slots,
             artifact,
+            session: None,
         };
+        if let Some(gateway) = session {
+            return self.session_init(target, gateway, request).await;
+        }
         let outcome = self.transport.connect(request).await;
         match &outcome {
             Ok(connected) => self.report_health(&connected.attempts),
@@ -1123,10 +1153,232 @@ impl Client {
                     nullifier: connected.proof.nullifier,
                     epoch,
                     receipt,
+                    session: None,
                 })
             }
             Err(error) => Err(self.map_transport_error(error).await),
         }
+    }
+
+    // ---------------------------------------------------------------- session tickets
+
+    /// The onion (no suffix) of a candidate, when it is an onion service.
+    fn onion_of(gateway: &Gateway) -> Option<String> {
+        match gateway {
+            Gateway::Onion { onion, .. } => Some(onion.clone()),
+            Gateway::PlainTcp { .. } => None,
+        }
+    }
+
+    /// Candidates whose SIGNED caps advertise `session` with the research class. A pinned
+    /// onion (no canopy, no caps) is assumed capable until it says `session-unsupported`.
+    async fn session_capable(&self, gateways: &[Gateway]) -> Vec<Gateway> {
+        let refused = self
+            .session_refused
+            .lock()
+            .map(|set| set.clone())
+            .unwrap_or_default();
+        let advertised: Option<HashSet<String>> = match &self.config.discovery {
+            Discovery::Onions(_) | Discovery::PlainTcp(_) => None,
+            _ => {
+                let snapshot = match self.canopy_snapshot().await {
+                    Ok(snapshot) => snapshot,
+                    Err(_) => return Vec::new(),
+                };
+                Some(
+                    snapshot
+                        .dir
+                        .gateways
+                        .iter()
+                        .filter(|g| {
+                            g.caps
+                                .as_ref()
+                                .and_then(|c| shadenet_proto::canonical_caps(c).session)
+                                .map(|s| {
+                                    s.classes
+                                        .iter()
+                                        .any(|c| c == shadenet_proto::session::RESEARCH_V1.class)
+                                })
+                                .unwrap_or(false)
+                        })
+                        .map(|g| g.onion.trim_end_matches(".onion").to_string())
+                        .collect(),
+                )
+            }
+        };
+        gateways
+            .iter()
+            .filter(|g| {
+                Self::onion_of(g).is_some_and(|onion| {
+                    !refused.contains(&onion)
+                        && advertised.as_ref().is_none_or(|set| set.contains(&onion))
+                })
+            })
+            .cloned()
+            .collect()
+    }
+
+    async fn session_candidate(&self, gateways: &[Gateway]) -> Option<Gateway> {
+        self.session_capable(gateways).await.into_iter().next()
+    }
+
+    /// Spend a ticket from a live book at one of the candidates. `Ok(None)` means no usable
+    /// book (or the book turned out to be gone): the caller proves as usual.
+    async fn session_spend(
+        &self,
+        target: &str,
+        gateways: &[Gateway],
+    ) -> Result<Option<Tunnel>, Error> {
+        let onions: Vec<String> = gateways.iter().filter_map(Self::onion_of).collect();
+        let Some(ticket) = self.sessions.take(&onions) else {
+            return Ok(None);
+        };
+        let gateway = gateways
+            .iter()
+            .find(|g| Self::onion_of(g).as_deref() == Some(ticket.onion.trim_end_matches(".onion")))
+            .cloned()
+            .ok_or_else(|| Error::Internal("ticket without its node".into()))?;
+        let spend = transport::TicketSpend {
+            ticket_book_digest: ticket.ticket_book_digest.clone(),
+            index: ticket.index,
+            secret: ticket.secret,
+            request_nonce: ticket.request_nonce.clone(),
+            target: target.to_string(),
+        };
+        match self.transport.spend_ticket(&gateway, spend).await {
+            Ok(connected) => {
+                self.report_health(&connected.attempts);
+                tracing::info!(gateway = %connected.gateway.label(), %target, ticket = ticket.index, "ticket accepted");
+                Ok(Some(Tunnel {
+                    stream: connected.stream,
+                    early_data: connected.early_data,
+                    gateway: connected.gateway.label(),
+                    target: target.to_string(),
+                    nullifier: String::new(),
+                    epoch: self.current_epoch(),
+                    receipt: None,
+                    session: Some(ticket.ticket_book_digest.clone()),
+                }))
+            }
+            Err(transport::Error::GatewayRefused { ack, attempts, .. }) => {
+                self.report_health(&attempts);
+                let reason = ack
+                    .get("err")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                tracing::debug!(%reason, ticket = ticket.index, "ticket refused");
+                if crate::session::refusal_drops_book(&reason) {
+                    // The node no longer holds the book: a fresh proof opens a new one.
+                    self.sessions.forget(&ticket.onion);
+                    return Ok(None);
+                }
+                if crate::session::refusal_refunds_ticket(&reason) {
+                    // The node refunded the ticket; the target itself is the problem.
+                    self.sessions.refund(&ticket);
+                    return Err(Error::NodeRefused {
+                        gateway: gateway.label(),
+                        reason,
+                        ack,
+                    });
+                }
+                // ticket-spent / mismatch / conflict: this ticket is lost; try the next one.
+                Ok(None)
+            }
+            Err(transport::Error::AllCandidatesFailed { attempts }) => {
+                self.report_health(&attempts);
+                // The node was unreachable: the ticket is still unused on it.
+                self.sessions.refund(&ticket);
+                Err(self
+                    .map_transport_error(transport::Error::AllCandidatesFailed { attempts })
+                    .await)
+            }
+            Err(error) => Err(self.map_transport_error(error).await),
+        }
+    }
+
+    /// Prove once to open a book at `gateway`, then spend its first ticket for `target`.
+    async fn session_init(
+        &self,
+        target: &str,
+        gateway: Gateway,
+        mut request: transport::ConnectRequest,
+    ) -> Result<Tunnel, Error> {
+        let onion = Self::onion_of(&gateway)
+            .ok_or_else(|| Error::Internal("session node without an onion".into()))?;
+        let class = &shadenet_proto::session::RESEARCH_V1;
+        let pending = crate::session::PendingBook::draw(&onion, class).map_err(Error::Internal)?;
+        request.session = Some(transport::SessionInit {
+            class_id: class.class.to_string(),
+            gateway: pending.onion.clone(),
+            nonce: pending.nonce.clone(),
+            commitments: pending.commitments.clone(),
+            ticket_book_digest: pending.ticket_book_digest.clone(),
+        });
+        let outcome = self.transport.connect(request).await;
+        match &outcome {
+            Ok(connected) => self.report_health(&connected.attempts),
+            Err(transport::Error::GatewayRefused { attempts, .. })
+            | Err(transport::Error::AllCandidatesFailed { attempts }) => {
+                self.report_health(attempts)
+            }
+            Err(_) => {}
+        }
+        match outcome {
+            Ok(connected) => {
+                let echo = connected.ack.get("session").cloned().unwrap_or_default();
+                let digest_ok = echo
+                    .get("ticketBookDigest")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(pending.ticket_book_digest.as_str());
+                let policy_ok = echo
+                    .get("policy")
+                    .map(|p| crate::session::policy_matches(p, class))
+                    .unwrap_or(false);
+                if !digest_ok || !policy_ok {
+                    // Fail closed: a node that echoes another book or other limits is not trusted
+                    // with this book. The slot is spent; the caller may try again.
+                    return Err(Error::NodeRefused {
+                        gateway: gateway.label(),
+                        reason: "session-policy-mismatch".into(),
+                        ack: Box::new(connected.ack),
+                    });
+                }
+                tracing::info!(gateway = %gateway.label(), class = class.class, tickets = class.tickets, "session book opened");
+                self.sessions.install(pending);
+                drop(connected.stream);
+                match self
+                    .session_spend(target, std::slice::from_ref(&gateway))
+                    .await?
+                {
+                    Some(tunnel) => Ok(tunnel),
+                    None => Err(Error::NodeRefused {
+                        gateway: gateway.label(),
+                        reason: "session-lost".into(),
+                        ack: Box::new(serde_json::Value::Null),
+                    }),
+                }
+            }
+            Err(transport::Error::GatewayRefused { ack, .. })
+                if ack.get("err").and_then(serde_json::Value::as_str)
+                    == Some("session-unsupported") =>
+            {
+                if let Ok(mut set) = self.session_refused.lock() {
+                    set.insert(onion.clone());
+                }
+                Err(Error::NodeRefused {
+                    gateway: gateway.label(),
+                    reason: "session-unsupported".into(),
+                    ack,
+                })
+            }
+            Err(error) => Err(self.map_transport_error(error).await),
+        }
+    }
+
+    /// Live session books as `(node, tickets left)`, for status.
+    pub fn session_books(&self) -> Vec<(String, usize)> {
+        self.sessions.summary()
     }
 
     async fn map_transport_error(&self, error: transport::Error) -> Error {

@@ -20,7 +20,7 @@ const hex = (b) => Buffer.from(b).toString("hex");
 
 // The wire functions the SDK exposes, re-exported from one entry so both builds see the same code.
 const entry = (spec) => `
-export { verifyCanopy, ShadeNetError } from ${JSON.stringify(spec(join(HERE, "..", "src", "index.mjs")))};
+export { verifyCanopy, ShadeNetError, buildTicketBook, sessionSignal, spendDigest, ticketFields, validateSessionInit, validateTicket, policyEcho } from ${JSON.stringify(spec(join(HERE, "..", "src", "index.mjs")))};
 export { canonicalDirectoryBytes, canonicalCapsBytes, onionToPubkey, pubkeyToOnion, verifyCapsSig,
   ed25519Sign, ed25519PubFromSeed } from ${JSON.stringify(spec(join(ROOT, "packages", "node", "lib", "directory.mjs")))};
 `;
@@ -48,6 +48,19 @@ async function suite(label, m) {
   const withCaps = { version: 1, issued: 1000000, gateways: [{ onion: V.onion, pubkey: V.onionPub, weight: 100, health: "up", caps: caps.caps, capsSig: caps.capsSig }] };
   ok(hex(m.canonicalDirectoryBytes(withCaps)) === caps.directoryWithCaps.canonicalBytesHex, "directory-with-caps bytes");
   ok(m.verifyCanopy({ ...withCaps, signature: caps.directoryWithCaps.signature }, { signers: [V.signerPub] }).nodes[0].caps.region === "eu", "directory with caps verifies");
+
+  // Session tickets (ADR 0011): the same book, signal, spend digest and wire ticket as the node
+  // and the Rust SDK, in Node and in the browser bundle.
+  const st = V.sessionTickets;
+  const book = m.buildTicketBook(st.secretsHex);
+  ok(book.ticketBookDigest === st.ticketBookDigest && book.commitments.join() === st.commitments.join(), "ticket book digest + commitments");
+  ok(m.sessionSignal({ gateway: st.onion, classId: st.classId, nonce: st.sessionNonce, ticketBookDigest: st.ticketBookDigest }) === st.signal, "session signal");
+  ok(m.spendDigest({ ticketBookDigest: st.ticketBookDigest, index: st.spend.index, target: st.spend.target, requestNonce: st.spend.requestNonce }) === st.spend.spendDigest, "spend digest");
+  ok(JSON.stringify(m.ticketFields({ ticketBookDigest: st.ticketBookDigest, index: st.spend.index, secret: book.secrets[st.spend.index], requestNonce: st.spend.requestNonce })) === JSON.stringify(st.spend.ticket), "wire ticket");
+  ok(m.validateTicket(st.spend.ticket).ok && m.validateSessionInit({ v: 1, class: st.classId, gateway: st.onion, nonce: st.sessionNonce, ticketCommitments: st.commitments, ticketBookDigest: st.ticketBookDigest }).ok, "validators accept the vector");
+  ok(JSON.stringify(m.policyEcho(st.classId)) === JSON.stringify(st.policy), "research-v1 policy echo");
+  const sc = st.capsWithSession;
+  ok(hex(m.canonicalCapsBytes(V.onion, sc.caps)) === sc.canonicalCapsBytesHex && m.verifyCapsSig(V.onion, sc.caps, sc.capsSig), "onion-signed session capability");
 
   const th = V.thresholdDirectory;
   const thDir = { version: th.version, issued: th.issued, gateways: [{ onion: th.onion, pubkey: th.onionPub, weight: 100, health: "up" }], signers: th.signers, signatures: th.signatures, threshold: th.threshold };

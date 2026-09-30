@@ -26,6 +26,7 @@ const SLOW_SUITES = new Set([
   "timing.selftest.mjs",
   "zk-artifact-window.selftest.mjs", // real proofs under two artifact sets (T-HARD-8)
   "reputation-tiers.selftest.mjs",   // real proofs at two tier limits in one tree (T-FEAT-8)
+  "session-e2e.selftest.mjs",        // real proofs: one proof opens a ticket book, tickets spend without proving (ADR 0011)
   "onchain-tiers.selftest.mjs",      // anvil + forge broadcast + real gateway + real proofs (T-FEAT-8b / T-DEV-9c)
   "paid-access.selftest.mjs",        // anvil + forge + real gateway + real proofs: union roots + slasher routing (T-FEAT-7)
   "registrar.selftest.mjs",          // anvil + forge create + the 402 registrar + shade-tree pay, both rails (T-FEAT-7)

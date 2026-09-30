@@ -29,6 +29,7 @@ fn input(members: Vec<String>, leaf: &str, secret: &str) -> EnvelopeInput {
         members,
         target: "example.com:443".into(),
         nonce: "00112233445566778899aabbccddeeff".into(),
+        signal: None,
         epoch: 1,
         rln_identifier: "1".into(),
         user_message_limit: 1,

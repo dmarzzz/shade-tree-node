@@ -162,6 +162,49 @@ result origins still requires the bounded multi-target session capability in
 [ADR 0009](../docs/adr/0009-epoch-bandwidth-envelope.md). Exact Grove-wide enforcement also requires
 closing the asynchronous, fail-open cross-gateway replay window described above.
 
+## Session tickets (session-v1, flagged)
+
+Off by default; on only when the deployment record's `sessionTickets` is `true`
+([ADR 0011](../docs/adr/0011-session-tickets.md), design in
+[`docs/design/SESSION-TICKETS.md`](../docs/design/SESSION-TICKETS.md)). A node that runs with
+it advertises the onion-signed capability `session: { version: 1, classes: ["research-v1"] }`
+(canonicalized after `rate`; absent caps bytes are unchanged). Everything rides the v4 port and
+the v4 envelope framing; a plain v4 envelope is unchanged byte for byte.
+
+**Initialization.** One v4 envelope whose proof binds, instead of `target`/`nonce`, the signal
+
+```text
+shade-tree:session:v1\n<gateway-onion>\n<class-id>\n<session-nonce>\n<ticket-book-digest>
+```
+
+and carries `session: { v: 1, class, gateway, nonce, ticketCommitments[], ticketBookDigest }`.
+`ticketCommitment_i = SHA256("Shade Tree session ticket v1\n" || u16be(i) || secret_i)`;
+`ticketBookDigest = SHA256("Shade Tree session ticket book v1\n" || u16be(N) || c_0..c_(N-1))`
+over raw commitment bytes. The node checks grammar, that `gateway` is its own onion, the signal
+binding, then the same root, artifact, Groth16 and spent-set checks as a tunnel, and answers
+`{ "ok": true, "session": { "ticketBookDigest", "policy": { class, tickets, maxPayloadBytes,
+lifetimeMs, idleTimeoutMs, maxConcurrentStreams } } }` and closes. The client fails closed when
+the echoed policy differs from its table. One proof slot opens at most one book; an exact replay
+of a live book is idempotent, another digest for the same slot is `session-conflict`.
+
+**Spend.** A proof-less v4 envelope `{ "v": 4, "ticket": { "v": 1, "book", "i", "t", "n" },
+"target" }` (`t` = the 32-byte secret, unpadded base64url; `n` = a 16-byte request nonce, hex)
+opens one tunnel. The node recomputes the commitment, moves the ticket `unused -> reserved`
+synchronously before any DNS or connect, then to `spent` inside the successful upstream connect
+before `{"ok":true}`. A definite pre-connect failure (`bad-target*`, `upstream:*` other than a
+timeout) returns it to `unused`; an ambiguous one burns it. The spend digest
+`SHA256("Shade Tree session ticket spend v1\n" || digest || u16be(i) || u16be(len(target)) ||
+target || requestNonce)` tells an exact in-flight retry (`ticket-inflight`) from a reuse for
+another target (`ticket-conflict`).
+
+**research-v1.** 6 tickets, 90 s hard lifetime from the ack, 15 s session idle (reset only by
+relayed payload), 4 concurrent streams and pending connects, shared token buckets of 64 KiB/s
+(burst 128 KiB) agent to destination and 512 KiB/s (burst 1 MiB) back, and the byte ceiling is
+the proof's own per-slot payload budget (40 MiB), shared by every stream of the book and
+stopping all of them at the boundary. Refusals: `session-unsupported | session-* | ticket-*`
+(bounded, `packages/node/gateway/session.mjs`). Every stream of a book is linkable to the serving node as
+one session; the proof still hides the member. Vectors: `testdata/vectors.json` `sessionTickets`.
+
 ## Discovery and trust
 
 Each node controls a Tor v3 onion identity. Its heartbeat signs the announcement and
