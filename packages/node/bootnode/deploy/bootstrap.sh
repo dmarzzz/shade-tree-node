@@ -27,6 +27,8 @@
 #   SHADE_TREE_BANNER      auto | always | never                 (default: never under systemd)
 #   SHADE_TREE_ENABLE_POW  1 | 0              (default: 0) onion PoW DoS defense
 #                    (HiddenServicePoWDefensesEnabled) on every HS block this box publishes.
+#   SHADE_TREE_SESSION_TICKETS 1 | 0          (default: 0) session-ticket books (ADR 0011), rendered into
+#                    the gateway AND heartbeat units so the signed session cap matches enforcement.
 #   SHADE_TREE_HS_MAX_STREAMS  per-circuit stream cap on every HS block (default 32; OPS-10).
 #                    Default OFF: a client tor built without the pow module (e.g. the Homebrew
 #                    bottle, `tor --list-modules` -> `pow: no`) could NOT reach a PoW-enabled
@@ -207,6 +209,9 @@ if arts:
     out["SHADE_TREE_ZK_ARTIFACTS"] = ",".join(arts)
 if elder.get("admission"):
     out["SHADE_TREE_ADMISSION"] = elder["admission"]
+# ADR 0011: the H2 switch from the record; gateway and heartbeat run with the same value.
+if r.get("sessionTickets") is True:
+    out["SHADE_TREE_SESSION_TICKETS"] = "1"
 if elder.get("gatewayRegistry"):
     out["SHADE_TREE_GATEWAY_REGISTRY"] = elder["gatewayRegistry"]
 for k, v in out.items():
@@ -240,6 +245,7 @@ SHADE_TREE_ADMISSION="${SHADE_TREE_ADMISSION:-open}"
 SHADE_TREE_BOOTNODE_PORT="${SHADE_TREE_BOOTNODE_PORT:-8877}"
 SHADE_TREE_GATEWAY_PORT="${SHADE_TREE_GATEWAY_PORT:-8443}"
 SHADE_TREE_ENABLE_POW="${SHADE_TREE_ENABLE_POW:-0}"
+SHADE_TREE_SESSION_TICKETS="${SHADE_TREE_SESSION_TICKETS:-0}"
 SHADE_TREE_BOOTNODE_ONION="${SHADE_TREE_BOOTNODE_ONION:-}"
 SHADE_TREE_BOOTNODE_ONIONS="${SHADE_TREE_BOOTNODE_ONIONS:-}"
 SHADE_TREE_BOOTNODE_SIGNER="${SHADE_TREE_BOOTNODE_SIGNER:-}"
@@ -324,6 +330,11 @@ case "$SHADE_TREE_ENABLE_POW" in
   1|true|yes|on)   SHADE_TREE_ENABLE_POW=1 ;;
   0|false|no|off)  SHADE_TREE_ENABLE_POW=0 ;;
   *) die "SHADE_TREE_ENABLE_POW must be 1 or 0 (got '$SHADE_TREE_ENABLE_POW')" ;;
+esac
+case "$SHADE_TREE_SESSION_TICKETS" in
+  1|true|yes|on)   SHADE_TREE_SESSION_TICKETS=1 ;;
+  0|false|no|off)  SHADE_TREE_SESSION_TICKETS=0 ;;
+  *) die "SHADE_TREE_SESSION_TICKETS must be 1 or 0 (got '$SHADE_TREE_SESSION_TICKETS')" ;;
 esac
 case "$SHADE_TREE_ELDER_ONLY" in
   1|true|yes|on)   SHADE_TREE_ELDER_ONLY=1 ;;
@@ -801,6 +812,8 @@ EOF
       echo "Environment=SHADE_TREE_TOR_PORT=9050"
       echo "EnvironmentFile=-/etc/shade-tree/fleet-tally.env"
     fi
+    # ADR 0011: session-ticket books; off by default so the golden unit is unchanged.
+    [ "$SHADE_TREE_SESSION_TICKETS" = "1" ] && echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
     [ "$ADMIT_INVITED" = "1" ] && [ -n "$SHADE_TREE_MEMBERS_RUNTIME_FILE" ] && echo "Environment=SHADE_TREE_MEMBERS_FILE=${SHADE_TREE_MEMBERS_RUNTIME_FILE}"
     # Admission policy companions (T-FEAT-9): the contracts + RPC behind each admitted on-chain
     # path (SHADE_TREE_HELIOS=1 implies staked). Only rendered when the policy needs them.
@@ -899,6 +912,8 @@ EOF
     [ -z "$SHADE_TREE_BOOTNODE_ONIONS" ] || echo "Environment=SHADE_TREE_BOOTNODE_ONIONS=${SHADE_TREE_BOOTNODE_ONIONS}"
     # Heartbeat loads the same vkeys and advertises their content-derived ids in signed caps.
     [ -z "$SHADE_TREE_ZK_ARTIFACTS" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACTS=${SHADE_TREE_ZK_ARTIFACTS}"
+    # ADR 0011: the heartbeat advertises the signed session cap only when the node enforces it.
+    [ "$SHADE_TREE_SESSION_TICKETS" = "1" ] && echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
     if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
       # Advertise the offer in the gateway's SIGNED caps (`caps.pay`, T-FEAT-9) -- the same
       # advert the bootnode puts in /health; SHADE_TREE_REGISTRAR_ONION names the onion it rides.
