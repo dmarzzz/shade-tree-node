@@ -59,7 +59,8 @@ shade-tree --version
 Automatic mode first tries the selected release's self-contained `-live` agent
 and falls back to its verifier-only binary only when that live asset is absent.
 On Apple Silicon it detects Rosetta shells and still selects the native arm64
-live build. Intel macOS has only the verifier binary. Pin v0.6.0 with
+live build. Intel macOS has a `-live` binary from v0.7.0-rc.1 on (v0.6.0 ships
+only the verifier there). Pin v0.6.0 with
 `... | SHADE_TREE_VERSION=v0.6.0 sh`, or read the
 [installer options and manual verification steps](crates/INSTALL.md). Checksums
 provide transfer integrity; GitHub attestations provide the stronger build

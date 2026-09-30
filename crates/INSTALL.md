@@ -102,8 +102,9 @@ provenance step:
 gh attestation verify "$ASSET" --repo dmarzzz/shade-tree-node
 ```
 
-On macOS, use `shasum -a 256 -c` instead of `sha256sum`. Only Apple Silicon has
-a published `-live` binary; Intel macOS is verifier-only. The project does not
+On macOS, use `shasum -a 256 -c` instead of `sha256sum`. Both Apple Silicon and
+Intel have a published `-live` binary from v0.7.0-rc.1 on (in v0.6.0 Intel is
+verifier-only). The project does not
 currently configure Apple Developer ID signing/notarization credentials, so
 the macOS asset is checksummed and attested but not notarized. After verifying
 the checksum, remove a Gatekeeper quarantine attribute if macOS added one:
