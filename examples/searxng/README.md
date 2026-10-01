@@ -55,3 +55,19 @@ or stake tier 8. `shadenet status` shows what is left.
   tunnel on a plain-http engine request.
 - Engines routed through ShadeNet share a small set of node IPs with other
   members, which is the point: they are not your IP and not a known Tor exit.
+
+## Restarting
+
+SearXNG runs inside the `shadenet` container's network namespace. Restart with Compose so the
+dependency follows:
+
+```bash
+docker compose restart            # both services
+docker compose restart shadenet   # the proxy; SearXNG is restarted with it (depends_on restart: true)
+```
+
+`docker restart searxng-shadenet-1` bypasses Compose: the proxy comes back in a new namespace and
+SearXNG keeps the old one, so every search returns connection refused until SearXNG is restarted
+too (#237). On the node side a planned restart is invisible to the proxy when the node runs with
+socket activation (`docs/OPERATOR.md`), so a stack restart is only needed for upgrades of the stack
+itself.

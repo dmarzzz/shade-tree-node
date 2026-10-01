@@ -228,6 +228,93 @@ curl --socks5-hostname 127.0.0.1:9050 http://<bootnode-onion>/directory
 
 ## 3. Day-2 operations
 
+### Restart without dropping a connection
+
+A gateway restart used to refuse every connection Tor handed it for the 4 to 5 s a cold start
+takes, and a client whose stream landed in that window saw a failed fetch. With **socket
+activation** systemd owns the loopback listening socket and hands it to every gateway process, so
+those connects queue in the kernel backlog and the new process serves them: a pause of a few
+seconds instead of a refusal, and no onion descriptor is republished because Tor never restarts.
+
+Measured on staging node-06 on 2026-10-01 (`systemctl restart shade-tree-gateway`, a local
+connect probe on the gateway port at 4/s for 40 s, restart at t=10 s):
+
+| | process absent | refused connects | client stream in the window |
+|---|---|---|---|
+| before (self-binding) | 4 to 5 s | 16 to 20 of 160 samples per restart | refused |
+| after (socket activation) | 4 to 5 s (unchanged) | 0 of 141, 0 of 160 (two restarts) | queued, served by the new process (a session init sent during the absence opened its book 1.7 s after "gateway up") |
+
+The process absence itself (Node start plus the on-chain root replay) is unchanged; what
+changed is that nobody is turned away during it.
+
+Turn it on when you bootstrap (or re-run bootstrap on an existing box; the first enablement stops
+the self-binding gateway once so the socket can take the port, after that restarts are warm):
+
+```bash
+SHADE_TREE_SOCKET_ACTIVATION=1 ... bootstrap.sh            # renders shade-tree-gateway.socket
+systemctl status shade-tree-gateway.socket                  # active (listening) 127.0.0.1:8443
+journalctl -u shade-tree-gateway -g socketActivation        # "gateway up ... socketActivation:true"
+```
+
+Then a code roll or a config change is just `systemctl restart shade-tree-gateway`. The Ansible
+role (`deploy/v4`) sets `shade_tree_socket_activation: true` for the fleet. The in-flight tunnels
+of the old process still drain for `SHADE_TREE_SHUTDOWN_TIMEOUT_MS` (10 s) before it exits.
+
+### Drain for maintenance
+
+For anything longer than a restart (kernel upgrade, moving the box), announce it first so clients
+route around the node instead of timing out on it:
+
+```bash
+shade-tree-node drain on --wait      # flag file -> heartbeat announces `draining: true` in its
+                                     # signed caps within 2 s; /readyz turns 503; --wait returns
+                                     # after the announce plus one directory refresh (60 s)
+systemctl stop shade-tree-gateway    # or whatever the maintenance is
+...
+systemctl start shade-tree-gateway
+shade-tree-node drain off            # announced on the next poll; clients pick it again
+shade-tree-node drain status         # exit 0 while draining
+```
+
+The flag is a file (`SHADE_TREE_DRAIN_FILE`, default `/opt/shade-tree/deploy-state/draining`);
+create it as root, the service user only reads it. A draining node stays listed and keeps serving
+whoever still picks it (both SDKs treat it like health `down`: last resort only), so a client is
+never stranded. The heartbeat's `shade_tree_heartbeat_draining` gauge and an info alert show it.
+
+### Alerts without Prometheus
+
+The node evaluates the conditions from `monitoring/alerts.yml` in-process and POSTs one JSON
+document per transition to a webhook, repeating a still-firing alert every 4 h:
+
+```bash
+# in the gateway and heartbeat units (bootstrap renders both when set):
+SHADE_TREE_ALERT_WEBHOOK=https://hooks.slack.com/services/...   # or a Discord / Matrix hookshot URL
+SHADE_TREE_ALERT_WEBHOOK_FORMAT=slack                            # generic (default) | slack | discord | matrix
+```
+
+Heartbeat: `HeartbeatStale` (no Elder accepted an announce for 3 intervals), `HeartbeatNeverAccepted`,
+`EgressDown`, `ElderPartial` (some Elders refuse), `Draining`. Gateway: `RootSourceDegraded`,
+`RpcEndpointFailing` (3+ failovers in 15 min), `HighDropRate` (>50 % drops over 20+ tunnels in
+15 min), `Draining`, plus `GatewayStarted` / `GatewayStopping` lifecycle notices. Delivery is
+counted in `shade_tree_alert_webhook_total{result}`; a dead webhook is logged once a minute and
+never blocks the node. Payload shapes and a hookshot template are in `monitoring/README.md`.
+
+For dashboards, `monitoring/compose/` runs Prometheus + Grafana on the host network with the
+rules and the node dashboard preloaded: `cd monitoring/compose && docker compose --profile monitoring up -d`,
+then http://127.0.0.1:3000.
+
+### Operator SLO
+
+What a single node promises the canopy, and what the alerts above watch: a heartbeat accepted by
+at least one Elder Tree every 5 min (so the node never ages out of the 15 min directory TTL);
+`/readyz` 200 except while draining; a planned restart invisible to clients (socket activation) and
+a planned stop announced at least one directory refresh ahead (drain). The public canopy page
+stays aggregate on purpose (no per-node identity leaves the canopy), so check your own node against
+this with `/readyz`, `shade_tree_heartbeat_last_success_timestamp_seconds` and
+`shade_tree_heartbeat_draining` on the loopback metrics listeners, the webhook alerts, or the
+Grafana dashboard in `monitoring/compose/`.
+
+
 ### Health
 
 ```bash
@@ -324,6 +411,24 @@ series list, scrape config, dashboard, alerts, and retention guidance.
 ---
 
 ## 4. Key management
+
+### One operator key (opt-in)
+
+The three on-chain role keys (`SHADE_TREE_SLASH_KEY`, `SHADE_TREE_GW_OPERATOR_KEY`,
+`SHADE_TREE_REGISTRAR_KEY`) can derive from ONE 32-byte seed with HKDF-SHA256, so a new operator
+backs up and rotates a single secret (`scripts/operator-keys.mjs`):
+
+```bash
+node scripts/operator-keys.mjs generate --out ~/operator.seed          # 0600, refuses overwrite
+node scripts/operator-keys.mjs show --seed ~/operator.seed             # the three addresses to fund / stake
+node scripts/operator-keys.mjs derive --seed ~/operator.seed --out-dir /root/creds
+SHADE_TREE_CREDENTIALS_FROM=/root/creds ... bootstrap.sh               # installs them into /etc/credstore
+```
+
+Derivation is one-way (a leaked role key does not reveal the seed or the other roles) and
+deterministic (restoring the seed restores the same addresses). Rotating means a new seed, a new
+`derive`, re-staking the operator and re-funding the slasher, same as with three separate keys.
+Independently managed keys keep working unchanged.
 
 Three secrets. All are gitignored (`identity.local.json`, `hs_ed25519_secret_key`,
 `bootnode-signer.key`) and never leave the box on their own.

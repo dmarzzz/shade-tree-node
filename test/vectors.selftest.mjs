@@ -122,6 +122,14 @@ async function main() {
   ok(dirCapsSigned.signature === cap.directoryWithCaps.signature, "directory-with-caps signature matches the pinned vector");
   ok(verifyDirectory(dirCapsSigned, V.signerPub).ok, "the pinned directory-with-caps verifies (caps signature checked)");
 
+  console.log("\ngateway draining flag (operator drain; additive, LAST caps key):");
+  const drn = V.capabilitiesDraining;
+  ok(JSON.stringify(canonicalCaps(drn.caps)) === JSON.stringify(drn.caps), "canonicalCaps keeps draining:true as the last key and is idempotent");
+  ok(JSON.stringify(canonicalCaps({ ...drn.caps, draining: false })) === JSON.stringify(cap.caps), "draining:false canonicalizes to the base caps vector (byte-unchanged when absent)");
+  ok(canonicalCapsBytes(V.onion, drn.caps).toString("hex") === drn.canonicalCapsBytesHex, "canonical caps bytes with draining match the pinned vector");
+  ok(signCaps(V.onion, drn.caps, V.onionSeed) === drn.capsSig, "caps signature with draining matches the pinned vector");
+  ok(drn.canonicalCapsBytesHex !== cap.canonicalCapsBytesHex, "draining really is in the signed bytes (differs from the base vector)");
+
   console.log("\nversion-negotiation reason labels (stable public literals; runtime suffixes not pinned):");
   const pr = V.protoReasons;
   const badRej = acceptEnvelopeVersion("3");        // garbage/non-integer => bad-version

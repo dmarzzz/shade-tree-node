@@ -380,9 +380,16 @@ member's own rate accounting matches what the gateway enforces. Run the slasher 
   client re-fetch `GET /gateway/<onion>` and re-check sigs + live stake itself (T-DEV-5,
   `packages/node/client/selection.mjs`); off by default, the client trusts the bootnode's `staked` label.
 
+- **Planned maintenance is announced, unplanned loss is not** (#1, #3): `shade-tree-node drain on`
+  tells clients a stop is coming and socket activation makes restarts warm (docs/OPERATOR.md
+  "Day-2 operations"); a node that dies without draining still ages out only at the directory TTL
+  (15 min) or on an Elder probe. In-process webhook alerts (`SHADE_TREE_ALERT_WEBHOOK`) tell the
+  operator within one evaluation interval (30 s) that a heartbeat went stale.
+
 Shipped since this playbook was written: bootnode persistence (T-DEV-4, `SHADE_TREE_BOOTNODE_STORE`),
 per-gateway replay cache (T-FEAT-12), signer-rotation allowlist (T-HARD-5), client stake
 re-verification (T-DEV-5), encrypted key backup/restore (`shade-tree backup` / `shade-tree restore`,
-`docs/BACKUP.md`).
+`docs/BACKUP.md`), socket-activated restarts + operator drain flag + webhook alerts + one-seed
+operator keys (day-two ops, 2026-10-01).
 </content>
 </invoke>

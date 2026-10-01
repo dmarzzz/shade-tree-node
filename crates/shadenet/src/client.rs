@@ -254,6 +254,9 @@ pub struct CanopyStatus {
     pub issued: Option<u64>,
     pub age_seconds: Option<u64>,
     pub from_last_known_good: bool,
+    /// `true` when the client is past `Config::canopy_max_stale` on a last-known-good copy
+    /// (every Elder Tree unreachable for that long): status is reported, routing fails closed.
+    pub stale: bool,
     pub error: Option<String>,
 }
 
@@ -466,6 +469,11 @@ impl Client {
             }],
             Discovery::Onions(_) | Discovery::PlainTcp(_) => Vec::new(),
         }
+    }
+
+    /// Past `canopy_max_stale` on a last-known-good copy: report it and stop routing on it.
+    fn canopy_is_stale(&self, from_cache: bool, age_seconds: u64) -> bool {
+        from_cache && age_seconds > self.config.canopy_max_stale.as_secs()
     }
 
     fn signers(&self) -> Option<String> {
@@ -906,6 +914,13 @@ impl Client {
             _ => {}
         }
         let snapshot = self.canopy_snapshot().await?;
+        let age = now_secs().saturating_sub(snapshot.dir.issued);
+        if self.canopy_is_stale(snapshot.from_cache, age) {
+            return Err(Error::Canopy(format!(
+                "canopy stale: the last verified directory is {age}s old (cap {}s) and no Elder Tree can be reached; refusing to route on it",
+                self.config.canopy_max_stale.as_secs()
+            )));
+        }
         let demo = snapshot.demo.clone();
         let mut dir = snapshot.dir;
         if let Ok(mut health) = self.health.lock() {
@@ -1504,12 +1519,14 @@ impl Client {
                             0
                         }
                     };
+                    let age = now_secs().saturating_sub(snapshot.dir.issued);
                     status.canopy = CanopyStatus {
                         nodes: snapshot.dir.gateways.len(),
                         eligible,
                         issued: Some(snapshot.dir.issued),
-                        age_seconds: Some(now_secs().saturating_sub(snapshot.dir.issued)),
+                        age_seconds: Some(age),
                         from_last_known_good: snapshot.from_cache,
+                        stale: self.canopy_is_stale(snapshot.from_cache, age),
                         error: status.canopy.error.take().or(snapshot.fresh_error.clone()),
                     };
                     demo = snapshot.demo;

@@ -62,6 +62,8 @@ import { applyNetworkEnv } from "../lib/network-record.mjs";
 import { createLogger } from "../lib/log.mjs";
 import { makeRegistry, installRuntimeMetrics, isLoopbackMetricsHost, listenMetrics, safeMetricsPort } from "../lib/metrics.mjs";
 import { printOperatorBanner } from "../lib/operator-ui.mjs";
+import { drainFilePath, drainPollMs, makeDrainWatcher } from "../lib/drain.mjs";
+import { installAlerts, heartbeatRules } from "../lib/alerts.mjs";
 import {
   buildRelayReport,
   readRelayCounterState,
@@ -83,6 +85,8 @@ const M = {
   // latest cycle. accepted < total while the fleet is healthy means one Elder is unreachable.
   eldersTotal: metrics.gauge("shade_tree_heartbeat_elders_total", "Elder Trees this heartbeat announces to (ADR 0012)."),
   eldersAccepted: metrics.gauge("shade_tree_heartbeat_elders_accepted", "Elder Trees that accepted the latest heartbeat cycle."),
+  // Operator drain flag (lib/drain.mjs): 1 while the node announces `draining: true`.
+  draining: metrics.gauge("shade_tree_heartbeat_draining", "1 while the operator drain flag is set and announced in the signed caps."),
 };
 M.eldersTotal.set(0);
 M.eldersAccepted.set(0);
@@ -234,7 +238,7 @@ export function advertisedSession(env = process.env) {
 // null when the gateway is UNCONFIGURED (no explicit egress policy, no valid region, no artifact
 // set, no admission policy, no pay advert) so the announce stays byte-identical to today.
 // buildAnnounce canonicalizes + signs whatever we return.
-export function buildGatewayCaps(env = process.env, { artifactIds = null, gatewayOnion = null } = {}) {
+export function buildGatewayCaps(env = process.env, { artifactIds = null, gatewayOnion = null, draining = false } = {}) {
   const caps = {};
   // ports: advertised ONLY when the operator explicitly set an egress policy (env present). An
   // UNSET policy is the implicit :443 floor every gateway already meets (DEFAULT_EGRESS_PORT), so
@@ -266,8 +270,11 @@ export function buildGatewayCaps(env = process.env, { artifactIds = null, gatewa
   // want a session route only to nodes whose SIGNED caps carry it.
   const session = advertisedSession(env);
   if (session) caps.session = session;
+  // draining (operator drain flag): announced only while the flag file exists, so a planned
+  // stop is visible in the signed caps and clients route around the node before it goes.
+  if (draining === true) caps.draining = true;
   // Nothing configured -> no caps -> byte-identical announce (proven in the selftest).
-  if (caps.ports === undefined && caps.region === undefined && caps.artifacts === undefined && caps.admits === undefined && caps.pay === undefined && caps.rate === undefined && caps.session === undefined) return null;
+  if (caps.ports === undefined && caps.region === undefined && caps.artifacts === undefined && caps.admits === undefined && caps.pay === undefined && caps.rate === undefined && caps.session === undefined && caps.draining === undefined) return null;
   // At least one real cap: advertise the proto range too (complete, and safe — it only ever
   // rides alongside already-present caps, never triggers caps on its own).
   caps.proto = { min: PROTO_RANGE.min, max: PROTO_RANGE.max };
@@ -468,7 +475,16 @@ export async function runHeartbeat({
   writeLog(log, "info", "egress self-check configured", { enabled, target: enabled ? EGRESS_CHECK_TARGET : "disabled" }, enabled
     ? `egress self-check: ON (metadata-only TCP connect to ${EGRESS_CHECK_TARGET} before each announce; SKIP announce if DOWN). Disable with SHADE_TREE_EGRESS_CHECK=0`
     : "egress self-check: OFF (SHADE_TREE_EGRESS_CHECK=0) — announcing unconditionally");
-  const caps = buildGatewayCaps(env, { gatewayOnion: id.onion });
+  // Caps are rebuilt per beat so the drain flag (lib/drain.mjs) can flip between beats; with the
+  // flag off the object is exactly what a single build produced before (the selftest pins it).
+  const drainPath = drainFilePath(env);
+  const drain = makeDrainWatcher({ path: drainPath, pollMs: drainPollMs(env), onChange: (on) => {
+    M.draining.set(on ? 1 : 0);
+    writeLog(log, "info", on ? "drain flag set; announcing draining" : "drain flag cleared; announcing normal", { draining: on, path: drainPath }, on ? `draining: ON (${drainPath} exists) -- announcing now; clients deprioritise this node` : "draining: OFF -- announcing now");
+    beatNow().catch(() => {});
+  } });
+  const capsFor = () => buildGatewayCaps(env, { gatewayOnion: id.onion, draining: drain.state() });
+  const caps = capsFor();
   writeLog(log, "debug", "signed capabilities prepared", { advertised: Boolean(caps), admits: caps?.admits || [], paid: Boolean(caps?.pay) }, caps
     ? `capabilities advertised (signed): ${JSON.stringify(caps)}`
     : "capabilities: none (unconfigured — announce is byte-identical to a legacy gateway; set SHADE_TREE_EGRESS_ALLOW, SHADE_TREE_GATEWAY_REGION, SHADE_TREE_ZK_ARTIFACTS, SHADE_TREE_ADMIT and/or SHADE_TREE_REGISTRAR_ADVERTISE to advertise)");
@@ -477,9 +493,9 @@ export async function runHeartbeat({
   if (caps?.pay) writeLog(log, "debug", "payment offer advertised", { protocols: caps.pay.protocols, port: caps.pay.port }, `payment advert: protocols=${caps.pay.protocols.join(",")} port=${caps.pay.port}${caps.pay.onion ? " onion=" + caps.pay.onion.slice(0, 16) + ".." : " (this onion)"}`);
 
   const announceBeat = bootnodes.length > 1
-    ? makeFanoutBeat({ bootnodes, announce: (elder) => announce({ id, bootnode: elder, op, weight, torHost, torPort, caps }), egress: () => egress(), enabled, log })
+    ? makeFanoutBeat({ bootnodes, announce: (elder) => announce({ id, bootnode: elder, op, weight, torHost, torPort, caps: capsFor() }), egress: () => egress(), enabled, log })
     : makeBeat({
-      announce: () => announce({ id, bootnode, op, weight, torHost, torPort, caps }),
+      announce: () => announce({ id, bootnode, op, weight, torHost, torPort, caps: capsFor() }),
       egress: () => egress(),
       enabled,
       log,
@@ -503,9 +519,13 @@ export async function runHeartbeat({
     }
     return result;
   };
+  // An immediate beat on a drain transition; `beat` is hoisted by the closure above.
+  async function beatNow() { return beat(); }
+  drain.start();
+  M.draining.set(drain.state() ? 1 : 0);
   const first = await beat();
   const timer = schedule(beat, intervalSec * 1000);
-  return { beat, first, timer, id: { onion: id.onion }, op: { operator: op.operator }, caps, relayTelemetry: relayEnabled, bootnodes };
+  return { beat, first, timer, id: { onion: id.onion }, op: { operator: op.operator }, caps, capsFor, drain, relayTelemetry: relayEnabled, bootnodes };
 }
 
 async function main() {
@@ -530,11 +550,22 @@ async function main() {
   }
   const running = await runHeartbeat({ log: heartbeatLog });
   ready = true;
+  // Webhook alerts without Prometheus (lib/alerts.mjs): off unless SHADE_TREE_ALERT_WEBHOOK is set.
+  const alerts = installAlerts({ role: "heartbeat", reg: metrics, rules: heartbeatRules({ intervalSec: config.intervalSec }), log: heartbeatLog });
+  if (alerts.start()) {
+    heartbeatLog.info("alert webhook configured", { event: "alert.ready", format: alerts.config.format, intervalMs: alerts.config.intervalMs });
+    alerts.lifecycle("HeartbeatStarted", `heartbeat up (${running.bootnodes.length} Elder Tree${running.bootnodes.length === 1 ? "" : "s"})`).catch(() => {});
+    const bye = () => { alerts.stop(); alerts.lifecycle("HeartbeatStopping", "heartbeat stopping (SIGTERM)").finally(() => process.exit(0)); };
+    process.once("SIGTERM", bye);
+    process.once("SIGINT", bye);
+  }
   printOperatorBanner({ role: "heartbeat", rows: [
     ["interval", `${heartbeatConfig().intervalSec}s`],
     ["egress", egressCheckEnabled() ? "checked" : "unchecked"],
     ["relay telemetry", process.env.SHADE_TREE_RELAY_TELEMETRY === "1" ? "private reports on" : "off"],
     ["metrics", metricsPort > 0 ? `127.0.0.1:${metricsPort}` : "off"],
+    ["drain flag", drainFilePath()],
+    ["alerts", alerts.enabled ? `webhook (${alerts.config.format})` : "off"],
   ] });
   heartbeatLog.info("heartbeat ready", { event: "service.ready", first: running.first?.ok === true ? "accepted" : running.first?.skipped ? "skipped" : "retrying", metricsPort });
 }

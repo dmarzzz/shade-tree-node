@@ -450,6 +450,9 @@
     SHADE_TREE_GATEWAY_REGION: "{{ shade_tree_gateway_region }}"
     SHADE_TREE_ENABLE_POW: "{{ '1' if shade_tree_enable_pow else '0' }}"
     SHADE_TREE_SESSION_TICKETS: "{{ '1' if shade_tree_session_tickets else '0' }}"
+    SHADE_TREE_SOCKET_ACTIVATION: "{{ '1' if shade_tree_socket_activation | bool else '0' }}"
+    SHADE_TREE_ALERT_WEBHOOK: "{{ shade_tree_alert_webhook | default('') }}"
+    SHADE_TREE_ALERT_WEBHOOK_FORMAT: "{{ shade_tree_alert_webhook_format | default('generic') }}"
     SHADE_TREE_LOG_FORMAT: json
     SHADE_TREE_BANNER: never
     SHADE_TREE_BOOTNODE_PORT: "{{ shade_tree_bootnode_port | string }}"

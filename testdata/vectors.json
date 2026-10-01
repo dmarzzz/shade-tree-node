@@ -36,7 +36,7 @@
   "operator": "0x000000000000000000000000000000000000dEaD",
   "operatorAuthMessage": "Shade Tree gateway operator authorization\nonion=ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion\noperator=0x000000000000000000000000000000000000dead",
   "signalHash": {
-    "_note": "calculateSignalHash(requestSignal(target, nonce)) — the circuit public x. keccak256(utf8(message)) as a big-endian uint, shifted right by 8 bits (drop least-significant byte), rendered decimal. message = requestSignal(target, nonce) = `shade-tree:v4\\n<target>\\n<nonce>`. Deterministic; the Rust port MUST reproduce signalHashDecimal.",
+    "_note": "calculateSignalHash(requestSignal(target, nonce)) \u2014 the circuit public x. keccak256(utf8(message)) as a big-endian uint, shifted right by 8 bits (drop least-significant byte), rendered decimal. message = requestSignal(target, nonce) = `shade-tree:v4\\n<target>\\n<nonce>`. Deterministic; the Rust port MUST reproduce signalHashDecimal.",
     "target": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
     "nonce": "abcdef0123456789abcdef0123456789",
     "message": "shade-tree:v4\nucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion\nabcdef0123456789abcdef0123456789",
@@ -50,7 +50,7 @@
     "operatorAuthMessage": "Shade Tree gateway operator authorization\nonion=ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion\noperator=0x7564105e977516c53be337314c7e53838967bdac"
   },
   "receipt": {
-    "_note": "Signed egress success receipt (T-FEAT-13, lib/receipt.mjs). Reuses the SAME onion key as `onion`/`onionSeed`/`onionPub` above (the gateway's onion-control key signs its own receipts), so it is deterministic and cross-referable. Fixed fields {v,onion,epoch,ok}: canonicalReceiptBytes = utf8(RECEIPT_DOMAIN) || utf8(JSON with field order v,onion,epoch,ok) — epoch normalized to a decimal string. receiptOnionSig = ed25519Sign(canonicalReceiptBytes, onionSeed) (RFC 8032 deterministic, so byte-pinned). epoch=8333 is a coarse bucket, floor(1000000/120) of the announce ts, chosen only to stay cross-referable. The Rust client (T-RUST-1) MUST reproduce receiptDomain, canonicalReceiptBytesHex, and receiptOnionSig.",
+    "_note": "Signed egress success receipt (T-FEAT-13, lib/receipt.mjs). Reuses the SAME onion key as `onion`/`onionSeed`/`onionPub` above (the gateway's onion-control key signs its own receipts), so it is deterministic and cross-referable. Fixed fields {v,onion,epoch,ok}: canonicalReceiptBytes = utf8(RECEIPT_DOMAIN) || utf8(JSON with field order v,onion,epoch,ok) \u2014 epoch normalized to a decimal string. receiptOnionSig = ed25519Sign(canonicalReceiptBytes, onionSeed) (RFC 8032 deterministic, so byte-pinned). epoch=8333 is a coarse bucket, floor(1000000/120) of the announce ts, chosen only to stay cross-referable. The Rust client (T-RUST-1) MUST reproduce receiptDomain, canonicalReceiptBytesHex, and receiptOnionSig.",
     "receiptDomain": "Shade Tree egress success receipt v1\n",
     "v": 1,
     "onion": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
@@ -83,7 +83,7 @@
     ]
   },
   "capabilities": {
-    "_note": "T-FEAT-10 gateway capability advertisement. ADDITIVE: caps + capsSig are OPTIONAL, OMITTED from canonical bytes when absent, so the canonicalAnnounceBytes/canonicalDirectoryBytes GOLDEN vectors above are byte-UNCHANGED (an announce/directory without caps is byte-identical to before). Reuses the SAME onion key as `onion`/`onionSeed`/`onionPub`. canonicalCaps normalizes to fixed order {ports(deduped,sorted),region(coarse bucket),proto{min,max}}. capsSig = ed25519Sign(canonicalCapsBytes = utf8(capsDomain) || utf8(JSON {onion,caps}), onionSeed) — durable (no ts), onion-bound, RFC 8032 deterministic so byte-pinned. announceWithCaps.canonicalBytesHex/onionSig pin an announce that CARRIES caps (caps appended after nonce, covered by the main onion sig). directoryWithCaps pins the directory canonical bytes + bootnode signature for an entry carrying caps+capsSig. The Rust client must reproduce capsDomain, canonicalCapsBytesHex, capsSig, and both canonical-bytes hexes.",
+    "_note": "T-FEAT-10 gateway capability advertisement. ADDITIVE: caps + capsSig are OPTIONAL, OMITTED from canonical bytes when absent, so the canonicalAnnounceBytes/canonicalDirectoryBytes GOLDEN vectors above are byte-UNCHANGED (an announce/directory without caps is byte-identical to before). Reuses the SAME onion key as `onion`/`onionSeed`/`onionPub`. canonicalCaps normalizes to fixed order {ports(deduped,sorted),region(coarse bucket),proto{min,max}}. capsSig = ed25519Sign(canonicalCapsBytes = utf8(capsDomain) || utf8(JSON {onion,caps}), onionSeed) \u2014 durable (no ts), onion-bound, RFC 8032 deterministic so byte-pinned. announceWithCaps.canonicalBytesHex/onionSig pin an announce that CARRIES caps (caps appended after nonce, covered by the main onion sig). directoryWithCaps pins the directory canonical bytes + bootnode signature for an entry carrying caps+capsSig. The Rust client must reproduce capsDomain, canonicalCapsBytesHex, capsSig, and both canonical-bytes hexes.",
     "capsDomain": "Shade Tree gateway capabilities v1\n",
     "caps": {
       "ports": [
@@ -108,13 +108,13 @@
     }
   },
   "protoReasons": {
-    "_note": "Stable public reason LABELS for wire version-negotiation rejects. Only the fixed literal prefixes are pinned — the full runtime reason strings additionally carry the offending/observed version numbers and ranges (e.g. `unsupported-version:3`, `no-mutual-version:client=1-2,gateway=5-6`), which are context-dependent and NOT pinned. badVersion/unsupportedVersion are the `label` field returned by acceptEnvelopeVersion (gateway/gateway.mjs); noMutualVersion is the reason prefix from selectProtoVersion (client/shade-tree-client.mjs). The Rust client MUST emit these same literal labels/prefixes.",
+    "_note": "Stable public reason LABELS for wire version-negotiation rejects. Only the fixed literal prefixes are pinned \u2014 the full runtime reason strings additionally carry the offending/observed version numbers and ranges (e.g. `unsupported-version:3`, `no-mutual-version:client=1-2,gateway=5-6`), which are context-dependent and NOT pinned. badVersion/unsupportedVersion are the `label` field returned by acceptEnvelopeVersion (gateway/gateway.mjs); noMutualVersion is the reason prefix from selectProtoVersion (client/shade-tree-client.mjs). The Rust client MUST emit these same literal labels/prefixes.",
     "badVersion": "bad-version",
     "unsupportedVersion": "unsupported-version",
     "noMutualVersion": "no-mutual-version"
   },
   "artifacts": {
-    "_note": "T-HARD-8 ZK artifact-version negotiation. artifactIdOf(circuit, vkeyBytes) = `<circuit>-<sha256(bytes) hex[0:16]>` (lib/zk-artifacts.mjs; Rust shadenet_proto::artifact_id_of) — the vkey FILE bytes exactly as testdata/zk-artifacts.lock.json hashes them, so an artifact id is literally the lock hash prefix. `sample` pins the id of the utf8 bytes \"hello\" (sha256 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824). `reasons` are the bounded gateway/client reason LABELS (runtime strings append `:<id>` / `:client=..,gateway=..`, not pinned). `capsWithArtifacts` pins canonicalCaps (artifacts sorted, appended after proto) + canonicalCapsBytes + capsSig under the SAME onion key as `capabilities`; the pre-existing `capabilities` vectors are byte-UNCHANGED (artifacts absent => omitted).",
+    "_note": "T-HARD-8 ZK artifact-version negotiation. artifactIdOf(circuit, vkeyBytes) = `<circuit>-<sha256(bytes) hex[0:16]>` (lib/zk-artifacts.mjs; Rust shadenet_proto::artifact_id_of) \u2014 the vkey FILE bytes exactly as testdata/zk-artifacts.lock.json hashes them, so an artifact id is literally the lock hash prefix. `sample` pins the id of the utf8 bytes \"hello\" (sha256 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824). `reasons` are the bounded gateway/client reason LABELS (runtime strings append `:<id>` / `:client=..,gateway=..`, not pinned). `capsWithArtifacts` pins canonicalCaps (artifacts sorted, appended after proto) + canonicalCapsBytes + capsSig under the SAME onion key as `capabilities`; the pre-existing `capabilities` vectors are byte-UNCHANGED (artifacts absent => omitted).",
     "sample": {
       "circuit": "rln",
       "inputUtf8": "hello",
@@ -322,7 +322,7 @@
     }
   },
   "sessionTickets": {
-    "_note": "session-v1 ticket books (ADR 0011, docs/design/SESSION-TICKETS.md §9-10). Fixed test-only secrets. ticketCommitment_i = SHA256(ticketDomain || u16be(i) || secret_i); ticketBookDigest = SHA256(bookDomain || u16be(N) || c_0..c_(N-1) raw bytes); the RLN signal is signalPrefix + onion + '\\n' + class + '\\n' + nonce + '\\n' + digest and its keccak signal hash is the circuit's public x (same calculateSignalHash as v4); spendDigest = SHA256(spendDomain || digest || u16be(i) || u16be(len(target)) || target || requestNonce). The ticket secret rides base64url unpadded (43 chars). capsWithSession pins the onion-signed `session` capability appended after `rate`. Rust (shadenet_proto::session) and @shadenet/sdk reproduce every value.",
+    "_note": "session-v1 ticket books (ADR 0011, docs/design/SESSION-TICKETS.md \u00a79-10). Fixed test-only secrets. ticketCommitment_i = SHA256(ticketDomain || u16be(i) || secret_i); ticketBookDigest = SHA256(bookDomain || u16be(N) || c_0..c_(N-1) raw bytes); the RLN signal is signalPrefix + onion + '\\n' + class + '\\n' + nonce + '\\n' + digest and its keccak signal hash is the circuit's public x (same calculateSignalHash as v4); spendDigest = SHA256(spendDomain || digest || u16be(i) || u16be(len(target)) || target || requestNonce). The ticket secret rides base64url unpadded (43 chars). capsWithSession pins the onion-signed `session` capability appended after `rate`. Rust (shadenet_proto::session) and @shadenet/sdk reproduce every value.",
     "signalPrefix": "shade-tree:session:v1\n",
     "ticketDomain": "Shade Tree session ticket v1\n",
     "ticketBookDomain": "Shade Tree session ticket book v1\n",
@@ -393,5 +393,22 @@
       "canonicalCapsBytesHex": "536861646520547265652067617465776179206361706162696c69746965732076310a7b226f6e696f6e223a2275636e6b6c3564326d356d79616c377a6b78346e796c6a6b6373733474686a6478326c37717a617370373474716e637675747970703361642e6f6e696f6e222c2263617073223a7b2261646d697473223a5b227374616b6564225d2c2272617465223a7b2273636f7065223a2267726f76652d7634222c2277696e646f77223a226669786564222c2265706f63685365636f6e6473223a36302c2270726576696f757345706f6368734163636570746564223a312c22726f6f7446726573686e6573735365636f6e6473223a36302c227061796c6f61644279746573506572536c6f74223a34313934333034307d2c2273657373696f6e223a7b2276657273696f6e223a312c22636c6173736573223a5b2272657365617263682d7631225d7d7d7d",
       "capsSig": "1a6ffa54f4dac61cf0a3778821b4ca804c68beaa035430126d20a9123d393739bdb6ad83ab6b16c25d06ae297a9ccb9f883344b004fc702ae6cac5690ca8cf06"
     }
+  },
+  "capabilitiesDraining": {
+    "_note": "Operator drain flag (day-two ops). ADDITIVE: `draining: true` is the LAST canonical caps key and is emitted only when exactly true, so every other caps vector above is byte-UNCHANGED. Same onion key and the same base caps as `capabilities`, plus draining. Both SDKs must reproduce canonicalCapsBytesHex and capsSig, and must treat a draining gateway like health \"down\" in selection (picked only when nothing else is left).",
+    "caps": {
+      "ports": [
+        80,
+        443
+      ],
+      "region": "eu",
+      "proto": {
+        "min": 4,
+        "max": 4
+      },
+      "draining": true
+    },
+    "canonicalCapsBytesHex": "536861646520547265652067617465776179206361706162696c69746965732076310a7b226f6e696f6e223a2275636e6b6c3564326d356d79616c377a6b78346e796c6a6b6373733474686a6478326c37717a617370373474716e637675747970703361642e6f6e696f6e222c2263617073223a7b22706f727473223a5b38302c3434335d2c22726567696f6e223a226575222c2270726f746f223a7b226d696e223a342c226d6178223a347d2c22647261696e696e67223a747275657d7d",
+    "capsSig": "dbdba3049098b1222e6d7e75beef00c9db652e452c6d67f519bf13a1f99b863fdb6d41b1fbc07420f45b4d93cf8ee63ca28eb804e24810d539ce888bfb644f0b"
   }
 }

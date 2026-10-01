@@ -358,6 +358,10 @@ pub struct Caps {
     /// other capability and canonicalized after `rate`, so older caps byte strings are
     /// unchanged when it is absent. Mirrors `caps.session`.
     pub session: Option<SessionCaps>,
+    /// Operator drain flag (day-two ops): `true` while the node announces a planned stop so
+    /// clients deprioritise it (`lib/directory.mjs isDraining`). Canonicalized LAST and only
+    /// when exactly `true`, so every older caps byte string is unchanged when absent.
+    pub draining: Option<bool>,
 }
 
 /// RAW, untrusted `caps.session`. Validated + normalized only by [`canonical_session`].
@@ -466,6 +470,8 @@ pub struct CanonicalCaps {
     pub pay: Option<CanonicalPay>,
     pub rate: Option<CanonicalRate>,
     pub session: Option<CanonicalSession>,
+    /// `Some(true)` only; mirrors `caps.draining`.
+    pub draining: Option<bool>,
 }
 
 /// Upper bound on advertised artifact ids (`lib/directory.mjs MAX_CAPS_ARTIFACTS`); a longer
@@ -663,6 +669,10 @@ pub fn canonical_caps(caps: &Caps) -> CanonicalCaps {
     if let Some(session) = &caps.session {
         out.session = canonical_session(session);
     }
+    // draining (operator drain flag): appended after session, `true` only.
+    if caps.draining == Some(true) {
+        out.draining = Some(true);
+    }
     out
 }
 
@@ -679,6 +689,7 @@ pub fn has_caps(caps: &Caps) -> bool {
         || c.pay.is_some()
         || c.rate.is_some()
         || c.session.is_some()
+        || c.draining == Some(true)
 }
 
 /// Serialize canonical caps as the exact `JSON.stringify(canonicalCaps(caps))` bytes:
@@ -814,6 +825,13 @@ fn canonical_caps_json(cc: &CanonicalCaps) -> String {
             push_json_string(&mut s, c);
         }
         s.push_str("]}");
+        first = false;
+    }
+    if cc.draining == Some(true) {
+        if !first {
+            s.push(',');
+        }
+        s.push_str("\"draining\":true");
     }
     s.push('}');
     s
@@ -1824,6 +1842,16 @@ pub fn clamp_weight(weight: Option<f64>) -> f64 {
 
 /// The (clamped) weights of the pool `pick_gateway`/`selection_order` draw from, in the
 /// same order and with the same healthy/down fallback. Shared by both so the two never drift.
+/// A gateway whose signed caps carry `draining: true` is about to stop for maintenance
+/// (`lib/directory.mjs isDraining`): still listed, still able to serve, picked only when
+/// nothing else is left.
+pub fn is_draining(g: &GatewayEntry) -> bool {
+    g.caps
+        .as_ref()
+        .map(|c| c.draining == Some(true))
+        .unwrap_or(false)
+}
+
 fn selection_pool<'a>(dir: &'a Directory, exclude: &HashSet<String>) -> Vec<&'a GatewayEntry> {
     let all: Vec<&GatewayEntry> = dir
         .gateways
@@ -1833,8 +1861,12 @@ fn selection_pool<'a>(dir: &'a Directory, exclude: &HashSet<String>) -> Vec<&'a 
     if all.is_empty() {
         return all;
     }
-    let healthy: Vec<&GatewayEntry> = all.iter().copied().filter(|g| g.health != "down").collect();
-    // last resort: if every remaining gateway is "down", still try one.
+    let healthy: Vec<&GatewayEntry> = all
+        .iter()
+        .copied()
+        .filter(|g| g.health != "down" && !is_draining(g))
+        .collect();
+    // last resort: if every remaining gateway is "down" or draining, still try one.
     if healthy.is_empty() {
         all
     } else {
@@ -1911,7 +1943,7 @@ pub fn spread_selection_order<'a>(
     let healthy: Vec<&GatewayEntry> = all
         .iter()
         .copied()
-        .filter(|gateway| gateway.health != "down")
+        .filter(|gateway| gateway.health != "down" && !is_draining(gateway))
         .collect();
     let pool = if healthy.is_empty() { &all } else { &healthy };
     let positive: Vec<&GatewayEntry> = pool
@@ -2148,6 +2180,55 @@ mod tests {
         assert_eq!(order[2].onion, "down1");
         assert!(order[0].onion.starts_with("up"));
         assert!(order[1].onion.starts_with("up"));
+    }
+
+    #[test]
+    fn selection_order_treats_draining_like_down() {
+        let mut draining = gw("drain1", 100, "up");
+        draining.caps = Some(Caps {
+            draining: Some(true),
+            ..Default::default()
+        });
+        let mut not_draining = gw("up2", 100, "up");
+        not_draining.caps = Some(Caps {
+            draining: Some(false),
+            ..Default::default()
+        });
+        let dir = Directory {
+            version: 1,
+            issued: 0,
+            gateways: vec![gw("up1", 100, "up"), draining.clone(), not_draining],
+            signer: None,
+            signature: None,
+            signers: None,
+            signatures: None,
+            threshold: None,
+        };
+        assert!(is_draining(&draining));
+        assert!(!is_draining(&dir.gateways[0]) && !is_draining(&dir.gateways[2]));
+        let mut rng = mulberry32(11);
+        let order = selection_order(&dir, &mut rng);
+        assert_eq!(order.len(), 3);
+        assert_eq!(
+            order[2].onion, "drain1",
+            "a draining node is the last resort"
+        );
+        let mut state = SmoothWeightedState::default();
+        for seed in 0..20u32 {
+            let mut rng = mulberry32(seed);
+            let spread = spread_selection_order(&dir, &mut state, &mut rng);
+            assert_ne!(
+                spread[0].onion, "drain1",
+                "spread never starts on a draining node"
+            );
+        }
+        // Alone, it is still used.
+        let only = Directory {
+            gateways: vec![draining],
+            ..dir.clone()
+        };
+        let mut rng = mulberry32(3);
+        assert_eq!(selection_order(&only, &mut rng)[0].onion, "drain1");
     }
 
     #[test]

@@ -82,6 +82,7 @@ const FLAG_ENV = {
 // command -> { script, help }. `long` marks a durable service (just for the help hint).
 const COMMANDS = {
   run:               { help: "run an agent with process-scoped Shade Tree routing: shade-tree run [--proxy http://127.0.0.1:8888] -- <command> [args]" },
+  drain:             { help: "operator: shade-tree-node drain on|off|status [--wait] -- announce a planned stop (clients route around this node), then restart or stop it" },
   keygen:            { script: "packages/node/bootnode/keygen.mjs",       help: "mint an onion identity (refuses overwrite): shade-tree-node keygen <hsDir> [--label name] [--force]" },
   elder:             { script: "packages/node/bootnode/server.mjs",       help: "run the Elder Tree, which signs the canopy directory", long: true },
   bootnode:          { script: "packages/node/bootnode/server.mjs",       help: "legacy alias for `elder`", long: true },
@@ -150,7 +151,7 @@ function parse(argv) {
 function topHelp() {
   console.log(`shade-tree ${pkg.version}: Shade Tree\n`);
   console.log("usage: shade-tree <command> [--flags] [args]\n");
-  const order = ["run", "proxy", "node", "elder", "join", "keygen", "heartbeat", "enroll", "identity", "register-member", "pay", "leaves", "register-gateway", "exit-gateway", "withdraw-gateway", "gateway-status", "sign-directory", "doctor", "backup", "restore", "record-deploy", "client", "shim", "gateway", "bootnode"];
+  const order = ["run", "proxy", "node", "elder", "join", "keygen", "heartbeat", "enroll", "identity", "register-member", "pay", "leaves", "register-gateway", "exit-gateway", "withdraw-gateway", "gateway-status", "sign-directory", "doctor", "drain", "backup", "restore", "record-deploy", "client", "shim", "gateway", "bootnode"];
   for (const name of order) console.log(`  ${name.padEnd(18)}${COMMANDS[name].help}`);
   console.log(`\ncommon flags: --bootnode <onion> --secret <hex> --port N --admission open|stake --stake-mode onchain|mock`);
   console.log(`operator output: --log-level debug|info|warn|error|off --log-format auto|pretty|text|json --metrics-port N --banner|--no-banner --quiet`);
@@ -335,6 +336,56 @@ async function runScoped(argv) {
   forwardChild(child, "shade-tree run");
 }
 
+// Operator drain (packages/node/lib/drain.mjs, docs/OPERATOR.md "Drain for maintenance"):
+//   on      create the flag; the heartbeat announces `draining: true` within SHADE_TREE_DRAIN_POLL_MS
+//           (2 s) and the gateway's /readyz turns 503. With --wait, block until the heartbeat's
+//           metrics show the drain announced (needs SHADE_TREE_HEARTBEAT_METRICS_PORT) and then
+//           one directory refresh (60 s) so clients have seen it.
+//   off     remove the flag (announced on the next poll).
+//   status  print the flag state and age; exit 0 when draining, 1 when not.
+async function drainCommand(argv) {
+  const { drainFilePath, isDraining, setDraining, drainingSince, drainPollMs } = await import("../lib/drain.mjs");
+  const { flags, positionals } = parse(argv);
+  const action = positionals[0];
+  const path = flags.file || drainFilePath();
+  if (flags.help || !["on", "off", "status"].includes(action)) {
+    console.log("usage: shade-tree-node drain on|off|status [--file PATH] [--wait] [--metrics-port N]\n");
+    console.log(`flag file: ${path} (SHADE_TREE_DRAIN_FILE). Create it as root; the service user only reads it.`);
+    console.log("on: announce draining (heartbeat caps + readyz 503). --wait blocks until announced + one directory refresh.");
+    console.log("off: remove the flag. status: exit 0 when draining.");
+    process.exit(flags.help ? 0 : 1);
+  }
+  if (action === "status") {
+    const on = isDraining(process.env, path);
+    console.log(on ? `draining for ${drainingSince(process.env, path)}s (${path})` : `not draining (${path})`);
+    process.exit(on ? 0 : 1);
+  }
+  if (action === "off") {
+    setDraining(false, process.env, path);
+    console.log(`drain flag removed (${path}); announced on the next heartbeat poll (${drainPollMs()} ms)`);
+    return;
+  }
+  setDraining(true, process.env, path);
+  console.log(`drain flag set (${path}); the heartbeat announces draining within ${drainPollMs()} ms`);
+  if (!("wait" in flags)) return;
+  const port = Number(flags["metrics-port"] || process.env.SHADE_TREE_HEARTBEAT_METRICS_PORT || 0);
+  if (!(port > 0)) { console.log("--wait: no heartbeat metrics port known (set SHADE_TREE_HEARTBEAT_METRICS_PORT or --metrics-port); waiting 60 s blind"); await new Promise((r) => setTimeout(r, 60_000)); return; }
+  const deadline = Date.now() + 120_000;
+  let announced = false;
+  while (Date.now() < deadline) {
+    try {
+      const text = await (await fetch(`http://127.0.0.1:${port}/metrics`)).text();
+      const m = text.match(/^shade_tree_heartbeat_draining (\d+)/m);
+      if (m && m[1] === "1") { announced = true; break; }
+    } catch { /* heartbeat may be restarting */ }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (!announced) { console.error("--wait: the heartbeat did not report the drain within 120 s (is it running with metrics?)"); process.exit(2); }
+  console.log("announced; waiting 60 s for clients to refresh the directory");
+  await new Promise((r) => setTimeout(r, 60_000));
+  console.log("drained: safe to restart or stop the gateway");
+}
+
 async function main() {
   const [, , cmd, ...rest] = process.argv;
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") { topHelp(); process.exit(0); }
@@ -342,6 +393,7 @@ async function main() {
   const entry = COMMANDS[cmd];
   if (!entry) { console.error(`unknown command: ${cmd}\n`); topHelp(); process.exit(1); }
   if (cmd === "run") { await runScoped(rest); return; }
+  if (cmd === "drain") { await drainCommand(rest); return; }
 
   const { flags, positionals } = parse(rest);
   if (flags.help) {

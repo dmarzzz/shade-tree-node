@@ -15,11 +15,11 @@ use serde_json::Value;
 use shadenet_proto::{
     accept_envelope_version, calculate_signal_hash, canonical_announce_bytes, canonical_caps_bytes,
     canonical_directory_bytes, canonical_receipt_bytes, ed25519_public_key, ed25519_sign,
-    ed25519_verify, onion_to_pubkey, operator_auth_message, pubkey_to_onion, request_signal,
-    select_proto_version, sign_receipt, verify_announce, verify_caps_sig, verify_directory,
-    verify_directory_threshold, verify_operator_sig, verify_receipt, Announce, Caps, Directory,
-    EnvelopeVersion, GatewayEntry, PayCaps, ProtoCaps, RateCaps, Receipt, REASON_BAD_VERSION,
-    REASON_NO_MUTUAL_VERSION, REASON_UNSUPPORTED_VERSION,
+    ed25519_verify, is_draining, onion_to_pubkey, operator_auth_message, pubkey_to_onion,
+    request_signal, select_proto_version, sign_receipt, verify_announce, verify_caps_sig,
+    verify_directory, verify_directory_threshold, verify_operator_sig, verify_receipt, Announce,
+    Caps, Directory, EnvelopeVersion, GatewayEntry, PayCaps, ProtoCaps, RateCaps, Receipt,
+    REASON_BAD_VERSION, REASON_NO_MUTUAL_VERSION, REASON_UNSUPPORTED_VERSION,
 };
 
 /// Load `testdata/vectors.json` relative to this crate's manifest dir.
@@ -820,6 +820,69 @@ fn caps_domain_matches_vector() {
     assert_eq!(
         shadenet_proto::CAPS_DOMAIN,
         s(&v["capabilities"], "capsDomain")
+    );
+}
+
+/// The `capabilitiesDraining` vector: the base caps plus the operator drain flag, which must
+/// canonicalize LAST, sign byte-exactly, and be deprioritised by selection like health "down".
+fn vector_caps_draining(v: &Value) -> Caps {
+    let mut caps = vector_caps(v);
+    caps.draining = v["capabilitiesDraining"]["caps"]["draining"].as_bool();
+    caps
+}
+
+#[test]
+fn draining_caps_bytes_and_signature_match_vector() {
+    let v = vectors();
+    let caps = vector_caps_draining(&v);
+    assert_eq!(
+        caps.draining,
+        Some(true),
+        "the vector carries draining:true"
+    );
+    let bytes = canonical_caps_bytes(s(&v, "onion"), &caps);
+    assert_eq!(
+        hex::encode(&bytes),
+        s(&v["capabilitiesDraining"], "canonicalCapsBytesHex"),
+        "canonical caps bytes with draining match the JS implementation"
+    );
+    assert!(
+        String::from_utf8_lossy(&bytes).ends_with(",\"draining\":true}}"),
+        "draining is the LAST canonical key"
+    );
+    assert_ne!(
+        hex::encode(&bytes),
+        s(&v["capabilities"], "canonicalCapsBytesHex"),
+        "draining really is in the signed bytes"
+    );
+    let sig = s(&v["capabilitiesDraining"], "capsSig");
+    assert!(
+        verify_caps_sig(s(&v, "onion"), &caps, Some(sig)),
+        "the pinned draining caps signature verifies"
+    );
+    let mut off = caps.clone();
+    off.draining = Some(false);
+    assert_eq!(
+        hex::encode(canonical_caps_bytes(s(&v, "onion"), &off)),
+        s(&v["capabilities"], "canonicalCapsBytesHex"),
+        "draining:false canonicalizes exactly like absent (byte-unchanged base vector)"
+    );
+    assert!(
+        !verify_caps_sig(s(&v, "onion"), &off, Some(sig)),
+        "the draining signature does not cover the non-draining caps"
+    );
+    assert!(
+        is_draining(&GatewayEntry {
+            onion: s(&v, "onion").to_string(),
+            pubkey: s(&v, "onionPub").to_string(),
+            weight: 100,
+            health: "up".to_string(),
+            operator: None,
+            staked: None,
+            caps: Some(caps),
+            caps_sig: Some(sig.to_string()),
+        }),
+        "is_draining reads the signed caps"
     );
 }
 

@@ -7,7 +7,9 @@
 #   open http://127.0.0.1:8080
 #
 # SearXNG shares the shadenet container's network namespace, so the proxy stays on loopback and
-# SearXNG's own port is published from the shadenet service. See README.md.
+# SearXNG's own port is published from the shadenet service. Restart the stack with
+# `docker compose restart` (or `docker compose restart shadenet`, which restarts SearXNG with it);
+# `docker restart <container>` leaves SearXNG in a dead namespace. See README.md.
 services:
   shadenet:
     image: ${SHADENET_IMAGE:-ghcr.io/dmarzzz/shadenet:latest}
@@ -56,6 +58,11 @@ services:
         condition: service_completed_successfully
       shadenet:
         condition: service_started
+        # SearXNG lives in the shadenet container's network namespace. When that container is
+        # recreated or restarted through Compose, the namespace is gone and SearXNG must follow
+        # (#237). `restart: true` does that for `docker compose restart shadenet` / `up`; a bare
+        # `docker restart searxng-shadenet-1` bypasses Compose, so use the Compose commands.
+        restart: true
     environment:
       SEARXNG_BASE_URL: http://127.0.0.1:8080/
     volumes:

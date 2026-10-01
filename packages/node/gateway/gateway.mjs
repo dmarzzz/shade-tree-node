@@ -55,10 +55,26 @@ import { printOperatorBanner } from "../lib/operator-ui.mjs";
 import { jsonRpcCall, makeBoundedJsonRpcProvider, waitForTransactionReceipt } from "../lib/rpc-safety.mjs";
 import { makeRelayByteCounter } from "../lib/relay-telemetry.mjs";
 import { loadCredentials } from "../lib/credentials.mjs";
+import { drainFilePath, isDraining } from "../lib/drain.mjs";
+import { installAlerts, gatewayRules } from "../lib/alerts.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LISTEN_HOST = "127.0.0.1";
 const LISTEN_PORT = Number(process.env.SHADE_TREE_GATEWAY_PORT || 8443);
+
+// systemd socket activation (zero-downtime restarts, docs/OPERATOR.md "Restart without dropping
+// a connection"): when systemd hands us the listening socket (LISTEN_FDS=1 addressed to our pid,
+// fd 3), we serve THAT socket instead of binding. The socket then outlives the process: while
+// the gateway restarts, Tor's local connects to 127.0.0.1:<port> queue in the kernel backlog and
+// are served by the new process, so a client sees a pause, not a refused stream. Pure decision
+// (injectable env/pid) so the selftest covers it without systemd.
+export function inheritedListener(env = process.env, pid = process.pid) {
+  const listenPid = Number(env.LISTEN_PID);
+  const fds = Number(env.LISTEN_FDS);
+  if (!Number.isInteger(fds) || fds < 1) return null;
+  if (listenPid !== pid) return null; // addressed to a parent/other process; never steal it
+  return { fd: 3 };
+}
 const MAX_ENVELOPE = 64 * 1024;
 export const MAX_EGRESS_ADDRESSES = 8;
 export const DEFAULT_TUNNEL_MAX_PAYLOAD_BYTES = 40 * 1024 * 1024;
@@ -2019,6 +2035,8 @@ async function main() {
       : null,
   });
   let activeTunnels = 0;
+  // Webhook alerts without Prometheus (lib/alerts.mjs): off unless SHADE_TREE_ALERT_WEBHOOK is set.
+  const alerts = installAlerts({ role: "node", reg: metrics, rules: gatewayRules(), log, draining: () => isDraining() });
   // Session tickets (ADR 0011): on only with SHADE_TREE_SESSION_TICKETS=1 (the deployment record's
   // `sessionTickets`, set at H2) AND a loadable onion identity, since every book is bound to this
   // node's onion. Off => the handler refuses session envelopes and is byte-identical for v4.
@@ -2046,7 +2064,9 @@ async function main() {
   const metricsPort = safeMetricsPort(process.env.SHADE_TREE_METRICS_PORT, [["node backend", LISTEN_PORT]]);
   let metricsServer = null;
   if (metricsPort > 0) {
-    metricsServer = listenMetrics({ port: metricsPort, reg: metrics, host: "127.0.0.1", ready: () => server.listening });
+    // /readyz is 503 while the operator drain flag is set (lib/drain.mjs), so a load balancer or
+    // a `shade-tree-node drain` script can wait for the node to be out of rotation.
+    metricsServer = listenMetrics({ port: metricsPort, reg: metrics, host: "127.0.0.1", ready: () => server.listening && !isDraining() });
     await new Promise((resolve, reject) => {
       metricsServer.once("listening", resolve);
       metricsServer.once("error", reject);
@@ -2060,10 +2080,13 @@ async function main() {
       : "node listener failed", { event: "service.failed", code: error.code || "UNKNOWN" });
     process.exit(1);
   });
-  server.listen(LISTEN_PORT, LISTEN_HOST, () => {
+  const inherited = inheritedListener();
+  const onListening = () => {
     // "gateway up on <host>:<port>" substring preserved for scripts/integration-sepolia.mjs.
     printOperatorBanner({ role: "node", rows: [
-      ["listen", `${LISTEN_HOST}:${LISTEN_PORT}`],
+      ["listen", `${LISTEN_HOST}:${LISTEN_PORT}${inherited ? " (socket activation)" : ""}`],
+      ["drain flag", drainFilePath()],
+      ["alerts", alerts.enabled ? `webhook (${alerts.config.format})` : "off"],
       ["admission", roots.admits?.join(",") || process.env.SHADE_TREE_ADMIT || "invited"],
       ["egress", process.env.SHADE_TREE_EGRESS_ALLOW || "*:443"],
       ["session tickets", session ? "on (research-v1)" : "off"],
@@ -2072,7 +2095,12 @@ async function main() {
       ["metrics", metricsPort > 0 ? `127.0.0.1:${metricsPort}` : "off"],
       ["logs", `${process.env.SHADE_TREE_LOG_LEVEL || "info"} / ${process.env.SHADE_TREE_LOG_FORMAT || "auto"}`],
     ] });
-    log.info(`gateway up on ${LISTEN_HOST}:${LISTEN_PORT}`, { event: "service.ready", epoch: currentEpoch(), epochSeconds: EPOCH_SECONDS, metricsPort });
+    log.info(`gateway up on ${LISTEN_HOST}:${LISTEN_PORT}`, { event: "service.ready", epoch: currentEpoch(), epochSeconds: EPOCH_SECONDS, metricsPort, socketActivation: Boolean(inherited) });
+    if (isDraining()) log.warn("drain flag is set at start; readyz reports 503 until it is removed", { path: drainFilePath() });
+    if (alerts.start()) {
+      log.info("alert webhook configured", { event: "alert.ready", format: alerts.config.format, intervalMs: alerts.config.intervalMs });
+      alerts.lifecycle("GatewayStarted", `gateway up on ${LISTEN_HOST}:${LISTEN_PORT}${inherited ? " (socket activation)" : ""}`).catch(() => {});
+    }
     const allowDesc = process.env.SHADE_TREE_EGRESS_ALLOW || "*:443";
     const denyDesc = process.env.SHADE_TREE_EGRESS_DENY || "";
     const dflt = allowDesc === "*:443" && !denyDesc;
@@ -2085,7 +2113,9 @@ async function main() {
     log.debug("replay defense ready", { replayWindowMs });
     if (sharedTally) log.info("fleet tally: ON; best-effort per-epoch replay suppression after peer propagation (nullifier+epoch only; fail-open)");
     log.debug("endpoint hardening", { envelopeTimeoutMs: HARDENING.envelopeTimeoutMs, idleTimeoutMs: HARDENING.idleTimeoutMs, maxPayloadBytes: payloadBudget.maxBytes, dnsTimeoutMs: HARDENING.dnsTimeoutMs, maxConns: limiter.maxConns, maxConnsPerNullifier: limiter.maxPerNullifier });
-  });
+  };
+  if (inherited) server.listen(inherited, onListening);
+  else server.listen(LISTEN_PORT, LISTEN_HOST, onListening);
 
   const timeoutMs = Number(process.env.SHADE_TREE_SHUTDOWN_TIMEOUT_MS || 10000);
   const shutdown = makeGracefulShutdown(server, {
@@ -2101,6 +2131,7 @@ async function main() {
         ["fleet tally", () => sharedTally?.close?.()],
         ["relay telemetry", () => relayCounter.close()],
         ["metrics", () => metricsServer?.close?.()],
+        ["alerts", () => { alerts.stop(); alerts.lifecycle("GatewayStopping", "gateway draining for restart/stop (SIGTERM)").catch(() => {}); }],
       ];
       for (const [resource, close] of cleanup) {
         try { close(); } catch (error) { log.warn("shutdown resource cleanup failed", { resource, errorType: error?.name || "Error" }); }

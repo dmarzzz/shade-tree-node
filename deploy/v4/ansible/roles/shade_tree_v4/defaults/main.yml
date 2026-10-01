@@ -10,6 +10,13 @@ shade_tree_members_file: ""
 shade_tree_install_dir: /opt/shade-tree
 shade_tree_gateway_region: ""
 shade_tree_enable_pow: false
+# Zero-downtime gateway restarts (docs/OPERATOR.md "Restart without dropping a connection"): systemd
+# owns the loopback listening socket and hands it to each gateway process. The first roll with this
+# on stops the self-binding gateway once so the socket can take the port; every later restart is warm.
+shade_tree_socket_activation: true
+# Webhook alerts without Prometheus (packages/node/lib/alerts.mjs); empty = off.
+shade_tree_alert_webhook: ""
+shade_tree_alert_webhook_format: generic
 shade_tree_operator_authorized: false
 shade_tree_rpc_url: ""
 shade_tree_slash_key: ""

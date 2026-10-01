@@ -258,6 +258,11 @@ export function canonicalCaps(caps) {
   if (rate) out.rate = rate;
   const session = canonicalSession(caps.session);
   if (session) out.session = session;
+  // Operator drain (day-two ops): a node announces `draining: true` before a planned stop so
+  // clients deprioritise it (pickGateway / spreadSelectionOrder treat it like health "down").
+  // Appended LAST and only when exactly `true`, so every pre-existing caps object canonicalizes
+  // to byte-identical JSON and an old Elder/client simply never sees the key.
+  if (caps.draining === true) out.draining = true;
   return out;
 }
 
@@ -265,7 +270,7 @@ export function canonicalCaps(caps) {
 // canonical bytes when empty, keeping absent/empty-caps records byte-identical to before.
 export function hasCaps(caps) {
   const c = canonicalCaps(caps);
-  return c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined || c.session !== undefined;
+  return c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined || c.session !== undefined || c.draining === true;
 }
 
 // Domain-separated, onion-bound canonical bytes the ONION key signs to attest its caps.
@@ -578,11 +583,17 @@ function clampWeight(g) {
   return Number.isFinite(w) ? Math.max(0, Math.min(MAX_WEIGHT, w)) : 1;
 }
 
+// A gateway whose SIGNED caps say `draining: true` is about to stop for maintenance: still
+// listed, still able to serve, but a client should only pick it when nothing else is left.
+export function isDraining(g) {
+  return Boolean(g && g.caps && g.caps.draining === true);
+}
+
 export function pickGateway(dir, { exclude = new Set(), rng = Math.random } = {}) {
   const all = (dir.gateways || []).filter((g) => !exclude.has(g.onion));
   if (all.length === 0) return null;
-  const healthy = all.filter((g) => g.health !== "down");
-  const pool = healthy.length ? healthy : all; // last resort: try a "down" one
+  const healthy = all.filter((g) => g.health !== "down" && !isDraining(g));
+  const pool = healthy.length ? healthy : all; // last resort: try a "down" or draining one
   const total = pool.reduce((s, g) => s + clampWeight(g), 0);
   if (total <= 0) return pool[Math.floor(rng() * pool.length)];
   let r = rng() * total;
