@@ -47,6 +47,7 @@
 // testdata/vectors.json, failure paths, log hygiene) + packages/node/bootnode/heartbeat-caps.selftest.mjs.
 
 import { readFile } from "node:fs/promises";
+import { SESSION_CLASS_IDS } from "../lib/session-tickets.mjs";
 import { loadCredentials } from "../lib/credentials.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -238,11 +239,12 @@ export function advertisedRate(env = process.env) {
   return canonicalCaps({ rate }).rate || null;
 }
 
-// The session-ticket capability (ADR 0011): `{ version: 1, classes: ["research-v1"] }` iff the
-// node was started with SHADE_TREE_SESSION_TICKETS=1 (the same switch gateway.mjs reads), else null.
+// The session-ticket capability (ADR 0011): `{ version: 1, classes: [every class the node
+// serves] }` iff the node was started with SHADE_TREE_SESSION_TICKETS=1 (the same switch
+// gateway.mjs reads), else null. Clients pick the best class they know (ADR 0013).
 export function advertisedSession(env = process.env) {
   if (String(env.SHADE_TREE_SESSION_TICKETS ?? "0") !== "1") return null;
-  return canonicalCaps({ session: { version: 1, classes: ["research-v1"] } }).session || null;
+  return canonicalCaps({ session: { version: 1, classes: [...SESSION_CLASS_IDS] } }).session || null;
 }
 
 // Build the raw caps object from env (injectable for tests; defaults to process.env). Returns

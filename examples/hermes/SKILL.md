@@ -25,9 +25,16 @@ resets every epoch (60 seconds on the public network).
 
 ## Budget
 
-Call `shadenet_status` before a batch: `slotsLeft` is how many fetches remain
-this epoch and `epochResetsInSeconds` when the budget refills. Prefer one fetch
-of a page that links to what you need over many small fetches.
+Call `shadenet_plan` with the URLs (or a count) before a batch: it says how many
+fetches can open now, how many epochs the batch needs and about how many
+seconds until the last one can open. `shadenet_status` shows `slotsLeft`,
+`epochResetsInSeconds` and `queue.depth`. Prefer one fetch of a page that
+links to what you need over many small fetches.
+
+A fetch whose budget is spent is not refused: the proxy holds it for the next
+epoch (up to about two epochs) and then opens it. Expect a fetch to take up to
+a couple of minutes when the plan said the batch does not fit now; do not fire
+the same fetch again while one is pending.
 
 ## Errors
 
@@ -36,7 +43,7 @@ history, which node is restarting, that the identity is in another network's
 set) and a `fix` (what to run). Read the cause before deciding; the code alone
 often points the wrong way.
 
-- `budget_exhausted`: wait `retryAfterSeconds`, then retry.
+- `budget_exhausted`: even the queue could not fit it; wait `retryAfterSeconds`, then retry once.
 - `not_admitted` or `not_finalized`: stop and tell the operator the `cause` and `fix`; retrying will not help.
 - `port_not_allowed`: use the https URL.
 - `no_eligible_node`, `transport`, `canopy`, `rpc`: temporary; retry once after `retryAfterSeconds`.

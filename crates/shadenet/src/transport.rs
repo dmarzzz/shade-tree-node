@@ -11,7 +11,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use arti_client::config::TorClientConfigBuilder;
 use arti_client::{TorClient, TorClientConfig};
@@ -47,11 +47,13 @@ impl Gateway {
 
 /// Result of one candidate dial. A gateway reply (accept or refusal) counts as
 /// a successful dial; only transport/framing failures rotate to another entry.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Attempt {
     pub gateway: Gateway,
     pub dial_succeeded: bool,
     pub error: Option<String>,
+    /// Wall time of the dial (Tor rendezvous included) when it succeeded.
+    pub latency_ms: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -509,8 +511,13 @@ impl Client {
         self.dialer.dial(gateway).await
     }
 
-    /// Prove once, then try candidates in order. A gateway refusal is terminal;
-    /// only dial/I/O failures advance to the next candidate.
+    /// Prove once, then try candidates in order. Dial and I/O failures advance to the next
+    /// candidate, after one more try at the same onion (a hidden-service rendezvous often fails
+    /// once and works on retry). A gateway refusal is terminal, except a root refusal
+    /// (`wrong-group-root` / `gate:*`) on a plain tunnel envelope: nothing was spent or published
+    /// at a node that refused before egress, and the envelope is bound to no node, so the
+    /// identical bytes go to the next candidate (ADR 0013). A session initialization binds its
+    /// node and has one candidate.
     pub async fn connect(&self, request: ConnectRequest) -> Result<Connected, Error> {
         if request.gateways.is_empty() {
             return Err(Error::NoGateways);
@@ -596,9 +603,23 @@ impl Client {
         let wire = serde_json::to_string(&envelope).expect("serialize envelope") + "\n";
         let mut attempts = Vec::with_capacity(request.gateways.len());
         let dialer = self.dialer.isolated();
+        let plain_tunnel = session.is_none();
+        let mut root_refusal: Option<Error> = None;
 
         for gateway in request.gateways {
-            match dialer.dial(&gateway).await {
+            let started = Instant::now();
+            let dialed = match dialer.dial(&gateway).await {
+                Ok(stream) => Ok(stream),
+                Err(first) if matches!(gateway, Gateway::Onion { .. }) => {
+                    tracing::debug!(gateway = %gateway.label(), error = %first, "dial failed; one more try");
+                    dialer
+                        .dial(&gateway)
+                        .await
+                        .map_err(|second| format!("{first}; retry: {second}"))
+                }
+                Err(error) => Err(error),
+            };
+            match dialed {
                 Ok(mut stream) => match tokio::time::timeout(
                     self.ack_timeout,
                     exchange_ack(&mut stream, wire.as_bytes()),
@@ -617,6 +638,7 @@ impl Client {
                             gateway: gateway.clone(),
                             dial_succeeded: true,
                             error: None,
+                            latency_ms: Some(started.elapsed().as_secs_f64() * 1000.0),
                         });
                         if ack.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
                             return Ok(Connected {
@@ -629,6 +651,24 @@ impl Client {
                             });
                         }
                         let kind = GatewayRefusalKind::from_ack(&ack);
+                        let reason = ack
+                            .get("err")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("");
+                        if plain_tunnel
+                            && (reason.starts_with("wrong-group-root")
+                                || reason.starts_with("gate:"))
+                        {
+                            tracing::info!(gateway = %gateway.label(), %reason, "node refused the root; same envelope to the next candidate");
+                            root_refusal = Some(Error::GatewayRefused {
+                                gateway,
+                                kind,
+                                ack: Box::new(ack),
+                                proof: proof.clone(),
+                                attempts: attempts.clone(),
+                            });
+                            continue;
+                        }
                         return Err(Error::GatewayRefused {
                             gateway,
                             kind,
@@ -641,14 +681,26 @@ impl Client {
                         gateway,
                         dial_succeeded: false,
                         error: Some(error),
+                        latency_ms: None,
                     }),
                 },
                 Err(error) => attempts.push(Attempt {
                     gateway,
                     dial_succeeded: false,
                     error: Some(error),
+                    latency_ms: None,
                 }),
             }
+        }
+        if let Some(mut refusal) = root_refusal {
+            if let Error::GatewayRefused {
+                attempts: ref mut all,
+                ..
+            } = refusal
+            {
+                *all = attempts;
+            }
+            return Err(refusal);
         }
         Err(Error::AllCandidatesFailed { attempts })
     }
@@ -680,6 +732,7 @@ impl Client {
         };
         let dialer = self.dialer.isolated();
         let mut attempts = Vec::with_capacity(1);
+        let started = Instant::now();
         match dialer.dial(gateway).await {
             Ok(mut stream) => match tokio::time::timeout(
                 self.ack_timeout,
@@ -699,6 +752,7 @@ impl Client {
                         gateway: gateway.clone(),
                         dial_succeeded: true,
                         error: None,
+                        latency_ms: Some(started.elapsed().as_secs_f64() * 1000.0),
                     });
                     if ack.get("ok").and_then(serde_json::Value::as_bool) == Some(true) {
                         return Ok(Connected {
@@ -724,6 +778,7 @@ impl Client {
                         gateway: gateway.clone(),
                         dial_succeeded: false,
                         error: Some(error),
+                        latency_ms: None,
                     });
                     Err(Error::AllCandidatesFailed { attempts })
                 }
@@ -733,6 +788,7 @@ impl Client {
                     gateway: gateway.clone(),
                     dial_succeeded: false,
                     error: Some(error),
+                    latency_ms: None,
                 });
                 Err(Error::AllCandidatesFailed { attempts })
             }
@@ -983,6 +1039,170 @@ mod tests {
         let mut lock = cursor.as_os_str().to_os_string();
         lock.push(".lock");
         let _ = std::fs::remove_dir(std::path::PathBuf::from(lock));
+    }
+
+    /// A dialer whose gateways answer by onion name: `refuse` ones answer a root refusal,
+    /// `down` ones fail to dial, everything else accepts.
+    struct ScriptedDialer {
+        dials: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl Dialer for ScriptedDialer {
+        fn dial<'a>(&'a self, gateway: &'a Gateway) -> DialFuture<'a> {
+            Box::pin(async move {
+                let name = gateway.label();
+                self.dials.lock().unwrap().push(name.clone());
+                if name.starts_with("down") {
+                    return Err(format!("connect onion {name}: no circuit"));
+                }
+                let (client, mut gateway_side) = tokio::io::duplex(4096);
+                let refuse = name.starts_with("refuse");
+                tokio::spawn(async move {
+                    loop {
+                        let mut byte = [0_u8; 1];
+                        gateway_side.read_exact(&mut byte).await.unwrap();
+                        if byte[0] == b'\n' {
+                            break;
+                        }
+                    }
+                    let reply: &[u8] = if refuse {
+                        b"{\"ok\":false,\"err\":\"wrong-group-root\"}\n"
+                    } else {
+                        b"{\"ok\":true}\n"
+                    };
+                    gateway_side.write_all(reply).await.unwrap();
+                });
+                Ok(Box::pin(client) as BoxStream)
+            })
+        }
+
+        fn successful_bootstraps(&self) -> usize {
+            0
+        }
+
+        fn isolated(&self) -> Arc<dyn Dialer> {
+            Arc::new(Self {
+                dials: Arc::clone(&self.dials),
+            })
+        }
+    }
+
+    fn scripted() -> (Client, Arc<std::sync::Mutex<Vec<String>>>) {
+        let dials = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let dialer = Arc::new(ScriptedDialer {
+            dials: Arc::clone(&dials),
+        });
+        let prover = Arc::new(BlockingProver::with_function(1, |input| {
+            Ok(built(input.target))
+        }));
+        (Client::with_components(dialer, prover), dials)
+    }
+
+    fn onion(name: &str) -> Gateway {
+        Gateway::Onion {
+            onion: name.into(),
+            port: 80,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_root_refusal_sends_the_same_envelope_to_the_next_candidate() {
+        let (client, dials) = scripted();
+        let connected = client
+            .connect(ConnectRequest {
+                gateways: vec![onion("refuse-a"), onion("refuse-b"), onion("accept-c")],
+                proof: proof_request("x.example:443"),
+                slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
+                artifact: "rln-test".into(),
+                session: None,
+            })
+            .await
+            .expect("the third candidate accepts");
+        assert_eq!(connected.gateway.label(), "accept-c.onion:80");
+        assert_eq!(connected.attempts.len(), 3);
+        assert!(connected.attempts.iter().all(|a| a.dial_succeeded));
+        assert_eq!(
+            dials.lock().unwrap().as_slice(),
+            [
+                "refuse-a.onion:80",
+                "refuse-b.onion:80",
+                "accept-c.onion:80"
+            ]
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_root_refusal_everywhere_is_still_a_refusal_with_every_attempt() {
+        let (client, _) = scripted();
+        let error = client
+            .connect(ConnectRequest {
+                gateways: vec![onion("refuse-a"), onion("refuse-b")],
+                proof: proof_request("x.example:443"),
+                slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
+                artifact: "rln-test".into(),
+                session: None,
+            })
+            .await
+            .err()
+            .expect("refused everywhere");
+        match error {
+            Error::GatewayRefused { attempts, ack, .. } => {
+                assert_eq!(attempts.len(), 2);
+                assert_eq!(ack["err"], "wrong-group-root");
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_initialization_never_moves_to_another_node() {
+        let (client, dials) = scripted();
+        let error = client
+            .connect(ConnectRequest {
+                gateways: vec![onion("refuse-a"), onion("accept-c")],
+                proof: proof_request("x.example:443"),
+                slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
+                artifact: "rln-test".into(),
+                session: Some(SessionInit {
+                    class_id: "research-v1".into(),
+                    gateway: format!("{}.onion", "a".repeat(56)),
+                    nonce: "00".repeat(16),
+                    commitments: vec!["00".repeat(32)],
+                    ticket_book_digest: "11".repeat(32),
+                }),
+            })
+            .await
+            .err()
+            .expect("a session init at a refusing node fails");
+        assert!(matches!(error, Error::GatewayRefused { .. }));
+        assert_eq!(dials.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_onion_that_fails_to_dial_is_tried_once_more_before_the_next_candidate() {
+        let (client, dials) = scripted();
+        let connected = client
+            .connect(ConnectRequest {
+                gateways: vec![onion("down-a"), onion("accept-c")],
+                proof: proof_request("x.example:443"),
+                slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
+                artifact: "rln-test".into(),
+                session: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(connected.gateway.label(), "accept-c.onion:80");
+        assert_eq!(
+            dials.lock().unwrap().as_slice(),
+            ["down-a.onion:80", "down-a.onion:80", "accept-c.onion:80"]
+        );
+        assert_eq!(connected.attempts.len(), 2);
+        assert!(!connected.attempts[0].dial_succeeded);
+        assert!(connected.attempts[0]
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("retry:"));
     }
 
     #[tokio::test]

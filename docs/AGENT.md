@@ -127,9 +127,16 @@ shadenet run --no-proxy api.openai.com,api.anthropic.com -- your-agent
 shadenet run --no-proxy api.openai.com -- hermes
 ```
 
-**Keep the model API off ShadeNet.** Every connection a routed agent opens
-spends a tunnel, including calls to its own model. List the model host in
-`--no-proxy` (loopback hosts such as a local Ollama bypass automatically).
+**The agent's own traffic stays off ShadeNet.** Every connection a routed
+agent opens spends a tunnel, including calls to its own model and the telemetry
+its runtime sends. `shadenet run` keeps your `NO_PROXY`, bypasses loopback, and
+bypasses the model-API and telemetry hosts agents talk to for themselves
+(`anthropic.com`, `openai.com`, `googleapis.com`, `datadoghq.com`, `sentry.io`,
+`statsig.com`, ...) by default; `--no-default-bypass` turns that off and
+`--no-proxy` adds hosts. To allow only some destinations through ShadeNet, start
+the proxy with an allow-list: `shadenet proxy --targets .wikipedia.org,api.ipify.org`
+(`SHADENET_TARGETS`, or `targets` in `config.toml`). Every other host is refused
+at once with `403 target_not_allowed`, spending nothing.
 
 **MCP tools (the agent chooses per request).** `shadenet mcp` serves
 `shadenet_fetch`, `shadenet_status` and, with `--searxng-url`,
@@ -148,7 +155,48 @@ nodes serve port 443; TLS runs end to end to the destination.
 [Adapters](ADAPTERS.md) has recipes for SearXNG, Hermes, Claude Code, Codex,
 curl, Python and Rust.
 
-## 5. When a request fails
+## 5. Bursts, the queue and planning
+
+The budget is per epoch (60 seconds on the public network): a tier-`K` member
+proves `K` times per epoch, and with session tickets each proof opens six
+tunnels at one node. An agent that fires ten fetches at once does not get nine
+refusals: the proxy holds the requests whose budget is spent and opens them at
+the next epoch boundary, in arrival order, for up to two epochs. A tunnel that
+waited answers `200 Connection Established` with `X-ShadeNet-Queued: <seconds>`.
+Only a request that would wait longer than that is refused with
+`429 budget_exhausted`; its `Retry-After` and `X-ShadeNet-ETA` are the
+queue-aware estimate.
+
+Ask before a batch:
+
+```sh
+shadenet plan --url https://a.example/x --url https://b.example/y   # or --count 12
+shadenet plan --count 12 --json
+```
+
+The plan says how many tunnels are available now, how many epochs the batch
+needs, a lower bound on the seconds until its last tunnel can open, and which
+tier would do it in one epoch. The MCP tool `shadenet_plan` returns the same
+object, and `shadenet status` / `GET /_shadenet/status` carry `queue` (depth,
+next slot, capacity) and `plan` for one more tunnel.
+
+While `shadenet proxy` runs, `shadenet status`, `shadenet plan` and
+`shadenet fetch` talk to it instead of starting their own client: no Tor
+bootstrap, no canopy fetch, and a fetch shares the proxy's session books and
+queue. `--direct` forces an own client. A sequential agent (one connection at a
+time, every few seconds) keeps its session book at nodes that serve
+`research-v2` (60 s idle); at older nodes a book closes after 15 s idle.
+
+Knobs, on `proxy`, `mcp` and `fetch`: `--max-wait <secs>`
+(`SHADENET_QUEUE_MAX_WAIT_SECS`, `queue_max_wait_secs` in `config.toml`; default
+two epochs) and `--no-queue` for the old refuse-at-once contract. `shadenet
+proxy` also keeps a circuit to the two best nodes warm (`--warm N`, `--no-warm`,
+`SHADENET_WARM_NODES`), so the first fetch after a quiet spell skips the onion
+rendezvous, and `status` lists each node with its measured latency. After a
+node reports it could not reach a destination (`upstream:*`), the client tries
+once on another node before giving up. ADR 0013 has the design.
+
+## 6. When a request fails
 
 A refused CONNECT answers with a status, an `X-ShadeNet-Error` code, an
 `X-ShadeNet-Cause` sentence, and a JSON body with `cause` and `fix` (plus
@@ -160,7 +208,7 @@ wrong way.
 |---|---|---|
 | 403 | `not_admitted`, `not_finalized` | which set the leaf is missing from, or how long until finality |
 | 403 | `port_not_allowed` | nodes serve HTTPS on 443 only |
-| 429 | `budget_exhausted` | the epoch reset, and what spent the budget |
+| 429 | `budget_exhausted` | the epoch reset and what spent the budget; with the queue on only a request that could not be held within `--max-wait` sees it, and `X-ShadeNet-ETA` is the queue-aware estimate |
 | 502 | `node_refused` | the node's reason; a `wrong-group-root` ack names the node's root, leaf count and block |
 | 503 | `rpc`, `canopy`, `transport`, `no_eligible_node`, `busy` | which RPC dropped history, which Elder is down, whether Tor is bootstrapped |
 

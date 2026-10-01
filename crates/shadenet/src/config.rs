@@ -127,6 +127,13 @@ pub struct Config {
     pub session_tickets: bool,
     /// Passphrase for an encrypted identity file. Never printed by `Debug`.
     pub passphrase: Option<Zeroizing<String>>,
+    /// Queue a tunnel whose epoch budget is spent for at most this long before refusing it
+    /// (ADR 0013). `None` refuses at once with `budget_exhausted`. The CLI defaults the proxy,
+    /// `mcp` and `fetch` to two epochs; SDK callers opt in.
+    pub queue_max_wait: Option<Duration>,
+    /// After a node refuses a tunnel for an `upstream:*` reason, try once more on another node
+    /// when the budget allows (ADR 0013).
+    pub retry_other_node: bool,
 }
 
 impl std::fmt::Debug for Config {
@@ -225,6 +232,8 @@ impl Default for ConfigBuilder {
                 nonce: None,
                 session_tickets: false,
                 passphrase: None,
+                queue_max_wait: None,
+                retry_other_node: true,
             },
             network_error,
         }
@@ -293,6 +302,14 @@ impl ConfigBuilder {
     setter!(
         /// Session tickets are a research flag (#103) and off by default.
         session_tickets: bool
+    );
+    setter!(
+        /// Hold a tunnel whose budget is spent for at most this long instead of refusing it.
+        queue_max_wait: Option<Duration>
+    );
+    setter!(
+        /// Retry once on another node after an `upstream:*` refusal.
+        retry_other_node: bool
     );
 
     /// Validate and finish.

@@ -103,6 +103,8 @@ pub enum Command {
     Init(InitArgs),
     /// Show admission, budget and canopy state
     Status(StatusArgs),
+    /// Plan a batch of fetches against the epoch budget: epochs, ETA and the tier that fits
+    Plan(PlanArgs),
     /// Check the local setup and report every problem found
     Doctor(DoctorArgs),
     /// Run the local HTTP CONNECT proxy for agents and SearXNG
@@ -190,6 +192,11 @@ pub enum ServiceKind {
 pub struct StatusArgs {
     #[command(flatten)]
     pub net: NetArgs,
+    #[command(flatten)]
+    pub queue: QueueArgs,
+    /// Start an own client even when a proxy is running on the configured listen address
+    #[arg(long)]
+    pub direct: bool,
     #[arg(long)]
     pub json: bool,
     /// Poll until the state is `ready`
@@ -197,6 +204,36 @@ pub struct StatusArgs {
     pub wait: bool,
     #[arg(long, default_value_t = 3600)]
     pub wait_timeout: u64,
+}
+
+#[derive(Args, Debug)]
+pub struct PlanArgs {
+    #[command(flatten)]
+    pub net: NetArgs,
+    /// Start an own client even when a proxy is running on the configured listen address
+    #[arg(long)]
+    pub direct: bool,
+    /// URLs or hosts the batch would fetch (repeatable; comma-separated also works)
+    #[arg(long = "url", value_name = "URL|HOST")]
+    pub urls: Vec<String>,
+    /// Number of fetches instead of listing them
+    #[arg(long, value_name = "N")]
+    pub count: Option<u64>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// The budget queue (ADR 0013), shared by `proxy`, `mcp` and `fetch`.
+#[derive(Args, Debug, Default, Clone)]
+#[command(next_help_heading = "Budget queue")]
+pub struct QueueArgs {
+    /// Refuse at once with 429 budget_exhausted when the epoch budget is spent, instead of
+    /// holding the request for the next epoch
+    #[arg(long)]
+    pub no_queue: bool,
+    /// Longest a request may wait in the queue [env: SHADENET_QUEUE_MAX_WAIT_SECS] [default: 2 epochs]
+    #[arg(long, value_name = "SECS")]
+    pub max_wait: Option<u64>,
 }
 
 #[derive(Args, Debug)]
@@ -236,6 +273,19 @@ pub struct ProxyArgs {
     /// Most tunnels being set up at once [env: SHADENET_MAX_SETUPS] [default: 16]
     #[arg(long)]
     pub max_setups: Option<usize>,
+    /// Keep circuits to this many of the best nodes warm [env: SHADENET_WARM_NODES] [default: 2]
+    #[arg(long, value_name = "N")]
+    pub warm: Option<usize>,
+    /// Only these destination hosts may use ShadeNet: names, or `.suffix` for a domain and its
+    /// subdomains, comma-separated (repeatable). Others get 403 target_not_allowed and spend
+    /// nothing [env: SHADENET_TARGETS]
+    #[arg(long, value_name = "HOSTS")]
+    pub targets: Vec<String>,
+    /// Do not warm circuits
+    #[arg(long)]
+    pub no_warm: bool,
+    #[command(flatten)]
+    pub queue: QueueArgs,
     /// Serve one CONNECT, then exit
     #[arg(long)]
     pub once: bool,
@@ -245,6 +295,8 @@ pub struct ProxyArgs {
 pub struct McpArgs {
     #[command(flatten)]
     pub net: NetArgs,
+    #[command(flatten)]
+    pub queue: QueueArgs,
     /// SearXNG base URL for shadenet_search [env: SHADENET_SEARXNG_URL]
     #[arg(long)]
     pub searxng_url: Option<String>,
@@ -254,6 +306,11 @@ pub struct McpArgs {
 pub struct FetchArgs {
     #[command(flatten)]
     pub net: NetArgs,
+    #[command(flatten)]
+    pub queue: QueueArgs,
+    /// Start an own client even when a proxy is running on the configured listen address
+    #[arg(long)]
+    pub direct: bool,
     /// https URL
     pub url: String,
     /// HTTP method
@@ -489,6 +546,7 @@ fn command_name(command: &Command) -> &'static str {
     match command {
         Command::Init(_) => "init",
         Command::Status(_) => "status",
+        Command::Plan(_) => "plan",
         Command::Doctor(_) => "doctor",
         Command::Proxy(_) => "proxy",
         Command::Mcp(_) => "mcp",
@@ -571,6 +629,34 @@ mod tests {
             panic!("member-status")
         };
         assert_eq!(pass.args, vec!["--identity", "x", "--json"]);
+    }
+
+    #[test]
+    fn queue_flags_parse_on_proxy_mcp_and_fetch() {
+        let cli = Cli::try_parse_from(["shadenet", "proxy", "--no-queue", "--warm", "3"]).unwrap();
+        let Command::Proxy(args) = cli.command else {
+            panic!("proxy")
+        };
+        assert!(args.queue.no_queue);
+        assert_eq!(args.warm, Some(3));
+        let cli = Cli::try_parse_from(["shadenet", "mcp", "--max-wait", "90"]).unwrap();
+        let Command::Mcp(args) = cli.command else {
+            panic!("mcp")
+        };
+        assert_eq!(args.queue.max_wait, Some(90));
+        let cli = Cli::try_parse_from([
+            "shadenet",
+            "plan",
+            "--url",
+            "https://a.example/x",
+            "--url",
+            "b.example,c.example",
+        ])
+        .unwrap();
+        let Command::Plan(args) = cli.command else {
+            panic!("plan")
+        };
+        assert_eq!(args.urls.len(), 2);
     }
 
     #[test]

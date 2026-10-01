@@ -33,7 +33,22 @@ export const SESSION_CLASSES = Object.freeze({
     destinationToAgentBytesPerSecond: 512 * 1024,
     destinationToAgentBurstBytes: 1024 * 1024,
   }),
+  // research-v2 (ADR 0013): identical book and limits, 60 s idle instead of 15 s so a client
+  // that opens one connection at a time keeps its book across the gaps. Advertised next to v1.
+  "research-v2": Object.freeze({
+    tickets: 6,
+    maxPayloadBytes: 41_943_040,
+    lifetimeMs: 90_000,
+    idleTimeoutMs: 60_000,
+    maxConcurrentStreams: 4,
+    maxPendingConnects: 4,
+    agentToDestinationBytesPerSecond: 64 * 1024,
+    agentToDestinationBurstBytes: 128 * 1024,
+    destinationToAgentBytesPerSecond: 512 * 1024,
+    destinationToAgentBurstBytes: 1024 * 1024,
+  }),
 });
+export const SESSION_CLASS_IDS = Object.freeze(Object.keys(SESSION_CLASSES));
 export const MAX_SESSION_CLASSES = 8;
 export const MAX_TICKETS = 64;
 export const TICKET_SECRET_BYTES = 32;

@@ -111,6 +111,7 @@ pub fn dispatch(command: Command, ctx: &Context) -> ExitCode {
     match command {
         Command::Init(args) => init(args, ctx),
         Command::Status(args) => status(args, ctx),
+        Command::Plan(args) => plan(args, ctx),
         Command::Doctor(args) => doctor(args, ctx),
         Command::Proxy(args) => proxy(args, ctx),
         Command::Mcp(args) => crate::mcp::serve(args, ctx),
@@ -160,6 +161,157 @@ pub(crate) fn build_client(
 ) -> Result<Client, String> {
     let config = net.to_config(ctx, need_identity)?;
     Client::new(config).map_err(|e| e.to_string())
+}
+
+/// The longest a queued tunnel waits: flag, then `SHADENET_QUEUE_MAX_WAIT_SECS`, then the config
+/// file, then two epochs (ADR 0013). `--no-queue` or a value of 0 refuses at once.
+pub(crate) fn queue_max_wait(
+    queue: &crate::QueueArgs,
+    ctx: &Context,
+    epoch_seconds: u64,
+) -> Result<Option<Duration>, String> {
+    if queue.no_queue {
+        return Ok(None);
+    }
+    let seconds = match queue.max_wait {
+        Some(seconds) => seconds,
+        None => match shadenet::env::var("QUEUE_MAX_WAIT_SECS")?.filter(|v| !v.trim().is_empty()) {
+            Some(raw) => raw.trim().parse::<u64>().map_err(|_| {
+                format!("SHADENET_QUEUE_MAX_WAIT_SECS must be an integer (got {raw:?})")
+            })?,
+            None => ctx
+                .file
+                .queue_max_wait_secs
+                .unwrap_or_else(|| shadenet::scheduler::default_max_wait_seconds(epoch_seconds)),
+        },
+    };
+    Ok((seconds > 0).then(|| Duration::from_secs(seconds)))
+}
+
+/// [`build_client`] with the budget queue configured for `proxy`, `mcp` and `fetch`.
+pub(crate) fn build_client_queued(
+    net: &crate::NetArgs,
+    queue: &crate::QueueArgs,
+    ctx: &Context,
+    need_identity: bool,
+) -> Result<Client, String> {
+    let mut config = net.to_config(ctx, need_identity)?;
+    let epoch_seconds = config
+        .epoch_seconds
+        .or_else(|| {
+            config
+                .network
+                .deployment
+                .rate_policy
+                .as_ref()
+                .map(|policy| policy.epoch_seconds)
+        })
+        .unwrap_or(shadenet::client::LEGACY_EPOCH_SECONDS);
+    config.queue_max_wait = queue_max_wait(queue, ctx, epoch_seconds)?;
+    Client::new(config).map_err(|e| e.to_string())
+}
+
+// ------------------------------------------------------------------ running proxy
+
+/// A `shadenet proxy` already listening on the configured address (flag, `SHADENET_LISTEN`,
+/// `config.toml`, else the default), reachable with this machine's proxy token. One-shot
+/// commands prefer it to starting their own client (ADR 0013, #236): no Tor bootstrap, no
+/// canopy fetch, and the proxy's own books, queue and node latencies.
+pub(crate) struct RunningProxy {
+    pub url: String,
+    pub token: Zeroizing<String>,
+}
+
+pub(crate) fn running_proxy(ctx: &Context) -> Option<RunningProxy> {
+    let token = proxy_token(None, ctx).ok()?;
+    let listen = shadenet::env::var_lenient("LISTEN")
+        .or_else(|| ctx.file.listen.clone())
+        .unwrap_or_else(|| "127.0.0.1:8118".into());
+    let url = format!("http://{listen}");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(800))
+        .no_proxy()
+        .build()
+        .ok()?;
+    let response = client
+        .get(format!("{url}/_shadenet/health"))
+        .bearer_auth(token.as_str())
+        .send()
+        .ok()?;
+    (response.status().as_u16() == 204).then_some(RunningProxy { url, token })
+}
+
+impl RunningProxy {
+    fn get_json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, String> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .no_proxy()
+            .build()
+            .map_err(|e| e.to_string())?;
+        client
+            .get(format!("{}{path}", self.url))
+            .bearer_auth(self.token.as_str())
+            .send()
+            .and_then(|r| r.error_for_status())
+            .and_then(|r| r.json::<T>())
+            .map_err(|e| format!("{path} via the running proxy: {e}"))
+    }
+
+    fn status(&self) -> Result<shadenet::Status, String> {
+        self.get_json("/_shadenet/status")
+    }
+
+    fn plan(&self, count: u64) -> Result<shadenet::Plan, String> {
+        self.get_json(&format!("/_shadenet/plan?count={count}"))
+    }
+
+    /// Fetch through the proxy's CONNECT path: the proxy spends the ticket or slot, queues the
+    /// request if the budget is spent, and keeps its session books.
+    fn fetch(&self, request: &shadenet::FetchRequest) -> Result<shadenet::FetchResponse, String> {
+        let proxy = reqwest::Proxy::all(&self.url)
+            .map_err(|e| e.to_string())?
+            .basic_auth("shadenet", self.token.as_str());
+        let client = reqwest::blocking::Client::builder()
+            .proxy(proxy)
+            .timeout(request.timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|e| e.to_string())?;
+        let method = reqwest::Method::from_bytes(request.method.as_bytes())
+            .map_err(|e| format!("bad method: {e}"))?;
+        let mut builder = client.request(method, &request.url);
+        for (name, value) in &request.headers {
+            builder = builder.header(name.as_str(), value.as_str());
+        }
+        if let Some(body) = &request.body {
+            builder = builder.body(body.clone());
+        }
+        let response = builder
+            .send()
+            .map_err(|e| format!("fetch via the running proxy: {e}"))?;
+        let status = response.status().as_u16();
+        let headers: Vec<(String, String)> = response
+            .headers()
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.to_string(),
+                    String::from_utf8_lossy(v.as_bytes()).into_owned(),
+                )
+            })
+            .collect();
+        let mut body = response.bytes().map_err(|e| e.to_string())?.to_vec();
+        let truncated = body.len() > request.max_bytes;
+        body.truncate(request.max_bytes);
+        Ok(shadenet::FetchResponse {
+            status,
+            headers,
+            body,
+            truncated,
+            gateway: "(running proxy)".into(),
+            epoch: 0,
+        })
+    }
 }
 
 // ------------------------------------------------------------------ status
@@ -229,6 +381,35 @@ fn print_status(status: &shadenet::Status) {
             "not bootstrapped yet"
         }
     );
+    if status.queue.enabled || status.queue.depth > 0 {
+        println!(
+            "queue: {} waiting, next tunnel in {}s, {} tunnel(s) per epoch, max wait {}s",
+            status.queue.depth,
+            status.queue.next_slot_in_seconds,
+            status.queue.capacity_per_epoch,
+            status.queue.max_wait_seconds
+        );
+    }
+    if !status.nodes.is_empty() {
+        let line: Vec<String> = status
+            .nodes
+            .iter()
+            .take(6)
+            .map(|node| {
+                format!(
+                    "{}{} {}{}",
+                    &node.onion[..node.onion.len().min(8)],
+                    if node.preferred { "*" } else { "" },
+                    node.health,
+                    match node.latency_ms {
+                        Some(ms) => format!(" {}ms", ms as u64),
+                        None => String::new(),
+                    }
+                )
+            })
+            .collect();
+        println!("nodes: {}", line.join(", "));
+    }
     if let Some(error) = &status.last_error {
         println!(
             "last error: {} ({})",
@@ -238,8 +419,105 @@ fn print_status(status: &shadenet::Status) {
     }
 }
 
+// ------------------------------------------------------------------ plan
+
+fn plan(args: crate::PlanArgs, ctx: &Context) -> ExitCode {
+    let listed: Vec<String> = args
+        .urls
+        .iter()
+        .flat_map(|raw| raw.split(','))
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let requests = if listed.is_empty() {
+        args.count.unwrap_or(1)
+    } else {
+        listed.len() as u64
+    };
+    let hosts: std::collections::BTreeSet<String> = listed
+        .iter()
+        .map(|item| {
+            let rest = item
+                .strip_prefix("https://")
+                .or_else(|| item.strip_prefix("http://"))
+                .unwrap_or(item);
+            rest.split('/').next().unwrap_or(rest).to_ascii_lowercase()
+        })
+        .collect();
+    let plan = match (args.direct, running_proxy(ctx)) {
+        (false, Some(proxy)) => match proxy.plan(requests) {
+            Ok(plan) => plan,
+            Err(message) => return usage("plan", message),
+        },
+        _ => match build_client(&args.net, ctx, false) {
+            Ok(client) => client.plan(requests),
+            Err(message) => return usage("plan", message),
+        },
+    };
+    if args.json {
+        let mut value = serde_json::to_value(&plan).unwrap_or_default();
+        value["distinctHosts"] = (hosts.len() as u64).into();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&value).unwrap_or_default()
+        );
+    } else {
+        println!(
+            "plan: {} fetch(es){} at tier {} ({}s epochs{})",
+            plan.requests,
+            if hosts.is_empty() {
+                String::new()
+            } else {
+                format!(" to {} host(s)", hosts.len())
+            },
+            plan.tier,
+            plan.epoch_seconds,
+            if plan.session_tickets {
+                format!(
+                    ", session tickets: {} tunnels per proof",
+                    plan.tickets_per_book
+                )
+            } else {
+                String::new()
+            }
+        );
+        println!(
+            "now: {} tunnel(s) available, {} queued ahead; {} per epoch",
+            plan.available_now, plan.queue_depth, plan.capacity_per_epoch
+        );
+        println!("{}", plan.advice);
+        if !hosts.is_empty() && (hosts.len() as u64) < plan.requests {
+            println!(
+                "tip: {} of these share a host; a keep-alive connection serves them on one tunnel",
+                plan.requests - hosts.len() as u64
+            );
+        }
+    }
+    ExitCode::SUCCESS
+}
+
 fn status(args: StatusArgs, ctx: &Context) -> ExitCode {
-    let client = match build_client(&args.net, ctx, false) {
+    if !args.direct && !args.wait {
+        if let Some(proxy) = running_proxy(ctx) {
+            return match proxy.status() {
+                Ok(status) => {
+                    if args.json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&status).unwrap_or_default()
+                        );
+                    } else {
+                        print_status(&status);
+                        println!("via: running proxy at {}", proxy.url);
+                    }
+                    state_exit(&status.state)
+                }
+                Err(message) => usage("status", message),
+            };
+        }
+    }
+    let client = match build_client_queued(&args.net, &args.queue, ctx, false) {
         Ok(client) => client,
         Err(message) => return usage("status", message),
     };
@@ -306,9 +584,17 @@ fn proxy(args: ProxyArgs, ctx: &Context) -> ExitCode {
         Ok(token) => token,
         Err(message) => return usage("proxy", message),
     };
-    let client = match build_client(&args.net, ctx, true) {
+    let client = match build_client_queued(&args.net, &args.queue, ctx, true) {
         Ok(client) => Arc::new(client),
         Err(message) => return usage("proxy", message),
+    };
+    let warm = if args.no_warm {
+        0
+    } else {
+        args.warm
+            .or_else(|| shadenet::env::parse("WARM_NODES"))
+            .or(ctx.file.warm_nodes)
+            .unwrap_or(2)
     };
     let listen = args
         .listen
@@ -330,6 +616,33 @@ fn proxy(args: ProxyArgs, ctx: &Context) -> ExitCode {
         .or(ctx.file.max_setups)
         .unwrap_or(16);
     config.once = args.once;
+    config.targets = {
+        let mut list: Vec<String> = args
+            .targets
+            .iter()
+            .flat_map(|raw| raw.split(','))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+        if list.is_empty() {
+            if let Some(raw) = shadenet::env::var_lenient("TARGETS") {
+                list = raw
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect();
+            }
+        }
+        if list.is_empty() {
+            list = ctx.file.targets.clone().unwrap_or_default();
+        }
+        list
+    };
+    if !config.targets.is_empty() {
+        tracing::info!(targets = ?config.targets, "destination allow-list on; other hosts get 403 target_not_allowed");
+    }
     let rt = match runtime() {
         Ok(rt) => rt,
         Err(message) => return usage("proxy", message),
@@ -343,6 +656,7 @@ fn proxy(args: ProxyArgs, ctx: &Context) -> ExitCode {
         // Harnesses and service managers wait for this exact line.
         eprintln!("{} proxy listening on http://{bound}", invoked_name());
         client.spawn_canopy_refresh();
+        client.spawn_warmer(warm, Duration::from_secs(60));
         let preflight = Arc::clone(&client);
         tokio::spawn(async move {
             let status = preflight.status().await;
@@ -405,14 +719,6 @@ fn fetch(args: FetchArgs, ctx: &Context) -> ExitCode {
         Ok(headers) => headers,
         Err(message) => return usage("fetch", message),
     };
-    let client = match build_client(&args.net, ctx, true) {
-        Ok(client) => client,
-        Err(message) => return usage("fetch", message),
-    };
-    let rt = match runtime() {
-        Ok(rt) => rt,
-        Err(message) => return usage("fetch", message),
-    };
     let request = shadenet::FetchRequest {
         url: args.url.clone(),
         method: args.method.to_ascii_uppercase(),
@@ -421,7 +727,21 @@ fn fetch(args: FetchArgs, ctx: &Context) -> ExitCode {
         max_bytes: args.max_bytes,
         timeout: Duration::from_secs(180),
     };
-    match rt.block_on(client.fetch(request)) {
+    let outcome = match (args.direct, running_proxy(ctx)) {
+        (false, Some(proxy)) => proxy.fetch(&request).map_err(shadenet::Error::Transport),
+        _ => {
+            let client = match build_client_queued(&args.net, &args.queue, ctx, true) {
+                Ok(client) => client,
+                Err(message) => return usage("fetch", message),
+            };
+            let rt = match runtime() {
+                Ok(rt) => rt,
+                Err(message) => return usage("fetch", message),
+            };
+            rt.block_on(client.fetch(request))
+        }
+    };
+    match outcome {
         Ok(response) => {
             use std::io::Write;
             if args.json {

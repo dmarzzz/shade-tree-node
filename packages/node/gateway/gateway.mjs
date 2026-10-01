@@ -43,7 +43,7 @@ import { dirname, join } from "node:path";
 import { verifyEnvelope, loadGroupOnchain, loadGroup, currentEpoch, EPOCH_SECONDS, MEMBERS_PATH, getArtifactSet } from "../lib/semaphore.mjs";
 import { reconstructSecret, resolveSlashLeaf, deriveCommitments, TIERS, K_SLOTS } from "../lib/rln.mjs";
 import { verifySessionEnvelope } from "../lib/rln.mjs";
-import { validateSessionInit, validateTicket, policyEcho } from "../lib/session-tickets.mjs";
+import { validateSessionInit, validateTicket, policyEcho, SESSION_CLASS_IDS } from "../lib/session-tickets.mjs";
 import { makeSessionBooks, SESSION_REASONS } from "./session.mjs";
 import { makeRootProvider, configuredContracts } from "../lib/root-provider.mjs";
 import { ADMIT_ORDER, DEFAULT_ADMIT, parseAdmit, admitsFromRoots, describeAdmits } from "../lib/admission.mjs";
@@ -2011,7 +2011,7 @@ async function makeSessionSupport() {
     return null;
   }
   const maxSessions = envInt("SHADE_TREE_SESSION_MAX", 256);
-  log.info("session tickets enabled", { classes: ["research-v1"], maxSessions });
+  log.info("session tickets enabled", { classes: [...SESSION_CLASS_IDS], maxSessions });
   return { sessions: makeSessionBooks({ maxSessions }), onion: String(id.onion).toLowerCase() };
 }
 
@@ -2104,7 +2104,7 @@ async function main() {
       ["alerts", alerts.enabled ? `webhook (${alerts.config.format})` : "off"],
       ["admission", roots.admits?.join(",") || process.env.SHADE_TREE_ADMIT || "invited"],
       ["egress", process.env.SHADE_TREE_EGRESS_ALLOW || "*:443"],
-      ["session tickets", session ? "on (research-v1)" : "off"],
+      ["session tickets", session ? `on (${SESSION_CLASS_IDS.join(", ")})` : "off"],
       ["payload limit", payloadBudget.maxBytes > 0 ? `${payloadBudget.maxBytes} bytes combined / RLN slot` : "off"],
       ["relay telemetry", relayTelemetryEnabled ? "private reports on" : "off"],
       ["metrics", metricsPort > 0 ? `127.0.0.1:${metricsPort}` : "off"],

@@ -43,6 +43,7 @@ pub mod health;
 pub mod identity;
 pub mod incidents;
 pub mod profile;
+pub mod scheduler;
 pub mod session;
 pub mod slot;
 
@@ -67,9 +68,10 @@ pub use config::{Config, ConfigBuilder, Discovery, Identity, Members, Slots};
 pub use error::{Error, Explanation, ERROR_CODES};
 pub use incidents::{Incident, IncidentFeed};
 pub use profile::{Network, PublicProfile};
+pub use scheduler::{Budget, Plan};
 
 #[cfg(feature = "live")]
-pub use client::{CanopyStatus, Client, Metrics, Problem, Status, Tunnel};
+pub use client::{CanopyStatus, Client, Metrics, NodeStatus, Problem, QueueStatus, Status, Tunnel};
 #[cfg(feature = "live")]
 pub use fetch::{FetchRequest, FetchResponse};
 #[cfg(feature = "live")]

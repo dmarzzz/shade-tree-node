@@ -5,9 +5,15 @@
 //! setup by `max_setups`, and open tunnels by `max_tunnels`.
 //!
 //! Local API (all authenticated with the proxy token):
-//! - `CONNECT host:port` opens a proof-gated tunnel. Failures answer with a status code, an
-//!   `X-ShadeNet-Error` code, `Retry-After` when waiting helps, and a JSON body.
+//! - `CONNECT host:port` opens a proof-gated tunnel. With the budget queue on (the default,
+//!   ADR 0013) a spent budget holds the request for the next epoch; the `200` then carries
+//!   `X-ShadeNet-Queued: <seconds waited>`. Failures answer with a status code, an
+//!   `X-ShadeNet-Error` code, `Retry-After` when waiting helps, `X-ShadeNet-ETA` (seconds until
+//!   a slot is expected, queue included) on `429`, and a JSON body.
 //! - `GET /_shadenet/status` returns [`crate::Status`] as JSON.
+//! - `GET /_shadenet/plan?count=N` returns a [`crate::Plan`] for `N` tunnels (ADR 0013).
+//! - A target outside `targets` (when set) is refused at once with `403 target_not_allowed`,
+//!   spending nothing: an allow-list for agents whose runtimes open connections of their own.
 //! - `GET /_shadenet/health` (and the legacy `/_shade_tree/health`) returns 204.
 //! - `GET /_shadenet/metrics` returns Prometheus text.
 //!
@@ -39,6 +45,9 @@ pub struct ProxyConfig {
     pub max_setups: usize,
     /// Serve one CONNECT, then return (tests).
     pub once: bool,
+    /// Allowed destination hosts: exact names, or `.suffix` for a domain and its subdomains.
+    /// Empty allows every host. A refused target spends nothing (ADR 0013, #230).
+    pub targets: Vec<String>,
 }
 
 impl std::fmt::Debug for ProxyConfig {
@@ -63,8 +72,25 @@ impl ProxyConfig {
             max_tunnels: 64,
             max_setups: 16,
             once: false,
+            targets: Vec::new(),
         }
     }
+}
+
+/// Whether `host` (no port) is allowed by `targets`: exact match, or a `.suffix` entry matches
+/// the domain itself and any subdomain. Case-insensitive; an empty list allows everything.
+pub fn target_allowed(targets: &[String], host: &str) -> bool {
+    if targets.is_empty() {
+        return true;
+    }
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    targets.iter().any(|pattern| {
+        let pattern = pattern.trim().to_ascii_lowercase();
+        match pattern.strip_prefix('.') {
+            Some(suffix) => host == suffix || host.ends_with(&format!(".{suffix}")),
+            None => host == pattern,
+        }
+    })
 }
 
 /// Minimum token length. The token is the only thing between other local users and the member's
@@ -124,6 +150,7 @@ pub async fn serve(
         tunnels: Arc::new(Semaphore::new(config.max_tunnels.max(1))),
         max_tunnels: config.max_tunnels.max(1),
         setups: Arc::new(Semaphore::new(config.max_setups.max(1))),
+        targets: config.targets.clone(),
     });
     loop {
         let (stream, peer) = listener
@@ -153,6 +180,7 @@ struct Shared {
     tunnels: Arc<Semaphore>,
     max_tunnels: usize,
     setups: Arc<Semaphore>,
+    targets: Vec<String>,
 }
 
 enum Handled {
@@ -292,12 +320,28 @@ fn reason_phrase(status: u16) -> &'static str {
 
 /// Serialize a JSON error response.
 pub(crate) fn error_response(error: &Error) -> String {
-    json_error_response(
+    let mut response = json_error_response(
         error.http_status(),
         error.code(),
         error.retry_after().map(|d| d.as_secs().max(1)),
         &error.to_json(),
-    )
+    );
+    if let Error::BudgetExhausted { retry_after, .. } = error {
+        // The queue-aware ETA (ADR 0013): the same number as Retry-After once queued requests
+        // ahead are counted, under a name agents can read without parsing the body.
+        let marker = "\r\nRetry-After: ";
+        if let Some(at) = response.find(marker) {
+            let line_end = response[at + 2..]
+                .find("\r\n")
+                .map(|i| at + 2 + i)
+                .unwrap_or(at);
+            response.insert_str(
+                line_end,
+                &format!("\r\nX-ShadeNet-ETA: {}", retry_after.as_secs().max(1)),
+            );
+        }
+    }
+    response
 }
 
 /// One header line's worth of a cause: no CR/LF, ASCII only, bounded.
@@ -389,6 +433,24 @@ async fn handle(shared: Arc<Shared>, mut stream: TcpStream) -> Handled {
             let _ = stream.write_all(response.as_bytes()).await;
             Handled::Local
         }
+        ("GET", target) if target.starts_with("/_shadenet/plan") => {
+            let count = target
+                .split_once('?')
+                .map(|(_, query)| query)
+                .unwrap_or("")
+                .split('&')
+                .find_map(|pair| pair.strip_prefix("count="))
+                .and_then(|n| n.parse::<u64>().ok())
+                .unwrap_or(1);
+            let plan = shared.client.plan(count);
+            let body = serde_json::to_string_pretty(&plan).unwrap_or_else(|_| "{}".into()) + "\n";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            Handled::Local
+        }
         ("GET", "/_shadenet/metrics") => {
             let body = prometheus(&shared);
             let response = format!(
@@ -400,6 +462,20 @@ async fn handle(shared: Arc<Shared>, mut stream: TcpStream) -> Handled {
         }
         ("CONNECT", target) => {
             let target = target.to_string();
+            let host = target.rsplit_once(':').map(|(h, _)| h).unwrap_or(&target);
+            if !target_allowed(&shared.targets, host.trim_matches(|c| c == '[' || c == ']')) {
+                let _ = stream
+                    .write_all(
+                        local_error(
+                            403,
+                            "target_not_allowed",
+                            "this host is not in the proxy's --targets allow-list; nothing was spent",
+                        )
+                        .as_bytes(),
+                    )
+                    .await;
+                return Handled::Local;
+            }
             Handled::Tunnel(tunnel(shared, stream, target, head.rest).await)
         }
         ("GET", _) => {
@@ -436,6 +512,18 @@ async fn tunnel(
             .await;
         return Err(Error::Transport("too many open tunnels".into()));
     };
+    // The budget queue (ADR 0013) runs before a setup permit is taken, so queued requests never
+    // crowd out the ones whose budget is available.
+    let mut queued_for = Duration::ZERO;
+    if let Some(max_wait) = shared.client.config().queue_max_wait {
+        match shared.client.wait_for_budget(max_wait).await {
+            Ok(waited) => queued_for = waited,
+            Err(error) => {
+                let _ = stream.write_all(error_response(&error).as_bytes()).await;
+                return Err(error);
+            }
+        }
+    }
     let setup_permit = match tokio::time::timeout(
         Duration::from_secs(60),
         Arc::clone(&shared.setups).acquire_owned(),
@@ -462,15 +550,22 @@ async fn tunnel(
     };
     drop(setup_permit);
     let gateway = tunnel.gateway.clone();
+    let waited = tunnel.waited.max(queued_for);
     let mut remote = tunnel.into_stream();
     let relay = async {
         if !early.is_empty() {
             remote.write_all(&early).await?;
             remote.flush().await?;
         }
-        stream
-            .write_all(b"HTTP/1.1 200 Connection Established\r\nProxy-Agent: shadenet-rust\r\n\r\n")
-            .await?;
+        let established = if waited.is_zero() {
+            "HTTP/1.1 200 Connection Established\r\nProxy-Agent: shadenet-rust\r\n\r\n".to_string()
+        } else {
+            format!(
+                "HTTP/1.1 200 Connection Established\r\nProxy-Agent: shadenet-rust\r\nX-ShadeNet-Queued: {}\r\n\r\n",
+                waited.as_secs()
+            )
+        };
+        stream.write_all(established.as_bytes()).await?;
         stream.flush().await?;
         tokio::io::copy_bidirectional(&mut stream, &mut remote).await
     };
@@ -538,6 +633,23 @@ fn prometheus(shared: &Shared) -> String {
             .max_tunnels
             .saturating_sub(shared.tunnels.available_permits())
     ));
+    let queue = shared.client.queue_status();
+    out.push_str(&format!(
+        "# HELP shadenet_queue_depth Tunnels waiting for the next epoch's budget.\n# TYPE shadenet_queue_depth gauge\nshadenet_queue_depth {}\n",
+        queue.depth
+    ));
+    out.push_str(&format!(
+        "# HELP shadenet_queue_next_slot_seconds Seconds until a new tunnel could open.\n# TYPE shadenet_queue_next_slot_seconds gauge\nshadenet_queue_next_slot_seconds {}\n",
+        queue.next_slot_in_seconds
+    ));
+    out.push_str(&format!(
+        "# HELP shadenet_queued_total Tunnels that waited in the budget queue.\n# TYPE shadenet_queued_total counter\nshadenet_queued_total {}\n",
+        queue.queued_total
+    ));
+    out.push_str(&format!(
+        "# HELP shadenet_queue_wait_seconds_total Seconds tunnels spent in the budget queue.\n# TYPE shadenet_queue_wait_seconds_total counter\nshadenet_queue_wait_seconds_total {}\n",
+        queue.waited_seconds_total
+    ));
     out
 }
 
@@ -555,6 +667,18 @@ mod tests {
         assert_eq!(head.rest, b"EARLY");
         assert!(parse_head(b"CONNECT x:443 HTTP/1.1\r\n").unwrap().is_none());
         assert!(parse_head(b"CONNECT x:443 SPDY\r\n\r\n").is_err());
+    }
+
+    #[test]
+    fn target_allow_list_matches_exact_and_suffix() {
+        let targets = vec![".example.org".to_string(), "api.ipify.org".to_string()];
+        assert!(target_allowed(&[], "anything.test"));
+        assert!(target_allowed(&targets, "example.org"));
+        assert!(target_allowed(&targets, "www.Example.ORG"));
+        assert!(!target_allowed(&targets, "notexample.org"));
+        assert!(target_allowed(&targets, "api.ipify.org"));
+        assert!(!target_allowed(&targets, "www.api.ipify.org"));
+        assert!(!target_allowed(&targets, "api.anthropic.com"));
     }
 
     #[test]
@@ -588,6 +712,11 @@ mod tests {
         );
         assert!(response.contains("\"fix\":"));
         assert!(response.contains("Retry-After: 17\r\n"));
+        assert!(response.contains("\r\nX-ShadeNet-ETA: 17\r\n"));
+        let (head, _) = response.split_once("\r\n\r\n").unwrap();
+        assert!(head
+            .lines()
+            .all(|line| line.is_empty() || line.contains(':') || line.starts_with("HTTP/1.1")));
         let body = response.split("\r\n\r\n").nth(1).unwrap();
         let json: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
         assert_eq!(json["error"]["code"], "budget_exhausted");
