@@ -6,6 +6,12 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 Nothing yet.
 
+## 0.7.1 — the node container
+
+- `ghcr.io/dmarzzz/shadenet-node:<version>`: Tor + the JS node + its heartbeat in one image, run from a deployment record alone (`SHADENET_RECORD`). `shadenet-node run | check [--probe] | identity | authorize | status | retire`; ten knobs as `SHADENET_*` or `/state/node.toml`, including `sets` (one node admitting several staked sets); any explicit `SHADE_TREE_*` still wins. Published multi-arch and attested by the release workflow.
+- `bootstrap.sh` and the v4 role take `SHADENET_SETS` / `shade_tree_extra_sets` for the same thing.
+- The operator page, OPERATOR.md, JOIN.md, CONFIG.md and docker/README.md lead with the container; the stale "blocked by #6" note is gone.
+
 ## 0.7.0 — ShadeNet research preview on Sepolia
 
 The launch release. The fleet, the site, both SDKs and the `shadenet` binary read one
