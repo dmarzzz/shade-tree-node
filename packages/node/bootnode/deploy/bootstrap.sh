@@ -246,6 +246,15 @@ SHADE_TREE_BOOTNODE_PORT="${SHADE_TREE_BOOTNODE_PORT:-8877}"
 SHADE_TREE_GATEWAY_PORT="${SHADE_TREE_GATEWAY_PORT:-8443}"
 SHADE_TREE_ENABLE_POW="${SHADE_TREE_ENABLE_POW:-0}"
 SHADE_TREE_SESSION_TICKETS="${SHADE_TREE_SESSION_TICKETS:-0}"
+# Zero-downtime gateway restarts (docs/OPERATOR.md "Restart without dropping a connection"): with
+# =1 systemd owns the loopback listening socket (shade-tree-gateway.socket) and hands it to the
+# gateway, so Tor's local connects queue in the kernel while the process restarts instead of
+# being refused for the 4-6 s a cold start takes. Off by default so the golden units are unchanged.
+SHADE_TREE_SOCKET_ACTIVATION="${SHADE_TREE_SOCKET_ACTIVATION:-0}"
+# Webhook alerts without Prometheus (packages/node/lib/alerts.mjs): rendered into the gateway and
+# heartbeat units only when set.
+SHADE_TREE_ALERT_WEBHOOK="${SHADE_TREE_ALERT_WEBHOOK:-${SHADENET_ALERT_WEBHOOK:-}}"
+SHADE_TREE_ALERT_WEBHOOK_FORMAT="${SHADE_TREE_ALERT_WEBHOOK_FORMAT:-generic}"
 SHADE_TREE_BOOTNODE_ONION="${SHADE_TREE_BOOTNODE_ONION:-}"
 SHADE_TREE_BOOTNODE_ONIONS="${SHADE_TREE_BOOTNODE_ONIONS:-}"
 SHADE_TREE_BOOTNODE_SIGNER="${SHADE_TREE_BOOTNODE_SIGNER:-}"
@@ -335,6 +344,19 @@ case "$SHADE_TREE_SESSION_TICKETS" in
   1|true|yes|on)   SHADE_TREE_SESSION_TICKETS=1 ;;
   0|false|no|off)  SHADE_TREE_SESSION_TICKETS=0 ;;
   *) die "SHADE_TREE_SESSION_TICKETS must be 1 or 0 (got '$SHADE_TREE_SESSION_TICKETS')" ;;
+esac
+case "$SHADE_TREE_SOCKET_ACTIVATION" in
+  1|true|yes|on)   SHADE_TREE_SOCKET_ACTIVATION=1 ;;
+  0|false|no|off)  SHADE_TREE_SOCKET_ACTIVATION=0 ;;
+  *) die "SHADE_TREE_SOCKET_ACTIVATION must be 1 or 0 (got '$SHADE_TREE_SOCKET_ACTIVATION')" ;;
+esac
+case "$SHADE_TREE_ALERT_WEBHOOK_FORMAT" in
+  generic|slack|discord|matrix) ;;
+  *) die "SHADE_TREE_ALERT_WEBHOOK_FORMAT must be generic, slack, discord or matrix (got '$SHADE_TREE_ALERT_WEBHOOK_FORMAT')" ;;
+esac
+case "$SHADE_TREE_ALERT_WEBHOOK" in
+  ""|https://*|http://127.0.0.1:*|http://localhost:*) ;;
+  *) die "SHADE_TREE_ALERT_WEBHOOK must be an https:// URL (or a loopback http:// relay); got '$SHADE_TREE_ALERT_WEBHOOK'" ;;
 esac
 case "$SHADE_TREE_ELDER_ONLY" in
   1|true|yes|on)   SHADE_TREE_ELDER_ONLY=1 ;;
@@ -778,6 +800,33 @@ EOF
 # through the light provider anchored to it (SHADE_TREE_ROOT_PROVIDER=light + SHADE_TREE_HELIOS_RPC_URL);
 # packages/node/lib/root-provider.mjs fails closed if the sidecar is down/mismatched, so the gateway simply
 # restarts until Helios is synced. Default (SHADE_TREE_HELIOS=0): byte-identical to before.
+# Webhook alerts (packages/node/lib/alerts.mjs): only rendered when the operator set a URL, so the
+# golden units are unchanged. The URL may carry a token; the unit file is root-owned 0644 like
+# every other unit (same exposure as the fleet-tally EnvironmentFile; use a loopback relay if that
+# is not acceptable). Instance label = this host's name.
+render_alert_env() {
+  [ -n "$SHADE_TREE_ALERT_WEBHOOK" ] || return 0
+  echo "Environment=SHADE_TREE_ALERT_WEBHOOK=${SHADE_TREE_ALERT_WEBHOOK}"
+  echo "Environment=SHADE_TREE_ALERT_WEBHOOK_FORMAT=${SHADE_TREE_ALERT_WEBHOOK_FORMAT}"
+}
+
+# The listening socket for zero-downtime restarts (SHADE_TREE_SOCKET_ACTIVATION=1). systemd binds
+# 127.0.0.1:<gateway port> once and passes it to every gateway process (LISTEN_FDS); between two
+# processes the kernel queues Tor's local connects in the backlog instead of refusing them.
+render_gateway_socket_unit() {  # $1 = output file
+  cat > "$1" <<EOF
+[Unit]
+Description=Shade Tree tunnel gateway listening socket (zero-downtime restarts)
+[Socket]
+ListenStream=127.0.0.1:${SHADE_TREE_GATEWAY_PORT}
+Backlog=1024
+NoDelay=true
+Service=shade-tree-gateway.service
+[Install]
+WantedBy=sockets.target
+EOF
+}
+
 render_gateway_unit() {  # $1 = output file
   {
     echo "[Unit]"
@@ -788,6 +837,13 @@ render_gateway_unit() {  # $1 = output file
     else
       echo "After=network-online.target tor.service"
       echo "Wants=network-online.target"
+    fi
+    # Socket activation (SHADE_TREE_SOCKET_ACTIVATION=1): the .socket unit owns 127.0.0.1:<port>;
+    # the service must start after it and cannot run without it (else it would bind the port
+    # itself and the next restart would be a cold one again).
+    if [ "$SHADE_TREE_SOCKET_ACTIVATION" = "1" ]; then
+      echo "Requires=shade-tree-gateway.socket"
+      echo "After=shade-tree-gateway.socket"
     fi
     cat <<EOF
 [Service]
@@ -835,6 +891,7 @@ EOF
     [ -z "$SHADE_TREE_FROM_BLOCKS" ] || echo "Environment=SHADE_TREE_FROM_BLOCKS=${SHADE_TREE_FROM_BLOCKS}"
     [ -z "$SHADE_TREE_ZK_ARTIFACTS" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACTS=${SHADE_TREE_ZK_ARTIFACTS}"
     [ -z "$SHADE_TREE_ZK_ARTIFACT_LEGACY" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACT_LEGACY=${SHADE_TREE_ZK_ARTIFACT_LEGACY}"
+    render_alert_env
     cat <<EOF
 ExecStart=${NODE_BIN} ${SHADE_TREE_DIR}/packages/node/gateway/gateway.mjs
 Restart=always
@@ -931,6 +988,7 @@ EOF
       echo "Environment=SHADE_TREE_PAY_CHAIN_ID=${SHADE_TREE_PAY_CHAIN_ID}"
       echo "Environment=SHADE_TREE_PAY_PROTOCOLS=${SHADE_TREE_PAY_PROTOCOLS}"
     fi
+    render_alert_env
     cat <<EOF
 ExecStart=${NODE_BIN} ${SHADE_TREE_DIR}/packages/node/bootnode/heartbeat.mjs
 Restart=always
@@ -954,11 +1012,12 @@ if [ -n "$SHADE_TREE_RENDER_ONLY" ]; then
   render_torrc "$out/etc/tor/torrc.d-shade-tree"
   [ "$WITH_BOOTNODE" = "1" ] && render_bootnode_unit "$out/etc/systemd/system/shade-tree-bootnode.service"
   [ "$WITH_GATEWAY" = "1" ] && render_gateway_unit "$out/etc/systemd/system/shade-tree-gateway.service"
+  [ "$WITH_GATEWAY" = "1" ] && [ "$SHADE_TREE_SOCKET_ACTIVATION" = "1" ] && render_gateway_socket_unit "$out/etc/systemd/system/shade-tree-gateway.socket"
   [ "$WITH_GATEWAY" = "1" ] && render_heartbeat_unit "$out/etc/systemd/system/shade-tree-heartbeat.service"
   [ "$SHADE_TREE_HELIOS" = "1" ] && render_helios_unit "$out/etc/systemd/system/shade-tree-helios.service"
   [ "$SHADE_TREE_REGISTRAR" = "1" ] && render_registrar_unit "$out/etc/systemd/system/shade-tree-registrar.service"
   if [ "$WITH_GATEWAY" = "0" ]; then render_mode="elder-only"; elif [ "$WITH_BOOTNODE" = "1" ]; then render_mode="bootnode+gateway"; else render_mode="gateway-only"; fi
-  echo "rendered to $out (mode: ${render_mode}, pow=${SHADE_TREE_ENABLE_POW}, helios=${SHADE_TREE_HELIOS}, registrar=${SHADE_TREE_REGISTRAR}, admit=${SHADE_TREE_ADMIT}$([ "$SHADE_TREE_REGISTRAR" = "1" ] && echo ", pay=${SHADE_TREE_PAY_PROTOCOLS}"))"
+  echo "rendered to $out (mode: ${render_mode}, pow=${SHADE_TREE_ENABLE_POW}, helios=${SHADE_TREE_HELIOS}, registrar=${SHADE_TREE_REGISTRAR}, admit=${SHADE_TREE_ADMIT}, socket=${SHADE_TREE_SOCKET_ACTIVATION}$([ "$SHADE_TREE_REGISTRAR" = "1" ] && echo ", pay=${SHADE_TREE_PAY_PROTOCOLS}"))"
   exit 0
 fi
 
@@ -1196,7 +1255,26 @@ fi
 if [ "$WITH_GATEWAY" = "1" ]; then
   render_gateway_unit /etc/systemd/system/shade-tree-gateway.service
   UNITS="${UNITS:+$UNITS }shade-tree-gateway"
+  if [ "$SHADE_TREE_SOCKET_ACTIVATION" = "1" ]; then
+    render_gateway_socket_unit /etc/systemd/system/shade-tree-gateway.socket
+    # Migration from a self-binding gateway: the port is held by the running service, so the
+    # socket cannot bind until that process is stopped. One cold restart, then never again.
+    if ! systemctl is-active --quiet shade-tree-gateway.socket; then
+      systemctl daemon-reload
+      if systemctl is-active --quiet shade-tree-gateway; then
+        log "socket activation: first enablement; stopping the self-binding gateway once so the socket can take the port"
+        systemctl stop shade-tree-gateway
+      fi
+      systemctl enable --now shade-tree-gateway.socket
+    fi
+  elif [ -f /etc/systemd/system/shade-tree-gateway.socket ]; then
+    # Turned off: the service binds the port itself again (one restart below), the socket goes.
+    systemctl disable --now shade-tree-gateway.socket >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/shade-tree-gateway.socket
+  fi
 elif [ -f /etc/systemd/system/shade-tree-gateway.service ]; then
+  systemctl disable --now shade-tree-gateway.socket >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/shade-tree-gateway.socket
   systemctl disable --now shade-tree-gateway >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/shade-tree-gateway.service
 fi

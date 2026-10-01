@@ -41,6 +41,16 @@ function escapeLabelValue(v) {
 
 // Deterministic canonical key + rendered `{a="1",b="2"}` suffix for a label set.
 // Keys are sorted so {a,b} and {b,a} collapse to one series.
+// Inverse of labelParts' suffix for values(): `{a="x",b="y"}` -> { a: "x", b: "y" } (escapes undone).
+function parseSuffix(suffix) {
+  const out = {};
+  if (!suffix || suffix.length < 2) return out;
+  const re = /([A-Za-z_][A-Za-z0-9_]*)="((?:[^"\\]|\\.)*)"/g;
+  let m;
+  while ((m = re.exec(suffix.slice(1, -1))) !== null) out[m[1]] = m[2].replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  return out;
+}
+
 function labelParts(labels) {
   const keys = Object.keys(labels || {}).filter((k) => labels[k] !== undefined && labels[k] !== null).sort();
   for (const key of keys) if (!LABEL_NAME.test(key)) throw new Error(`invalid metric label name: ${key}`);
@@ -190,8 +200,30 @@ export function makeRegistry({ maxSeries = DEFAULT_MAX_SERIES } = {}) {
     return `{${suffix.slice(1, -1)},${lePair}}`;
   }
 
+  // Read a counter/gauge's current series (collect() gauges evaluated), for in-process rules
+  // (lib/alerts.mjs). Returns [{ labels: {..}, value }]; unknown metric -> []. Never throws.
+  function values(name) {
+    const m = metrics.get(name);
+    if (!m || m.type === "histogram") return [];
+    const out = new Map();
+    for (const [key, s] of m.series) out.set(key, { labels: parseSuffix(s.suffix), value: s.value });
+    if (m.type === "gauge" && typeof m.collect === "function") {
+      try {
+        const collected = m.collect();
+        if (typeof collected === "number" && Number.isFinite(collected)) out.set("", { labels: {}, value: collected });
+        else if (Array.isArray(collected)) {
+          for (const c of collected.slice(0, maxSeries)) {
+            const { key } = labelParts(c.labels || {});
+            if (Number.isFinite(Number(c.value))) out.set(key, { labels: { ...(c.labels || {}) }, value: Number(c.value) });
+          }
+        }
+      } catch { /* a broken collector reads as absent */ }
+    }
+    return [...out.values()];
+  }
+
   return {
-    counter, gauge, histogram, render, size: () => metrics.size,
+    counter, gauge, histogram, render, values, size: () => metrics.size,
     droppedSeries: () => [...metrics.values()].reduce((sum, metric) => sum + metric.droppedSeries, 0),
     _metrics: metrics,
   };

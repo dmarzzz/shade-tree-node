@@ -189,6 +189,43 @@ async function main() {
     ok(unitEnv(ticketsGateway, "SHADE_TREE_GW_IDENTITY") !== null && unitEnv(ticketsGateway, "SHADE_TREE_GW_IDENTITY") === unitEnv(ticketsHeartbeat, "SHADE_TREE_GW_IDENTITY") && unitEnv(nodeDef, "SHADE_TREE_GW_IDENTITY") === null, "with tickets on the gateway binds books to the same onion identity file the heartbeat signs with (absent by default)");
     const ticketsBad = render(work, "session-tickets-bad", { SHADE_TREE_SESSION_TICKETS: "maybe" });
     ok(ticketsBad.status !== 0 && /SHADE_TREE_SESSION_TICKETS must be 1 or 0/.test(ticketsBad.stderr), "bad session-ticket switch rejected up front");
+
+    // 12b. SHADE_TREE_SOCKET_ACTIVATION (zero-downtime restarts): off by default (golden unchanged, no
+    // .socket file); =1 renders shade-tree-gateway.socket on the gateway port and makes the service
+    // Require/After it; the heartbeat unit is untouched; a bad value is rejected up front.
+    console.log("socket activation:");
+    ok(!(await listFiles(def.out)).some((f) => f.endsWith("shade-tree-gateway.socket")), "default render has no .socket unit");
+    const sock = render(work, "socket-activation", { SHADE_TREE_SOCKET_ACTIVATION: "1" });
+    const sockFiles = await readAll(sock.out);
+    const sockUnit = sockFiles.get("etc/systemd/system/shade-tree-gateway.socket") || "";
+    const sockGateway = sockFiles.get("etc/systemd/system/shade-tree-gateway.service") || "";
+    ok(sock.status === 0 && /^ListenStream=127\.0\.0\.1:8443$/m.test(sockUnit) && /^Service=shade-tree-gateway\.service$/m.test(sockUnit) && /^WantedBy=sockets\.target$/m.test(sockUnit) && /^Backlog=1024$/m.test(sockUnit), "=1 renders the loopback .socket unit on the gateway port, bound to the service");
+    ok(/^Requires=shade-tree-gateway\.socket$/m.test(sockGateway) && /^After=shade-tree-gateway\.socket$/m.test(sockGateway), "the gateway service requires and follows the socket");
+    ok(sockGateway.replace(/^Requires=shade-tree-gateway\.socket\n|^After=shade-tree-gateway\.socket\n/gm, "") === got.get("etc/systemd/system/shade-tree-gateway.service"), "apart from those two lines the gateway unit is byte-identical to the golden one");
+    ok(sockFiles.get("etc/systemd/system/shade-tree-heartbeat.service") === got.get("etc/systemd/system/shade-tree-heartbeat.service"), "the heartbeat unit is unchanged by socket activation");
+    const sockPort = render(work, "socket-activation-port", { SHADE_TREE_SOCKET_ACTIVATION: "1", SHADE_TREE_GATEWAY_PORT: "9443" });
+    ok(sockPort.status === 0 && /^ListenStream=127\.0\.0\.1:9443$/m.test((await readAll(sockPort.out)).get("etc/systemd/system/shade-tree-gateway.socket") || ""), "the socket follows SHADE_TREE_GATEWAY_PORT");
+    const sockBad = render(work, "socket-activation-bad", { SHADE_TREE_SOCKET_ACTIVATION: "maybe" });
+    ok(sockBad.status !== 0 && /SHADE_TREE_SOCKET_ACTIVATION must be 1 or 0/.test(sockBad.stderr), "bad socket-activation switch rejected up front");
+    ok(/systemctl is-active --quiet shade-tree-gateway\.socket/.test(bootstrapSource) && /systemctl stop shade-tree-gateway\s+fi\s+systemctl enable --now shade-tree-gateway\.socket/.test(bootstrapSource), "live path: first enablement stops the self-binding gateway once, then enables the socket");
+
+    // 12c. SHADE_TREE_ALERT_WEBHOOK (lib/alerts.mjs): unset = golden unchanged; set = URL + format
+    // reach BOTH the gateway and the heartbeat units; a non-https / non-loopback URL and a bad
+    // format are rejected up front.
+    console.log("alert webhook:");
+    ok(unitEnv(nodeDef, "SHADE_TREE_ALERT_WEBHOOK") === null && unitEnv(hbDef, "SHADE_TREE_ALERT_WEBHOOK") === null, "default units carry no alert webhook");
+    const hook = render(work, "alert-hook", { SHADE_TREE_ALERT_WEBHOOK: "https://hooks.example/abc", SHADE_TREE_ALERT_WEBHOOK_FORMAT: "slack" });
+    const hookFiles = await readAll(hook.out);
+    const hookGw = hookFiles.get("etc/systemd/system/shade-tree-gateway.service") || "";
+    const hookHb = hookFiles.get("etc/systemd/system/shade-tree-heartbeat.service") || "";
+    ok(hook.status === 0 && unitEnv(hookGw, "SHADE_TREE_ALERT_WEBHOOK") === "https://hooks.example/abc" && unitEnv(hookGw, "SHADE_TREE_ALERT_WEBHOOK_FORMAT") === "slack", "webhook URL + format reach the gateway unit");
+    ok(unitEnv(hookHb, "SHADE_TREE_ALERT_WEBHOOK") === "https://hooks.example/abc" && unitEnv(hookHb, "SHADE_TREE_ALERT_WEBHOOK_FORMAT") === "slack", "and the heartbeat unit");
+    const hookAlias = render(work, "alert-hook-alias", { SHADENET_ALERT_WEBHOOK: "http://127.0.0.1:9194/alert" });
+    ok(hookAlias.status === 0 && unitEnv((await readAll(hookAlias.out)).get("etc/systemd/system/shade-tree-gateway.service") || "", "SHADE_TREE_ALERT_WEBHOOK") === "http://127.0.0.1:9194/alert", "SHADENET_ALERT_WEBHOOK alias and a loopback http relay are accepted");
+    const hookPlain = render(work, "alert-hook-plain", { SHADE_TREE_ALERT_WEBHOOK: "http://hooks.example/abc" });
+    ok(hookPlain.status !== 0 && /SHADE_TREE_ALERT_WEBHOOK must be an https/.test(hookPlain.stderr), "a plain-http remote webhook is rejected (token would travel in clear)");
+    const hookFmt = render(work, "alert-hook-fmt", { SHADE_TREE_ALERT_WEBHOOK: "https://hooks.example/abc", SHADE_TREE_ALERT_WEBHOOK_FORMAT: "pager" });
+    ok(hookFmt.status !== 0 && /SHADE_TREE_ALERT_WEBHOOK_FORMAT must be/.test(hookFmt.stderr), "an unknown webhook format is rejected up front");
     for (const [key, value] of [["SHADE_TREE_EPOCH_SECONDS", "0"], ["SHADE_TREE_ROOT_FRESHNESS_SECONDS", "nope"], ["SHADE_TREE_TIERS", "1,,8"]]) {
       const bad = render(work, `rate-bad-${key}`, { [key]: value });
       ok(bad.status !== 0 && bad.stderr.includes(key), `bad public rate parameter rejected up front: ${key}=${value}`);

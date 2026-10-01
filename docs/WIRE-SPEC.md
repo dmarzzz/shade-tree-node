@@ -107,6 +107,7 @@ Built by `packages/node/bootnode/announce.mjs:51` `buildAnnounce`; verified by `
 | `artifacts` | deduped, sorted ids `^[a-z0-9][a-z0-9._-]{0,63}$` | ≤ 8 (`MAX_CAPS_ARTIFACTS`) | T-HARD-8 |
 | `admits` | subset of `invited, staked, paid` in THAT order (the anonymity order, `ADMIT_PATHS`), deduped, lowercased | ≤ 3 by construction | T-FEAT-9 |
 | `pay` | `{ protocols: subset of [x402, mpp] in that order (non-empty), onion?: lowercased v3 onion (only when the registrar rides ANOTHER onion than the gateway's), port: 1..65535, asset: lowercased 0x-hex-40, chain: "eip155:<1..16 digits>", tiers: { "<limit 1..65535, canonical integer key>": "<atomic price, 1..40 decimal digits>" } sorted by numeric limit }`; a `pay` missing any of protocols/port/asset/chain/tiers is dropped WHOLE | 1..8 tiers (`MAX_CAPS_PAY_TIERS`) | T-FEAT-9 |
+| `draining` | `true` only (any other value dropped); appended LAST so every pre-existing caps byte string is unchanged | none | day-two ops (operator drain flag; clients treat it like health `down`) |
 
 `admits` is the gateway's ADMISSION POLICY (`SHADE_TREE_ADMIT`, `docs/adr/0008`): which membership
 roots it trusts. Absent = a legacy gateway (a client assumes it may admit any path during the

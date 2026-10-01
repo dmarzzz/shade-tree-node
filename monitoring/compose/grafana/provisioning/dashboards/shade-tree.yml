@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: shade-tree
+    folder: Shade Tree
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

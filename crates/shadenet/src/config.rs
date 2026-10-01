@@ -114,6 +114,11 @@ pub struct Config {
     pub canopy_refresh: Duration,
     /// How long a member set is reused before it is fetched again.
     pub member_refresh: Duration,
+    /// How long a last-known-good canopy may keep serving when EVERY Elder Tree is unreachable
+    /// (status reports `canopy.stale` once past it and `connect`/`fetch` fail closed with a
+    /// `canopy` error). Default 1 h: long enough to ride out an Elder outage, short enough that
+    /// a client cannot keep using a directory the operators retired.
+    pub canopy_max_stale: Duration,
     /// Arti state and cache directories. `None` uses ShadeNet's own defaults.
     pub tor_directories: Option<(PathBuf, PathBuf)>,
     /// Fixed per-request nonce (reproducible runs). `None` draws a random one per tunnel.
@@ -214,6 +219,7 @@ impl Default for ConfigBuilder {
                 prover_workers: 2,
                 canopy_refresh: Duration::from_secs(300),
                 member_refresh: Duration::from_secs(30),
+                canopy_max_stale: Duration::from_secs(3600),
                 tor_directories: default_tor_directories(),
                 nonce: None,
                 session_tickets: false,
@@ -276,6 +282,7 @@ impl ConfigBuilder {
     setter!(prover_workers: usize);
     setter!(canopy_refresh: Duration);
     setter!(member_refresh: Duration);
+    setter!(canopy_max_stale: Duration);
     setter!(tor_directories: Option<(PathBuf, PathBuf)>);
     setter!(nonce: Option<String>);
     setter!(

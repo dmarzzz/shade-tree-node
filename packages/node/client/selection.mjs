@@ -20,7 +20,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadDirectory, selectionOrder, reportHealth, verifyDirectory, MAX_WEIGHT, canonicalCaps, DEFAULT_EGRESS_PORT, DEFAULT_PROTO_VERSION } from "../lib/directory.mjs";
+import { loadDirectory, selectionOrder, reportHealth, verifyDirectory, MAX_WEIGHT, canonicalCaps, DEFAULT_EGRESS_PORT, DEFAULT_PROTO_VERSION, isDraining } from "../lib/directory.mjs";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { verifyAnnounce } from "../bootnode/announce.mjs";
 import { makeStakeVerifier } from "../lib/gateway-registry.mjs";
@@ -404,8 +404,8 @@ function swrrPick(pool) {
 // plain selectionOrder when there is nothing to spread across (< 2 candidates).
 function spreadSelectionOrder(view) {
   const all = (view.gateways || []).slice();
-  const healthy = all.filter((g) => g.health !== "down");
-  const pool = healthy.length ? healthy : all; // last resort: spread over "down" ones
+  const healthy = all.filter((g) => g.health !== "down" && !isDraining(g));
+  const pool = healthy.length ? healthy : all; // last resort: spread over "down" / draining ones
   const positive = pool.filter((g) => effWeight(g) > 0);
   const spreadPool = positive.length ? positive : pool;
   if (spreadPool.length < 2) return selectionOrder(view, { rng: _rng });

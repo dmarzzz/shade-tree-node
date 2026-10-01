@@ -46,6 +46,8 @@ Files:
 | `shade_tree_heartbeat_attempts_total` | counter | `outcome` (accepted\|rejected\|egress-unhealthy\|transport-error) | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_egress_check_up` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
+| `shade_tree_heartbeat_draining` | gauge | none | `packages/node/bootnode/heartbeat.mjs` (1 while the operator drain flag is announced) |
+| `shade_tree_alert_webhook_total` | counter | `result` (sent\|failed) | `packages/node/lib/alerts.mjs` (gateway + heartbeat, when a webhook is set) |
 | `shade_tree_registrar_payments_total` | counter | `protocol` (unknown\|x402\|mpp), `result` (challenged\|inserted\|replayed\|rejected\|failed), bounded `reason` on non-success outcomes | `packages/node/payments/registrar.mjs` |
 | `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `packages/node/payments/registrar.mjs` |
 | `shade_tree_registrar_txs_total` | counter | `kind` (settle\|insert), `result` (ok\|failed) | `packages/node/payments/registrar.mjs` |
@@ -177,6 +179,52 @@ Panels: fleet size (`shade_tree_bootnode_live_gateways`), directory fetch rate, 
 reason + rejection fraction, active tunnels, slash events, gateway pass/drop by reason + drop
 fraction, and `verifyEnvelope` p50/p95/p99 (histogram_quantile over
 `shade_tree_gateway_verify_seconds_bucket`) plus mean verify time and verifies/sec.
+
+## Alerts without Prometheus (webhook)
+
+Set `SHADE_TREE_ALERT_WEBHOOK` (and optionally `SHADE_TREE_ALERT_WEBHOOK_FORMAT`) on the gateway
+and heartbeat units (`bootstrap.sh` renders both when the variable is set) and the node evaluates
+the rules below in-process every 30 s, POSTing one JSON document per transition and repeating a
+still-firing alert every 4 h. No Alertmanager, no Prometheus.
+
+| Rule | Role | Condition | Severity |
+|---|---|---|---|
+| `HeartbeatStale` | heartbeat | last accepted announce older than 3 intervals | critical |
+| `HeartbeatNeverAccepted` | heartbeat | no announce accepted 3 intervals after start | critical |
+| `EgressDown` | heartbeat | local egress check failing for 2 evaluations | critical |
+| `ElderPartial` | heartbeat | some but not all Elder Trees accept the announce (2 evaluations) | warning |
+| `Draining` | both | operator drain flag set | info |
+| `RootSourceDegraded` | gateway | an admission root source degraded for 2 evaluations | warning |
+| `RpcEndpointFailing` | gateway | 3+ RPC failovers in 15 min | warning |
+| `HighDropRate` | gateway | more than half of 20+ tunnels dropped in 15 min | warning |
+| `GatewayStarted` / `GatewayStopping` / `HeartbeatStarted` / `HeartbeatStopping` | both | lifecycle, once | info |
+
+Payloads (`SHADE_TREE_ALERT_WEBHOOK_FORMAT`):
+
+- `generic` (default): `{"source":"shadenet","version":1,"role":"node","instance":"<host>","alert":"HeartbeatStale","severity":"critical","status":"firing|resolved","summary":"...","startsAt":"<iso>","ts":"<iso>"}`
+- `slack`: `{"text":"[shadenet] FIRING HeartbeatStale (host): ..."}` for an incoming webhook
+- `discord`: `{"content":"[shadenet] FIRING ..."}` for a channel webhook
+- `matrix`: the generic fields plus `text` and `msgtype: "m.text"`, for a matrix-hookshot generic
+  webhook whose template is `{{ data.text }}`
+
+The URL may carry a token, so bootstrap only accepts `https://` (or a loopback `http://` relay).
+Delivery is counted in `shade_tree_alert_webhook_total{result}`; failures are logged at most once
+a minute and never affect the node.
+
+## One-node compose bundle
+
+`monitoring/compose/docker-compose.yml` runs Prometheus (rules from `alerts.yml`, scraping the
+three loopback listeners of this host) and Grafana (dashboard provisioned) on the host network,
+both bound to 127.0.0.1:
+
+```bash
+cd monitoring/compose
+GRAFANA_ADMIN_PASSWORD=... docker compose --profile monitoring up -d
+# Grafana http://127.0.0.1:3000 (admin), Prometheus http://127.0.0.1:9090
+```
+
+Host networking is required: the node's metrics listeners refuse any non-loopback `Host` header,
+so a bridged container could not scrape them. Edit `prometheus.yml` if your metrics ports differ.
 
 ## Load the alert rules
 

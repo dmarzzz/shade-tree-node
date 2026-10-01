@@ -80,6 +80,9 @@ pub struct CapsDto {
     // Session tickets (ADR 0011): `{ version, classes }`, canonicalized by shadenet-proto.
     #[serde(default)]
     pub session: Option<SessionCapsDto>,
+    // Operator drain flag (day-two ops): `true` while the node announces a planned stop.
+    #[serde(default)]
+    pub draining: Option<bool>,
 }
 
 /// Untrusted `caps.session`; validation lives in `shadenet_proto::canonical_session`.
@@ -279,6 +282,7 @@ impl DirectoryDto {
                             version: session.version,
                             classes: session.classes,
                         }),
+                        draining: c.draining,
                     }),
                     caps_sig: g.caps_sig,
                 })

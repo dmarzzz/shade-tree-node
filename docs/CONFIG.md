@@ -96,6 +96,14 @@ Read by `packages/node/gateway/gateway.mjs` (egress proxy). See also On-chain an
 | `SHADE_TREE_FLEET_TALLY_MAX_EPOCHS` | `4` | Maximum live epoch buckets. Hard maximum 16. | gateway fleet tally | (none) |
 | `SHADE_TREE_FLEET_TALLY_MAX_TOTAL` | `100000` | Maximum recorded entries across all epoch buckets. Hard maximum 500000. | gateway fleet tally | (none) |
 | `SHADE_TREE_SHUTDOWN_TIMEOUT_MS` | `10000` | Drain grace on SIGTERM/SIGINT before in-flight tunnels are force-closed. | gateway, bootnode | (none) |
+| `SHADE_TREE_DRAIN_FILE` | `<repo>/deploy-state/draining` | Operator drain flag file. While it exists the heartbeat announces `draining: true` in its signed caps (clients deprioritise the node) and the gateway's `/readyz` answers 503. `shade-tree-node drain on|off|status` manages it. | gateway, heartbeat | `drain --file` |
+| `SHADE_TREE_DRAIN_POLL_MS` | `2000` | How often the heartbeat checks the drain flag; a change triggers an immediate announce. Minimum 200. | heartbeat | (none) |
+| `SHADE_TREE_ALERT_WEBHOOK` | (unset) | Webhook URL for in-process alerts without Prometheus (`packages/node/lib/alerts.mjs`): one JSON POST per alert transition, repeated every `SHADE_TREE_ALERT_REPEAT_MS` while firing. `SHADENET_ALERT_WEBHOOK` is an alias. Unset = off. | gateway, heartbeat | (none) |
+| `SHADE_TREE_ALERT_WEBHOOK_FORMAT` | `generic` | Payload shape: `generic`, `slack` (`{text}`), `discord` (`{content}`), `matrix` (hookshot generic webhook: `{text, msgtype, ...}`). | gateway, heartbeat | (none) |
+| `SHADE_TREE_ALERT_INSTANCE` | hostname | Instance label carried in every alert. | gateway, heartbeat | (none) |
+| `SHADE_TREE_ALERT_INTERVAL_MS` | `30000` | Alert rule evaluation interval (minimum 1000). | gateway, heartbeat | (none) |
+| `SHADE_TREE_ALERT_REPEAT_MS` | `14400000` | Re-send interval for an alert that stays firing (4 h; minimum 60 000). | gateway, heartbeat | (none) |
+| `SHADE_TREE_SOCKET_ACTIVATION` | `0` | bootstrap.sh: `1` renders `shade-tree-gateway.socket` so systemd owns the loopback listening socket and hands it to the gateway (`LISTEN_FDS`); restarts no longer refuse Tor's local connects. The gateway itself needs no setting: it serves fd 3 whenever `LISTEN_PID` is its own pid. | bootstrap | (none) |
 
 ## Client
 
