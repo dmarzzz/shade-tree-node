@@ -24,15 +24,15 @@
   "services": {
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "18f92f9aeb03af21c97a072d3b87f042bf3a6005"
+      "commit": "56ae0a65c24d0a9bf904ac932cb744dad17c6022"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "18f92f9aeb03af21c97a072d3b87f042bf3a6005"
+      "commit": "56ae0a65c24d0a9bf904ac932cb744dad17c6022"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "18f92f9aeb03af21c97a072d3b87f042bf3a6005"
+      "commit": "56ae0a65c24d0a9bf904ac932cb744dad17c6022"
     }
   },
   "elder": {
@@ -112,6 +112,6 @@
     "legacy": null
   },
   "created": "2026-09-02",
-  "note": "ShadeNet research preview on Sepolia: zero-config clients use the permissionless staking path (tier 1 = 0.01 ETH, tier 8 = 0.08 ETH, one 60-second slot, 40 MiB combined tunnel payload, session tickets on; see docs/ECONOMICS.md); invited admission remains available when selected explicitly. Two Elder Trees and the Shade Tree nodes are managed from agent-devops and pinned to services.*.commit. Proof artifacts are the PSE RLN trusted-setup output; the staking contract is Sepolia testnet material and its ETH has no value.",
+  "note": "ShadeNet research preview on Sepolia: zero-config clients use the permissionless staking path (tier 1 = 0.01 ETH, tier 8 = 0.08 ETH, one 60-second slot, 40 MiB combined tunnel payload, session tickets on; see docs/ECONOMICS.md); invited admission remains available when selected explicitly. Two Elder Trees and the Shade Tree nodes are managed from agent-devops and pinned to services.*.commit. Proof artifacts are the PSE RLN trusted-setup output; the staking contract is Sepolia testnet material and its ETH has no value. Canopy: 2 Elder Trees at 56ae0a65c24d, recorded by scripts/record-canopy.mjs.",
   "sessionTickets": true
 }
