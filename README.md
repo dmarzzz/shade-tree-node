@@ -54,15 +54,15 @@ and filename, and installs without sudo into `~/.local/bin`:
 
 ```sh
 curl -q -fsSL --proto '=https' --proto-redir '=https' \
-  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.0-rc.1 sh
+  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.0 sh
 shadenet --version
 ```
 
 Automatic mode first tries the selected release's self-contained `-live` agent
 and falls back to its verifier-only binary only when that live asset is absent.
 On Apple Silicon it detects Rosetta shells and still selects the native arm64
-live build. Until v0.7.0 is the latest release, pin it with `SHADENET_VERSION=v0.7.0-rc.1` as
-above: v0.6.0 installs only the older `shade-tree` binary, without `init`, `status` or
+live build. v0.7.0 is the latest release; pin it with `SHADENET_VERSION=v0.7.0` if you need a
+fixed build. v0.6.0 installs only the older `shade-tree` binary, without `init`, `status` or
 `mcp`, and has no Intel macOS live build. The
 [installer options and manual verification steps](crates/INSTALL.md) cover the rest. Checksums
 provide transfer integrity; GitHub attestations provide the stronger build

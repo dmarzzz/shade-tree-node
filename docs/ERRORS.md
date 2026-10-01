@@ -67,6 +67,12 @@ only, `--records <path,…>` to look for the identity in other deployment record
 | `identity in <network>` | when not admitted: whether the leaf lives in another record's set | a staging identity on the production record |
 | `root` | after a `wrong-group-root` refusal: our replay root against the roots the node advertised | which side is stale |
 
+## Seeing a refusal from curl
+
+A refused CONNECT is answered by the proxy, not the destination, so `curl -w '%{http_code}'`
+prints `000`. Use `-w '%{http_connect}'` for the proxy's status (429, 502, 407) and `-i` or `-v`
+to see the `X-ShadeNet-Error` header and the JSON body.
+
 ## Budget arithmetic
 
 One tunnel spends one RLN slot. A tier-`K` member has `K` slots per epoch. The

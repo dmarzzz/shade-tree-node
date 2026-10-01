@@ -1,10 +1,10 @@
 # ShadeNet
 
-> ShadeNet gives AI agents anonymous, unlinkable web egress. A local `shadenet` proxy proves in zero knowledge (an RLN membership proof) that the agent's member has staked for access, and a Shade Tree node reached as a Tor onion service opens the HTTPS connection to the destination. The destination sees the node's IP; the node cannot tell which member is asking. Research preview on Sepolia: untrusted testnet ZK artifacts, not for real funds. ShadeNet is one word and is not affiliated with Shade Network or Shade Protocol.
+> ShadeNet gives AI agents anonymous, unlinkable web egress. A local `shadenet` proxy proves in zero knowledge (an RLN membership proof) that the agent's member has staked for access, and a Shade Tree node reached as a Tor onion service opens the HTTPS connection to the destination. The destination sees the node's IP; the node cannot tell which member is asking. Research preview on Sepolia: the proof keys come from PSE's RLN trusted setup, the bonds are testnet ETH, not for real funds. ShadeNet is one word and is not affiliated with Shade Network or Shade Protocol.
 
 Setup for an agent, end to end (the `shadenet` binary embeds Tor; no Node.js or system Tor needed):
 
-1. Install: `curl -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.0-rc.1 sh` (pin v0.7.0-rc.1 until it is the latest release; v0.6.0 has no `shadenet` binary)
+1. Install: `curl -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | sh` (installs the latest release, v0.7.0 or newer; pin with `SHADENET_VERSION=v0.7.0` if you need a fixed build)
 2. `shadenet init` creates `~/.config/shadenet/{identity.json,proxy-token,config.toml}` and prints the stake amount for the current network. Keep `identity.json` private; it is never needed on a command line.
 3. Stake the printed leaf: `shadenet register-member --identity ~/.config/shadenet/identity.json --key-file <owner-only file holding a funded Sepolia key>`. Anyone may stake an agent's leaf for it (a sponsor): `shadenet register-member <leaf> --key-file <their key>`, or from a browser at https://shade-tree-node.vercel.app/stake/ (which also makes an identity file a person can hand to an agent).
 4. `shadenet status --wait` returns when the stake is final (about 13 minutes). `shadenet status --json` reports `state`, `slotsLeft` and `epochResetsInSeconds`.

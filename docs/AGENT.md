@@ -1,7 +1,7 @@
 # Agent guide
 
 ShadeNet gives an agent anonymous, unlinkable egress. A local proxy proves in
-zero knowledge that the agent's member has paid for access (an RLN membership
+zero knowledge that the agent's member has staked for access (an RLN membership
 proof) and a Shade Tree node, reached as a Tor onion service, opens the
 connection to the destination. The node never learns who is asking; the
 destination sees the node's IP, not yours.
@@ -11,8 +11,9 @@ need neither Node.js nor a system Tor daemon. (`shade-tree` is the same binary
 under its old name, kept for one release.)
 
 > [!WARNING]
-> Research preview on Sepolia. The ZK artifacts are from an untrusted testnet
-> setup and the staking wallet is linked to the public member leaf. Do not use
+> Research preview on Sepolia. The proof keys come from PSE's RLN trusted setup
+> (docs/ceremony/PSE-VERIFICATION.md); the bonds are testnet ETH and the staking
+> wallet is linked to the public member leaf. Do not use
 > it for real funds or sensitive work.
 
 ## Quickstart
