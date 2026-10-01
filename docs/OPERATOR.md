@@ -231,12 +231,21 @@ curl --socks5-hostname 127.0.0.1:9050 http://<bootnode-onion>/directory
 ### Restart without dropping a connection
 
 A gateway restart used to refuse every connection Tor handed it for the 4 to 5 s a cold start
-takes (measured on the staging fleet, 2026-10-01: `systemctl restart shade-tree-gateway`, local
-port probe at 4/s, 16 to 20 refused samples per restart), and a client whose stream landed in that
-window saw a failed fetch. With **socket activation** systemd owns the loopback listening socket
-and hands it to every gateway process, so those connects queue in the kernel backlog and the new
-process serves them: a pause of a few seconds instead of a refusal, and no onion descriptor is
-republished because Tor never restarts.
+takes, and a client whose stream landed in that window saw a failed fetch. With **socket
+activation** systemd owns the loopback listening socket and hands it to every gateway process, so
+those connects queue in the kernel backlog and the new process serves them: a pause of a few
+seconds instead of a refusal, and no onion descriptor is republished because Tor never restarts.
+
+Measured on staging node-06 on 2026-10-01 (`systemctl restart shade-tree-gateway`, a local
+connect probe on the gateway port at 4/s for 40 s, restart at t=10 s):
+
+| | process absent | refused connects | client stream in the window |
+|---|---|---|---|
+| before (self-binding) | 4 to 5 s | 16 to 20 of 160 samples per restart | refused |
+| after (socket activation) | 4 to 5 s (unchanged) | 0 of 141, 0 of 160 (two restarts) | queued, served by the new process (a session init sent during the absence opened its book 1.7 s after "gateway up") |
+
+The process absence itself (Node start plus the on-chain root replay) is unchanged; what
+changed is that nobody is turned away during it.
 
 Turn it on when you bootstrap (or re-run bootstrap on an existing box; the first enablement stops
 the self-binding gateway once so the socket can take the port, after that restarts are warm):
