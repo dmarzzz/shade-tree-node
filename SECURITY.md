@@ -9,11 +9,14 @@ Everything in it is testnet material:
 
 - The code is **unaudited** by a third party. An internal contract review found
   issues that need a fresh deployment
-  ([issue #113](https://github.com/dmarzzz/shade-tree-node/issues/113)); the live
-  `StakedReputationSet` (`0xEB67…4275`) predates those fixes and the self-slash
-  change in #115, and is replaced at the ShadeNet launch.
-- The ZK artifacts (`circuits/rln/`) come from an **untrusted testnet phase-2
-  setup**. A holder of that setup's toxic waste could forge proofs. The
+  ([issue #113](https://github.com/dmarzzz/shade-tree-node/issues/113), all fixed
+  and regression-tested); the ShadeNet launch set `StakedReputationSet`
+  (`0xDEB2…4bBC`, 2026-09-30) carries those fixes; the earlier set `0xEB67…4275`
+  is retired.
+- The ZK artifacts (`circuits/rln/`) are PSE's finalized RLN trusted-setup
+  output, adopted after an independent re-verification
+  (`docs/ceremony/PSE-VERIFICATION.md`); an outside verifier's signed statement
+  is still pending. The
   production trusted-setup ceremony has not been run
   ([issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6),
   `docs/CEREMONY.md`).

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Get anonymous Tor egress for an AI agent: create a ShadeNet identity locally and stake 0.001 Sepolia ETH, or sponsor someone else's.">
+  <meta name="description" content="Get anonymous Tor egress for an AI agent: create a ShadeNet identity locally and stake 0.01 Sepolia ETH, or sponsor someone else's.">
   <meta name="theme-color" content="#07100c">
   <meta property="og:title" content="Get Access · ShadeNet">
   <meta property="og:description" content="Create the member secret locally, save its recovery file, and send only the public commitment to Sepolia.">
@@ -96,13 +96,13 @@
           <label class="tier-row">
             <input type="radio" name="tier" value="1" data-tier checked>
             <span class="tier-name">tier 1</span>
-            <span class="tier-bond">0.001 ETH</span>
+            <span class="tier-bond">0.01 ETH</span>
             <span class="tier-buys">1 session per minute, up to 6 connections, 40 MiB</span>
           </label>
           <label class="tier-row">
             <input type="radio" name="tier" value="8" data-tier>
             <span class="tier-name">tier 8</span>
-            <span class="tier-bond">0.008 ETH</span>
+            <span class="tier-bond">0.08 ETH</span>
             <span class="tier-buys">8 sessions per minute, up to 6 connections, 40 MiB</span>
           </label>
         </fieldset>
@@ -144,10 +144,10 @@
         <p class="step-index" aria-hidden="true">04</p>
         <h2>Fund and stake</h2>
         <p>The wallet sends exactly the tier's bond to the pinned contract, plus gas. Its address is linked to the commitment forever, so use a wallet you don't mind linking, or let a sponsor stake for you.</p>
-        <p class="contract-line"><span class="label">contract</span> <a href="https://sepolia.etherscan.io/address/0xf117FDEA83ac57d15D9394A2B56873C32d227B7E">0xf117…7B7E</a></p>
+        <p class="contract-line"><span class="label">contract</span> <a href="https://sepolia.etherscan.io/address/0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC">0xDEB2…4bBC</a></p>
         <div class="button-row">
           <button class="line-action" type="button" data-connect-wallet>connect wallet</button>
-          <button class="solid-action" type="button" data-stake disabled>stake 0.001 Sepolia ETH</button>
+          <button class="solid-action" type="button" data-stake disabled>stake 0.01 Sepolia ETH</button>
         </div>
         <p class="wallet-state" data-wallet>No wallet connected</p>
         <p class="wallet-state" data-balance hidden></p>
@@ -174,13 +174,13 @@
           <label class="tier-row">
             <input type="radio" name="sponsor-tier" value="1" data-sponsor-tier checked>
             <span class="tier-name">tier 1</span>
-            <span class="tier-bond">0.001 ETH</span>
+            <span class="tier-bond">0.01 ETH</span>
             <span class="tier-buys">1 session per minute, up to 6 connections, 40 MiB</span>
           </label>
           <label class="tier-row">
             <input type="radio" name="sponsor-tier" value="8" data-sponsor-tier>
             <span class="tier-name">tier 8</span>
-            <span class="tier-bond">0.008 ETH</span>
+            <span class="tier-bond">0.08 ETH</span>
             <span class="tier-buys">8 sessions per minute, up to 6 connections, 40 MiB</span>
           </label>
       </fieldset>
@@ -224,7 +224,7 @@
         <div class="code-block">
           <pre tabindex="0" aria-label="Install the ShadeNet client"><code>curl -fsSL --proto '=https' --proto-redir '=https' \
   https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \
-  | SHADENET_VERSION=v0.7.0-rc.1 sh</code></pre>
+  | SHADENET_VERSION=v0.7.0 sh</code></pre>
           <button class="copy-block" type="button" data-copy-block aria-label="Copy: Install the ShadeNet client">copy</button>
         </div>
         <div class="code-block">
@@ -343,7 +343,7 @@ console.log(await staking.memberStatus(identity.leaf));   // { state, limit, wit
 
     <section class="stake-boundary" aria-labelledby="boundary-title">
       <h2 id="boundary-title">Honest boundary</h2>
-      <p>Tier 1 buys 1 session per fixed 60-second epoch, capped at 40 MiB combined traffic each and 6 connections per session. Registration becomes usable after Sepolia finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. Exit and withdraw are proof-authorised and return the testnet bond to a fresh recipient after 24 hours. The proof setup is untrusted testnet material until the trusted-setup ceremony runs. Never use mainnet ETH or sensitive traffic.</p>
+      <p>Tier 1 buys 1 session per fixed 60-second epoch, capped at 40 MiB combined traffic each and 6 connections per session. Registration becomes usable after Sepolia finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. Exit and withdraw are proof-authorised and return the testnet bond to a fresh recipient after 24 hours. The proof keys come from the published trusted-setup ceremony. Never use mainnet ETH or sensitive traffic.</p>
     </section>
       </div>
     </div>

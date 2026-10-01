@@ -43,7 +43,7 @@ check(
   frontDoors.every((doc) => /(?:deployment\.json|disposable v4|v4 research (?:Grove|canopy))/i.test(doc)),
 );
 check(
-  "current deployment receipt is explicitly v4, invited-and-staked, and untrusted research",
+  "current deployment receipt is explicitly v4, invited-and-staked, disposable research on ceremony proof keys",
   deployment.status === "live"
     && deployment.protocol?.min === 4
     && deployment.protocol?.max === 4
@@ -53,7 +53,7 @@ check(
     && /^https:\/\//.test(deployment.admission?.roots?.staked?.rpcUrl || "")
     && Number.isInteger(deployment.admission?.roots?.staked?.deployBlock)
     && deployment.admission?.operatorAuthorization?.approved === true
-    && deployment.security?.proofArtifacts === "untrusted-testnet"
+    && deployment.security?.proofArtifacts === "trusted-ceremony"
     && deployment.security?.scope === "disposable-research",
 );
 check(
@@ -64,9 +64,9 @@ check(
     && /Invited membership\s+material remains private/.test(sepoliaReadme),
 );
 check(
-  "deployment plan records the research fleet while keeping production blocked on trusted setup",
-  /disposable v4 research canopy live · production blocked on trusted setup/.test(deploymentPlan)
-    && /untrusted-testnet/.test(deploymentPlan)
+  "deployment plan records the launched research preview on ceremony proof keys",
+  /ShadeNet research preview launched on Sepolia \(M8\) · proof keys from the PSE trusted setup/.test(deploymentPlan)
+    && /trusted-ceremony/.test(deploymentPlan)
     && /issue #6/.test(deploymentPlan),
 );
 check(

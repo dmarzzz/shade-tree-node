@@ -93,7 +93,9 @@ test("primary static routes and the branded 404 resolve", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /This path leaves the canopy/i })).toBeVisible();
 });
 
-const RECORD = JSON.parse(readFileSync(new URL("../../network/sepolia-staging/deployment.json", import.meta.url), "utf8"));
+// The record the page under test was built from (site-src/record.mjs decides; M8 moved it to production).
+const { SITE_NETWORK } = await import("../../site-src/record.mjs");
+const RECORD = JSON.parse(readFileSync(new URL(`../../network/${SITE_NETWORK}/deployment.json`, import.meta.url), "utf8"));
 const STAKED = RECORD.admission.roots.staked;
 const TIER1 = STAKED.tiers.find((t) => t.limit === 1);
 const TIER8 = STAKED.tiers.find((t) => t.limit === 8);

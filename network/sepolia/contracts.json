@@ -63,7 +63,7 @@
     "libraries": "PoseidonT3 0x82Cb42c70208a92DD5938b5f4D67C7d2313bE022 linked (reused, --libraries)",
     "deployedAt": "2026-08-17",
     "deployGas": 2071319,
-    "verified": "cast call: currentRoot()==10354334201938752428558948798274962999644820234654929486063894213598717249307 (empty depth-20 root) at deploy, storage slot 3 == currentRoot, allowedLimits()==[8,32], DEFAULT_LIMIT()==8, ROOT_STORAGE_SLOT()==3, operator()==0xc860…7f02, pendingOperator()==0x0, hasher()==0x29e9…6586, isAllowedLimit(16)==false, commitmentOf(111,8)==11302006078516901731073162965056551612114122314181142374993834332168998510316 (JS golden), balance 0",
+    "verified": "cast call: currentRoot()==10354334201938752428558948798274962999644820234654929486063894213598717249307 (empty depth-20 root) at deploy, storage slot 3 == currentRoot, allowedLimits()==[8,32], DEFAULT_LIMIT()==8, ROOT_STORAGE_SLOT()==3, operator()==0xc860\u20267f02, pendingOperator()==0x0, hasher()==0x29e9\u20266586, isAllowedLimit(16)==false, commitmentOf(111,8)==11302006078516901731073162965056551612114122314181142374993834332168998510316 (JS golden), balance 0",
     "smoke": {
       "result": "PASS",
       "date": "2026-08-17",
@@ -75,7 +75,7 @@
       "rootAfter": "6430323861468492113547438473981076657535586200031679816061979000753954952048",
       "report": "network/sepolia/integration-report-paid-access.md"
     },
-    "events": "Inserted(uint256 indexed commitment, uint256 limit, uint256 index, uint256 root) / Slashed(uint256 indexed commitment, uint256 limit, uint256 index, uint256 root) — the root is the post-update currentRoot; NOTE topic0 differs from the staked set’s MemberRegistered/MemberSlashed (an event-replay root provider needs these two topics; the light-client provider reads slot 3 unchanged)",
+    "events": "Inserted(uint256 indexed commitment, uint256 limit, uint256 index, uint256 root) / Slashed(uint256 indexed commitment, uint256 limit, uint256 index, uint256 root) \u2014 the root is the post-update currentRoot; NOTE topic0 differs from the staked set\u2019s MemberRegistered/MemberSlashed (an event-replay root provider needs these two topics; the light-client provider reads slot 3 unchanged)",
     "broadcast": "network/sepolia/paid-access-broadcast.json"
   },
   "payAsset": {
@@ -123,10 +123,10 @@
     "family": "rate-limiting-nullifier / circom-rln v1.0.0",
     "commit": "17f0fed7d8d19e8b127fd0b3e5295a4831193a0d",
     "params": "RLN(20,16): treeDepth=20, limitBits=16",
-    "leaf": "rateCommitment = Poseidon(2)([ Poseidon(1)([identitySecret]), limit ]) — limit = the member's reputation tier (userMessageLimit; 8 or 32 on this deployment), docs/adr/0006-reputation-tiers.md",
+    "leaf": "rateCommitment = Poseidon(2)([ Poseidon(1)([identitySecret]), limit ]) \u2014 limit = the member's reputation tier (userMessageLimit; 8 or 32 on this deployment), docs/adr/0006-reputation-tiers.md",
     "artifacts": "circuits/rln/ (hash-pinned in circuits/rln/ARTIFACTS.md; testnet-only, untrusted phase-2 ceremony)"
   },
-  "note": "RLN release with ON-CHAIN TIERS (T-FEAT-8b) + the ON-CHAIN incremental tree / currentRoot at storage slot 3 (T-DEV-9, T-DEV-9c). register(commitment, limit) requires bondFor(limit) and records the tier; slash(commitment, secret, limit, receiver) recomputes the leaf at the CLAIMED limit through the tiered RateCommitmentHasher and burns that tier's bond; the one-arg register / three-arg slash overloads are the default-tier (8) path, byte-equivalent to rln-v3. Exit-auth is the REAL Groth16 WithdrawVerifier (testnet-only VK, T-HARD-1 pending) taking the recorded limit. Events MemberRegistered/MemberSlashed carry the limit (new topic0; lib/root-provider.mjs reads both generations). Deployed by the fleet operator hot key. GatewayRegistry is UNCHANGED (0x94EC…9A68, rln-v3 era, still the live registry). NOTE: the LIVE fleet gateways' slashing (SHADE_TREE_SLASH_CONTRACT in agent-devops) still points at the superseded rln-v3 set 0xdAE2…20FC — flipping the fleet units to this set is a separate operator step (docs/ONCHAIN-DEPLOY.md §8); SHADE_TREE_NETWORK=sepolia already resolves SHADE_TREE_GROUP_CONTRACT to this set. T-FEAT-7 (2026-08-17): the PaidAccessSet 0x4e8C…4111 was added NEXT TO this release (release name unchanged; see the `paidAccessSet` block): the operator-inserted paid-access membership tree whose root the gateway unions with this set’s. An earlier payable/priced variant of that contract was designed but NEVER broadcast (pivoted to off-chain 402 settlement before deploy).",
+  "note": "RLN release with ON-CHAIN TIERS (T-FEAT-8b) + the ON-CHAIN incremental tree / currentRoot at storage slot 3 (T-DEV-9, T-DEV-9c). register(commitment, limit) requires bondFor(limit) and records the tier; slash(commitment, secret, limit, receiver) recomputes the leaf at the CLAIMED limit through the tiered RateCommitmentHasher and burns that tier's bond; the one-arg register / three-arg slash overloads are the default-tier (8) path, byte-equivalent to rln-v3. Exit-auth is the REAL Groth16 WithdrawVerifier (testnet-only VK, T-HARD-1 pending) taking the recorded limit. Events MemberRegistered/MemberSlashed carry the limit (new topic0; lib/root-provider.mjs reads both generations). Deployed by the fleet operator hot key. GatewayRegistry is UNCHANGED (0x94EC\u20269A68, rln-v3 era, still the live registry). NOTE: the LIVE fleet gateways' slashing (SHADE_TREE_SLASH_CONTRACT in agent-devops) still points at the superseded rln-v3 set 0xdAE2\u202620FC \u2014 flipping the fleet units to this set is a separate operator step (docs/ONCHAIN-DEPLOY.md \u00a78); SHADE_TREE_NETWORK=sepolia already resolves SHADE_TREE_GROUP_CONTRACT to this set. T-FEAT-7 (2026-08-17): the PaidAccessSet 0x4e8C\u20264111 was added NEXT TO this release (release name unchanged; see the `paidAccessSet` block): the operator-inserted paid-access membership tree whose root the gateway unions with this set\u2019s. An earlier payable/priced variant of that contract was designed but NEVER broadcast (pivoted to off-chain 402 settlement before deploy).",
   "liveIntegration": {
     "result": "PASS",
     "date": "2026-08-17",
@@ -151,7 +151,7 @@
   },
   "deployedAt": "2026-08-17",
   "broadcast": "network/sepolia/rln-v4-broadcast.json",
-  "verified": "cast call: currentRoot()==10354334201938752428558948798274962999644820234654929486063894213598717249307 (empty depth-20 tree root) at deploy, allowedLimits()==[8,32], bondFor(8)==1e15, bondFor(32)==4e15, DEFAULT_LIMIT()==8, ROOT_STORAGE_SLOT()==3, withdrawVerifier()==0x5224…5351 (WithdrawVerifier over WithdrawGroth16Verifier 0x6B26…507E), hasher()==0x29e9…6586, hasher.commitmentOf(111,32)==15363698809722346745616993869789510363416645981863858152379739283427647190637 (JS golden)",
+  "verified": "cast call: currentRoot()==10354334201938752428558948798274962999644820234654929486063894213598717249307 (empty depth-20 tree root) at deploy, allowedLimits()==[8,32], bondFor(8)==1e15, bondFor(32)==4e15, DEFAULT_LIMIT()==8, ROOT_STORAGE_SLOT()==3, withdrawVerifier()==0x5224\u20265351 (WithdrawVerifier over WithdrawGroth16Verifier 0x6B26\u2026507E), hasher()==0x29e9\u20266586, hasher.commitmentOf(111,32)==15363698809722346745616993869789510363416645981863858152379739283427647190637 (JS golden)",
   "superseded": {
     "rln-v3": {
       "status": "superseded 2026-08-17 by rln-v4-tiers (still on chain; the live fleet's slash target until its units are flipped)",
@@ -188,6 +188,29 @@
         "slashTx": "0xc0f99e962300794c599364f17e3e333696ae1a8fc326b9702d3c4c4e09039efb",
         "slashBlock": 11279845,
         "report": "network/sepolia/integration-report-rln.md"
+      }
+    },
+    "public-stake-v1-0xEB67": {
+      "status": "retired 2026-09-30 by the ShadeNet launch set 0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC (M8, CHAIN-1); it predates #115 (self-slash refund) and held 0 members and no funds",
+      "contracts": {
+        "stakedReputationSet": "0xEB67Abf066c11D78856BccC63476ed14d51e4275",
+        "hasher": "0x4Aef86FA47026432567E6F1cE5d5Bb46c62d8d23",
+        "withdrawVerifier": "0x2a905423D252e39d73d37156C28503aD8650C952"
+      },
+      "deployTx": "0x27d187dc35ea6d333a1cc91effcc78883534964b4818601937f96ce2b7a2719c",
+      "deployBlock": 11624622,
+      "params": {
+        "tiers": [
+          {
+            "limit": 1,
+            "bondWei": "100000000000000000"
+          },
+          {
+            "limit": 8,
+            "bondWei": "800000000000000000"
+          }
+        ],
+        "unbondingSeconds": 86400
       }
     }
   }

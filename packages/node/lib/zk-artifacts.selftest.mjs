@@ -27,7 +27,7 @@
 
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
 import { Duplex } from "node:stream";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -74,7 +74,7 @@ await test("artifact id = <circuit>-<sha256(vkey bytes)[0:16]>; built-in id == l
   assert.equal(BUILTIN, "rln-" + lock.artifacts["circuits/rln/verification_key.json"].sha256.slice(0, 16));
   assert.equal(lockArtifactIds().current, BUILTIN);
   assert.equal(lockArtifactIds().previous, PREVIOUS, "the PSE adoption (2026-09-30) rotated the set; the dev id is the recorded previous id");
-  assert.equal(PREVIOUS, artifactIdOfFile(PREVIOUS_VKEY_PATH), "circuits/rln/previous/ holds the retired dev vkey under its own id");
+  assert.equal(existsSync(PREVIOUS_VKEY_PATH), false, "circuits/rln/previous/ is gone: the dual-VK window closed with the production launch record (M8); the dev id survives only as the lock's previousArtifactId");
   assert.notEqual(ALT, BUILTIN, "one extra byte => a different id (content-derived)");
   assert.equal(isArtifactId(BUILTIN), true);
   for (const junk of ["", "Rln-x", "rln x", "a".repeat(65), 42, null, undefined, {}]) assert.equal(isArtifactId(junk), false, JSON.stringify(junk));
@@ -99,12 +99,9 @@ await test("parseArtifactSpec: `id=path` pairs, bare paths, whitespace; bad id /
   assert.throws(() => parseArtifactSpec(`${BUILTIN}=`), /missing vkey path/);
 });
 
-await test("dual-VK window: SHADE_TREE_ZK_ARTIFACTS=<new>=..,<old>=.. accepts both; legacy = the lock's previous id by default", () => {
-  const set = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${BUILTIN}=${BUILTIN_VKEY_PATH},${PREVIOUS}=${PREVIOUS_VKEY_PATH}` } });
-  assert.deepEqual(set.ids, [BUILTIN, PREVIOUS].sort());
-  assert.equal(set.explicit, true);
-  assert.equal(set.legacyId, PREVIOUS);
-  assert.equal(set.legacyAccepted, true, "inside the window the legacy id is accepted (this is what the deployment records open)");
+await test("dual-VK window closed (M8): the retired dev vkey file is gone, so no explicit set can accept the lock's previous id; legacy = the lock's previous id, not accepted", () => {
+  assert.equal(existsSync(PREVIOUS_VKEY_PATH), false, "circuits/rln/previous/ was removed with the production launch record");
+  assert.throws(() => loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${BUILTIN}=${BUILTIN_VKEY_PATH},${PREVIOUS}=${PREVIOUS_VKEY_PATH}` } }), /vkey not found/, "a record that still named the dev vkey fails closed at load");
   const synthetic = loadArtifactSet({ env: { SHADE_TREE_ZK_ARTIFACTS: `${ALT}=${ALT_VKEY_PATH},${BUILTIN}=${BUILTIN_VKEY_PATH}` } });
   assert.deepEqual(synthetic.ids, [ALT, BUILTIN].sort());
   assert.equal(synthetic.legacyId, PREVIOUS, "the legacy id comes from the lock, not from the window's membership");

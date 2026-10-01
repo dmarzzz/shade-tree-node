@@ -6,6 +6,57 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 Nothing yet.
 
+## 0.7.0 — ShadeNet research preview on Sepolia
+
+The launch release. The fleet, the site, both SDKs and the `shadenet` binary read one
+production record, `network/sepolia/deployment.json`, deployed 2026-09-30 from the final
+economics (H2) with the PSE trusted-setup verifier (H3). Signed and hashed v4 wire strings are
+unchanged (`test/wire-freeze.selftest.mjs`). `docs/LAUNCH-REPORT.md` is the launch gate line by
+line with evidence.
+
+### Launch
+
+- Production contracts on Sepolia: `StakedReputationSet` `0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC`
+  with the ceremony `WithdrawVerifier`, all four contracts Sourcify `exact_match`; the earlier set
+  `0xEB67…4275` is retired (CHAIN-1). The record lists the RPC failover order (ADR 0012).
+- Economics final (H2, #212, `docs/ECONOMICS.md`): tier 1 = 0.01 ETH, tier 8 = 0.08 ETH, 24 h
+  unbonding, slash bounty 1/10, 24 sponsor seats, session tickets on.
+- Trusted setup: PSE's finalized RLN ceremony adopted for both circuits after an independent
+  re-verification from public inputs (H3, #214, `docs/ceremony/PSE-VERIFICATION.md`, two archive
+  mirrors). The dual-VK window closed with the production record: only
+  `rln-ae43614cd02ebe95` is accepted, `security.proofArtifacts` is `trusted-ceremony`,
+  `circuits/rln/previous/` is gone, and `deploy/v4/preflight.mjs` reads the lock's `CEREMONY`
+  trust value.
+- The Get access page and its status API build from the production record; install lines pin
+  v0.7.0 (#216, #218, #222).
+
+### Protocol and SDKs
+
+- Session tickets (#103, ADR 0011, #205): with the record's `sessionTickets` switch on, one RLN
+  proof per epoch buys a gateway-bound ticket good for several tunnels inside the epoch's payload
+  budget; shared vectors, Rust client, JS node and `@shadenet/sdk` all agree. Off by default in
+  code; on in the launch record. Units render the switch (#221, #225).
+- Every Elder hears every node and the Lab reads the record's `elders[]` (ADR 0012, #213, #224).
+- Member-set replay verified against the contract's counters, fail closed on an RPC that returns
+  an empty log page (#207); v4 preflight retries a missing receipt (#209) and checks fallback RPCs
+  for current state (#217).
+
+### Ops and release
+
+- The JS node lives in `packages/node/` (#202) and the compatibility shims are gone (#208).
+- Staging rehearsal report (M7, `docs/STAGING-REHEARSAL.md`, #209, #219, #223, #224): every
+  launch-gate line run on the staging canopy, including a browser stake, Hermes and SearXNG
+  through the canopy, Elder failover, an RPC outage, an alert round trip and a release from a tag.
+- Release: Intel macOS live binary (#198), `--version` names the commit (#199), packageable crates
+  and a tag gate (#191), prerelease handling and a Homebrew tap step with a deploy key (#194, #211),
+  the publish dry-run passes a dist-tag for prereleases (#206); `install.sh` glibc and aarch64
+  loader fixes (#220).
+
+### Dependencies
+
+- brace-expansion 2.1.7 / 5.0.12 (GHSA-q2hr-2g5m-vwhr and related, #201, #203, #204); routine
+  npm, cargo and Actions bumps.
+
 ## 0.7.0-rc.1 — ShadeNet research preview, release candidate
 
 First release cut from a tag under the ShadeNet name; a prerelease, so it never becomes "Latest"

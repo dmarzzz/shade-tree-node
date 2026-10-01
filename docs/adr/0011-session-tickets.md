@@ -42,8 +42,10 @@ The switch: `economics.json` `sessionTickets` is written into the deployment rec
 script; the node role starts every node and heartbeat with `SHADE_TREE_SESSION_TICKETS=1` from
 it; the heartbeat then advertises the onion-signed `session` capability; both SDKs read the
 record for their default and honour `SHADENET_SESSION_TICKETS` / `SHADE_TREE_SESSION_TICKETS` as
-an override. With the record saying `false` (today), every path is byte-identical to v4 and a
-session envelope is refused `session-unsupported`.
+an override. With the record saying `false`, every path is byte-identical to v4 and a
+session envelope is refused `session-unsupported`. A client whose record says `true` treats that
+refusal as "this node has no tickets": it remembers the onion and opens the same tunnel on the
+v4 path in the same call, so a canopy mid-roll or a pinned onion still serves.
 
 ## Why not the HTTP/2 side port
 

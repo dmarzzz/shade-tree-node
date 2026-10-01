@@ -239,7 +239,7 @@ export function validateDeploymentRecord(record, { requireLive = true, repoRoot 
       const lockPath = resolve(repoRoot, "testdata/zk-artifacts.lock.json");
       let lock = null;
       try { lock = JSON.parse(readFileSync(lockPath, "utf8")); } catch { /* diagnosed below */ }
-      if (lock?.trust !== "TRUSTED-CEREMONY" || lock?.ceremony?.status !== "complete") {
+      if (lock?.trust !== "CEREMONY" || lock?.ceremony?.status !== "complete") {
         bad("security.proofArtifacts", "claims trusted-ceremony but the pinned artifact lock does not record a completed trusted ceremony");
       }
     }
@@ -280,7 +280,7 @@ export function validatePinnedCheckout(record, { repoRoot }) {
     const lockBytes = git("show", `${commit}:testdata/zk-artifacts.lock.json`);
     let lock = null;
     try { if (lockBytes.status === 0) lock = JSON.parse(lockBytes.stdout.toString("utf8")); } catch { /* diagnosed below */ }
-    if (lock?.trust !== "TRUSTED-CEREMONY" || lock?.ceremony?.status !== "complete") {
+    if (lock?.trust !== "CEREMONY" || lock?.ceremony?.status !== "complete") {
       bad("security.proofArtifacts", "is not backed by a completed trusted ceremony in the pinned commit's artifact lock");
     }
   }
