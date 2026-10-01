@@ -263,14 +263,31 @@ export function canonicalCaps(caps) {
   // Appended LAST and only when exactly `true`, so every pre-existing caps object canonicalizes
   // to byte-identical JSON and an old Elder/client simply never sees the key.
   if (caps.draining === true) out.draining = true;
+  // Admission sets (dogfood #234): the contract addresses this gateway reads roots from, so a
+  // client can tell "this node reads another network's set" before it proves. Lowercase
+  // addresses only, deduped, sorted, count-bounded; appended LAST, same rule as above.
+  const sets = canonicalSets(caps.sets);
+  if (sets.length) out.sets = sets;
   return out;
+}
+export const MAX_CAPS_SETS = 8;
+const SET_ADDRESS_RE = /^0x[0-9a-f]{40}$/;
+export function canonicalSets(list) {
+  if (!Array.isArray(list)) return [];
+  const sets = [...new Set(list.filter((a) => typeof a === "string").map((a) => a.toLowerCase()).filter((a) => SET_ADDRESS_RE.test(a)))].sort();
+  return sets.length <= MAX_CAPS_SETS ? sets : [];
+}
+// The sets a directory entry advertises, or null when it advertises none (a legacy node).
+export function setsOf(entry) {
+  const sets = canonicalCaps(entry && entry.caps).sets;
+  return Array.isArray(sets) ? sets : null;
 }
 
 // True iff caps carry at least one valid bucketed field. Used to OMIT the caps field from
 // canonical bytes when empty, keeping absent/empty-caps records byte-identical to before.
 export function hasCaps(caps) {
   const c = canonicalCaps(caps);
-  return c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined || c.session !== undefined || c.draining === true;
+  return c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined || c.session !== undefined || c.draining === true || c.sets !== undefined;
 }
 
 // Domain-separated, onion-bound canonical bytes the ONION key signs to attest its caps.

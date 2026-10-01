@@ -10,7 +10,9 @@ Setup for an agent, end to end (the `shadenet` binary embeds Tor; no Node.js or 
 4. `shadenet status --wait` returns when the stake is final (about 13 minutes). `shadenet status --json` reports `state`, `slotsLeft` and `epochResetsInSeconds`.
 5. Run `shadenet proxy` (loopback 127.0.0.1:8118, token required), then either `shadenet run --no-proxy <your model API host> -- <agent>` or register the MCP server: `shadenet mcp` (tools `shadenet_fetch`, `shadenet_status`, `shadenet_search`).
 
-Rules an agent should follow: HTTPS on port 443 only; every new tunnel spends one slot of a per-epoch budget, so reuse connections and keep model API calls off ShadeNet; on `429 budget_exhausted` wait `Retry-After` seconds; `403 not_admitted` or `not_finalized` means stop and ask the operator. `shadenet doctor` diagnoses local setup problems.
+Rules an agent should follow: HTTPS on port 443 only; every new tunnel spends one slot of a per-epoch budget, so reuse connections and keep model API calls off ShadeNet; on `429 budget_exhausted` wait `Retry-After` seconds; `403 not_admitted` or `not_finalized` means stop and ask the operator.
+
+When it fails: every refusal carries `X-ShadeNet-Cause` and a JSON `cause` and `fix` naming the real reason (which RPC dropped history, which node is restarting, that the identity is in another network's set). Read `problems[]` from `GET /_shadenet/status` or the `shadenet_status` tool before retrying; it lists the state's cause, fallen-back canopy sources, the last error and the operators' open incidents. `shadenet doctor --json` checks the local setup and the canopy side (every RPC, every Elder, the state directories Tor needs) and prints the command that clears each failing line.
 
 ## Docs
 

@@ -239,6 +239,14 @@ An operator explicitly chooses any combination of:
 Invited-only is the default. Naming an admission path without its required contract or
 root is a startup error; the node does not silently weaken the requested policy.
 
+A node that reads on-chain sets advertises their contract addresses in its signed
+capabilities as `caps.sets` (lowercase `0x` addresses, deduplicated, sorted, at most
+eight, canonicalized last, after `draining`; see WIRE-SPEC). A client whose record names a set
+no listed node advertises refuses to prove (`no_eligible_node`, "none of N node(s) reads
+this record's admission set") instead of spending a slot on a `wrong-group-root`
+refusal; a node without `caps.sets` is treated as able to read any set. The field is
+advice about routing, never a proof of membership: the node still checks the root.
+
 The proof hides which leaf in an accepted root the client controls. It does not erase
 links created when a wallet enrolls or pays onchain, and a small set remains a small
 anonymity set.

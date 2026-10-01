@@ -21,7 +21,7 @@
 // Exit 0 = all invariants held. No network, no chain, no Tor.
 
 import { generateKeyPairSync } from "node:crypto";
-import { advertisedPorts, advertisedRate, buildGatewayCaps, announceOnce } from "./heartbeat.mjs";
+import { advertisedPorts, advertisedRate, advertisedSets, buildGatewayCaps, announceOnce } from "./heartbeat.mjs";
 import { buildAnnounce, verifyAnnounce, canonicalAnnounceBytes } from "./announce.mjs";
 import { pubkeyToOnion, canonicalCaps } from "../lib/directory.mjs";
 import { PROTO_RANGE } from "../gateway/gateway.mjs";
@@ -72,6 +72,12 @@ async function main() {
   const rate = advertisedRate(rateEnv);
   ok(rate?.scope === "grove-v4" && rate.epochSeconds === 60 && rate.payloadBytesPerSlot === 41943040, "runtime epoch/freshness/payload become one canonical signed rate policy");
   ok(advertisedRate({ SHADE_TREE_EPOCH_SECONDS: "60" }) === null, "partial runtime rate policy is not advertised");
+  // sets (dogfood #234): the admission sets this node reads, from the contract env, lowercased.
+  ok(advertisedSets({}) === null, "no contract env -> no sets advertised (invited-only node)");
+  ok(JSON.stringify(advertisedSets({ SHADE_TREE_GROUP_CONTRACT: "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC, 0xf117FDEA83ac57d15D9394A2B56873C32d227B7E", SHADE_TREE_PAID_ACCESS_CONTRACT: "0xf117FDEA83ac57d15D9394A2B56873C32d227B7E" })) === JSON.stringify(["0xdeb294e6e9ad6a3fcbdeffd1f67ac9678ac94bbc", "0xf117fdea83ac57d15d9394a2b56873c32d227b7e"]), "group + paid contracts -> lowercase, deduped, sorted sets");
+  ok(advertisedSets({ SHADE_TREE_GROUP_CONTRACT: "not-an-address" }) === null, "a malformed contract is never advertised");
+  const withSets = buildGatewayCaps({ SHADE_TREE_GROUP_CONTRACT: "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC" });
+  ok(withSets && JSON.stringify(withSets.sets) === JSON.stringify(["0xdeb294e6e9ad6a3fcbdeffd1f67ac9678ac94bbc"]) && withSets.proto, "a configured set alone yields caps (with proto riding along)");
   const ratedCaps = buildGatewayCaps(rateEnv);
   ok(ratedCaps?.rate?.epochSeconds === 60 && ratedCaps.proto, "a complete rate policy triggers signed caps and carries protocol range");
 

@@ -149,19 +149,27 @@ curl, Python and Rust.
 
 ## 5. When a request fails
 
-A refused CONNECT answers with a status, an `X-ShadeNet-Error` code, a JSON body
-and, when waiting helps, `Retry-After`:
+A refused CONNECT answers with a status, an `X-ShadeNet-Error` code, an
+`X-ShadeNet-Cause` sentence, and a JSON body with `cause` and `fix` (plus
+`Retry-After` when waiting helps). Read the cause, not the status: every
+failure the rehearsals hit was environmental and the code alone pointed the
+wrong way.
 
-| Status | Code | Meaning |
+| Status | Code | Read the cause for |
 |---|---|---|
-| 403 | `not_admitted`, `not_finalized` | Register, or wait for finality |
-| 403 | `port_not_allowed` | Nodes serve HTTPS on 443 only |
-| 429 | `budget_exhausted` | This epoch's tunnels are spent; `Retry-After` is the reset |
-| 502 | `node_refused` | A node refused; the body has its reason |
-| 503 | `no_eligible_node`, `canopy`, `rpc`, `transport`, `busy` | Temporary; retry after `Retry-After` |
+| 403 | `not_admitted`, `not_finalized` | which set the leaf is missing from, or how long until finality |
+| 403 | `port_not_allowed` | nodes serve HTTPS on 443 only |
+| 429 | `budget_exhausted` | the epoch reset, and what spent the budget |
+| 502 | `node_refused` | the node's reason; a `wrong-group-root` ack names the node's root, leaf count and block |
+| 503 | `rpc`, `canopy`, `transport`, `no_eligible_node`, `busy` | which RPC dropped history, which Elder is down, whether Tor is bootstrapped |
 
-The full table, exit codes and budget arithmetic are in
-[ERRORS.md](ERRORS.md). `shadenet doctor` checks the whole local setup at once.
+Before retrying, read `problems[]` from `GET /_shadenet/status` (or the
+`shadenet_status` tool): the state's cause and fix, canopy sources that fell
+back, the last error, and the operators' open incidents ("node-06 restarting
+since 22:11Z"). When the fix says so, run `shadenet doctor`: it checks the
+local setup and the canopy side (every RPC, every Elder, your identity in
+other records, the state directories Tor needs) and prints the command that
+clears each failing line. The full table is in [ERRORS.md](ERRORS.md).
 
 ## Rust applications
 

@@ -1089,34 +1089,7 @@ fn service_unit(kind: ServiceKind, config: &Path) -> String {
 
 // ------------------------------------------------------------------ doctor
 
-struct Check {
-    name: &'static str,
-    level: &'static str,
-    detail: String,
-}
-
-fn check(name: &'static str, result: Result<String, String>) -> Check {
-    match result {
-        Ok(detail) => Check {
-            name,
-            level: "ok",
-            detail,
-        },
-        Err(detail) => Check {
-            name,
-            level: "fail",
-            detail,
-        },
-    }
-}
-
-fn warn(name: &'static str, detail: String) -> Check {
-    Check {
-        name,
-        level: "warn",
-        detail,
-    }
-}
+use shadenet::doctor::{Check, Level};
 
 #[cfg(unix)]
 fn mode_of(path: &Path) -> Option<u32> {
@@ -1131,238 +1104,496 @@ fn mode_of(_path: &Path) -> Option<u32> {
     None
 }
 
-fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
-    let mut checks = Vec::new();
-    checks.push(Check {
-        name: "version",
-        level: "ok",
-        detail: format!(
-            "shadenet {} (invoked as {})",
-            crate::VERSION,
-            invoked_name()
-        ),
-    });
-    checks.push(match &ctx.file.path {
-        Some(path) => Check {
-            name: "config",
-            level: "ok",
-            detail: path.display().to_string(),
-        },
-        None => warn(
-            "config",
-            "no config file; run `shadenet init` or pass flags".into(),
-        ),
-    });
-    let legacy: Vec<String> = std::env::vars()
-        .map(|(k, _)| k)
-        .filter(|k| k.starts_with(shadenet::env::LEGACY_PREFIX))
-        .filter(|k| {
-            std::env::var(format!(
-                "{}{}",
-                shadenet::env::PREFIX,
-                &k[shadenet::env::LEGACY_PREFIX.len()..]
-            ))
-            .is_err()
-        })
-        .collect();
-    if !legacy.is_empty() {
-        checks.push(warn(
-            "environment",
-            format!(
-                "deprecated names in use (rename to SHADENET_*): {}",
-                legacy.join(", ")
-            ),
-        ));
-    }
-    let network = ctx.network();
-    checks.push(check(
-        "network",
-        network
-            .as_ref()
-            .map(|n| format!("{} (Elder Tree {})", n.name, n.deployment.elder_onion))
-            .map_err(Clone::clone),
-    ));
-    if let Ok(network) = &network {
-        if network.deployment.default_path.as_deref() == Some("staked") {
-            checks.push(check(
-                "staking profile",
-                network
-                    .public_profile()
-                    .map(|p| {
-                        format!(
-                            "contract {} on chain {}, {} tier(s), default tier {}",
-                            p.contract,
-                            p.chain_id,
-                            p.tiers.len(),
-                            p.default_limit
-                        )
-                    })
-                    .map_err(|e| e.to_string()),
-            ));
+fn print_check(c: &Check) {
+    println!("{:<4}  {:<22} {}", c.level.as_str(), c.name, c.detail);
+    if c.level != Level::Ok {
+        if let Some(cause) = &c.cause {
+            println!("      cause: {cause}");
+        }
+        if let Some(fix) = &c.fix {
+            println!("      fix:   {fix}");
         }
     }
-    // Identity.
-    let identity_path = ctx.identity_path(args.net.identity.as_ref()).ok().flatten();
-    let mut leaf = None;
-    match &identity_path {
-        None => checks.push(Check {
-            name: "identity",
-            level: "fail",
-            detail: "none configured; run `shadenet init`".into(),
-        }),
-        Some(path) => {
-            let parsed = std::fs::read_to_string(path)
-                .map_err(|e| format!("read {}: {e}", path.display()))
-                .and_then(|raw| {
-                    serde_json::from_str::<serde_json::Value>(&raw)
-                        .map_err(|e| format!("{}: {e}", path.display()))
-                });
-            match parsed {
-                Ok(value) => {
-                    leaf = value["leaf"].as_str().map(str::to_string);
-                    checks.push(check(
-                        "identity",
-                        match (
-                            &leaf,
-                            value["identitySecret"].is_string(),
-                            value["encrypted"].is_object(),
-                        ) {
-                            (Some(l), secret, encrypted) if secret || encrypted => Ok(format!(
-                                "{} (leaf {}.., tier {}, {})",
-                                path.display(),
-                                &l[..l.len().min(12)],
-                                value["limit"],
-                                if encrypted {
-                                    "passphrase-protected"
-                                } else {
-                                    "no passphrase; `shadenet identity-lock` adds one"
-                                }
-                            )),
-                            _ => Err(format!(
-                                "{} is missing identitySecret or leaf",
-                                path.display()
-                            )),
-                        },
-                    ));
-                    if let Some(mode) = mode_of(path) {
-                        if mode & 0o077 != 0 {
-                            checks.push(Check {
-                                name: "identity permissions",
-                                level: "fail",
-                                detail: format!(
-                                    "{} is mode {mode:o}; run chmod 600",
-                                    path.display()
-                                ),
-                            });
-                        }
-                    }
-                }
-                Err(e) => checks.push(Check {
-                    name: "identity",
-                    level: "fail",
-                    detail: e,
-                }),
+}
+
+/// Records the doctor looks for the identity in besides the active one: the bundled network,
+/// `--records`, and the repo-style `network/*/deployment.json` next to the current directory.
+fn other_records(args: &DoctorArgs) -> Vec<shadenet::Network> {
+    let mut out = Vec::new();
+    if let Ok(bundled) = shadenet::Network::bundled(shadenet::profile::DEFAULT_NETWORK) {
+        out.push(bundled);
+    }
+    let mut paths = args.records.clone();
+    if let Ok(entries) = std::fs::read_dir("network") {
+        for entry in entries.flatten() {
+            let candidate = entry.path().join("deployment.json");
+            if candidate.is_file() {
+                paths.push(candidate);
             }
         }
     }
-    // Proxy token.
-    checks.push(check(
-        "proxy token",
-        proxy_token(None, ctx).and_then(|t| {
-            shadenet::proxy::validate_token(&t)
-                .map(|()| "set and well-formed".to_string())
-                .map_err(|e| e.to_string())
-        }),
-    ));
-    // Slot state.
-    if let Some(leaf) = &leaf {
-        checks.push(check(
-            "slot state",
-            shadenet::slot::default_path(leaf)
-                .map_err(|e| e.to_string())
-                .and_then(|path| {
-                    let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
-                    std::fs::create_dir_all(&parent)
-                        .map_err(|e| format!("{}: {e}", parent.display()))?;
-                    let probe = parent.join(format!(".doctor-{}", std::process::id()));
-                    std::fs::write(&probe, b"")
-                        .map_err(|e| format!("{} is not writable: {e}", parent.display()))?;
-                    let _ = std::fs::remove_file(probe);
-                    Ok(format!(
-                        "{} (shared with the JavaScript client; never delete mid-epoch)",
-                        path.display()
-                    ))
-                }),
-        ));
-    }
-    checks.push(check(
-        "zk artifacts",
-        shadenet_rln::artifacts::verify_embedded()
-            .map(|c| {
-                format!(
-                    "{} (trust {}, provenance {})",
-                    c.artifact_id, c.trust, c.provenance
-                )
-            })
-            .map_err(|e| e.to_string()),
-    ));
-    let mut code_state = None;
-    if !args.offline {
-        match build_client(&args.net, ctx, false) {
-            Ok(client) => match runtime() {
-                Ok(rt) => {
-                    let status = rt.block_on(client.status());
-                    checks.push(check(
-                        "canopy over Tor",
-                        match status.canopy.issued {
-                            Some(_) => Ok(format!(
-                                "{} node(s), {} eligible",
-                                status.canopy.nodes, status.canopy.eligible
-                            )),
-                            None => Err(status
-                                .canopy
-                                .error
-                                .clone()
-                                .unwrap_or_else(|| "unavailable".into())),
-                        },
-                    ));
-                    if status.admitted.is_some() {
-                        let level = if status.admitted == Some(true) {
-                            "ok"
-                        } else {
-                            "warn"
-                        };
-                        checks.push(Check {
-                            name: "admission",
-                            level,
-                            detail: format!(
-                                "{} ({})",
-                                status.state,
-                                status.admission_set.clone().unwrap_or_default()
-                            ),
-                        });
-                    }
-                    code_state = Some(status.state);
-                }
-                Err(e) => checks.push(Check {
-                    name: "runtime",
-                    level: "fail",
-                    detail: e,
-                }),
-            },
-            Err(e) => checks.push(Check {
-                name: "client",
-                level: "fail",
-                detail: e,
-            }),
+    for path in paths {
+        match shadenet::Network::from_file(&path) {
+            Ok(network) if !out.iter().any(|n| n.name == network.name) => out.push(network),
+            Ok(_) => {}
+            Err(error) => tracing::warn!(path = %path.display(), %error, "record skipped"),
         }
     }
-    let failed = checks.iter().any(|c| c.level == "fail");
+    out
+}
+
+fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
+    let mut checks: Vec<Check> = Vec::new();
+    let network = ctx.network();
+    let config = args.net.to_config(ctx, false);
+    let rln_identifier = config
+        .as_ref()
+        .ok()
+        .and_then(|c| c.rln_identifier.parse::<u64>().ok())
+        .unwrap_or(1);
+
+    if !args.rpc {
+        match &network {
+            Ok(network) => checks.push(shadenet::doctor::check_version(
+                crate::VERSION,
+                (crate::COMMIT != "unknown").then_some(crate::COMMIT),
+                network,
+            )),
+            Err(e) => checks.push(Check::fail(
+                "network",
+                e.clone(),
+                "the deployment record could not be loaded",
+                "pass --network sepolia or the path to a deployment.json",
+            )),
+        }
+        checks.push(match &ctx.file.path {
+            Some(path) => Check::ok("config", path.display().to_string()),
+            None => Check::warn(
+                "config",
+                "no config file",
+                "nothing persists between commands, so every flag must be repeated",
+                "run `shadenet init` once; it writes ~/.config/shadenet/config.toml",
+            ),
+        });
+        let legacy: Vec<String> = std::env::vars()
+            .map(|(k, _)| k)
+            .filter(|k| k.starts_with(shadenet::env::LEGACY_PREFIX))
+            .filter(|k| {
+                std::env::var(format!(
+                    "{}{}",
+                    shadenet::env::PREFIX,
+                    &k[shadenet::env::LEGACY_PREFIX.len()..]
+                ))
+                .is_err()
+            })
+            .collect();
+        if !legacy.is_empty() {
+            checks.push(Check::warn(
+                "environment",
+                legacy.join(", "),
+                "deprecated SHADE_TREE_* names are set; they still work this release but are read after SHADENET_*",
+                "rename them to SHADENET_*",
+            ));
+        }
+        if let Ok(network) = &network {
+            checks.push(Check::ok(
+                "network",
+                format!(
+                    "{} ({} Elder Tree{}, first {})",
+                    network.name,
+                    network.deployment.elders.len(),
+                    if network.deployment.elders.len() == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                    &network.deployment.elder_onion[..network.deployment.elder_onion.len().min(12)]
+                ),
+            ));
+            if network.deployment.default_path.as_deref() == Some("staked") {
+                checks.push(match network.public_profile() {
+                    Ok(p) => Check::ok(
+                        "staking profile",
+                        format!(
+                            "contract {} on chain {}, {} tier(s), default tier {}, {} RPC endpoint(s)",
+                            p.contract,
+                            p.chain_id,
+                            p.tiers.len(),
+                            p.default_limit,
+                            p.rpc_urls.len()
+                        ),
+                    ),
+                    Err(e) => Check::fail(
+                        "staking profile",
+                        e.to_string(),
+                        "the record's staked admission root is incomplete",
+                        "use the record the release ships (`--network sepolia`)",
+                    ),
+                });
+            }
+        }
+    }
+
+    // Identity file.
+    let identity_path = ctx.identity_path(args.net.identity.as_ref()).ok().flatten();
+    let mut leaf = None;
+    if !args.rpc {
+        match &identity_path {
+            None => checks.push(Check::fail(
+                "identity",
+                "none configured",
+                "no identity file is configured, so there is nothing to prove with",
+                "run `shadenet init`, or pass --identity <file> to the identity a sponsor gave you",
+            )),
+            Some(path) => {
+                let parsed = std::fs::read_to_string(path)
+                    .map_err(|e| format!("read {}: {e}", path.display()))
+                    .and_then(|raw| {
+                        serde_json::from_str::<serde_json::Value>(&raw)
+                            .map_err(|e| format!("{}: {e}", path.display()))
+                    });
+                match parsed {
+                    Ok(value) => {
+                        leaf = value["leaf"].as_str().map(str::to_string);
+                        let secret = value["identitySecret"].is_string();
+                        let encrypted = value["encrypted"].is_object();
+                        checks.push(match (&leaf, secret || encrypted) {
+                            (Some(l), true) => Check::ok(
+                                "identity",
+                                format!(
+                                    "{} (leaf {}.., tier {}, {})",
+                                    path.display(),
+                                    &l[..l.len().min(12)],
+                                    value["limit"],
+                                    if encrypted {
+                                        "passphrase-protected"
+                                    } else {
+                                        "no passphrase; `shadenet identity-lock` adds one"
+                                    }
+                                ),
+                            ),
+                            _ => Check::fail(
+                                "identity",
+                                format!("{} is missing identitySecret or leaf", path.display()),
+                                "the file is not an identity file (or is a public commitment only)",
+                                "use the identity.json that `shadenet init` or the Get access page wrote; a sponsor gets only the commitment, never this file",
+                            ),
+                        });
+                        if let Some(mode) = mode_of(path) {
+                            if mode & 0o077 != 0 {
+                                checks.push(Check::fail(
+                                    "identity permissions",
+                                    format!("{} is mode {mode:o}", path.display()),
+                                    "the identity secret is readable by other users on this machine",
+                                    format!("chmod 600 {}", path.display()),
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => checks.push(Check::fail(
+                        "identity",
+                        e,
+                        "the identity file could not be read or parsed",
+                        "check the path in config.toml (`shadenet doctor` prints it) or re-create it with `shadenet init`",
+                    )),
+                }
+            }
+        }
+        // Proxy token.
+        checks.push(match proxy_token(None, ctx).and_then(|t| {
+            shadenet::proxy::validate_token(&t).map_err(|e| e.to_string())
+        }) {
+            Ok(()) => Check::ok("proxy token", "set and well-formed"),
+            Err(e) => Check::fail(
+                "proxy token",
+                e,
+                "the local proxy refuses every CONNECT without a valid token, so agents get 407",
+                "run `shadenet init` to mint one, or set SHADENET_PROXY_TOKEN_FILE",
+            ),
+        });
+        // Slot state.
+        if let Some(leaf) = &leaf {
+            checks.push(
+                match shadenet::slot::default_path(leaf)
+                    .map_err(|e| e.to_string())
+                    .and_then(|path| {
+                        let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
+                        std::fs::create_dir_all(&parent)
+                            .map_err(|e| format!("{}: {e}", parent.display()))?;
+                        let probe = parent.join(format!(".doctor-{}", std::process::id()));
+                        std::fs::write(&probe, b"")
+                            .map_err(|e| format!("{} is not writable: {e}", parent.display()))?;
+                        let _ = std::fs::remove_file(probe);
+                        Ok(path)
+                    }) {
+                    Ok(path) => Check::ok(
+                        "slot state",
+                        format!("{} (shared with the JavaScript client; never delete mid-epoch)", path.display()),
+                    ),
+                    Err(e) => Check::fail(
+                        "slot state",
+                        e,
+                        "the per-epoch slot file cannot be written, so the client refuses to spend (reusing a slot would get the identity slashed)",
+                        "make the directory writable by this user, or set SHADENET_SLOTS_DIR to one that is",
+                    ),
+                },
+            );
+        }
+        checks.push(match shadenet_rln::artifacts::verify_embedded() {
+            Ok(c) => Check::ok(
+                "zk artifacts",
+                format!("{} (trust {}, provenance {})", c.artifact_id, c.trust, c.provenance),
+            ),
+            Err(e) => Check::fail(
+                "zk artifacts",
+                e.to_string(),
+                "the embedded circuit artifacts do not match their lock, so no node will accept a proof from this binary",
+                "reinstall the release (`curl … install.sh | sh`); a modified binary is never accepted",
+            ),
+        });
+        // Directories Arti and the cache use.
+        if let Ok(config) = &config {
+            checks.extend(shadenet::doctor::check_state_dirs(
+                config.tor_directories.as_ref(),
+                config.cache_dir.as_deref(),
+            ));
+        }
+    }
+
+    // Network checks.
+    let mut rpc_verdicts = Vec::new();
+    let mut elder_verdicts = Vec::new();
+    let mut code_state = None;
+    let mut node_roots: Option<(Vec<String>, Option<u64>, Option<u64>)> = None;
+    if !args.offline {
+        if let (Ok(network), Ok(config)) = (&network, &config) {
+            if let Ok(profile) = network.public_profile() {
+                let overrides: Option<Vec<String>> = config.rpc_url.as_deref().map(|list| {
+                    list.split(',')
+                        .map(str::trim)
+                        .filter(|u| !u.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                });
+                let deploy_tx = network
+                    .deployment
+                    .staked
+                    .as_ref()
+                    .and_then(|s| s.deploy_tx.clone());
+                let (rpc_checks, verdicts) = shadenet::doctor::check_rpcs(
+                    &profile,
+                    deploy_tx.as_deref(),
+                    overrides.as_deref(),
+                    rln_identifier,
+                );
+                checks.extend(rpc_checks);
+                rpc_verdicts = verdicts;
+            }
+        }
+        if !args.rpc {
+            match build_client(&args.net, ctx, false) {
+                Ok(client) => match runtime() {
+                    Ok(rt) => {
+                        let status = rt.block_on(client.status());
+                        checks.push(if status.tor_ready {
+                            Check::ok("tor", "embedded Tor bootstrapped")
+                        } else {
+                            Check::warn(
+                                "tor",
+                                "not bootstrapped",
+                                "embedded Tor (Arti) has not reached the Tor network yet",
+                                "wait a few seconds and retry; persistent failure means Tor is blocked from this machine",
+                            )
+                        });
+                        // Each Elder on its own: reachability, directory age, incidents.
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or_default();
+                        let our_set = network.as_ref().ok().and_then(|n| {
+                            n.deployment
+                                .staked
+                                .as_ref()
+                                .map(|s| s.contract.to_ascii_lowercase())
+                        });
+                        if let Ok(network) = &network {
+                            for elder in &network.deployment.elders {
+                                let directory =
+                                    rt.block_on(client.fetch_elder(&elder.onion, "/directory"));
+                                let incidents = directory.is_ok().then(|| {
+                                    rt.block_on(client.fetch_elder(&elder.onion, "/incidents"))
+                                });
+                                let (check, verdict) = shadenet::doctor::judge_elder_for_set(
+                                    &elder.onion,
+                                    &elder.canopy_signer,
+                                    directory,
+                                    incidents,
+                                    now,
+                                    our_set.as_deref(),
+                                );
+                                checks.push(check);
+                                elder_verdicts.push(verdict);
+                            }
+                        }
+                        checks.push(match status.canopy.issued {
+                            Some(_) => Check::ok(
+                                "canopy",
+                                format!(
+                                    "{} node(s), {} eligible{}",
+                                    status.canopy.nodes,
+                                    status.canopy.eligible,
+                                    if status.canopy.from_last_known_good { " (last-known-good copy)" } else { "" }
+                                ),
+                            ),
+                            None => Check::fail(
+                                "canopy",
+                                status.canopy.error.clone().unwrap_or_else(|| "unavailable".into()),
+                                "no Elder Tree served a verifiable canopy and no last-known-good copy exists",
+                                "check the elder lines above and the `tor` line; nothing else can work until a canopy verifies",
+                            ),
+                        });
+                        // Admission set (dogfood #234): do the listed nodes read the set this
+                        // record names? Judged from the freshest Elder that answered.
+                        if let Some(ours) = our_set.as_deref() {
+                            let best = elder_verdicts
+                                .iter()
+                                .filter(|v| v.reachable && v.gateways.is_some())
+                                .max_by_key(|v| v.issued.unwrap_or_default());
+                            if let Some(v) = best {
+                                let nodes = v.gateways.unwrap_or_default();
+                                let sets = &v.sets;
+                                checks.push(if sets.advertising == 0 {
+                                    Check::ok(
+                                        "admission set",
+                                        format!("{nodes} node(s), none advertises the set it reads (pre-0.7.1 fleet); {ours} assumed"),
+                                    )
+                                } else if sets.admitting > 0 {
+                                    Check::ok(
+                                        "admission set",
+                                        format!("{} of {} advertising node(s) read {ours}", sets.admitting, sets.advertising),
+                                    )
+                                } else {
+                                    Check::fail(
+                                        "admission set",
+                                        format!("0 of {} advertising node(s) read {ours}; they read {}", sets.advertising, sets.advertised.join(", ")),
+                                        "every proof would be refused `wrong-group-root`: the nodes serve another network's set (the fleet moved, or this binary carries an older record)",
+                                        "run against the record these nodes serve (`--network <path>` or update the binary), or stake in the set they read",
+                                    )
+                                });
+                            }
+                        }
+                        if let Some(last) = &status.last_error {
+                            if last["reason"].as_str() == Some("gate:wrong-group-root") {
+                                // The node told us which roots it accepts; keep them for the root check.
+                                node_roots = Some((
+                                    last["ack"]["roots"]
+                                        .as_array()
+                                        .map(|a| {
+                                            a.iter()
+                                                .filter_map(|v| v.as_str().map(str::to_string))
+                                                .collect()
+                                        })
+                                        .unwrap_or_default(),
+                                    last["ack"]["rootBlock"].as_u64(),
+                                    last["ack"]["rootLeaves"].as_u64(),
+                                ));
+                            }
+                        }
+                        for problem in &status.problems {
+                            if problem.kind == "state" || problem.kind == "last_error" {
+                                checks.push(Check::warn(
+                                    format!("{} {}", problem.kind, problem.code),
+                                    status.state.clone(),
+                                    problem.cause.clone(),
+                                    problem.fix.clone(),
+                                ));
+                            }
+                        }
+                        if status.state == "ready" {
+                            checks.push(Check::ok(
+                                "admission",
+                                format!(
+                                    "ready in {} (tier {}, {} of {} slots left this epoch)",
+                                    status.admission_set.clone().unwrap_or_default(),
+                                    status.tier.unwrap_or_default(),
+                                    status.slots_left.unwrap_or_default(),
+                                    status.tier.unwrap_or_default()
+                                ),
+                            ));
+                        }
+                        code_state = Some(status.state.clone());
+                        // Not admitted here: look for the leaf in the other records.
+                        if status.state == "not_admitted" {
+                            if let (Some(leaf), Ok(network)) = (&leaf, &network) {
+                                checks.extend(shadenet::doctor::check_identity_elsewhere(
+                                    leaf,
+                                    network,
+                                    &other_records(&args),
+                                    rln_identifier,
+                                ));
+                            }
+                        }
+                    }
+                    Err(e) => checks.push(Check::fail(
+                        "runtime",
+                        e,
+                        "the async runtime could not start",
+                        "report it with `shadenet doctor --json`",
+                    )),
+                },
+                Err(e) => checks.push(Check::fail(
+                    "client",
+                    e,
+                    "the client could not be built from this configuration",
+                    "fix the config lines above first",
+                )),
+            }
+        }
+    }
+
+    // Root comparison: our replay against what a node advertised in its last refusal.
+    if let Some((roots, block, leaves)) = &node_roots {
+        let ours: Option<&shadenet::doctor::RpcVerdict> =
+            rpc_verdicts.iter().find(|v| v.members == "complete");
+        let where_ = match (block, leaves) {
+            (Some(b), Some(n)) => format!(" ({n} leaves at block {b})"),
+            (Some(b), None) => format!(" (block {b})"),
+            _ => String::new(),
+        };
+        checks.push(match ours {
+            Some(v) if roots.iter().any(|r| Some(r) == v.root.as_ref()) => Check::ok(
+                "root",
+                format!("our replay root matches a root the node accepts{where_}; the last refusal was transient"),
+            ),
+            Some(v) => Check::fail(
+                "root",
+                format!(
+                    "ours {}… ({} live / {} slots) vs node's {} root(s){where_}",
+                    v.root.as_deref().unwrap_or("?").chars().take(12).collect::<String>(),
+                    v.live.unwrap_or_default(),
+                    v.slots.unwrap_or_default(),
+                    roots.len()
+                ),
+                "the member set this client replays is not one the node accepts: if the node's leaf count is higher, our RPC is behind or dropped logs; if ours is higher, the node's root source is stale",
+                "ours behind: use another RPC (see the rpc lines). Node behind: wait one root refresh (60 s) or report the node to the operator with this output",
+            ),
+            None => Check::fail(
+                "root",
+                format!("the node accepts {} root(s){where_}, and no RPC gave us a complete member set", roots.len()),
+                "we cannot build the tree the node expects because every RPC failed the replay",
+                "fix the rpc lines above first",
+            ),
+        });
+    }
+
+    let failed = checks.iter().any(|c| c.level == Level::Fail);
     if args.json {
         let value = serde_json::json!({
             "ok": !failed,
             "state": code_state,
-            "checks": checks.iter().map(|c| serde_json::json!({"name": c.name, "level": c.level, "detail": c.detail})).collect::<Vec<_>>(),
+            "checks": checks,
+            "rpc": rpc_verdicts,
+            "elders": elder_verdicts,
         });
         println!(
             "{}",
@@ -1370,7 +1601,10 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
         );
     } else {
         for c in &checks {
-            println!("{:<4}  {:<20} {}", c.level, c.name, c.detail);
+            print_check(c);
+        }
+        if failed {
+            println!("\nfix the first `fail` line, then run `shadenet doctor` again");
         }
     }
     if failed {

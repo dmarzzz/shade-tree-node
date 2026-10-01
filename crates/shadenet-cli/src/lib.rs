@@ -206,6 +206,13 @@ pub struct DoctorArgs {
     /// Skip checks that need the network (RPC, Tor)
     #[arg(long)]
     pub offline: bool,
+    /// Only the RPC checks: rate every endpoint in the record and compare the member sets
+    #[arg(long)]
+    pub rpc: bool,
+    /// Other deployment records to look for this identity in (paths, comma-separated); the
+    /// bundled `sepolia` record is always checked
+    #[arg(long, value_delimiter = ',')]
+    pub records: Vec<std::path::PathBuf>,
     #[arg(long)]
     pub json: bool,
 }
@@ -424,6 +431,17 @@ pub fn main() -> ExitCode {
     init_logging(cli.log_level, cli.log_format);
     let file = match config_file::load(cli.config.as_deref()) {
         Ok(file) => file,
+        // `init --config <path>` names the file it is about to write (dogfood #238): a missing
+        // explicit path is not an error there, it is the destination.
+        Err(_)
+            if matches!(cli.command, Command::Init(_))
+                && cli.config.as_deref().is_some_and(|p| !p.exists()) =>
+        {
+            config_file::ConfigFile {
+                path: cli.config.clone(),
+                ..Default::default()
+            }
+        }
         Err(message) => {
             eprintln!("shadenet: {message}");
             return ExitCode::from(EXIT_USAGE);

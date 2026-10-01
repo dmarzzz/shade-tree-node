@@ -107,6 +107,8 @@ struct CanopySnapshot {
     fetched_at: Instant,
     from_cache: bool,
     fresh_error: Option<String>,
+    /// Operator-declared incidents from every Elder that served a verified feed (advice only).
+    incidents: Vec<crate::incidents::Incident>,
 }
 
 /// One place a signed canopy comes from.
@@ -244,6 +246,29 @@ pub struct Status {
     pub canopy: CanopyStatus,
     pub tor_ready: bool,
     pub last_error: Option<serde_json::Value>,
+    /// Everything an agent should read before retrying: why the state is not `ready`, which
+    /// canopy sources fell back, the last error's cause and fix, and the operators' open
+    /// incidents. Empty when nothing is wrong.
+    pub problems: Vec<Problem>,
+}
+
+/// One thing standing between the agent and a working tunnel, with the cause and the fix.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Problem {
+    /// `state`, `canopy`, `last_error`, `incident`.
+    pub kind: String,
+    /// The error code, state name or incident id.
+    pub code: String,
+    pub cause: String,
+    pub fix: String,
+    /// For incidents: the component and instance the operator named.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -515,6 +540,11 @@ impl Client {
     }
 
     async fn fetch_over_tor(&self, elder: &str) -> Result<String, String> {
+        self.fetch_elder(elder, "/directory").await
+    }
+
+    /// One HTTP GET of `path` from an Elder Tree over Tor, body as text. Public for `doctor`.
+    pub async fn fetch_elder(&self, elder: &str, path: &str) -> Result<String, String> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (onion, port) = parse_onion_addr(elder, 80)?;
         let host = format!("{onion}.onion");
@@ -531,7 +561,7 @@ impl Client {
                 .await
                 .map_err(|e| format!("connect Elder Tree {host}:{port}: {e}"))?;
             stream
-                .write_all(dircache::http_get_request(&host, "/directory").as_bytes())
+                .write_all(dircache::http_get_request(&host, path).as_bytes())
                 .await
                 .map_err(|e| format!("write request: {e}"))?;
             stream.flush().await.map_err(|e| format!("flush: {e}"))?;
@@ -588,15 +618,41 @@ impl Client {
             .await
             .map_err(|e| e.to_string())
             .and_then(|result| result);
-            (source.label(), source.signers().to_string(), outcome)
+            // The incident feed rides behind the directory: advice only, never a reason to fail
+            // the refresh, verified under the same pinned signer(s).
+            let incidents = match (&outcome, source) {
+                (Ok(_), CanopySource::Elder { onion, signers }) => {
+                    match self.fetch_elder(onion, "/incidents").await {
+                        Ok(raw) => match crate::incidents::parse_and_verify(&raw, signers, now_secs()) {
+                            Ok(feed) => feed.active(now_secs()).into_iter().cloned().collect(),
+                            Err(error) => {
+                                tracing::debug!(elder = %onion, %error, "incident feed ignored");
+                                Vec::new()
+                            }
+                        },
+                        Err(error) => {
+                            tracing::debug!(elder = %onion, %error, "no incident feed");
+                            Vec::new()
+                        }
+                    }
+                }
+                _ => Vec::new(),
+            };
+            (source.label(), source.signers().to_string(), outcome, incidents)
         });
         let results = futures::future::join_all(fetches).await;
 
         let mut accepted = Vec::new();
         let mut errors = Vec::new();
+        let mut incidents: Vec<crate::incidents::Incident> = Vec::new();
         {
             let mut floors = self.canopy_floors.lock().unwrap_or_else(|p| p.into_inner());
-            for (label, signers, outcome) in results {
+            for (label, signers, outcome, feed) in results {
+                for incident in feed {
+                    if !incidents.iter().any(|known| known.id == incident.id) {
+                        incidents.push(incident);
+                    }
+                }
                 match outcome {
                     Ok(outcome) => {
                         // In-memory rollback floor per source, for when no LKG file is configured.
@@ -656,6 +712,7 @@ impl Client {
             fetched_at: Instant::now(),
             from_cache,
             fresh_error: (!errors.is_empty()).then(|| errors.join("; ")),
+            incidents,
         });
         Ok(())
     }
@@ -947,6 +1004,37 @@ impl Client {
             if dir.gateways.is_empty() {
                 return Err(Error::NoEligibleNode(format!(
                     "none of {before} admitted node(s) signs the network's rate policy"
+                )));
+            }
+            // A node that advertises its admission sets and does not list ours would refuse
+            // every proof `wrong-group-root` (dogfood #234: a staging identity against nodes on
+            // the production set). Drop it here, so status says so instead of "ready". A node
+            // without `sets` (older heartbeat) stays eligible, as before.
+            let ours = profile.contract.to_ascii_lowercase();
+            let before = dir.gateways.len();
+            let theirs: Vec<String> = dir
+                .gateways
+                .iter()
+                .filter_map(|g| {
+                    g.caps
+                        .as_ref()
+                        .and_then(|c| shadenet_proto::canonical_caps(c).sets)
+                })
+                .flatten()
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            dir.gateways.retain(|g| {
+                g.caps
+                    .as_ref()
+                    .and_then(|c| shadenet_proto::canonical_caps(c).sets)
+                    .is_none_or(|sets| sets.contains(&ours))
+            });
+            if dir.gateways.is_empty() {
+                return Err(Error::NoEligibleNode(format!(
+                    "none of {before} node(s) reads this record's admission set {}: they advertise {}",
+                    profile.contract,
+                    if theirs.is_empty() { "no set".to_string() } else { theirs.join(", ") }
                 )));
             }
         }
@@ -1507,8 +1595,10 @@ impl Client {
             canopy: CanopyStatus::default(),
             tor_ready: self.tor_bootstraps() > 0,
             last_error: self.last_error.lock().ok().and_then(|e| e.clone()),
+            problems: Vec::new(),
         };
         let mut demo = None;
+        let mut incidents = Vec::new();
         if self.signers().is_some() {
             match self.canopy_snapshot().await {
                 Ok(snapshot) => {
@@ -1530,6 +1620,7 @@ impl Client {
                         error: status.canopy.error.take().or(snapshot.fresh_error.clone()),
                     };
                     demo = snapshot.demo;
+                    incidents = snapshot.incidents;
                     if eligible == 0 {
                         status.state = "degraded".into();
                     }
@@ -1543,28 +1634,37 @@ impl Client {
         status.tor_ready = self.tor_bootstraps() > 0;
         let Some(identity) = &self.identity else {
             status.state = "no_identity".into();
+            status.problems = problems_for(&status, None, &incidents);
             return status;
         };
+        let mut admission_error = None;
         match self.admitted_members(&identity.leaf, demo.as_ref()).await {
             Ok((_, set)) => {
                 status.admitted = Some(true);
                 status.finalized = Some(true);
                 status.admission_set = Some(set);
             }
-            Err(Error::NotFinalized { set, .. }) => {
+            Err(error @ Error::NotFinalized { .. }) => {
+                if let Error::NotFinalized { set, .. } = &error {
+                    status.admission_set = Some(set.clone());
+                }
                 status.admitted = Some(false);
                 status.finalized = Some(false);
-                status.admission_set = Some(set);
                 status.state = "not_finalized".into();
+                admission_error = Some(error);
             }
-            Err(Error::NotAdmitted { set, .. }) => {
+            Err(error @ Error::NotAdmitted { .. }) => {
+                if let Error::NotAdmitted { set, .. } = &error {
+                    status.admission_set = Some(set.clone());
+                }
                 status.admitted = Some(false);
-                status.admission_set = Some(set);
                 status.state = "not_admitted".into();
+                admission_error = Some(error);
             }
             Err(error) => {
                 status.state = "degraded".into();
                 status.last_error = Some(error.to_json()["error"].clone());
+                admission_error = Some(error);
             }
         }
         if let Ok(Some(path)) = self.slot_path(&identity.leaf) {
@@ -1577,8 +1677,136 @@ impl Client {
                 }
             }
         }
+        status.problems = problems_for(&status, admission_error.as_ref(), &incidents);
         status
     }
+}
+
+/// Build the `problems[]` an agent reads before retrying: the state's cause and fix, canopy
+/// sources that fell back, the last error, and the operators' open incidents (newest first).
+fn problems_for(
+    status: &Status,
+    admission_error: Option<&Error>,
+    incidents: &[crate::incidents::Incident],
+) -> Vec<Problem> {
+    let mut out = Vec::new();
+    let plain = |kind: &str, code: &str, e: crate::error::Explanation| Problem {
+        kind: kind.into(),
+        code: code.into(),
+        cause: e.cause,
+        fix: e.fix,
+        component: None,
+        instance: None,
+        since: None,
+    };
+    match status.state.as_str() {
+        "ready" => {}
+        "no_identity" => out.push(plain(
+            "state",
+            "no_identity",
+            crate::error::Explanation {
+                cause: "no identity file is configured, so there is nothing to prove with".into(),
+                fix: "run `shadenet init`, or pass `--identity <file>` to the identity a sponsor gave you".into(),
+            },
+        )),
+        "budget_exhausted" => out.push(plain(
+            "state",
+            "budget_exhausted",
+            Error::BudgetExhausted {
+                detail: format!(
+                    "{} of {} slots used this epoch",
+                    status.slots_used.unwrap_or_default(),
+                    status.tier.unwrap_or_default()
+                ),
+                retry_after: Duration::from_secs(status.epoch_resets_in_seconds),
+            }
+            .explain(),
+        )),
+        state => {
+            if let Some(error) = admission_error {
+                out.push(plain("state", state, error.explain()));
+            } else if state == "degraded" {
+                out.push(plain(
+                    "state",
+                    "degraded",
+                    crate::error::Explanation {
+                        cause: status
+                            .canopy
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "no eligible node in the canopy".into()),
+                        fix: "run `shadenet doctor`; it names the Elder, RPC or artifact mismatch".into(),
+                    },
+                ));
+            }
+        }
+    }
+    if status.canopy.from_last_known_good {
+        out.push(plain(
+            "canopy",
+            "from_last_known_good",
+            crate::error::Explanation {
+                cause: format!(
+                    "no Elder Tree answered over Tor; the client is using its last verified canopy ({}s old){}",
+                    status.canopy.age_seconds.unwrap_or_default(),
+                    status
+                        .canopy
+                        .error
+                        .as_deref()
+                        .map(|e| format!(": {e}"))
+                        .unwrap_or_default()
+                ),
+                fix: "tunnels still work against the cached nodes; if this persists for more than 15 minutes, check Tor with `shadenet doctor`".into(),
+            },
+        ));
+    } else if let Some(error) = &status.canopy.error {
+        if status.canopy.issued.is_some() {
+            out.push(plain(
+                "canopy",
+                "partial",
+                crate::error::Explanation {
+                    cause: format!("one canopy source failed or fell back: {error}"),
+                    fix: "nothing to do; the other Elder served a fresh canopy. Persistent: `shadenet doctor`".into(),
+                },
+            ));
+        }
+    }
+    if let Some(last) = &status.last_error {
+        let code = last["code"].as_str().unwrap_or("error");
+        if !out.iter().any(|p| p.code == code) {
+            out.push(Problem {
+                kind: "last_error".into(),
+                code: code.into(),
+                cause: last["cause"].as_str().unwrap_or("").to_string(),
+                fix: last["fix"].as_str().unwrap_or("").to_string(),
+                component: None,
+                instance: None,
+                since: None,
+            });
+        }
+    }
+    let mut open: Vec<&crate::incidents::Incident> = incidents.iter().collect();
+    open.sort_by_key(|i| std::cmp::Reverse(i.since));
+    for incident in open {
+        out.push(Problem {
+            kind: "incident".into(),
+            code: incident.id.clone(),
+            cause: format!(
+                "{} ({}): {}",
+                incident.instance, incident.severity, incident.summary
+            ),
+            fix: match incident.component.as_str() {
+                "elder" => "tunnels keep working from the cached canopy and the other Elder; nothing to do".into(),
+                "node" => "the client skips a node that fails and picks another; expect one slow retry".into(),
+                "rpc" => "member-set reads fall back to the next RPC in the record; `shadenet doctor --rpc` shows which".into(),
+                _ => "operator-declared; retry later if requests fail".into(),
+            },
+            component: Some(incident.component.clone()),
+            instance: Some(incident.instance.clone()),
+            since: Some(incident.since),
+        });
+    }
+    out
 }
 
 fn health_path(config: &Config) -> Option<PathBuf> {

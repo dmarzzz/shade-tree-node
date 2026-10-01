@@ -250,9 +250,13 @@ await test("gateway handler: artifact reject replies {ok:false, err:'gate:<reaso
     assert.equal(metricValue("shade_tree_gateway_tunnels_total", { result: "drop", reason: "artifact-unknown" }) >= 1, true);
     assert.equal(metricValue("shade_tree_gateway_tunnels_total", { result: "drop", reason: "bad-artifact" }) >= 1, true);
     assert.ok(!metrics.render().includes(`reason="artifact-retired:${BUILTIN}"`), "no id-bearing label leaked into metrics");
-    // a non-artifact reject carries NO artifacts field (reply shape unchanged for every other reason)
+    // a non-artifact reject carries NO artifacts field (reply shape unchanged for every other
+    // reason); a root reject advertises the roots this node accepts instead (`roots`), so the
+    // client can name the stale side.
     const root = await drive({ ...consistentEnvelope(ALT), proof: { ...consistentEnvelope(ALT).proof, snarkProof: { proof: {}, publicSignals: { ...consistentEnvelope(ALT).proof.snarkProof.publicSignals, root: "1" } } } });
-    assert.deepEqual(root.ack, { ok: false, err: "gate:wrong-group-root" });
+    assert.deepEqual({ ...root.ack, roots: undefined }, { ok: false, err: "gate:wrong-group-root", roots: undefined });
+    assert.ok(!("artifacts" in root.ack), "no artifacts field on a root reject");
+    assert.deepEqual(root.ack.roots, ["999"]);
   } finally {
     _setArtifactSet(null);
     _setRecentRoots([]);

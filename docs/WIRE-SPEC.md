@@ -94,7 +94,7 @@ Built by `packages/node/bootnode/announce.mjs:51` `buildAnnounce`; verified by `
 | `onionSig` | hex string | yes | ed25519 over `canonicalAnnounceBytes(rec)`, signed by the onion identity key (`:59`) |
 | `operator` | string | no | Ethereum address, lowercased (`:62`) |
 | `operatorSig` | hex string | no | EIP-191 `personal_sign` over `operatorAuthMessage` (`:63`) |
-| `caps` | object | no | T-FEAT-10 signed capabilities, `canonicalCaps` form (`packages/node/lib/directory.mjs`): fixed field order `ports, region, proto, artifacts, admits, pay`, each present only when valid; covered by `onionSig` (appended after `nonce` in `canonicalAnnounceBytes`) |
+| `caps` | object | no | T-FEAT-10 signed capabilities, `canonicalCaps` form (`packages/node/lib/directory.mjs`): fixed field order `ports, region, proto, artifacts, admits, pay, rate, session, draining, sets`, each present only when valid; covered by `onionSig` (appended after `nonce` in `canonicalAnnounceBytes`) |
 | `capsSig` | hex string | with `caps` | durable onion-key signature over `canonicalCapsBytes(onion, caps)` (`CAPS_DOMAIN` + `{onion,caps}`); copied verbatim onto the directory entry |
 
 #### 3.0.1 `caps` fields (all bucketed, TOTAL canonicalization: junk dropped, never thrown)
@@ -108,10 +108,15 @@ Built by `packages/node/bootnode/announce.mjs:51` `buildAnnounce`; verified by `
 | `admits` | subset of `invited, staked, paid` in THAT order (the anonymity order, `ADMIT_PATHS`), deduped, lowercased | ≤ 3 by construction | T-FEAT-9 |
 | `pay` | `{ protocols: subset of [x402, mpp] in that order (non-empty), onion?: lowercased v3 onion (only when the registrar rides ANOTHER onion than the gateway's), port: 1..65535, asset: lowercased 0x-hex-40, chain: "eip155:<1..16 digits>", tiers: { "<limit 1..65535, canonical integer key>": "<atomic price, 1..40 decimal digits>" } sorted by numeric limit }`; a `pay` missing any of protocols/port/asset/chain/tiers is dropped WHOLE | 1..8 tiers (`MAX_CAPS_PAY_TIERS`) | T-FEAT-9 |
 | `draining` | `true` only (any other value dropped); appended LAST so every pre-existing caps byte string is unchanged | none | day-two ops (operator drain flag; clients treat it like health `down`) |
+| `sets` | the on-chain admission sets the gateway reads roots from: lowercased `0x` + 40 hex addresses, deduped, sorted (byte order); appended LAST after `draining`, so every older caps string is byte-identical when absent | ≤ 8 (`MAX_CAPS_SETS`) | dogfood #234 |
 
 `admits` is the gateway's ADMISSION POLICY (`SHADE_TREE_ADMIT`, `docs/adr/0008`): which membership
 roots it trusts. Absent = a legacy gateway (a client assumes it may admit any path during the
-rollout). `pay` is present iff the provider SELLS access (`SHADE_TREE_REGISTRAR_ADVERTISE=1` on its
+rollout). `sets` names the contracts behind the `staked`/`paid` paths (every
+`SHADE_TREE_GROUP_CONTRACT` entry plus `SHADE_TREE_PAID_ACCESS_CONTRACT`); a client whose record
+names a set no listed node advertises refuses to prove (`no_eligible_node`) instead of being
+refused `wrong-group-root`, and absent `sets` means "may read any set". Pinned:
+`testdata/vectors.json` `capabilitiesSets`. `pay` is present iff the provider SELLS access (`SHADE_TREE_REGISTRAR_ADVERTISE=1` on its
 heartbeat); its shape is the bootnode `/health` `pay` object plus `onion`. Both are unforgeable
 by the bootnode: they ride under `onionSig` and `capsSig`, so a widened/narrowed policy fails
 `bad-caps-sig` at `verifyAnnounce` / `verifyDirectory`. Pinned: `testdata/vectors.json`

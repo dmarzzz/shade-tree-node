@@ -67,7 +67,8 @@
 import http from "node:http";
 import { chmod, readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
-import { generateKeyPairSync, createHash } from "node:crypto";
+import { generateKeyPairSync, createHash, timingSafeEqual } from "node:crypto";
+import { makeIncidents } from "./incidents.mjs";
 import { gzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -682,7 +683,7 @@ function readBody(req, max = 64 * 1024) {
 }
 
 // `limits` overrides HTTP_LIMITS (the selftest sets tiny timeouts); main() passes none.
-export function makeServer(registry, { signerPub, limits = {}, pay = null, relayAggregator = null } = {}) {
+export function makeServer(registry, { signerPub, limits = {}, pay = null, relayAggregator = null, incidents = null, incidentsToken = null } = {}) {
   // Current live-gateway count as a gauge, evaluated at scrape time from this registry.
   metrics.gauge("shade_tree_bootnode_live_gateways", "Gateways currently live (announced within TTL).").setCollect(() => registry.size());
 
@@ -739,6 +740,27 @@ export function makeServer(registry, { signerPub, limits = {}, pay = null, relay
       // Operator metrics intentionally do not live on this server. Tor maps this entire
       // listener into the Elder onion, so exposing /metrics here would publish exact fleet
       // activity. main() starts a separate loopback-only listener when configured.
+      // GET /incidents -> the signed operator incident feed (packages/node/bootnode/incidents.mjs).
+      // Served with the canopy headers because clients fetch it right after /directory and verify
+      // it under the same pinned signer. Empty when nothing is declared; never 404.
+      if (req.method === "GET" && url.pathname === "/incidents") {
+        if (!incidents) return send(res, 200, { version: 1, issued: Math.floor(Date.now() / 1000), incidents: [] }, CANOPY_HEADERS);
+        return send(res, 200, incidents.feed(), CANOPY_HEADERS);
+      }
+      // POST /incidents/alertmanager -> Alertmanager webhook receiver. Off (404) unless the
+      // operator set SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN; a wrong or missing bearer is 401.
+      if (req.method === "POST" && url.pathname === "/incidents/alertmanager") {
+        if (!incidents || !incidentsToken) return send(res, 404, { ok: false, err: "incidents-webhook-disabled" });
+        const auth = String(req.headers.authorization || "");
+        const presented = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+        if (!presented || presented.length !== incidentsToken.length || !timingSafeEqual(Buffer.from(presented), Buffer.from(incidentsToken))) {
+          return send(res, 401, { ok: false, err: "bad-token" });
+        }
+        let payload;
+        try { payload = JSON.parse(await readBody(req, 256 * 1024)); } catch { return send(res, 400, { ok: false, err: "bad-json" }); }
+        const result = incidents.applyAlertmanager(payload);
+        return send(res, 200, { ok: true, ...result });
+      }
       // GET /directory/delta?since=<etag> -> only what CHANGED since the client's last view
       // (T-FEAT-6). Additive to /directory: the response carries the current signer + signature
       // + gateway order so the client reconstructs the new directory from its cached base + the
@@ -895,7 +917,15 @@ async function main() {
     minimumCohort: Number(process.env.SHADE_TREE_RELAY_MIN_COHORT || 5),
     delayHours: Number(process.env.SHADE_TREE_RELAY_DELAY_HOURS || 6),
   });
-  const server = makeServer(registry, { signerPub: signer.pub, pay, relayAggregator });
+  // Operator incident feed (GET /incidents): hand-edited file and/or the Alertmanager webhook.
+  const incidents = makeIncidents({
+    signer,
+    path: process.env.SHADE_TREE_BOOTNODE_INCIDENTS_FILE || join(HERE, "incidents.local.json"),
+    log,
+  });
+  const incidentsToken = process.env.SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN || null;
+  const server = makeServer(registry, { signerPub: signer.pub, pay, relayAggregator, incidents, incidentsToken });
+  log.info("incident feed on", { file: incidents.path, webhook: incidentsToken ? "POST /incidents/alertmanager (bearer)" : "off" });
   if (pay) log.info("advertising 402 registrar in /health", pay);
 
   // Track live connections for draining (add/delete only — no per-request work).
@@ -927,7 +957,7 @@ async function main() {
     ] });
     log.info(`bootnode up on 127.0.0.1:${port}`, { event: "service.ready", admission, stake: stake.mode, ttlSec, metricsPort });
     log.info("Canopy signer ready", { signer: signer.pub });
-    log.debug("discovery endpoints ready", { endpoints: ["POST /announce", "POST /telemetry/relay", "GET /telemetry/aggregate", "GET /directory", "GET /directory/delta", "GET /gateway/<onion>", "GET /health"] });
+    log.debug("discovery endpoints ready", { endpoints: ["POST /announce", "POST /telemetry/relay", "GET /telemetry/aggregate", "GET /directory", "GET /directory/delta", "GET /gateway/<onion>", "GET /health", "GET /incidents", "POST /incidents/alertmanager"] });
     const b = registry.announceBucket;
     log.debug("endpoint hardening", { announceRatePerSec: Number(b.rate.toFixed(2)), announceBurst: b.burst, ...server.limits });
   });

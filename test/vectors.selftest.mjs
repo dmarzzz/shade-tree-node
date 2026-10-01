@@ -129,6 +129,15 @@ async function main() {
   ok(canonicalCapsBytes(V.onion, drn.caps).toString("hex") === drn.canonicalCapsBytesHex, "canonical caps bytes with draining match the pinned vector");
   ok(signCaps(V.onion, drn.caps, V.onionSeed) === drn.capsSig, "caps signature with draining matches the pinned vector");
   ok(drn.canonicalCapsBytesHex !== cap.canonicalCapsBytesHex, "draining really is in the signed bytes (differs from the base vector)");
+  console.log("\nadmission sets capability (dogfood #234; additive — every caps vector above is UNCHANGED):");
+  const cs = V.capabilitiesSets;
+  ok(JSON.stringify(canonicalCaps(cs.caps)) === JSON.stringify(cs.canonical), "canonicalCaps lowercases, dedupes, sorts and appends `sets` last");
+  ok(canonicalCapsBytes(V.onion, cs.caps).toString("hex") === cs.canonicalCapsBytesHex, "caps-with-sets canonical bytes match the pinned vector");
+  ok(signCaps(V.onion, cs.caps, V.onionSeed) === cs.capsSig, "caps-with-sets onion signature matches the pinned vector");
+  ok(verifyCapsSig(V.onion, cs.caps, cs.capsSig), "the pinned caps-with-sets signature verifies");
+  ok(!verifyCapsSig(V.onion, { ...cs.caps, sets: [...cs.caps.sets, "0x0000000000000000000000000000000000000001"] }, cs.capsSig), "a widened set list fails the onion signature");
+  ok(JSON.stringify(canonicalCaps({ sets: ["junk", "0xABC"] })) === "{}", "junk sets are dropped whole");
+  ok(canonicalCapsBytes(V.onion, { ports: [443] }).toString("utf8").includes("\"sets\"") === false, "caps without sets serialize without the key (byte-identical to before)");
 
   console.log("\nversion-negotiation reason labels (stable public literals; runtime suffixes not pinned):");
   const pr = V.protoReasons;

@@ -183,6 +183,7 @@ impl Default for ConfigBuilder {
                         rate_policy: None,
                         staked: None,
                         session_tickets: false,
+                        node_commit: None,
                     },
                 },
                 Some(error.to_string()),

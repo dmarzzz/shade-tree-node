@@ -270,3 +270,20 @@ its availability targets `[NEEDS DATA]`: recalibrate the fractions, `for:` windo
 against the first 30 days of real metrics. `docs/SLO.md` section 3 also calls for multi-window
 burn-rate alerts once a real error-budget baseline exists; those are deliberately NOT included here
 because they need production event volumes to set the burn multipliers honestly.
+
+## Incident feed for clients
+
+Alerts can also be shown to the agents using the canopy. Each Elder serves `GET /incidents`, a
+signed list of open incidents that the Rust client fetches with the directory and surfaces as
+`problems[]` in `shadenet status`, the proxy's `/_shadenet/status` and the `shadenet_status`
+MCP tool. Two sources feed it:
+
+- Alertmanager: add the receiver in [`alertmanager.incidents.example.yml`](alertmanager.incidents.example.yml)
+  and set `SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN` on the Elder; firing alerts are upserted and
+  resolved ones get an `until` (kept for an hour so a client that fetches late still learns why).
+- by hand, for planned work: edit `SHADE_TREE_BOOTNODE_INCIDENTS_FILE`
+  (`{ "incidents": [ { "id", "component", "instance", "severity", "summary", "since", "until" } ] }`);
+  the Elder re-reads it on every fetch.
+
+The feed carries no authority: a client never changes routing because of it, it only tells the
+agent what the operators already know (`docs/ERRORS.md`, "problems[] before you retry").

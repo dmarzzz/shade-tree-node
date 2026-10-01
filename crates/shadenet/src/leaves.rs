@@ -152,14 +152,15 @@ pub fn reconstruct(logs: &[Value], rln_identifier: u64) -> Result<DiscoveredMemb
     })
 }
 
-struct Rpc {
+/// A minimal blocking JSON-RPC client (public within the crate for `doctor`).
+pub(crate) struct Rpc {
     client: reqwest::blocking::Client,
     url: String,
     id: u64,
 }
 
 impl Rpc {
-    fn new(url: &str) -> Result<Self, String> {
+    pub(crate) fn new(url: &str) -> Result<Self, String> {
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .build()
@@ -171,7 +172,7 @@ impl Rpc {
         })
     }
 
-    fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+    pub(crate) fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
         self.id += 1;
         let response = self
             .client

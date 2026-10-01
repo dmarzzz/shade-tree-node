@@ -699,7 +699,10 @@ export class ShadeTreeClient {
     if (this.maxAnon && leafSource !== "invited") {
       throw new Error(`--max-anon: your leaf is in the ${leafSource} set (${ADMIT_ORDER.indexOf(leafSource) > 0 ? "less anonymous than invited: " : ""}${leafSource === "staked" ? "the staking wallet is linkable to your commitment on chain" : "the buyer address -> operator transfer and tier bucket are public"}); an invited-only gateway would reject it (wrong-group-root). Max-anon requires an invited (members.json) leaf -- drop --max-anon to use gateways that admit ${leafSource}.`);
     }
-    return { leafSource, maxAnon: this.maxAnon };
+    // The on-chain sets this leaf lives in (dogfood #234): selection drops nodes whose signed
+    // `caps.sets` name other sets, so a client on the wrong record fails before it proves.
+    const sets = leafSource === "invited" ? [] : configuredContracts().filter((c) => c.kind === leafSource || leafSource === "auto").map((c) => c.address.toLowerCase());
+    return { leafSource, maxAnon: this.maxAnon, sets };
   }
 
   async _sel() {

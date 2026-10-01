@@ -20,7 +20,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadDirectory, selectionOrder, reportHealth, verifyDirectory, MAX_WEIGHT, canonicalCaps, DEFAULT_EGRESS_PORT, DEFAULT_PROTO_VERSION, isDraining } from "../lib/directory.mjs";
+import { loadDirectory, selectionOrder, reportHealth, verifyDirectory, MAX_WEIGHT, canonicalCaps, setsOf, DEFAULT_EGRESS_PORT, DEFAULT_PROTO_VERSION, isDraining } from "../lib/directory.mjs";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { verifyAnnounce } from "../bootnode/announce.mjs";
 import { makeStakeVerifier } from "../lib/gateway-registry.mjs";
@@ -871,6 +871,19 @@ export function filterByAdmission(gateways, adm, { log = (message) => clientLog.
   return kept;
 }
 // One-line fleet policy summary for the fail-closed errors: `gw1=[invited,staked] gw2=(none)`.
+// Admission SETS (dogfood #234): keep gateways whose signed `caps.sets` names one of the
+// contracts this client proves against; a gateway without `sets` (older heartbeat) is kept.
+// Pure, same-reference when nothing is filtered or `mine` is empty.
+export function filterBySets(gateways, mine) {
+  const wanted = new Set((mine || []).map((a) => String(a).toLowerCase()).filter(Boolean));
+  if (wanted.size === 0) return gateways;
+  const kept = gateways.filter((g) => { const sets = setsOf(g); return !sets || sets.some((s) => wanted.has(s)); });
+  return kept.length === gateways.length ? gateways : kept;
+}
+export function describeFleetSets(gateways) {
+  return gateways.map((g) => `${String(g.onion || "").slice(0, 12)}..=${setsOf(g) ? "[" + setsOf(g).join(",") + "]" : "(no sets advertised)"}`).join(" ") || "(empty directory)";
+}
+
 export function describeFleetAdmits(gateways) {
   return gateways.map((g) => `${String(g.onion || "").slice(0, 12)}..=${admitsOf(g) ? "[" + admitsOf(g).join(",") + "]" : "(no policy advertised)"}`).join(" ") || "(empty directory)";
 }
@@ -902,6 +915,17 @@ export async function selectCandidates(req = null, adm = null, opts = null) {
     if (gateways.length === 0) {
       if (adm.maxAnon) throw new Error(`--max-anon: no invited-only gateway in the directory (a gateway qualifies only when its signed caps say admits=[invited]); fleet: ${describeFleetAdmits(before)}`);
       throw new Error(`no gateway admits a ${adm.leafSource} leaf (your leaf source); fleet: ${describeFleetAdmits(before)} -- pick a gateway that admits ${adm.leafSource}, or obtain a leaf in a set the fleet admits (docs/CLIENTS.md "Leaf source")`);
+    }
+  }
+  // Admission-set filter (dogfood #234): a node that says it reads another network's set would
+  // refuse every proof `wrong-group-root`; drop it before spending a slot. `adm.sets` is the
+  // list of contracts this client proves against (ShadeTreeClient passes its configured ones);
+  // absent => byte-identical default path.
+  if (Array.isArray(adm?.sets) && adm.sets.length) {
+    const before = gateways;
+    gateways = filterBySets(gateways, adm.sets);
+    if (gateways.length === 0) {
+      throw new Error(`no gateway reads this client's admission set (${adm.sets.join(",")}); fleet: ${describeFleetSets(before)} -- run against the record those nodes serve, or stake in the set they read`);
     }
   }
   // Receipt-quality weight adjustment (T-FEAT-22). OFF by default and identity when no gateway has a
