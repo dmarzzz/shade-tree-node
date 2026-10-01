@@ -1,0 +1,115 @@
+name: node-image
+
+# ghcr.io/<owner>/shadenet-node: Tor + the JS node + heartbeat from a checkout, run from a
+# deployment record alone. Called by release.yml for every tag, and runnable by hand for a ref
+# (`gh workflow run node-image.yml -f ref=v0.7.1 -f push=true`) when a tag's image needs
+# (re)publishing without cutting a new release.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Image tag (the release version)
+        required: true
+        type: string
+      push:
+        description: Push to GHCR (false = build and smoke-test only)
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build (a tag like v0.7.1, or a branch)
+        required: true
+        type: string
+        default: main
+      push:
+        description: Push to GHCR
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  node-image:
+    name: node container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write # push ghcr.io/<owner>/shadenet-node
+      id-token: write # Sigstore certificate for the image attestation
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Resolve the version and commit
+        id: meta
+        shell: bash
+        env:
+          CALLED_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ -n "$CALLED_VERSION" ]]; then version="$CALLED_VERSION"
+          else version="$(node -p 'require("./package.json").version')"; fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { echo "bad version: $version" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "final=$([[ "$version" == *-* ]] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU for arm64
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Build and smoke-test (amd64)
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+        run: |
+          docker buildx create --use --name shadenet-node >/dev/null
+          docker buildx build --platform linux/amd64 --load \
+            -f docker/shadenet-node.Dockerfile --build-arg VERSION="$VERSION" --build-arg COMMIT="$COMMIT" \
+            -t shadenet-node:smoke .
+          # Capture whole outputs (no grep -q on a live pipe: docker run dies with EPIPE under pipefail).
+          help="$(docker run --rm shadenet-node:smoke help)"
+          grep -q SHADENET_RECORD <<<"$help"
+          set +e; out="$(docker run --rm shadenet-node:smoke run 2>&1)"; code=$?; set -e
+          [[ $code -eq 2 ]] || { echo "run without a record exited $code, expected 2: $out" >&2; exit 1; }
+          grep -q "set SHADENET_RECORD" <<<"$out"
+          torv="$(docker run --rm --entrypoint tor shadenet-node:smoke --version)"
+          grep -q "Tor version" <<<"$torv"
+          docker run --rm shadenet-node:smoke status --quiet || true
+          echo "smoke ok: $(head -1 <<<"$torv")"
+
+      - name: Push multi-arch image
+        id: push
+        if: ${{ inputs.push }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+          FINAL: ${{ steps.meta.outputs.final }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shadenet-node"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            -f docker/shadenet-node.Dockerfile --build-arg VERSION="$VERSION" --build-arg COMMIT="$COMMIT" \
+            -t "$image:$VERSION" $([[ "$FINAL" == true ]] && echo "-t $image:latest") \
+            --metadata-file "$RUNNER_TEMP/node-image.json" .
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/node-image.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Attest image provenance
+        if: ${{ inputs.push }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
