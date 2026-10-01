@@ -15,7 +15,7 @@
 // This is a supervisor, not a daemon framework: one Tor, one gateway, one heartbeat, restarted
 // with backoff when they exit, all stopped together on SIGTERM. Inside the container it is PID 1.
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statfsSync, chmodSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
@@ -26,6 +26,7 @@ import { generateOnionIdentity } from "../bootnode/keygen.mjs";
 import { verifyOperatorSig } from "../bootnode/announce.mjs";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { resolveBuildCommit } from "../lib/build-info.mjs";
+import { torInfo, startTor, supervise, writeStatus } from "../lib/node-supervisor.mjs";
 import { rpcUrlsOf, eldersOf } from "../lib/network-record.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -106,13 +107,6 @@ function portFree(port) {
   });
 }
 
-function torInfo() {
-  const v = spawnSync("tor", ["--version"], { encoding: "utf8" });
-  if (v.status !== 0) return { present: false };
-  const m = spawnSync("tor", ["--list-modules"], { encoding: "utf8" });
-  return { present: true, version: v.stdout.split("\n")[0].trim(), pow: /^pow:\s*yes/m.test(m.stdout || "") };
-}
-
 async function check({ probe = false, json = false } = {}) {
   const findings = []; // { level: ok|warn|fail, what }
   const ok = (w) => findings.push({ level: "ok", what: w });
@@ -187,7 +181,7 @@ async function check({ probe = false, json = false } = {}) {
   }
   if (probe && record && tor.present && findings.every((f) => f.level !== "fail")) {
     log("probe: bootstrapping a temporary Tor to reach each Elder Tree (up to 3 minutes)…");
-    const t = await startTor({ knobs, hsDir, tor, timeoutMs: 180000 }).catch((e) => { fail(`probe: ${e.message}`); return null; });
+    const t = await startTor({ knobs, hsDir, tor, timeoutMs: 180000, log }).catch((e) => { fail(`probe: ${e.message}`); return null; });
     if (t) {
       for (const e of eldersOf(record)) {
         try {
@@ -210,52 +204,6 @@ async function check({ probe = false, json = false } = {}) {
   return !failed;
 }
 
-// ---- processes ---------------------------------------------------------------------------
-function startTor({ knobs, hsDir, tor, timeoutMs = 180000 }) {
-  const torrc = join(knobs.state, "torrc");
-  mkdirSync(join(knobs.state, "tor"), { recursive: true, mode: 0o700 });
-  chmodSync(join(knobs.state, "tor"), 0o700);
-  rmSync(join(knobs.state, "tor.log"), { force: true });
-  writeFileSync(torrc, renderTorrc({ stateDir: knobs.state, hsDir, pow: knobs.pow && tor.pow, torLevel: process.env.SHADENET_TOR_LOG }));
-  const child = spawn("tor", ["-f", torrc], { stdio: ["ignore", "pipe", "pipe"] });
-  return new Promise((res, rej) => {
-    let done = false;
-    const timer = setTimeout(() => { if (!done) { done = true; child.kill("SIGTERM"); rej(new Error("tor did not bootstrap within the timeout (outbound to the Tor network blocked?)")); } }, timeoutMs);
-    const onLine = (buf) => {
-      for (const line of buf.toString().split("\n")) {
-        if (!line.trim()) continue;
-        if (/\[(warn|err)\]/.test(line) || /Bootstrapped (0|5|10|25|50|75|90|100)%/.test(line)) console.error(`[tor] ${line.replace(/^.*?\[/, "[")}`);
-        if (!done && /Bootstrapped 100%/.test(line)) { done = true; clearTimeout(timer); res(child); }
-      }
-    };
-    child.stdout.on("data", onLine); child.stderr.on("data", onLine);
-    child.once("exit", (code) => { if (!done) { done = true; clearTimeout(timer); rej(new Error(`tor exited with ${code} before bootstrapping`)); } });
-  });
-}
-
-function supervise(name, script, env, state) {
-  let attempt = 0; let child = null; let stopping = false;
-  const start = () => {
-    child = spawn(process.execPath, [join(ROOT, script)], { cwd: ROOT, env: { ...process.env, ...env }, stdio: ["ignore", "inherit", "inherit"] });
-    state.pids[name] = child.pid; writeStatus(state);
-    const startedAt = Date.now();
-    child.once("exit", (code, sig) => {
-      delete state.pids[name]; writeStatus(state);
-      if (stopping) return;
-      if (Date.now() - startedAt > 60000) attempt = 0;
-      const delay = Math.min(30000, 2000 * 2 ** attempt++);
-      log(`${name} exited (${sig || code}); restarting in ${delay / 1000}s`);
-      setTimeout(start, delay).unref();
-    });
-  };
-  start();
-  return { stop: (sig = "SIGTERM") => { stopping = true; if (child && child.exitCode === null) child.kill(sig); } };
-}
-
-function writeStatus(state) {
-  try { writeFileSync(join(state.stateDir, "status.json"), JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2) + "\n"); } catch {}
-}
-
 async function run() {
   const cfg = loadNodeConfig();
   if (cfg.errors.length) { for (const e of cfg.errors) log(`config: ${e}`); log("run `shadenet-node check` for the full picture"); process.exit(2); }
@@ -270,12 +218,12 @@ async function run() {
   const state = { stateDir: knobs.state, onion: id.onion, network: record.network, set: record.admission.roots.staked.contract, elders: eldersOf(record).map((e) => e.onion), commit: resolveBuildCommit(), recordPin: record.services?.node?.commit || null, metricsPort: Number(env.SHADE_TREE_METRICS_PORT || 0), startedAt: new Date().toISOString(), pids: {} };
   log(`node ${id.onion} joining ${record.network} (set ${state.set}) with ${state.elders.length} Elder Tree(s); admit ${env.SHADE_TREE_ADMIT}; tickets ${env.SHADE_TREE_SESSION_TICKETS === "1" ? "on" : "off"}`);
   if (state.recordPin && state.commit !== "unknown" && !state.recordPin.startsWith(state.commit)) log(`warning: build ${state.commit.slice(0, 7)} differs from the record's pin ${state.recordPin.slice(0, 7)}`);
-  const torChild = await startTor({ knobs, hsDir, tor });
+  const torChild = await startTor({ knobs, hsDir, tor, log });
   state.pids.tor = torChild.pid; writeStatus(state);
   log("tor bootstrapped; onion descriptor publishes in about 30 s");
-  const gateway = supervise("gateway", "packages/node/gateway/gateway.mjs", env, state);
+  const gateway = supervise("gateway", "packages/node/gateway/gateway.mjs", { root: ROOT, env, state, log });
   await sleep(1500);
-  const heartbeat = supervise("heartbeat", "packages/node/bootnode/heartbeat.mjs", env, state);
+  const heartbeat = supervise("heartbeat", "packages/node/bootnode/heartbeat.mjs", { root: ROOT, env, state, log });
   log("node and heartbeat started; `heartbeat accepted` in the log means an Elder lists this node");
   let shuttingDown = false;
   const shutdown = async (sig) => {
