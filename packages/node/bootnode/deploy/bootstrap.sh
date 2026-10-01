@@ -1006,6 +1006,9 @@ EOF
     [ -z "$SHADE_TREE_ZK_ARTIFACTS" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACTS=${SHADE_TREE_ZK_ARTIFACTS}"
     # ADR 0011: the heartbeat advertises the signed session cap only when the node enforces it.
     [ "$SHADE_TREE_SESSION_TICKETS" = "1" ] && echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
+    # dogfood #234: the heartbeat advertises the admission sets the gateway reads (signed caps.sets),
+    # so it needs the same contract list the gateway unit carries.
+    [ "$ADMIT_STAKED" = "1" ] && echo "Environment=SHADE_TREE_GROUP_CONTRACT=${SHADE_TREE_GROUP_CONTRACT}"
     if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
       # Advertise the offer in the gateway's SIGNED caps (`caps.pay`, T-FEAT-9) -- the same
       # advert the bootnode puts in /health; SHADE_TREE_REGISTRAR_ONION names the onion it rides.
