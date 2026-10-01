@@ -423,10 +423,15 @@ fn is_trusted_prefix(path: &Path) -> bool {
 #[cfg(unix)]
 pub fn current_umask() -> Option<u32> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+    // Unique per call: parallel callers in one process (the doctor's tests run concurrently)
+    // must not race on one probe file, or `create_new` fails and the check reads as "unknown".
+    static PROBE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nonce = PROBE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let path = std::env::temp_dir().join(format!(
-        ".shadenet-umask-{}-{}",
+        ".shadenet-umask-{}-{:?}-{}",
         std::process::id(),
-        Instant::now().elapsed().as_nanos()
+        std::thread::current().id(),
+        nonce
     ));
     let file = std::fs::OpenOptions::new()
         .write(true)
@@ -721,8 +726,14 @@ mod tests {
 
     #[test]
     fn umask_is_readable_and_checks_022() {
-        let umask = current_umask().expect("umask");
+        // Read the umask from several threads at once: the probe must not collide with itself.
+        let reads: Vec<Option<u32>> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..8).map(|_| s.spawn(current_umask)).collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        let umask = reads[0].expect("umask");
         assert!(umask <= 0o777);
+        assert!(reads.iter().all(|r| *r == Some(umask)), "{reads:?}");
         let check = umask_check().unwrap();
         assert_eq!(check.level == Level::Ok, umask & 0o022 == 0o022);
     }
