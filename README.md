@@ -54,7 +54,7 @@ and filename, and installs without sudo into `~/.local/bin`:
 
 ```sh
 curl -q -fsSL --proto '=https' --proto-redir '=https' \
-  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | sh
+  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.0 sh
 shadenet --version
 ```
 
