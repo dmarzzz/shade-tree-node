@@ -1,6 +1,6 @@
 [package]
 name = "shadenet-rln"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
@@ -38,7 +38,7 @@ path = "src/bin/tree.rs"
 [dependencies]
 # Reuse the trust-critical, conformance-gated request-signal + signal-hash from the
 # JS-reference port so the Rust side OWNS the target binding (x = H(signal)).
-shadenet-proto = { path = "../shadenet-proto", version = "0.7.0" }
+shadenet-proto = { path = "../shadenet-proto", version = "0.7.1" }
 
 # T-RUST-2c native merkle tree (rlnjs Semaphore-v3 parity):
 #   - light-poseidon: circomlib-compatible Poseidon (BN254, arity 2) == poseidon-lite.

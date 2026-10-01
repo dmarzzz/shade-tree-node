@@ -1,6 +1,6 @@
 {
   "name": "@shadenet/sdk",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "ShadeNet JavaScript SDK: identities, staking, canopy verification and egress, for browsers and Node.",
   "license": "MIT",
   "type": "module",
