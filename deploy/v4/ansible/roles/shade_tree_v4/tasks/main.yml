@@ -686,7 +686,7 @@
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_TIERS=' ~ shade_tree_rate_tiers) | quote }}
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_ROOT_FRESHNESS_SECONDS=' ~ (shade_tree_root_freshness_seconds | string)) | quote }}
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=' ~ (shade_tree_policy_payload_bytes | string)) | quote }}
-      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FROM_BLOCK=' ~ (shade_tree_staked_deploy_block | string)) | quote }}
+      printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FROM_BLOCK=' ~ (([shade_tree_staked_deploy_block | int] + (shade_tree_extra_sets | map(attribute='deployBlock') | map('int') | list)) | min | string)) | quote }}
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FLEET_TALLY_PEERS=' ~ shade_tree_fleet_tally_peers) | quote }}
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FLEET_TALLY_LISTEN=127.0.0.1:' ~ (shade_tree_fleet_tally_port | string)) | quote }}
       heartbeat_environment="$(systemctl show shade-tree-heartbeat --property=Environment --value)"
