@@ -74,6 +74,9 @@
 #                                own is the more trust-minimized choice, docs/LIGHT-CLIENT.md)
 #     SHADE_TREE_HELIOS_VERSION        release tag to install         (default: 0.11.1, sha256-pinned below;
 #                                another version needs SHADE_TREE_HELIOS_SHA256=<sha256 of the tarball>)
+#   SHADENET_SETS          0x<contract>@<deployBlock>[,...] extra staked sets admitted besides the
+#                    record's: one node serving two canopies (rendered as SHADE_TREE_GROUP_CONTRACT +
+#                    SHADE_TREE_FROM_BLOCKS comma lists). Needs the preset or SHADE_TREE_FROM_BLOCK.
 #   SHADE_TREE_ADMIT       invited[,staked][,paid]  (default: invited) the gateway's ADMISSION POLICY
 #                    (T-FEAT-9, docs/adr/0008): which membership roots this PROVIDER honours, in
 #                    anonymity order invited (members.json, no on-chain footprint) > staked
@@ -234,6 +237,32 @@ PY
   SHADENET_PRESET_APPLIED=1
 fi
 SHADENET_PRESET_APPLIED="${SHADENET_PRESET_APPLIED:-0}"
+
+# SHADENET_SETS=0x<contract>@<deployBlock>[,...]: extra staked sets this node admits besides the
+# record's (one node serving two canopies, e.g. staging and production). Each set carries its own
+# eth_getLogs start block; the record's set stays first. Rendered as the comma lists
+# SHADE_TREE_GROUP_CONTRACT and SHADE_TREE_FROM_BLOCKS the gateway already reads.
+SHADENET_SETS="${SHADENET_SETS:-}"
+if [ -n "$SHADENET_SETS" ]; then
+  [ -n "${SHADE_TREE_GROUP_CONTRACT:-}" ] || die "SHADENET_SETS needs a primary set (SHADENET_NETWORK preset or SHADE_TREE_GROUP_CONTRACT)"
+  primary="${SHADE_TREE_GROUP_CONTRACT%%,*}"
+  primary_block="${SHADE_TREE_FROM_BLOCK:-}"
+  [[ "$primary_block" =~ ^[0-9]+$ ]] || die "SHADENET_SETS needs the primary set's deploy block in SHADE_TREE_FROM_BLOCK (the preset fills it)"
+  contracts="$primary"; from_blocks="${primary}=${primary_block}"
+  IFS=',' read -r -a set_list <<<"$SHADENET_SETS"
+  for entry in "${set_list[@]}"; do
+    entry="${entry// /}"; [ -n "$entry" ] || continue
+    [[ "$entry" =~ ^(0x[0-9a-fA-F]{40})@([0-9]+)$ ]] || die "SHADENET_SETS entry '$entry' must be 0x<contract>@<deployBlock>"
+    addr="${BASH_REMATCH[1]}"; blk="${BASH_REMATCH[2]}"
+    [ "${addr,,}" != "${primary,,}" ] || continue
+    contracts="${contracts},${addr}"; from_blocks="${from_blocks},${addr}=${blk}"
+    [ "$blk" -ge "$primary_block" ] || primary_block="$blk"
+  done
+  SHADE_TREE_GROUP_CONTRACT="$contracts"
+  SHADE_TREE_FROM_BLOCKS="$from_blocks"
+  SHADE_TREE_FROM_BLOCK="$primary_block"
+  export SHADE_TREE_GROUP_CONTRACT SHADE_TREE_FROM_BLOCKS SHADE_TREE_FROM_BLOCK
+fi
 
 
 SHADE_TREE_REPO="${SHADE_TREE_REPO:-https://github.com/dmarzzz/shade-tree-node}"

@@ -1,5 +1,22 @@
 # Docker
 
+## Shade Tree node, from the record
+
+`docker/shadenet-node.Dockerfile` is the operator front door: Tor + the node + its heartbeat, run
+from a deployment record alone. Published by the release workflow as
+`ghcr.io/dmarzzz/shadenet-node:<version>` (multi-arch). See docs/OPERATOR.md section 2.
+
+```sh
+docker run -d --name shadenet-node --restart unless-stopped \
+  -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
+  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1
+docker run --rm -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.7.1 check --probe   # validate, start nothing
+```
+
+Build it locally: `docker build -f docker/shadenet-node.Dockerfile --build-arg COMMIT=$(git rev-parse HEAD) -t shadenet-node:dev .`
+
+## Everything else
+
 Two ways to run: a **single-image** for one-off roles, and a **compose fleet**
 that stands up tor + bootnode + gateway + client locally.
 

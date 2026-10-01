@@ -17,7 +17,8 @@
     "experiments/**",
     "demo/**",
     "out/**",
-    "packages/node/lib/entry-shim.mjs"
+    "packages/node/lib/entry-shim.mjs",
+    "packages/node/lib/node-supervisor.mjs"
   ],
   "reporter": [
     "text",

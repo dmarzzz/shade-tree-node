@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Install and prepare a Shade Tree node that provides Tor-based, proof-gated HTTPS egress for local AI agents.">
+  <meta name="description" content="Run a Shade Tree node: one container, one record URL. The node opens HTTPS tunnels for agents in the ShadeNet canopy and never learns who asked.">
   <meta name="theme-color" content="#07100c">
   <meta property="og:title" content="Run a Proof-Gated Egress Node for AI Agents · ShadeNet">
-  <meta property="og:description" content="Prepare a Shade Tree node to provide Tor-based, proof-gated HTTPS egress for local AI agents.">
+  <meta property="og:description" content="One container, one record URL. The node opens HTTPS tunnels for agents in the canopy and never learns who asked.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://shade-tree-node.vercel.app/operator/">
   <meta property="og:site_name" content="ShadeNet">
@@ -61,42 +61,71 @@
 
   <main id="guide" class="guide-main">
     <header class="guide-intro">
-      <h1>Prepare a Shade Tree node.</h1>
-      <p>Run a node to provide proof-gated egress for agents in the canopy.</p>
+      <h1>Run a Shade Tree node.</h1>
+      <p>One container, one record URL. The node opens the HTTPS tunnels agents ask for and never learns who asked.</p>
     </header>
 
     <div class="guide-steps">
-      <section class="guide-step guide-note" aria-labelledby="operator-safety">
-        <h2 id="operator-safety">Local research only</h2>
-        <p>The node rejects non-public destination addresses after DNS resolution. The bundled Sepolia <code>public-stake-v1</code> profile is for public research access: a stake at the bond in the current network record (shown on the <a href="/stake/">Get access</a> page) admits one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined traffic ceiling. Production remains blocked by the untrusted development Groth16 artifacts in <a href="https://github.com/dmarzzz/shade-tree-node/issues/6">issue #6</a>.</p>
+      <section class="guide-step" aria-labelledby="operator-what">
+        <h2 id="operator-what">What a node does</h2>
+        <p>A Shade Tree node is an onion service. An agent's proxy reaches it over Tor, shows a zero-knowledge proof that its member has staked, and asks for one HTTPS tunnel to port 443. The node checks the proof against the current member set on Sepolia, opens the connection, and relays bytes. The destination sees the node's IP. The node sees a proof and a destination, never the member. Every node that joins makes the canopy's anonymity set larger and the service harder to take down.</p>
       </section>
 
-      <section class="guide-step" aria-labelledby="operator-install">
-        <h2 id="operator-install">1. Install</h2>
-        <p>Requires Node.js 20 or newer, npm, and Tor.</p>
-        <div class="command" aria-label="Install the ShadeNet operator CLI">
-          <code>git clone https://github.com/dmarzzz/shade-tree-node.git &amp;&amp; cd shade-tree-node &amp;&amp; npm ci &amp;&amp; npm link</code>
-          <button class="copy-command" type="button" data-copy="git clone https://github.com/dmarzzz/shade-tree-node.git &amp;&amp; cd shade-tree-node &amp;&amp; npm ci &amp;&amp; npm link" aria-label="Copy operator installation command">copy</button>
-        </div>
-        <p>The checkout contains the Tor configuration, local-loop scripts, tests, and deployment assets used by the operator runbook.</p>
+      <section class="guide-step" aria-labelledby="operator-needs">
+        <h2 id="operator-needs">What it needs</h2>
+        <p>A Linux box with Docker, 1 vCPU, 2 GB of memory, 10 GB of disk and outbound internet. No inbound ports: the node is reached as an onion service, so a firewall that allows only SSH in is correct. The Sepolia canopy admits nodes whose operator holds a bond in the gateway registry; staking that bond is one command in the runbook and the only step that costs testnet ETH.</p>
       </section>
 
-      <section class="guide-step" aria-labelledby="operator-prepare">
-        <h2 id="operator-prepare">2. Prepare the node</h2>
-        <div class="command" aria-label="Prepare a Shade Tree node identity">
-          <code>shade-tree-node join node</code>
-          <button class="copy-command" type="button" data-copy="shade-tree-node join node" aria-label="Copy node preparation command">copy</button>
+      <section class="guide-step" aria-labelledby="operator-check">
+        <h2 id="operator-check">1. Check the box</h2>
+        <div class="command" aria-label="Check a box before running a node">
+          <code>docker run --rm -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json ghcr.io/dmarzzz/shadenet-node:0.7.1 check --probe</code>
+          <button class="copy-command" type="button" data-copy="docker run --rm -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json ghcr.io/dmarzzz/shadenet-node:0.7.1 check --probe" aria-label="Copy the node check command">copy</button>
         </div>
-        <p>This creates a local onion identity and prints the node and heartbeat commands. It does not configure Tor. Keep <code>identity.local.json</code> private.</p>
+        <p>This starts nothing. It reads the record, answers each RPC in it, verifies the Tor configuration, measures free disk, tries the two loopback ports, reaches every Elder Tree over a temporary Tor, and prints the exact environment the node would run with. Fix any FAIL line, then continue.</p>
       </section>
 
       <section class="guide-step" aria-labelledby="operator-run">
-        <h2 id="operator-run">3. Run a local canopy</h2>
-        <p>The manual local quickstart uses the checkout to configure Tor, an Elder Tree, a node, its heartbeat, and a test Proxy. The full runbook covers logs, metrics, keys, incident response, and retirement.</p>
+        <h2 id="operator-run">2. Run the node</h2>
+        <div class="command" aria-label="Run a Shade Tree node">
+          <code>docker run -d --name shadenet-node --restart unless-stopped -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1</code>
+          <button class="copy-command" type="button" data-copy="docker run -d --name shadenet-node --restart unless-stopped -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1" aria-label="Copy the node run command">copy</button>
+        </div>
+        <p>Add <code>-e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x…</code> for the staked operator: the <code>identity</code> command prints the node's onion, <code>shadenet-node authorize</code> signs it where the key lives, and the key never reaches the box. The <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/OPERATOR.md#2-join-the-fleet-as-a-new-gateway-operator">runbook</a> has the three lines, and a compose file for people who prefer compose.</p>
+      </section>
+
+      <section class="guide-step" aria-labelledby="operator-first">
+        <h2 id="operator-first">The first ten minutes</h2>
+        <p>The log tells the story in order. The node mints its onion identity and keeps it in the volume. Tor bootstraps, usually within two minutes, and the onion descriptor is published about thirty seconds later. The heartbeat announces to every Elder Tree in the record and logs <code>heartbeat accepted</code> once per Elder. Within five minutes the node is listed on the <a href="/canopy/">Canopy</a> page. The first tunnel is served after the node's next member-set refresh, about a minute after that.</p>
+      </section>
+
+      <section class="guide-step" aria-labelledby="operator-knobs">
+        <h2 id="operator-knobs">The knobs</h2>
+        <p>Everything the node needs is in the record. The rest is ten optional settings, as <code>SHADENET_*</code> variables or the same keys in <code>/state/node.toml</code>: who to admit, an egress allow and deny list, the selection weight that bounds how much traffic lands here, a region, the metrics port, the log format, the operator key or signature, and onion proof-of-work. <code>shadenet-node help</code> lists them with defaults; the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/CONFIG.md#operator-front-door-shadenet-node">configuration reference</a> maps each to the advanced layer underneath.</p>
+      </section>
+
+      <section class="guide-step" aria-labelledby="operator-admit">
+        <h2 id="operator-admit">What you admit</h2>
+        <p>A node admits the staked set named in its record. It can admit more than one: <code>SHADENET_SETS=0x…@deployBlock</code> adds another canopy's set, each scanned from its own deploy block, so one node can serve a staging set and the production set at once. The invited path (your own members file) and the paid path from ADR 0008 switch on with <code>SHADENET_ADMIT</code>. The directory advertises what each node admits, so an agent is only ever routed to a node that will take its proof.</p>
+      </section>
+
+      <section class="guide-step" aria-labelledby="operator-cost">
+        <h2 id="operator-cost">What it costs</h2>
+        <p>The canopy's own nodes are $12 a month droplets with 2000 GiB of outbound transfer included. A member who saturates every slot relays about 40 MiB a minute, so three continuously saturated tier-1 members fill that allowance before overage starts at a cent per GiB. Most members use a small fraction of a slot. The weight knob is the lever: a lower weight sends fewer members this way. Bonds are refundable collateral on a testnet, not revenue; the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/ECONOMICS.md">economics note</a> has every number with its source.</p>
+      </section>
+
+      <section class="guide-step guide-note" aria-labelledby="operator-abuse">
+        <h2 id="operator-abuse">What lands on your address</h2>
+        <p>Destinations see the node's IP, so abuse complaints come to the operator. The node rejects private and non-public destination addresses after DNS resolution, allows only port 443 by default, and takes an allow and deny list for anything narrower. A member who spends more than their budget is slashed on chain and burned from the set. Retiring is <code>docker stop</code>: the node leaves every Elder Tree's directory within fifteen minutes, open tunnels finish, and the identity stays in the volume until you delete it.</p>
+      </section>
+
+      <section class="guide-step" aria-labelledby="operator-day2">
+        <h2 id="operator-day2">Day two</h2>
         <div class="guide-links">
-          <a class="solid-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/QUICKSTART.md#path-b-the-local-loop-understand-the-pieces">Local quickstart</a>
-          <a class="line-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/OPERATOR.md">Operator runbook</a>
+          <a class="solid-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/OPERATOR.md">Operator runbook</a>
           <a class="line-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/monitoring/README.md">Monitoring</a>
+          <a class="line-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/INCIDENT.md">Incidents</a>
+          <a class="line-action" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/CONFIG.md">Configuration</a>
         </div>
       </section>
     </div>
