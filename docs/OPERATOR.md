@@ -1,11 +1,9 @@
 # Operator runbook
 
-> [!CAUTION]
-> Public-host deployment is currently blocked. Nodes now resolve once, reject
-> non-public answers, and pin the checked address before dialing, but the
-> bundled Groth16 artifacts still use an untrusted development setup. Treat the
-> commands below as local research and future-rollout documentation. See the
-> current [deployment plan](DEPLOYMENT-PLAN.md).
+> [!NOTE]
+> Public-host deployment is open: the proof keys come from the adopted PSE trusted setup
+> (`docs/ceremony/PSE-VERIFICATION.md`) and the Sepolia canopy runs `v0.7.0`. Still a research
+> preview on a testnet; see [DEPLOYMENT-PLAN.md](DEPLOYMENT-PLAN.md).
 
 For running a Shade Tree node or Elder Tree. Every command here exists in
 `packages/node/bin/shade-tree.mjs` or the deploy scripts. For the full config surface see
@@ -71,13 +69,65 @@ Wait ~30s for descriptor propagation, then verify (see day-2 below).
 
 ## 2. Join the fleet as a new gateway operator
 
-### Fresh box, one command (gateway-only mode)
+### One container, one record URL
+
+The node image bundles Tor, the node and its heartbeat, and takes everything it needs from the
+deployment record. It mints an onion identity on first start, announces to every Elder Tree in the
+record, and keeps the identity, Tor state and spent set in the `/state` volume.
+
+```bash
+docker run -d --name shadenet-node --restart unless-stopped \
+  -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
+  -v shadenet-node:/state \
+  ghcr.io/dmarzzz/shadenet-node:0.7.1
+docker logs -f shadenet-node        # "heartbeat accepted" once per Elder means the node is listed
+```
+
+Check first, start nothing: the same image validates the record, every RPC in it, Tor, disk and
+ports, and prints the exact environment it would run with. `--probe` bootstraps a temporary Tor and
+reads each Elder's `/health`.
+
+```bash
+docker run --rm -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
+  ghcr.io/dmarzzz/shadenet-node:0.7.1 check --probe
+```
+
+The Sepolia canopy's Elders admit staked operators (`elder.admission = stake`): the operator
+address must hold a bond in the gateway registry and each onion must carry that operator's
+signature. The key never has to be on the node's box. Mint the identity, sign where the key lives,
+hand the node the two values:
+
+```bash
+docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.7.1 identity
+#   -> { "onion": "<56 chars>.onion", ... }
+shadenet-node authorize --onion <onion> --key-file ~/operator.key      # on your laptop (npm i -g shade-tree-node, or the repo)
+#   -> { "SHADENET_OPERATOR": "0x…", "SHADENET_OPERATOR_SIG": "0x…" }
+docker run -d ... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… ghcr.io/dmarzzz/shadenet-node:0.7.1
+```
+
+Staking the operator bond is `register-gateway` under "Stake the operator" below; it is the one
+step that costs testnet ETH, and it is the operator's own.
+
+The knobs, all optional except the record (`shadenet-node help` lists them; the full table is
+[CONFIG.md](CONFIG.md#operator-front-door-shadenet-node)): `SHADENET_ADMIT` (staked, invited,staked, staked,paid),
+`SHADENET_MEMBERS_FILE`, `SHADENET_ALLOW` / `SHADENET_DENY` (egress policy), `SHADENET_WEIGHT` (how
+much traffic lands here), `SHADENET_REGION`, `SHADENET_METRICS` (loopback port or off), `SHADENET_LOG`,
+`SHADENET_OPERATOR_KEY_FILE` or `SHADENET_OPERATOR` + `SHADENET_OPERATOR_SIG`, `SHADENET_POW`. The same
+keys work in `/state/node.toml`. Any `SHADE_TREE_*` variable set explicitly still wins, so the
+advanced surface is unchanged.
+
+Day two: `docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status` (onion, pins,
+readiness), `docker exec shadenet-node curl -s 127.0.0.1:9101/metrics`, `docker stop shadenet-node`
+to retire (the node leaves every Elder's directory within the 15-minute TTL; the identity stays in
+the volume, `docker volume rm shadenet-node` forgets it). Compose recipe: `examples/node/compose.yml`.
+
+### Fresh box, one command (systemd, no container)
 
 `bootstrap.sh` with `SHADE_TREE_BOOTNODE_ONION` set installs **only** tor + `shade-tree-gateway` +
 `shade-tree-heartbeat` — no bootnode unit, no bootnode onion — and points the heartbeat at the
 existing bootnode:
 
-### Join the Sepolia canopy with one command
+### Join the Sepolia canopy with bootstrap.sh
 
 ```bash
 ssh root@<new-ubuntu-24.04-host>

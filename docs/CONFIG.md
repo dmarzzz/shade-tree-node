@@ -2,6 +2,36 @@
 
 Every configuration value is an `SHADE_TREE_*` environment variable. Most also have a `--flag` on the `shade-tree` CLI (see `docs/CLI.md`); the flag just sets the same env var and overrides it. Tables below give the default, what the variable controls, which component reads it, and the `--flag` alias where one exists.
 
+## Operator front door (`shadenet-node`)
+
+Running a node needs one value, the deployment record, and at most these knobs. They are
+`SHADENET_*` environment variables or the same keys in `<state>/node.toml`; `shadenet-node check`
+prints where each value came from. Everything else (Elders, signers, contract, RPC list, tiers,
+epoch, payload cap, accepted proof artifacts, the session-ticket switch, the node commit) is read
+from the record, and any `SHADE_TREE_*` variable set explicitly still wins over the knob that would
+have set it. The tables below are that advanced layer.
+
+| Knob (`SHADENET_*` / `node.toml`) | Default | Controls | Sets |
+|---|---|---|---|
+| `SHADENET_RECORD` / `record` | (required) | Deployment record: an `https://` URL or a file path | the record-derived variables |
+| `SHADENET_STATE` / `state` | `/state` in the image, `./shadenet-node` elsewhere | Onion identity (`hs-gateway/`), Tor state, spent set, `status.json` | `SHADE_TREE_GW_IDENTITY`, `SHADE_TREE_SPENT_STATE_FILE`, telemetry state paths |
+| `SHADENET_ADMIT` / `admit` | `staked` | Who this node admits: `staked`, `invited,staked`, `staked,paid` (ADR 0008) | `SHADE_TREE_ADMIT` |
+| `SHADENET_MEMBERS_FILE` / `members_file` | (unset) | Operator-owned `members.json`, required by the invited path; absolute path | `SHADE_TREE_MEMBERS_FILE` |
+| `SHADENET_ALLOW` / `allow` | `*:443` | Egress allow list, `host:port` patterns | `SHADE_TREE_EGRESS_ALLOW` |
+| `SHADENET_DENY` / `deny` | (empty) | Egress deny list; deny wins | `SHADE_TREE_EGRESS_DENY` |
+| `SHADENET_WEIGHT` / `weight` | `100` | Selection weight 1..1000; lower means less traffic lands here | `SHADE_TREE_GW_WEIGHT` |
+| `SHADENET_REGION` / `region` | (unset) | Advertised region bucket: `na sa eu af as oc aq unknown` | `SHADE_TREE_GATEWAY_REGION` |
+| `SHADENET_METRICS` / `metrics` | `9101` | Prometheus port on loopback (the heartbeat uses port + 2), or `off` | `SHADE_TREE_METRICS_PORT`, `SHADE_TREE_HEARTBEAT_METRICS_PORT` |
+| `SHADENET_LOG` / `log` | `json:info` | `json`, `pretty` or `text`, with an optional `:debug|info|warn|error` | `SHADE_TREE_LOG_FORMAT`, `SHADE_TREE_LOG_LEVEL` |
+| `SHADENET_OPERATOR_KEY_FILE` / `operator_key_file` | (unset) | Owner-only file holding the staked operator key (stake-admission canopies) | `SHADE_TREE_GW_OPERATOR_KEY` |
+| `SHADENET_OPERATOR` + `SHADENET_OPERATOR_SIG` / `operator`, `operator_sig` | (unset) | The operator address and its signature over `operatorAuthMessage(onion, operator)`, made with `shadenet-node authorize` where the key lives; the key never reaches the node | `SHADE_TREE_GW_OPERATOR`, `SHADE_TREE_GW_OPERATOR_SIG` |
+| `SHADENET_POW` / `pow` | `false` | Onion proof-of-work defense; needs a Tor built with the `pow` module (the image's stock Debian Tor has none) | the torrc |
+
+Fixed inside the image: the node listens on `127.0.0.1:8443`, Tor's SOCKS on `127.0.0.1:9050`,
+no inbound ports (the node is an onion service). `node.toml` is a flat file of `key = "value"`
+lines (strings, integers, `true`/`false`, `["a", "b"]` arrays); unknown keys and other TOML are
+rejected with the line number.
+
 ## Bootnode
 
 Read by `packages/node/bootnode/server.mjs` (discovery service) and `packages/node/bootnode/heartbeat.mjs` (gateway announcer).

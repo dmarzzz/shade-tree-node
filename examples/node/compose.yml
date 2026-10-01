@@ -1,0 +1,45 @@
+# A Shade Tree node, the compose way. Same image and knobs as `docker run`; see docs/OPERATOR.md.
+#
+#   docker compose up -d
+#   docker compose exec shadenet-node node packages/node/bin/shadenet-node.mjs status
+#   docker compose stop                 # retire: the node leaves every Elder within 15 minutes
+services:
+  shadenet-node:
+    image: ghcr.io/dmarzzz/shadenet-node:0.7.0
+    container_name: shadenet-node
+    restart: unless-stopped
+    environment:
+      SHADENET_RECORD: https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json
+      # Optional knobs (defaults shown). Put secrets in files, never here.
+      # SHADENET_ADMIT: staked
+      # SHADENET_ALLOW: "*:443"
+      # SHADENET_DENY: ""
+      # SHADENET_WEIGHT: "100"
+      # SHADENET_REGION: eu
+      # SHADENET_METRICS: "9101"
+      # SHADENET_LOG: json:info
+      # SHADENET_OPERATOR_KEY_FILE: /run/secrets/operator-key
+    volumes:
+      - shadenet-node:/state
+    # secrets:
+    #   - operator-key
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g, pids: 256 }
+
+# secrets:
+#   operator-key:
+#     file: ./operator.key   # one line, 64 hex, chmod 600
+
+volumes:
+  shadenet-node:

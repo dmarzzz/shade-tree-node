@@ -481,6 +481,70 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+  # ------------------------------------------------------------ node container image
+  # The operator front door: Tor + the JS node + heartbeat from the tagged checkout, run from a
+  # deployment record alone (docker/shadenet-node.Dockerfile, packages/node/bin/shadenet-node.mjs).
+  # Multi-arch through QEMU since nothing native is compiled (pure JS deps). Tags push to GHCR.
+  node-image:
+    name: node container image
+    needs: [set-version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write # push ghcr.io/<owner>/shadenet-node on tags
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU for arm64
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Build and smoke-test (amd64)
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+        run: |
+          docker buildx create --use --name shadenet-node >/dev/null
+          docker buildx build --platform linux/amd64 --load \
+            -f docker/shadenet-node.Dockerfile --build-arg VERSION="$RELEASE_VERSION" --build-arg COMMIT="$GITHUB_SHA" \
+            -t shadenet-node:smoke .
+          docker run --rm shadenet-node:smoke help | grep -q SHADENET_RECORD
+          # No record: the supervisor refuses to start with the one-line reason, exit 2.
+          set +e; out="$(docker run --rm shadenet-node:smoke run 2>&1)"; code=$?; set -e
+          [[ $code -eq 2 ]] && grep -q "set SHADENET_RECORD" <<<"$out"
+          docker run --rm shadenet-node:smoke status --quiet || true
+          docker run --rm --entrypoint tor shadenet-node:smoke --version | grep -q "Tor version"
+
+      - name: Push multi-arch image
+        id: push
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/shadenet-node"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx build --platform linux/amd64,linux/arm64 --push \
+            -f docker/shadenet-node.Dockerfile --build-arg VERSION="$RELEASE_VERSION" --build-arg COMMIT="$GITHUB_SHA" \
+            -t "$image:$RELEASE_VERSION" $([[ "$RELEASE_VERSION" == *-* ]] || echo "-t $image:latest") \
+            --metadata-file "$RUNNER_TEMP/node-image.json" .
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/node-image.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Attest image provenance
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
   # Release publication is isolated from compilation so build tools never receive
   # a token that can modify repository contents. A tag is published atomically only
   # after every default and live matrix entry has succeeded.
