@@ -1,0 +1,27 @@
+# Alertmanager receiver that feeds the Elder Tree's incident feed (GET /incidents), so clients
+# can tell their agents "node-06 restarting since 22:11Z" instead of a bare transport timeout.
+#
+# The Elder serves POST /incidents/alertmanager when SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN is set
+# (docs/CONFIG.md). Point this receiver at the Elder's HTTP port on a path Alertmanager can
+# reach (a loopback SSH tunnel to the Elder host, or the Elder's onion through a local Tor
+# SOCKS proxy). Keep the Matrix receiver you already have; add this one alongside it.
+#
+# Merge into your alertmanager.yml:
+route:
+  receiver: matrix            # whatever you route to today
+  routes:
+    - receiver: shadenet-incidents
+      continue: true          # still deliver to matrix below
+      matchers:
+        - component =~ "bootnode|gateway|heartbeat|rpc"
+receivers:
+  - name: shadenet-incidents
+    webhook_configs:
+      - url: http://127.0.0.1:8877/incidents/alertmanager   # the Elder, via an SSH tunnel
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/credstore/SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN
+# Labels the receiver maps: alertname + instance become the incident id, `component` (or the
+# job name) picks elder/node/heartbeat/rpc, `severity` is kept, annotations.summary is the text.

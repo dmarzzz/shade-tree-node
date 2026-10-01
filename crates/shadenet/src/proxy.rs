@@ -300,18 +300,40 @@ pub(crate) fn error_response(error: &Error) -> String {
     )
 }
 
+/// One header line's worth of a cause: no CR/LF, ASCII only, bounded.
+fn header_safe(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c.is_ascii() && !c.is_ascii_control() {
+                c
+            } else {
+                ' '
+            }
+        })
+        .take(240)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 fn json_error_response(
     status: u16,
     code: &str,
     retry_after: Option<u64>,
     body: &serde_json::Value,
 ) -> String {
+    let cause = body["error"]["cause"].as_str().map(header_safe);
     let body = format!("{body}\n");
     let mut response = format!(
         "HTTP/1.1 {status} {}\r\nContent-Type: application/json\r\nX-ShadeNet-Error: {code}\r\nConnection: close\r\nContent-Length: {}\r\n",
         reason_phrase(status),
         body.len()
     );
+    // The cause rides as a header too, so an agent that only sees headers (a CONNECT failure
+    // through most HTTP clients) still learns why. The body carries the full `cause` and `fix`.
+    if let Some(cause) = cause.filter(|c| !c.is_empty()) {
+        response.push_str(&format!("X-ShadeNet-Cause: {cause}\r\n"));
+    }
     if let Some(seconds) = retry_after {
         response.push_str(&format!("Retry-After: {seconds}\r\n"));
     }
@@ -560,6 +582,11 @@ mod tests {
         let response = error_response(&error);
         assert!(response.starts_with("HTTP/1.1 429 Too Many Requests\r\n"));
         assert!(response.contains("X-ShadeNet-Error: budget_exhausted\r\n"));
+        assert!(
+            response.contains("X-ShadeNet-Cause: the per-epoch budget is spent"),
+            "{response}"
+        );
+        assert!(response.contains("\"fix\":"));
         assert!(response.contains("Retry-After: 17\r\n"));
         let body = response.split("\r\n\r\n").nth(1).unwrap();
         let json: serde_json::Value = serde_json::from_str(body.trim()).unwrap();

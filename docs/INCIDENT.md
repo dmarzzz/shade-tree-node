@@ -21,6 +21,7 @@ narrow the risk but do not remove signer trust. Keep that boundary in mind befor
 | Source | Path |
 |---|---|
 | Canopy monitor (orbital-one) | Prometheus scrapes the Elder, every node and heartbeat, and each host over forwarding-only SSH tunnels; Alertmanager sends every firing and resolved alert to the operator's Matrix room through Hermes (`[shadenet] FIRING <alert> (<host>)`). Rules: `monitoring/alerts.yml` plus host, probe and pin-drift rules in the operator's `shadenet_monitor` role |
+| Incident feed (every Elder) | `GET /incidents` on each Elder is a signed list of open incidents; Alertmanager posts firing and resolved alerts to `POST /incidents/alertmanager` (bearer `SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN`), and an operator can edit `SHADE_TREE_BOOTNODE_INCIDENTS_FILE` by hand for planned work. Clients fetch it with the directory and show it in `problems[]`, so an agent sees "node-06 restarting since 22:11Z" instead of a bare timeout. Receiver config: `monitoring/alertmanager.incidents.example.yml` |
 | Uptime probes | Hosted workflow (every 15 minutes) and the Lab runner (every 5 minutes); an Elder unreachable from the Lab for 15 minutes pages |
 | Security reports | GitHub private vulnerability reporting (SECURITY.md) |
 | Everyone else | GitHub issues |

@@ -83,6 +83,9 @@ pub struct CapsDto {
     // Operator drain flag (day-two ops): `true` while the node announces a planned stop.
     #[serde(default)]
     pub draining: Option<bool>,
+    // Admission sets this node reads (dogfood #234); canonicalized by shadenet-proto.
+    #[serde(default)]
+    pub sets: Option<Vec<String>>,
 }
 
 /// Untrusted `caps.session`; validation lives in `shadenet_proto::canonical_session`.
@@ -283,6 +286,7 @@ impl DirectoryDto {
                             classes: session.classes,
                         }),
                         draining: c.draining,
+                        sets: c.sets,
                     }),
                     caps_sig: g.caps_sig,
                 })

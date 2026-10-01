@@ -62,6 +62,19 @@ async function main() {
       const logs = [];
       const log = (m) => logs.push(m);
       ok(sel.filterByAdmission(G, null) === G && sel.filterByAdmission(G, { leafSource: "auto" }) === G && sel.filterByAdmission(G, {}) === G, "inactive (null / auto / {}) -> the SAME array reference (byte-identical default path)");
+      // Admission sets (dogfood #234): a gateway that advertises sets must include one of ours;
+      // one without `sets` is kept; nothing configured => same reference.
+      const PROD = "0xdeb294e6e9ad6a3fcbdeffd1f67ac9678ac94bbc", STAGE = "0xf117fdea83ac57d15d9394a2b56873c32d227b7e";
+      const S = [
+        { onion: "a".repeat(56) + ".onion", caps: { ports: [443], sets: [PROD] } },
+        { onion: "b".repeat(56) + ".onion", caps: { ports: [443], sets: [PROD, STAGE] } },
+        { onion: "c".repeat(56) + ".onion" },
+      ];
+      ok(sel.filterBySets(S, []) === S && sel.filterBySets(S, null) === S, "no configured set -> the SAME array reference");
+      ok(sel.filterBySets(S, [STAGE.toUpperCase()]).map((g) => g.onion[0]).join("") === "bc", "a staging client keeps the node that reads staging too and the node without sets, drops the production-only node (case-insensitive)");
+      ok(sel.filterBySets(S, [PROD]) === S, "a production client keeps every node (same reference when nothing is dropped)");
+      ok(sel.filterBySets(S.slice(0, 1), ["0x" + "1".repeat(40)]).length === 0, "a client on a set no node reads keeps nothing (caller fails closed)");
+      ok(/a{12}\.\.=\[0xdeb2/.test(sel.describeFleetSets(S)) && /c{12}\.\.=\(no sets advertised\)/.test(sel.describeFleetSets(S)), "describeFleetSets names each node's sets or the absence");
       ok(!sel.admissionActive(null) && !sel.admissionActive({ leafSource: "auto", maxAnon: false }) && sel.admissionActive({ leafSource: "paid" }) && sel.admissionActive({ maxAnon: true }), "admissionActive: only a real leaf source or maxAnon activates it");
       const paid = sel.filterByAdmission(G, { leafSource: "paid" }, { log });
       ok(paid.length === 2 && paid.includes(gAll) && paid.includes(gLegacy), "paid leaf -> the all-three gateway + the policy-less legacy one (rollout compat); invited-only and invited+staked are OUT");

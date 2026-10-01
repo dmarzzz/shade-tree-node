@@ -343,6 +343,18 @@ let localLeaves = null;
 // root set directly so a handler can be driven without initRoots()/members.json/a chain.
 export function _setRecentRoots(roots) { recentRoots = new Set(Array.from(roots || []).map(String)); }
 export function _getRecentRoots() { return new Set(recentRoots); }
+// What a `wrong-group-root` refusal advertises back: the roots this node accepts (they are public
+// on chain), and the block and live-leaf count of its primary source, so a client can compare its
+// own replay and tell the agent which side is stale (`shadenet doctor --rpc`). Bounded: at most
+// the recent-roots window, which is already small.
+let rootSourceInfo = { block: null, leaves: null };
+export function _setRootSourceInfo(info) { rootSourceInfo = { block: info?.block ?? null, leaves: info?.leaves ?? null }; }
+function rootAdvert() {
+  const out = { roots: Array.from(recentRoots).slice(0, 16) };
+  if (Number.isFinite(rootSourceInfo.block)) out.rootBlock = rootSourceInfo.block;
+  if (Number.isFinite(rootSourceInfo.leaves)) out.rootLeaves = rootSourceInfo.leaves;
+  return out;
+}
 
 // resolveSlashTier(identitySecret) -> { commitment, limit, resolved }: the leaf to slash and
 // the tier it sits at. Reputation tiers (T-FEAT-8) make the leaf depend on the member's
@@ -534,6 +546,7 @@ export async function initRoots({
     const refresh = async () => {
       const r = await loadGroupOnchain(provider);
       chainRoots = r.recentRoots || [];
+      _setRootSourceInfo({ block: r.observedAtBlock, leaves: r.leafCount });
       perSource = r.perSource || [{
         contract: provider.contract || contracts[0].address,
         roots: chainRoots.slice(),
@@ -1717,7 +1730,7 @@ export function makeHandler(spentSet, {
     const t0 = performance.now();
     const v = await verifySession(env, recentRoots, Date.now(), { gatewayOnion: sessionOnion });
     M.verify.observe((performance.now() - t0) / 1000);
-    if (!v.ok) return drop(v.artifacts ? "gate:" + v.reason : v.label ?? v.reason, v.artifacts ? { artifacts: v.artifacts } : null);
+    if (!v.ok) return drop(v.artifacts ? "gate:" + v.reason : v.label ?? v.reason, v.artifacts ? { artifacts: v.artifacts } : v.reason === "wrong-group-root" ? rootAdvert() : null);
     // The session nonce is the exact-envelope key for the honest-retry window, as `nonce` is for v4.
     const res = await spentSet.admit(v.nullifier, v.share, { nonce: env.session.nonce, epoch: v.externalNullifier });
     if (!res.ok) return drop(res.reason);
@@ -1856,7 +1869,9 @@ export function makeHandler(spentSet, {
         M.tunnels.inc({ result: "drop", reason });
         // An artifact rejection advertises the accepted ids back (like `proto` on a version
         // reject) so the client can re-select a mutual artifact set or fail closed precisely.
-        reply(socket, v.artifacts ? { ok: false, err: "gate:" + v.reason, artifacts: v.artifacts } : { ok: false, err: "gate:" + v.reason });
+        reply(socket, v.artifacts ? { ok: false, err: "gate:" + v.reason, artifacts: v.artifacts }
+          : v.reason === "wrong-group-root" ? { ok: false, err: "gate:" + v.reason, ...rootAdvert() }
+            : { ok: false, err: "gate:" + v.reason });
         return socket.destroy();
       }
 

@@ -70,6 +70,8 @@ pub struct Deployment {
     /// Session tickets (ADR 0011): the record's `sessionTickets`, set at H2. The client
     /// default; `SHADENET_SESSION_TICKETS` overrides it.
     pub session_tickets: bool,
+    /// `services.node.commit` from the record: the commit the canopy's nodes run (for `doctor`).
+    pub node_commit: Option<String>,
 }
 
 /// The zero-configuration public path of a network: staked admission, one signed rate policy and
@@ -324,6 +326,10 @@ pub fn parse_deployment(name: &str, raw: &str) -> Result<Deployment, String> {
         rate_policy,
         staked,
         session_tickets,
+        node_commit: deployment
+            .pointer("/services/node/commit")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
     })
 }
 

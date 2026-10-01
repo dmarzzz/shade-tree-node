@@ -89,6 +89,12 @@ components:
     X-ShadeNet-Error:
       description: The stable error code, also in the body.
       schema: { $ref: "#/components/schemas/ErrorCode" }
+    X-ShadeNet-Cause:
+      description: >-
+        One ASCII sentence naming the environmental cause (which RPC dropped history, which
+        node refused and why, that the identity is in another network's set). The body's
+        `error.cause` is the same text unclipped, with `error.fix` beside it.
+      schema: { type: string, maxLength: 240 }
     Retry-After:
       description: Seconds until retrying makes sense (for `budget_exhausted`, the epoch reset).
       schema: { type: integer, minimum: 1 }
@@ -132,6 +138,8 @@ components:
             code: { $ref: "#/components/schemas/ErrorCode" }
             message: { type: string }
             retryAfterSeconds: { type: integer, minimum: 1 }
+            cause: { type: string, description: "Why, in plain words, derived from the error's content." }
+            fix: { type: string, description: "The command or edit that clears it." }
             gateway: { type: string, description: "For node_refused: the node that refused." }
             reason: { type: string, description: "For node_refused: the node's reason code." }
     Status:
@@ -173,6 +181,24 @@ components:
             stale: { type: boolean, description: "true once a last-known-good canopy is older than the client's canopy_max_stale (1 h default) and every Elder Tree is unreachable; routing then fails closed with a `canopy` error." }
             error: { type: [string, "null"] }
         torReady: { type: boolean }
+        problems:
+          type: array
+          description: >-
+            Everything standing between the agent and a tunnel, with the cause and the fix:
+            why the state is not ready, canopy sources that fell back, the last error, and the
+            operators' open incidents (newest first). Empty when nothing is wrong. Read it
+            before retrying.
+          items:
+            type: object
+            required: [kind, code, cause, fix]
+            properties:
+              kind: { type: string, enum: [state, canopy, last_error, incident] }
+              code: { type: string, description: "The error code, state name or incident id." }
+              cause: { type: string }
+              fix: { type: string }
+              component: { type: string, description: "Incidents: elder, node, heartbeat, rpc, canopy, other." }
+              instance: { type: string, description: "Incidents: the host or node the operator named." }
+              since: { type: integer, description: "Incidents: unix seconds." }
         lastError:
           oneOf:
             - type: "null"

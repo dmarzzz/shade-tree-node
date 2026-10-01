@@ -362,6 +362,12 @@ pub struct Caps {
     /// clients deprioritise it (`lib/directory.mjs isDraining`). Canonicalized LAST and only
     /// when exactly `true`, so every older caps byte string is unchanged when absent.
     pub draining: Option<bool>,
+    /// The admission SETS (contract addresses) this gateway reads roots from, so a client can
+    /// tell "this node reads another network's set" before it proves (dogfood #234: every
+    /// node refused `wrong-group-root` while status said ready). Lowercase `0x` + 40 hex,
+    /// deduped, sorted, at most [`MAX_CAPS_SETS`]; canonicalized after `draining`, so every
+    /// older caps byte string is unchanged when absent. Mirrors `caps.sets`.
+    pub sets: Option<Vec<String>>,
 }
 
 /// RAW, untrusted `caps.session`. Validated + normalized only by [`canonical_session`].
@@ -472,6 +478,20 @@ pub struct CanonicalCaps {
     pub session: Option<CanonicalSession>,
     /// `Some(true)` only; mirrors `caps.draining`.
     pub draining: Option<bool>,
+    pub sets: Option<Vec<String>>,
+}
+
+/// Upper bound on advertised admission sets (`lib/directory.mjs MAX_CAPS_SETS`); a longer list
+/// is dropped entirely by [`canonical_caps`].
+pub const MAX_CAPS_SETS: usize = 8;
+
+/// A lowercase `0x`-prefixed 20-byte hex address, the only spelling `caps.sets` accepts.
+pub fn is_set_address(s: &str) -> bool {
+    s.len() == 42
+        && s.starts_with("0x")
+        && s[2..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Upper bound on advertised artifact ids (`lib/directory.mjs MAX_CAPS_ARTIFACTS`); a longer
@@ -673,6 +693,20 @@ pub fn canonical_caps(caps: &Caps) -> CanonicalCaps {
     if caps.draining == Some(true) {
         out.draining = Some(true);
     }
+    // Admission sets: lowercase addresses only, deduped, sorted (byte order), count-bounded;
+    // appended LAST so every pre-existing caps string is byte-identical.
+    if let Some(list) = &caps.sets {
+        let mut v: Vec<String> = list
+            .iter()
+            .map(|a| a.to_ascii_lowercase())
+            .filter(|a| is_set_address(a))
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        if !v.is_empty() && v.len() <= MAX_CAPS_SETS {
+            out.sets = Some(v);
+        }
+    }
     out
 }
 
@@ -690,6 +724,7 @@ pub fn has_caps(caps: &Caps) -> bool {
         || c.rate.is_some()
         || c.session.is_some()
         || c.draining == Some(true)
+        || c.sets.is_some()
 }
 
 /// Serialize canonical caps as the exact `JSON.stringify(canonicalCaps(caps))` bytes:
@@ -832,6 +867,20 @@ fn canonical_caps_json(cc: &CanonicalCaps) -> String {
             s.push(',');
         }
         s.push_str("\"draining\":true");
+        first = false;
+    }
+    if let Some(sets) = &cc.sets {
+        if !first {
+            s.push(',');
+        }
+        s.push_str("\"sets\":[");
+        for (i, a) in sets.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            push_json_string(&mut s, a);
+        }
+        s.push(']');
     }
     s.push('}');
     s

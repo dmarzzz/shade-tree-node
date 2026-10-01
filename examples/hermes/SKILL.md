@@ -31,13 +31,22 @@ of a page that links to what you need over many small fetches.
 
 ## Errors
 
-Every error has a `code`:
+Every error has a `code`, a `cause` (why, in plain words: which RPC dropped
+history, which node is restarting, that the identity is in another network's
+set) and a `fix` (what to run). Read the cause before deciding; the code alone
+often points the wrong way.
 
 - `budget_exhausted`: wait `retryAfterSeconds`, then retry.
-- `not_admitted` or `not_finalized`: stop and tell the operator; retrying will not help.
+- `not_admitted` or `not_finalized`: stop and tell the operator the `cause` and `fix`; retrying will not help.
 - `port_not_allowed`: use the https URL.
 - `no_eligible_node`, `transport`, `canopy`, `rpc`: temporary; retry once after `retryAfterSeconds`.
-- `node_refused`: report the `reason`.
+- `node_refused`: retry once (the proxy rotates nodes); if it repeats, report the `cause`.
+
+Before retrying anything, call `shadenet_status` and read `problems`: each
+entry has `kind`, `code`, `cause` and `fix`. `kind: incident` entries are what
+the canopy's operators declared (a node being restarted, an Elder down) and
+carry `instance` and `since`; wait them out rather than retrying hard. When a
+`fix` says to run `shadenet doctor`, tell the operator; it is a shell command.
 
 ## Search
 

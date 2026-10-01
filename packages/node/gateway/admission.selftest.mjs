@@ -127,6 +127,7 @@ async function main() {
     ok(paidAck.ok === false && paidAck.err === "gate:wrong-group-root", `an invited-only gateway drops a PAID-rooted proof: ${JSON.stringify(paidAck)}`);
     const stakedAck = await drive(envelopeUnder(stakedRoot));
     ok(stakedAck.ok === false && stakedAck.err === "gate:wrong-group-root", `…and a STAKED-rooted proof: ${JSON.stringify(stakedAck)}`);
+    ok(Array.isArray(stakedAck.roots) && stakedAck.roots.includes(String(staticRoot)) && !stakedAck.roots.includes(String(stakedRoot)), `a root refusal advertises the roots this node accepts (public on chain) so the client can name the stale side: ${JSON.stringify(stakedAck.roots)}`);
     const staticAck = await drive(envelopeUnder(staticRoot));
     ok(staticAck.ok === false && staticAck.err !== "gate:wrong-group-root", `an INVITED-rooted envelope passes the root check (fails later on its fake proof bytes: ${staticAck.err})`);
     _setRecentRoots([]);

@@ -197,6 +197,17 @@ export function advertisedAdmits(env = process.env) {
   return null;
 }
 
+// The admission sets this gateway reads roots from (every SHADE_TREE_GROUP_CONTRACT entry and
+// SHADE_TREE_PAID_ACCESS_CONTRACT), as lowercase addresses; null when none is configured
+// (an invited-only node advertises no set). Canonicalized (dedup/sort/bound) by canonicalCaps.
+export function advertisedSets(env = process.env) {
+  const list = [
+    ...String(env.SHADE_TREE_GROUP_CONTRACT || "").split(","),
+    ...String(env.SHADE_TREE_PAID_ACCESS_CONTRACT || "").split(","),
+  ].map((a) => a.trim().toLowerCase()).filter((a) => /^0x[0-9a-f]{40}$/.test(a));
+  return list.length ? [...new Set(list)].sort() : null;
+}
+
 // The payment advert this gateway carries in its caps (T-FEAT-9): the bootnode's /health `pay`
 // shape (payAdvertFromEnv) plus `onion` when SHADE_TREE_REGISTRAR_ONION names a registrar onion other
 // than the gateway's own (`gatewayOnion`). null when SHADE_TREE_REGISTRAR_ADVERTISE is unset/garbage.
@@ -273,8 +284,12 @@ export function buildGatewayCaps(env = process.env, { artifactIds = null, gatewa
   // draining (operator drain flag): announced only while the flag file exists, so a planned
   // stop is visible in the signed caps and clients route around the node before it goes.
   if (draining === true) caps.draining = true;
+  // sets (dogfood #234): the on-chain admission sets this node reads, so a client on another
+  // network's record learns it before proving instead of being refused `wrong-group-root`.
+  const sets = advertisedSets(env);
+  if (sets) caps.sets = sets;
   // Nothing configured -> no caps -> byte-identical announce (proven in the selftest).
-  if (caps.ports === undefined && caps.region === undefined && caps.artifacts === undefined && caps.admits === undefined && caps.pay === undefined && caps.rate === undefined && caps.session === undefined && caps.draining === undefined) return null;
+  if (caps.ports === undefined && caps.region === undefined && caps.artifacts === undefined && caps.admits === undefined && caps.pay === undefined && caps.rate === undefined && caps.session === undefined && caps.draining === undefined && caps.sets === undefined) return null;
   // At least one real cap: advertise the proto range too (complete, and safe — it only ever
   // rides alongside already-present caps, never triggers caps on its own).
   caps.proto = { min: PROTO_RANGE.min, max: PROTO_RANGE.max };

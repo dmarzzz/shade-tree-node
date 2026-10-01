@@ -1502,6 +1502,73 @@ fn session_ticket_book_matches_vector() {
 }
 
 #[test]
+fn caps_with_sets_match_vector_and_are_onion_signed() {
+    // Dogfood #234: the admission sets a node reads, signed into its caps. The raw vector
+    // carries mixed case and a duplicate; canonical form is lowercase, deduped, sorted, LAST.
+    let v = vectors();
+    let cws = &v["capabilitiesSets"];
+    let onion = s(&v, "onion");
+    let caps = Caps {
+        ports: Some(vec![443]),
+        sets: Some(str_vec(&cws["caps"]["sets"])),
+        ..Default::default()
+    };
+    assert_eq!(
+        shadenet_proto::canonical_caps(&caps).sets,
+        Some(str_vec(&cws["canonical"]["sets"]))
+    );
+    assert_eq!(
+        hex::encode(canonical_caps_bytes(onion, &caps)),
+        s(cws, "canonicalCapsBytesHex")
+    );
+    assert_eq!(
+        hex::encode(ed25519_sign(
+            &canonical_caps_bytes(onion, &caps),
+            &seed32(s(&v, "onionSeed"))
+        )),
+        s(cws, "capsSig")
+    );
+    assert!(verify_caps_sig(onion, &caps, Some(s(cws, "capsSig"))));
+
+    // A signer without the onion key cannot add, widen or drop the sets.
+    let mut widened = caps.clone();
+    widened
+        .sets
+        .as_mut()
+        .unwrap()
+        .push("0x0000000000000000000000000000000000000001".into());
+    assert!(!verify_caps_sig(onion, &widened, Some(s(cws, "capsSig"))));
+    let mut removed = caps.clone();
+    removed.sets = None;
+    assert!(!verify_caps_sig(onion, &removed, Some(s(cws, "capsSig"))));
+
+    // Junk is dropped whole; the field alone makes caps non-empty; absent stays byte-identical.
+    let junk = Caps {
+        sets: Some(vec!["not-an-address".into(), "0xABC".into()]),
+        ..Default::default()
+    };
+    assert_eq!(shadenet_proto::canonical_caps(&junk).sets, None);
+    assert!(!shadenet_proto::has_caps(&junk));
+    let only = Caps {
+        sets: Some(vec!["0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC".into()]),
+        ..Default::default()
+    };
+    assert!(shadenet_proto::has_caps(&only));
+    let too_many = Caps {
+        sets: Some((0..9).map(|i| format!("0x{:040x}", i + 1)).collect()),
+        ..Default::default()
+    };
+    assert_eq!(shadenet_proto::canonical_caps(&too_many).sets, None);
+    let without = Caps {
+        ports: Some(vec![443]),
+        ..Default::default()
+    };
+    assert!(!canonical_caps_bytes(onion, &without)
+        .windows(6)
+        .any(|w| w == b"\"sets\""));
+}
+
+#[test]
 fn caps_with_session_match_vector_and_are_onion_signed() {
     let v = vectors();
     let cws = &v["sessionTickets"]["capsWithSession"];

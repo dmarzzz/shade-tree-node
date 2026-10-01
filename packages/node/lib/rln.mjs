@@ -320,6 +320,7 @@ export async function loadGroupOnchain(rootProvider) {
     perSource: r.perSource,
     errors: r.errors,
     leafCount: r.leafCount,
+    observedAtBlock: r.observedAtBlock,
     stale: !!r.stale,
     error: r.error,
   };

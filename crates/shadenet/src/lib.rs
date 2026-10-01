@@ -41,12 +41,15 @@ pub mod error;
 pub mod eth;
 pub mod health;
 pub mod identity;
+pub mod incidents;
 pub mod profile;
 pub mod session;
 pub mod slot;
 
 #[cfg(feature = "live")]
 pub mod client;
+#[cfg(feature = "live")]
+pub mod doctor;
 #[cfg(feature = "live")]
 pub mod fetch;
 #[cfg(feature = "live")]
@@ -61,11 +64,12 @@ pub mod stream;
 pub mod transport;
 
 pub use config::{Config, ConfigBuilder, Discovery, Identity, Members, Slots};
-pub use error::{Error, ERROR_CODES};
+pub use error::{Error, Explanation, ERROR_CODES};
+pub use incidents::{Incident, IncidentFeed};
 pub use profile::{Network, PublicProfile};
 
 #[cfg(feature = "live")]
-pub use client::{CanopyStatus, Client, Metrics, Status, Tunnel};
+pub use client::{CanopyStatus, Client, Metrics, Problem, Status, Tunnel};
 #[cfg(feature = "live")]
 pub use fetch::{FetchRequest, FetchResponse};
 #[cfg(feature = "live")]
