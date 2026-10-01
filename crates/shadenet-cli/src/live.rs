@@ -1348,9 +1348,21 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
                     .find(|t| t.limit == profile.default_limit)
                     .or(profile.tiers.first());
                 if let Some(tier) = tier {
+                    // Human units (dogfood #239): the page says "0.01 ETH, tier 1"; so do we.
+                    let unit = if network.deployment.session_tickets {
+                        "session"
+                    } else {
+                        "tunnel"
+                    };
                     println!(
-                        "Next, stake this leaf ({} tunnel(s) per {}s epoch for a bond of {} wei on chain {}):",
-                        tier.limit, profile.rate_policy.epoch_seconds, tier.bond_wei, profile.chain_id
+                        "Next, stake this leaf: tier {} ({} {}{} per {}s epoch) for a bond of {} on {}:",
+                        tier.limit,
+                        tier.limit,
+                        unit,
+                        if tier.limit == 1 { "" } else { "s" },
+                        profile.rate_policy.epoch_seconds,
+                        format_bond(&tier.bond_wei, profile.chain_id),
+                        chain_name(profile.chain_id, &network.name),
                     );
                 }
                 println!("  {bin} register-member --identity {} --key-file <owner-only file with a funded key>", identity_path.display());
@@ -1934,9 +1946,86 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
     }
 }
 
+/// A bond in wei, printed the way the Get access page prints it: `0.01 ETH` (trailing zeros
+/// trimmed, at most 18 decimals), falling back to the raw figure when the string is not an
+/// integer. Sepolia's ether is named so nobody reads it as mainnet ETH.
+fn format_bond(wei: &str, chain_id: u64) -> String {
+    let digits = wei.trim();
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return format!("{wei} wei");
+    }
+    let digits = digits.trim_start_matches('0');
+    let digits = if digits.is_empty() { "0" } else { digits };
+    let (whole, frac) = if digits.len() > 18 {
+        digits.split_at(digits.len() - 18)
+    } else {
+        ("0", digits)
+    };
+    let frac = format!("{frac:0>18}");
+    let frac = frac.trim_end_matches('0');
+    let amount = if frac.is_empty() {
+        whole.to_string()
+    } else {
+        format!("{whole}.{frac}")
+    };
+    let unit = match chain_id {
+        11155111 => "Sepolia ETH",
+        1 => "ETH",
+        _ => "ETH",
+    };
+    format!("{amount} {unit}")
+}
+
+/// The network a chain id belongs to, for prose; the record's own name wins when it says more.
+fn chain_name(chain_id: u64, record_name: &str) -> String {
+    let chain = match chain_id {
+        1 => "Ethereum mainnet".to_string(),
+        11155111 => "Sepolia".to_string(),
+        17000 => "Holesky".to_string(),
+        other => format!("chain {other}"),
+    };
+    if record_name.is_empty() || record_name.eq_ignore_ascii_case(&chain) {
+        chain
+    } else {
+        format!("{chain} (record {record_name})")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bonds_print_in_ether_not_wei() {
+        assert_eq!(
+            format_bond("10000000000000000", 11155111),
+            "0.01 Sepolia ETH"
+        );
+        assert_eq!(
+            format_bond("80000000000000000", 11155111),
+            "0.08 Sepolia ETH"
+        );
+        assert_eq!(
+            format_bond("1000000000000000", 11155111),
+            "0.001 Sepolia ETH"
+        );
+        assert_eq!(format_bond("1000000000000000000", 1), "1 ETH");
+        assert_eq!(format_bond("1500000000000000000000", 1), "1500 ETH");
+        assert_eq!(format_bond("1", 1), "0.000000000000000001 ETH");
+        assert_eq!(format_bond("0", 1), "0 ETH");
+        assert_eq!(format_bond("not-a-number", 1), "not-a-number wei");
+    }
+
+    #[test]
+    fn chain_names_read_as_prose() {
+        assert_eq!(chain_name(11155111, "sepolia"), "Sepolia");
+        assert_eq!(
+            chain_name(11155111, "sepolia-staging"),
+            "Sepolia (record sepolia-staging)"
+        );
+        assert_eq!(chain_name(1, ""), "Ethereum mainnet");
+        assert_eq!(chain_name(424242, "x"), "chain 424242 (record x)");
+    }
 
     #[test]
     fn headers_parse_strictly() {
