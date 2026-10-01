@@ -445,6 +445,7 @@
     SHADE_TREE_TIERS: "{{ shade_tree_rate_tiers }}"
     SHADE_TREE_ROOT_FRESHNESS_SECONDS: "{{ shade_tree_root_freshness_seconds | string }}"
     SHADE_TREE_FROM_BLOCK: "{{ shade_tree_staked_deploy_block | string }}"
+    SHADENET_SETS: "{{ shade_tree_extra_sets | map(attribute='contract') | zip(shade_tree_extra_sets | map(attribute='deployBlock')) | map('join', '@') | join(',') }}"
     SHADE_TREE_ZK_ARTIFACTS: "{{ shade_tree_artifact_specs | join(',') }}"
     SHADE_TREE_ZK_ARTIFACT_LEGACY: "{{ shade_tree_deployment.artifacts.legacy or '' }}"
     SHADE_TREE_GATEWAY_REGION: "{{ shade_tree_gateway_region }}"

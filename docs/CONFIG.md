@@ -16,6 +16,7 @@ have set it. The tables below are that advanced layer.
 | `SHADENET_RECORD` / `record` | (required) | Deployment record: an `https://` URL or a file path | the record-derived variables |
 | `SHADENET_STATE` / `state` | `/state` in the image, `./shadenet-node` elsewhere | Onion identity (`hs-gateway/`), Tor state, spent set, `status.json` | `SHADE_TREE_GW_IDENTITY`, `SHADE_TREE_SPENT_STATE_FILE`, telemetry state paths |
 | `SHADENET_ADMIT` / `admit` | `staked` | Who this node admits: `staked`, `invited,staked`, `staked,paid` (ADR 0008) | `SHADE_TREE_ADMIT` |
+| `SHADENET_SETS` / `sets` | (empty: the record's set) | Extra staked sets to admit besides the record's, `0x<contract>@<deployBlock>` comma-separated; one node serving two canopies. The record's set stays first and every set scans from its own block | `SHADE_TREE_GROUP_CONTRACT`, `SHADE_TREE_FROM_BLOCKS`, `SHADE_TREE_FROM_BLOCK` |
 | `SHADENET_MEMBERS_FILE` / `members_file` | (unset) | Operator-owned `members.json`, required by the invited path; absolute path | `SHADE_TREE_MEMBERS_FILE` |
 | `SHADENET_ALLOW` / `allow` | `*:443` | Egress allow list, `host:port` patterns | `SHADE_TREE_EGRESS_ALLOW` |
 | `SHADENET_DENY` / `deny` | (empty) | Egress deny list; deny wins | `SHADE_TREE_EGRESS_DENY` |
@@ -255,6 +256,8 @@ On macOS, the installer checks `sysctl.proc_translated` so an Apple Silicon
 machine running an x86_64 shell under Rosetta receives the native arm64 asset.
 
 ## Deploy (`packages/node/bootnode/deploy/bootstrap.sh`)
+
+`SHADENET_SETS=0x<contract>@<deployBlock>[,...]` (also the role's `shade_tree_extra_sets` list) adds staked sets beside the record's; bootstrap renders the `SHADE_TREE_GROUP_CONTRACT` and `SHADE_TREE_FROM_BLOCKS` comma lists into the gateway unit.
 
 Read only by the one-command droplet bring-up (not by any `shade-tree` process). They shape the torrc include + systemd units the script writes; the units then carry the runtime `SHADE_TREE_*` values above as `Environment=` lines. Full table + rationale: `packages/node/bootnode/deploy/README.md` "Tunables".
 

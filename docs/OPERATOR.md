@@ -108,6 +108,11 @@ docker run -d ... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… ghcr
 Staking the operator bond is `register-gateway` under "Stake the operator" below; it is the one
 step that costs testnet ETH, and it is the operator's own.
 
+Serving two canopies from one node (the staging set beside production, or a private set beside
+the public one): `SHADENET_SETS=0x<contract>@<deployBlock>` adds a staked set to the record's; the
+node scans each from its own deploy block and the directory advertises both. The same knob is
+`SHADENET_SETS` on the `bootstrap.sh` line and `shade_tree_extra_sets` in the Ansible role.
+
 The knobs, all optional except the record (`shadenet-node help` lists them; the full table is
 [CONFIG.md](CONFIG.md#operator-front-door-shadenet-node)): `SHADENET_ADMIT` (staked, invited,staked, staked,paid),
 `SHADENET_MEMBERS_FILE`, `SHADENET_ALLOW` / `SHADENET_DENY` (egress policy), `SHADENET_WEIGHT` (how

@@ -25,3 +25,8 @@ shade_tree_tunnel_max_payload_bytes: 41943040
 shade_tree_elder_metrics_port: 9100
 shade_tree_node_metrics_port: 9101
 shade_tree_heartbeat_metrics_port: 9103
+
+# Extra staked sets this node admits besides the record's (one node serving two canopies, e.g.
+# the staging set beside production). Each entry: { contract: 0x..., deployBlock: N }. Rendered
+# into bootstrap.sh's SHADENET_SETS -> SHADE_TREE_GROUP_CONTRACT + SHADE_TREE_FROM_BLOCKS comma lists.
+shade_tree_extra_sets: []

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseNodeToml, resolveKnobs, checkJoinableRecord, deriveNodeEnv, renderTorrc, redactEnv, KNOBS } from "./node-config.mjs";
+import { parseNodeToml, resolveKnobs, checkJoinableRecord, deriveNodeEnv, renderTorrc, redactEnv, parseSets, KNOBS } from "./node-config.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../../..");
@@ -33,7 +33,7 @@ assert.throws(() => parseNodeToml("allow = [1, 2]"), /double-quoted strings/);
   for (const needle of ["record:", "invited path needs members_file", "weight:", "region:", "metrics:", "log:", "operator:", "operator and operator_sig go together"]) assert.match(text, new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 }
 assert.equal(resolveKnobs({ env: { SHADENET_RECORD: "ftp://x" } }).errors.some((e) => /https:\/\/ URL or a file path/.test(e)), true);
-assert.equal(KNOBS.length, 14, "the knob list is the documented surface; update CONFIG.md when it changes");
+assert.equal(KNOBS.length, 15, "the knob list is the documented surface; update CONFIG.md when it changes");
 
 // The record gate: both committed records are joinable; a retired or pre-v4 one is not.
 assert.deepEqual(checkJoinableRecord(staging), { ok: true, errors: [] });
@@ -65,6 +65,23 @@ assert.match(checkJoinableRecord({ ...production, protocol: { min: 5, max: 5 } }
   assert.equal(env.SHADE_TREE_GW_IDENTITY, "/state/hs-gateway/identity.local.json");
   assert.equal(env.SHADE_TREE_SPENT_STATE_FILE, "/state/spent-set.local.json");
   assert.equal(redactEnv(env).SHADE_TREE_GW_OPERATOR_SIG, "0xabab…");
+}
+
+// sets: extra staked sets ride along with the record's, each with its own scan start.
+{
+  assert.deepEqual(parseSets("0xf117FDEA83ac57d15D9394A2B56873C32d227B7E@11803707"), { sets: [{ contract: "0xf117FDEA83ac57d15D9394A2B56873C32d227B7E", deployBlock: 11803707 }], errors: [] });
+  assert.match(parseSets("0xf117FDEA83ac57d15D9394A2B56873C32d227B7E").errors.join(), /add @<deployBlock>/);
+  assert.match(parseSets("nope").errors.join(), /expected 0x<contract>@<deployBlock>/);
+  assert.match(resolveKnobs({ env: { SHADENET_RECORD: "https://r/x.json", SHADENET_SETS: "0x12" } }).errors.join(), /^sets:/m);
+  const { knobs } = resolveKnobs({ env: { SHADENET_RECORD: "https://r/x.json", SHADENET_SETS: `${staging.admission.roots.staked.contract}@${staging.admission.roots.staked.deployBlock}` } });
+  knobs.state = "/state";
+  const env = deriveNodeEnv({ knobs, record: production, hsDir: "/state/hs-gateway" });
+  const prod = production.admission.roots.staked;
+  assert.equal(env.SHADE_TREE_GROUP_CONTRACT, `${prod.contract},${staging.admission.roots.staked.contract}`, "the record's set stays first");
+  assert.equal(env.SHADE_TREE_FROM_BLOCKS, `${prod.contract}=${prod.deployBlock},${staging.admission.roots.staked.contract}=${staging.admission.roots.staked.deployBlock}`);
+  assert.equal(env.SHADE_TREE_FROM_BLOCK, "0x" + Math.min(prod.deployBlock, staging.admission.roots.staked.deployBlock).toString(16));
+  const same = deriveNodeEnv({ knobs: { ...knobs, sets: `${prod.contract}@${prod.deployBlock}` }, record: production, hsDir: "/state/hs-gateway" });
+  assert.equal(same.SHADE_TREE_GROUP_CONTRACT, prod.contract, "listing the record's own set changes nothing");
 }
 
 // torrc: one onion service on the node port, PoW only when asked, Tor state under the state dir.

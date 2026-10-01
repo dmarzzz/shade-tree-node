@@ -215,7 +215,8 @@ function startTor({ knobs, hsDir, tor, timeoutMs = 180000 }) {
   const torrc = join(knobs.state, "torrc");
   mkdirSync(join(knobs.state, "tor"), { recursive: true, mode: 0o700 });
   chmodSync(join(knobs.state, "tor"), 0o700);
-  writeFileSync(torrc, renderTorrc({ stateDir: knobs.state, hsDir, pow: knobs.pow && tor.pow }));
+  rmSync(join(knobs.state, "tor.log"), { force: true });
+  writeFileSync(torrc, renderTorrc({ stateDir: knobs.state, hsDir, pow: knobs.pow && tor.pow, torLevel: process.env.SHADENET_TOR_LOG }));
   const child = spawn("tor", ["-f", torrc], { stdio: ["ignore", "pipe", "pipe"] });
   return new Promise((res, rej) => {
     let done = false;

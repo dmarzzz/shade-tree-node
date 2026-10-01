@@ -104,6 +104,11 @@
         <p>Everything the node needs is in the record. The rest is ten optional settings, as <code>SHADENET_*</code> variables or the same keys in <code>/state/node.toml</code>: who to admit, an egress allow and deny list, the selection weight that bounds how much traffic lands here, a region, the metrics port, the log format, the operator key or signature, and onion proof-of-work. <code>shadenet-node help</code> lists them with defaults; the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/CONFIG.md#operator-front-door-shadenet-node">configuration reference</a> maps each to the advanced layer underneath.</p>
       </section>
 
+      <section class="guide-step" aria-labelledby="operator-admit">
+        <h2 id="operator-admit">What you admit</h2>
+        <p>A node admits the staked set named in its record. It can admit more than one: <code>SHADENET_SETS=0x…@deployBlock</code> adds another canopy's set, each scanned from its own deploy block, so one node can serve a staging set and the production set at once. The invited path (your own members file) and the paid path from ADR 0008 switch on with <code>SHADENET_ADMIT</code>. The directory advertises what each node admits, so an agent is only ever routed to a node that will take its proof.</p>
+      </section>
+
       <section class="guide-step" aria-labelledby="operator-cost">
         <h2 id="operator-cost">What it costs</h2>
         <p>The canopy's own nodes are $12 a month droplets with 2000 GiB of outbound transfer included. A member who saturates every slot relays about 40 MiB a minute, so three continuously saturated tier-1 members fill that allowance before overage starts at a cent per GiB. Most members use a small fraction of a slot. The weight knob is the lever: a lower weight sends fewer members this way. Bonds are refundable collateral on a testnet, not revenue; the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/ECONOMICS.md">economics note</a> has every number with its source.</p>

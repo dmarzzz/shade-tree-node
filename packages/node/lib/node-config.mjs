@@ -28,6 +28,7 @@ export const KNOBS = [
   { key: "record", env: "SHADENET_RECORD", toml: "record", what: "deployment record: https URL or file path (required)" },
   { key: "state", env: "SHADENET_STATE", toml: "state", what: "state directory: onion identity, Tor state, spent set, logs", default: DEFAULT_STATE_DIR },
   { key: "admit", env: "SHADENET_ADMIT", toml: "admit", what: "who this node admits: staked | invited,staked | staked,paid (ADR 0008)", default: "staked", advanced: "SHADE_TREE_ADMIT" },
+  { key: "sets", env: "SHADENET_SETS", toml: "sets", what: "extra staked sets to admit besides the record's: 0xcontract@deployBlock, comma-separated (one node, several canopies)", default: "", advanced: "SHADE_TREE_GROUP_CONTRACT, SHADE_TREE_FROM_BLOCKS" },
   { key: "members_file", env: "SHADENET_MEMBERS_FILE", toml: "members_file", what: "operator-owned members.json for the invited path", advanced: "SHADE_TREE_MEMBERS_FILE" },
   { key: "allow", env: "SHADENET_ALLOW", toml: "allow", what: "egress allow list, host:port patterns", default: "*:443", advanced: "SHADE_TREE_EGRESS_ALLOW" },
   { key: "deny", env: "SHADENET_DENY", toml: "deny", what: "egress deny list; deny wins", default: "", advanced: "SHADE_TREE_EGRESS_DENY" },
@@ -90,6 +91,7 @@ export function resolveKnobs({ env = process.env, toml = {} } = {}) {
   if (!admit.length || !admit.every((a) => ["invited", "staked", "paid"].includes(a))) errors.push(`admit: must be a comma list of invited, staked, paid (got ${knobs.admit})`);
   if (admit.includes("invited") && !knobs.members_file) errors.push("admit: the invited path needs members_file (your own members.json)");
   if (knobs.members_file && !isAbsolute(String(knobs.members_file))) errors.push(`members_file: must be an absolute path (got ${knobs.members_file})`);
+  for (const entry of parseSets(knobs.sets).errors) errors.push(`sets: ${entry}`);
   const weight = Number(knobs.weight);
   if (!Number.isInteger(weight) || weight < 1 || weight > 1000) errors.push(`weight: integer 1..1000 (got ${knobs.weight})`);
   if (knobs.region && !REGION_BUCKETS.has(String(knobs.region))) errors.push(`region: one of ${[...REGION_BUCKETS].join(" ")} (got ${knobs.region})`);
@@ -104,6 +106,20 @@ export function resolveKnobs({ env = process.env, toml = {} } = {}) {
   if (knobs.operator_key_file && !isAbsolute(String(knobs.operator_key_file))) errors.push("operator_key_file: must be an absolute path");
   knobs.pow = knobs.pow === true || /^(1|true|yes|on)$/i.test(String(knobs.pow));
   return { knobs, sources, errors };
+}
+
+// `sets`: "0xContract@block,0xOther@block". The deploy block is required: an eth_getLogs scan
+// from 0 against a public RPC is exactly the empty-page failure the rehearsal hit.
+export function parseSets(spec) {
+  const out = []; const errors = [];
+  for (const raw of String(spec || "").split(",").map((s) => s.trim()).filter(Boolean)) {
+    const m = /^(0x[0-9a-fA-F]{40})(?:@(\d+))?$/.exec(raw);
+    if (!m) { errors.push(`${raw}: expected 0x<contract>@<deployBlock>`); continue; }
+    if (!m[2]) { errors.push(`${raw}: add @<deployBlock> (the block the set was deployed at; it is in that canopy's record)`); continue; }
+    if (out.some((e) => e.contract.toLowerCase() === m[1].toLowerCase())) { errors.push(`${raw}: listed twice`); continue; }
+    out.push({ contract: m[1], deployBlock: Number(m[2]) });
+  }
+  return { sets: out, errors };
 }
 
 // Read node.toml from the state dir (if any) and resolve. Throws only on an unreadable toml.
@@ -164,6 +180,15 @@ export function deriveNodeEnv({ knobs, record, explicit = {}, hsDir, torPort = T
     SHADE_TREE_RELAY_REPORT_STATE: join(knobs.state, "relay-report.local.json"),
   };
   if (arts.length) out.SHADE_TREE_ZK_ARTIFACTS = arts.join(",");
+  // Extra sets: the record's set stays first; every set carries its own scan start.
+  const extra = parseSets(knobs.sets).sets.filter((e) => e.contract.toLowerCase() !== String(fromRecord.SHADE_TREE_GROUP_CONTRACT || "").toLowerCase());
+  if (extra.length && fromRecord.SHADE_TREE_GROUP_CONTRACT) {
+    const recordBlock = record.admission.roots.staked.deployBlock;
+    const all = [{ contract: fromRecord.SHADE_TREE_GROUP_CONTRACT, deployBlock: recordBlock }, ...extra];
+    out.SHADE_TREE_GROUP_CONTRACT = all.map((e) => e.contract).join(",");
+    out.SHADE_TREE_FROM_BLOCKS = all.map((e) => `${e.contract}=${e.deployBlock}`).join(",");
+    out.SHADE_TREE_FROM_BLOCK = "0x" + Math.min(...all.map((e) => e.deployBlock)).toString(16);
+  }
   if (String(knobs.deny || "")) out.SHADE_TREE_EGRESS_DENY = String(knobs.deny);
   if (knobs.region) out.SHADE_TREE_GATEWAY_REGION = String(knobs.region);
   if (knobs.members_file) out.SHADE_TREE_MEMBERS_FILE = String(knobs.members_file);
@@ -182,13 +207,17 @@ export function readOperatorKeyFile(path) {
 }
 
 // ---- torrc ----------------------------------------------------------------------------
-export function renderTorrc({ stateDir, hsDir, gatewayPort = GATEWAY_PORT, socksPort = TOR_SOCKS_PORT, pow = false, maxStreams = 512, fleetTallyPort = null }) {
+// torLevel: "notice" (default) or "info" (SHADENET_TOR_LOG=info) for the file log at <state>/tor.log,
+// kept so an operator can read Tor's own account of descriptor uploads and circuit failures.
+export function renderTorrc({ stateDir, hsDir, gatewayPort = GATEWAY_PORT, socksPort = TOR_SOCKS_PORT, pow = false, maxStreams = 512, fleetTallyPort = null, torLevel = "notice" }) {
+  const level = torLevel === "info" ? "info" : "notice";
   const lines = [
     "# shadenet-node: written at every start; edit node.toml or SHADENET_*, not this file.",
     `DataDirectory ${join(stateDir, "tor")}`,
     `SocksPort 127.0.0.1:${socksPort}`,
     "ClientOnly 0",
     "Log notice stdout",
+    `Log ${level} file ${join(stateDir, "tor.log")}`,
     "AvoidDiskWrites 1",
     `HiddenServiceDir ${hsDir}`,
     `HiddenServicePort 80 127.0.0.1:${gatewayPort}`,
