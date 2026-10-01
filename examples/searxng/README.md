@@ -21,7 +21,7 @@ mkdir -m 0755 state                                     # the proxy's home: Arti
 SHADENET_UID=$(id -u) SHADENET_GID=$(id -g) docker compose up -d
 ```
 
-If 8080 is taken on the host, set `SEARXNG_PORT`. On a staging canopy, put the record next to the
+If 8080 is taken on the host, set `SEARXNG_PORT`. SearXNG lives inside the `shadenet` service's network namespace, so restart the two together (`docker compose restart`): restarting only `shadenet` leaves SearXNG unreachable until it is restarted too. On a staging canopy, put the record next to the
 identity (`cp deployment.json ./shadenet/`) and set `SHADENET_NETWORK=/config/deployment.json`.
 
 Open <http://127.0.0.1:8080>. `docker compose logs shadenet` shows the proxy's
