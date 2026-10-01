@@ -2,7 +2,9 @@
 //!
 //! Tools:
 //! - `shadenet_fetch`: fetch an https URL through ShadeNet.
-//! - `shadenet_status`: admission, tunnel budget and canopy state.
+//! - `shadenet_status`: admission, tunnel budget, queue and canopy state.
+//! - `shadenet_plan`: what a batch of fetches costs in epochs and seconds, and the tier that
+//!   would do it in one epoch (ADR 0013).
 //! - `shadenet_search`: query a SearXNG instance (only when `--searxng-url` or
 //!   `SHADENET_SEARXNG_URL` is set). SearXNG itself decides which engines go through ShadeNet.
 //!
@@ -47,8 +49,21 @@ fn tools(search: bool) -> Value {
         json!({
             "name": "shadenet_status",
             "title": "ShadeNet status",
-            "description": "Whether this identity is admitted, how many tunnels are left in the current epoch and when it resets, and how many canopy nodes are usable.",
+            "description": "Whether this identity is admitted, how many tunnels are left in the current epoch and when it resets, how many requests are queued for the next epoch, per-node latency, and how many canopy nodes are usable.",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+        }),
+        json!({
+            "name": "shadenet_plan",
+            "title": "Plan a batch of ShadeNet fetches",
+            "description": "Before a batch of shadenet_fetch calls, learn what it costs: how many tunnels are available now, how many epochs the batch needs, roughly how many seconds until the last fetch can open, and which tier would do it in one epoch. Pass the URLs (or a count). Costs nothing.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs or hosts the batch would fetch"},
+                    "count": {"type": "integer", "minimum": 0, "description": "number of fetches, when the URLs are not known yet"}
+                },
+                "additionalProperties": false
+            }
         }),
     ];
     if search {
@@ -98,6 +113,19 @@ impl Server {
                 text_result(&serde_json::to_value(status).unwrap_or_default(), false)
             }
             "shadenet_fetch" => self.fetch(args),
+            "shadenet_plan" => {
+                let count = args
+                    .get("urls")
+                    .and_then(Value::as_array)
+                    .map(|list| list.len() as u64)
+                    .filter(|n| *n > 0)
+                    .or_else(|| args.get("count").and_then(Value::as_u64))
+                    .unwrap_or(1);
+                text_result(
+                    &serde_json::to_value(self.client.plan(count)).unwrap_or_default(),
+                    false,
+                )
+            }
             "shadenet_search" if self.searxng.is_some() => self.search(args),
             other => tool_error("unknown_tool", format!("no tool named {other}")),
         }
@@ -248,7 +276,7 @@ impl Server {
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": false}},
                     "serverInfo": {"name": "shadenet", "title": "ShadeNet", "version": crate::VERSION},
-                    "instructions": "ShadeNet gives this agent anonymous egress. Use shadenet_fetch only for sites that block Tor or datacenter IPs or when the request must not be linked to this machine; never for model APIs or logged-in sites. Each fetch spends one tunnel of a small per-epoch budget: on budget_exhausted, wait retryAfterSeconds."
+                    "instructions": "ShadeNet gives this agent anonymous egress. Use shadenet_fetch only for sites that block Tor or datacenter IPs or when the request must not be linked to this machine; never for model APIs or logged-in sites. Each fetch spends one tunnel of a small per-epoch budget. When the budget is spent a fetch waits for the next epoch by itself (up to about two epochs); call shadenet_plan before a batch to see how long it will take, and on budget_exhausted wait retryAfterSeconds."
                 }))
             }
             "ping" => Ok(json!({})),
@@ -275,7 +303,7 @@ impl Server {
 }
 
 pub fn serve(args: McpArgs, ctx: &Context) -> ExitCode {
-    let client = match crate::live::build_client(&args.net, ctx, true) {
+    let client = match crate::live::build_client_queued(&args.net, &args.queue, ctx, true) {
         Ok(client) => Arc::new(client),
         Err(message) => {
             eprintln!("mcp: {message}");
@@ -347,11 +375,16 @@ mod tests {
         };
         assert_eq!(
             names(tools(false)),
-            vec!["shadenet_fetch", "shadenet_status"]
+            vec!["shadenet_fetch", "shadenet_status", "shadenet_plan"]
         );
         assert_eq!(
             names(tools(true)),
-            vec!["shadenet_fetch", "shadenet_status", "shadenet_search"]
+            vec![
+                "shadenet_fetch",
+                "shadenet_status",
+                "shadenet_plan",
+                "shadenet_search"
+            ]
         );
     }
 

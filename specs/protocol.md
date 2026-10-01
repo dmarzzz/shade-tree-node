@@ -167,7 +167,8 @@ closing the asynchronous, fail-open cross-gateway replay window described above.
 Off by default; on only when the deployment record's `sessionTickets` is `true`
 ([ADR 0011](../docs/adr/0011-session-tickets.md), design in
 [`docs/design/SESSION-TICKETS.md`](../docs/design/SESSION-TICKETS.md)). A node that runs with
-it advertises the onion-signed capability `session: { version: 1, classes: ["research-v1"] }`
+it advertises the onion-signed capability `session: { version: 1, classes: ["research-v1", "research-v2"] }`
+(every class it serves; a client picks the best one it knows, ADR 0013)
 (canonicalized after `rate`; absent caps bytes are unchanged). Everything rides the v4 port and
 the v4 envelope framing; a plain v4 envelope is unchanged byte for byte.
 
@@ -201,7 +202,8 @@ another target (`ticket-conflict`).
 relayed payload), 4 concurrent streams and pending connects, shared token buckets of 64 KiB/s
 (burst 128 KiB) agent to destination and 512 KiB/s (burst 1 MiB) back, and the byte ceiling is
 the proof's own per-slot payload budget (40 MiB), shared by every stream of the book and
-stopping all of them at the boundary. Refusals: `session-unsupported | session-* | ticket-*`
+stopping all of them at the boundary. **research-v2** is research-v1 with a 60 s session idle
+(ADR 0013): a client that opens one connection at a time keeps its book across the gaps. Refusals: `session-unsupported | session-* | ticket-*`
 (bounded, `packages/node/gateway/session.mjs`). Every stream of a book is linkable to the serving node as
 one session; the proof still hides the member. Vectors: `testdata/vectors.json` `sessionTickets`.
 

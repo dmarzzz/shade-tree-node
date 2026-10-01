@@ -26,6 +26,7 @@ use crate::dircache::{self, DemoAdvert};
 use crate::health::{self, HealthCache};
 use crate::leaves::{self, DiscoveredMembers};
 use crate::profile::PublicProfile;
+use crate::scheduler::{self, Budget, Plan};
 use crate::transport::{self, BoxStream, Gateway};
 use crate::{slot, Error};
 
@@ -211,6 +212,8 @@ pub struct Tunnel {
     pub receipt: Option<serde_json::Value>,
     /// `Some(book digest)` when this tunnel spent a session ticket instead of a proof (ADR 0011).
     pub session: Option<String>,
+    /// How long the request was held in the budget queue before it opened (ADR 0013).
+    pub waited: Duration,
 }
 
 impl Tunnel {
@@ -226,7 +229,7 @@ impl Tunnel {
 
 /// A point-in-time view for agents and operators. Field names are the public JSON contract of
 /// `shadenet status --json` and `GET /_shadenet/status`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub version: String,
@@ -246,6 +249,12 @@ pub struct Status {
     pub canopy: CanopyStatus,
     pub tor_ready: bool,
     pub last_error: Option<serde_json::Value>,
+    /// Per-node reachability and measured dial latency, best first (ADR 0013).
+    pub nodes: Vec<NodeStatus>,
+    /// The budget queue (ADR 0013).
+    pub queue: QueueStatus,
+    /// What one more tunnel costs right now.
+    pub plan: Option<Plan>,
     /// Everything an agent should read before retrying: why the state is not `ready`, which
     /// canopy sources fell back, the last error's cause and fix, and the operators' open
     /// incidents. Empty when nothing is wrong.
@@ -253,7 +262,7 @@ pub struct Status {
 }
 
 /// One thing standing between the agent and a working tunnel, with the cause and the fix.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Problem {
     /// `state`, `canopy`, `last_error`, `incident`.
@@ -271,7 +280,38 @@ pub struct Problem {
     pub since: Option<u64>,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+/// One canopy node as the client sees it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeStatus {
+    pub onion: String,
+    /// The canopy's own health word for the node (`up`, `down`, ...).
+    pub health: String,
+    /// Dial latency EWMA in milliseconds, measured by this client (tunnels and warm-ups).
+    pub latency_ms: Option<f64>,
+    /// Consecutive dial failures seen by this client.
+    pub fails: u64,
+    /// This node is the next pick for a tunnel.
+    pub preferred: bool,
+}
+
+/// The budget queue: requests held for the next epoch instead of refused (ADR 0013).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueStatus {
+    pub enabled: bool,
+    /// Requests waiting for a slot right now.
+    pub depth: u64,
+    pub max_wait_seconds: u64,
+    /// Seconds until a new request could open: 0 when a slot or ticket is free now.
+    pub next_slot_in_seconds: u64,
+    pub capacity_per_epoch: u64,
+    pub available_now: u64,
+    pub queued_total: u64,
+    pub waited_seconds_total: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanopyStatus {
     pub nodes: usize,
@@ -304,6 +344,20 @@ pub struct Client {
     sessions: crate::session::SessionPool,
     /// Nodes that refused a session initialization as unsupported this process lifetime.
     session_refused: StdMutex<HashSet<String>>,
+    /// Serializes session-book initialization so concurrent tunnels to one node share one
+    /// proof and one book instead of each opening its own (ADR 0013).
+    session_init_gate: Mutex<()>,
+    queue: QueueCounters,
+    /// The node a transport failure was last attributed to, for the one retry elsewhere.
+    last_failed_gateway: StdMutex<Option<String>>,
+}
+
+#[derive(Default)]
+struct QueueCounters {
+    depth: AtomicU64,
+    seq: AtomicU64,
+    queued_total: AtomicU64,
+    waited_ms_total: AtomicU64,
 }
 
 impl Client {
@@ -355,6 +409,9 @@ impl Client {
             counters: Counters::default(),
             sessions: crate::session::SessionPool::new(),
             session_refused: StdMutex::new(HashSet::new()),
+            session_init_gate: Mutex::new(()),
+            queue: QueueCounters::default(),
+            last_failed_gateway: StdMutex::new(None),
         })
     }
 
@@ -1147,7 +1204,14 @@ impl Client {
             if let Gateway::Onion { onion, .. } = &attempt.gateway {
                 let full = format!("{}.onion", onion.trim_end_matches(".onion"));
                 changed |= known.contains(&full);
-                health::update(cache, known, &full, attempt.dial_succeeded, None, now_ms());
+                health::update(
+                    cache,
+                    known,
+                    &full,
+                    attempt.dial_succeeded,
+                    attempt.latency_ms,
+                    now_ms(),
+                );
             }
         }
         if changed {
@@ -1163,8 +1227,137 @@ impl Client {
     // ---------------------------------------------------------------- tunnel
 
     /// Open a proof-gated tunnel to `target` (`host:port`).
+    ///
+    /// With [`Config::queue_max_wait`] set, a spent budget holds the request for the next epoch
+    /// (up to that long) instead of failing with `budget_exhausted`; see [`Client::connect_queued`].
     pub async fn connect(&self, target: &str) -> Result<Tunnel, Error> {
-        let result = self.connect_inner(target).await;
+        match self.config.queue_max_wait {
+            Some(max_wait) => self.connect_queued(target, max_wait).await,
+            None => self.connect_once(target).await,
+        }
+    }
+
+    /// Wait until the budget can open one more tunnel, for at most `max_wait` (ADR 0013).
+    ///
+    /// Returns how long it waited (zero when a slot or ticket was free at once). While waiting
+    /// the request counts in [`Status::queue`]. It fails with `budget_exhausted` when the wait
+    /// would exceed `max_wait`; that error's `retry_after` is the queue-aware ETA. Callers that
+    /// hold resources a queued request should not (the proxy's setup permits) wait here first and
+    /// connect after.
+    pub async fn wait_for_budget(&self, max_wait: Duration) -> Result<Duration, Error> {
+        let started = Instant::now();
+        let mut queued = false;
+        let mut stagger = 0;
+        loop {
+            let budget = self.budget_snapshot();
+            if budget.available_now() > 0 {
+                if queued {
+                    self.queue.depth.fetch_sub(1, Ordering::Relaxed);
+                    let waited = started.elapsed();
+                    self.queue
+                        .waited_ms_total
+                        .fetch_add(waited.as_millis() as u64, Ordering::Relaxed);
+                    return Ok(waited);
+                }
+                return Ok(Duration::ZERO);
+            }
+            let position = if queued {
+                self.queue.depth.load(Ordering::Relaxed).saturating_sub(1)
+            } else {
+                self.queue.depth.load(Ordering::Relaxed)
+            };
+            let boundary = Duration::from_secs(budget.resets_in_seconds.max(1));
+            let eta = Duration::from_secs(
+                scheduler::queue_eta_seconds(&budget, position).max(boundary.as_secs()),
+            );
+            if started.elapsed() + boundary > max_wait {
+                if queued {
+                    self.queue.depth.fetch_sub(1, Ordering::Relaxed);
+                }
+                let error = Error::BudgetExhausted {
+                    detail: format!(
+                        "used {}/{} tunnels in epoch {}; {position} request(s) queued ahead, the wait would exceed {}s",
+                        budget.tier.saturating_sub(budget.slots_left),
+                        budget.tier,
+                        self.current_epoch(),
+                        max_wait.as_secs()
+                    ),
+                    retry_after: eta,
+                };
+                self.record_error(&error);
+                return Err(error);
+            }
+            if !queued {
+                queued = true;
+                self.queue.depth.fetch_add(1, Ordering::Relaxed);
+                self.queue.queued_total.fetch_add(1, Ordering::Relaxed);
+                stagger = self.queue.seq.fetch_add(1, Ordering::Relaxed) % 64;
+                tracing::info!(
+                    position,
+                    eta_secs = eta.as_secs(),
+                    "budget spent; queued for the next epoch"
+                );
+            }
+            // Wake just past the boundary, staggered by arrival so slots go out in order.
+            tokio::time::sleep(boundary + Duration::from_millis(100 + 25 * stagger)).await;
+        }
+    }
+
+    /// Open a tunnel, holding the request while the epoch budget is spent (ADR 0013): see
+    /// [`Client::wait_for_budget`]. A request that loses the race for the last slot after its
+    /// wait goes back to waiting, within the same `max_wait`.
+    pub async fn connect_queued(&self, target: &str, max_wait: Duration) -> Result<Tunnel, Error> {
+        let started = Instant::now();
+        let mut waited = Duration::ZERO;
+        loop {
+            let remaining = max_wait.saturating_sub(started.elapsed());
+            waited += self.wait_for_budget(remaining).await?;
+            match self.connect_once(target).await {
+                Ok(mut tunnel) => {
+                    tunnel.waited = waited;
+                    if tunnel.waited >= Duration::from_secs(1) {
+                        tracing::info!(%target, waited_ms = tunnel.waited.as_millis() as u64, "queued tunnel opened");
+                    }
+                    return Ok(tunnel);
+                }
+                Err(Error::BudgetExhausted { .. }) if started.elapsed() < max_wait => {
+                    // Lost the race for the last slot of the epoch: wait for the next one.
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    /// One attempt: no queueing. A node that refuses for an `upstream:*` reason (it could not
+    /// reach the destination), or that could not be reached at all when it was the only
+    /// candidate (a session book binds the proof to one node), is retried once on another node
+    /// when the budget allows and [`Config::retry_other_node`] is on. The proof is never
+    /// replayed: the retry spends a new ticket or slot, which is why it stops at one.
+    async fn connect_once(&self, target: &str) -> Result<Tunnel, Error> {
+        let mut result = self.connect_inner(target, None).await;
+        let avoid = match &result {
+            Err(Error::NodeRefused {
+                gateway, reason, ..
+            }) if reason.starts_with("upstream:") => {
+                tracing::info!(%gateway, %reason, %target, "node could not reach the destination; trying another node once");
+                Some(gateway.clone())
+            }
+            Err(Error::Transport(_)) => {
+                let failed = self.last_failed_gateway.lock().ok().and_then(|g| g.clone());
+                if let Some(gateway) = &failed {
+                    tracing::info!(%gateway, %target, "node unreachable; trying another node once");
+                }
+                failed
+            }
+            _ => None,
+        };
+        if let Some(avoid) = avoid {
+            if self.config.retry_other_node && self.budget_snapshot().available_now() > 0 {
+                result = self.connect_inner(target, Some(&avoid)).await;
+            }
+        }
         match &result {
             Ok(_) => {
                 self.counters.tunnels_opened.fetch_add(1, Ordering::Relaxed);
@@ -1174,7 +1367,7 @@ impl Client {
         result
     }
 
-    async fn connect_inner(&self, target: &str) -> Result<Tunnel, Error> {
+    async fn connect_inner(&self, target: &str, avoid: Option<&str>) -> Result<Tunnel, Error> {
         let port = target_port(target)?;
         let identity = self
             .identity
@@ -1185,7 +1378,15 @@ impl Client {
                 "the identity is passphrase-protected and was loaded without its passphrase; set SHADENET_PASSPHRASE_FILE".into(),
             ));
         }
-        let (gateways, advertised, demo) = self.candidates(port).await?;
+        let (mut gateways, advertised, demo) = self.candidates(port).await?;
+        if let Some(avoid) = avoid {
+            gateways.retain(|g| g.label() != avoid);
+            if gateways.is_empty() {
+                return Err(Error::NoEligibleNode(format!(
+                    "no node other than {avoid} is eligible"
+                )));
+            }
+        }
         // Session tickets (ADR 0011): a live book at any candidate spends a ticket before any
         // proof; nothing here touches the slot cursor.
         if self.config.session_tickets {
@@ -1235,7 +1436,7 @@ impl Client {
                 None
             };
             let candidates = match &session {
-                Some(gateway) => vec![gateway.clone()],
+                Some((gateway, _)) => vec![gateway.clone()],
                 None => gateways.clone(),
             };
             tracing::debug!(%target, epoch, limit, %artifact, candidates = candidates.len(), session = session.is_some(), "building RLN envelope");
@@ -1260,8 +1461,17 @@ impl Client {
                 artifact: artifact.clone(),
                 session: None,
             };
-            if let Some(gateway) = session {
-                match self.session_init(target, gateway, request).await {
+            if let Some((gateway, class)) = session {
+                // One book per node at a time (ADR 0013): concurrent tunnels wait for the first
+                // initialization and then spend its tickets instead of each proving a book.
+                let gate = self.session_init_gate.lock().await;
+                if let Some(tunnel) = self.session_spend(target, &gateways).await? {
+                    drop(gate);
+                    return Ok(tunnel);
+                }
+                let outcome = self.session_init(target, gateway, class, request).await;
+                drop(gate);
+                match outcome {
                     Err(Error::NodeRefused {
                         gateway, reason, ..
                     }) if reason == "session-unsupported" => {
@@ -1294,6 +1504,7 @@ impl Client {
                         epoch,
                         receipt,
                         session: None,
+                        waited: Duration::ZERO,
                     })
                 }
                 Err(error) => Err(self.map_transport_error(error).await),
@@ -1311,55 +1522,65 @@ impl Client {
         }
     }
 
-    /// Candidates whose SIGNED caps advertise `session` with the research class. A pinned
-    /// onion (no canopy, no caps) is assumed capable until it says `session-unsupported`.
-    async fn session_capable(&self, gateways: &[Gateway]) -> Vec<Gateway> {
+    /// Candidates whose SIGNED caps advertise `session` with a class this client knows, each
+    /// with the best such class (ADR 0013: `research-v2` over `research-v1`). A pinned onion
+    /// (no canopy, no caps) is assumed to serve `research-v1` until it says
+    /// `session-unsupported`.
+    async fn session_capable(
+        &self,
+        gateways: &[Gateway],
+    ) -> Vec<(Gateway, &'static shadenet_proto::session::ClassPolicy)> {
+        use shadenet_proto::session::{preferred_class, ClassPolicy, RESEARCH_V1};
         let refused = self
             .session_refused
             .lock()
             .map(|set| set.clone())
             .unwrap_or_default();
-        let advertised: Option<HashSet<String>> = match &self.config.discovery {
-            Discovery::Onions(_) | Discovery::PlainTcp(_) => None,
-            _ => {
-                let snapshot = match self.canopy_snapshot().await {
-                    Ok(snapshot) => snapshot,
-                    Err(_) => return Vec::new(),
-                };
-                Some(
-                    snapshot
-                        .dir
-                        .gateways
-                        .iter()
-                        .filter(|g| {
-                            g.caps
-                                .as_ref()
-                                .and_then(|c| shadenet_proto::canonical_caps(c).session)
-                                .map(|s| {
-                                    s.classes
-                                        .iter()
-                                        .any(|c| c == shadenet_proto::session::RESEARCH_V1.class)
-                                })
-                                .unwrap_or(false)
-                        })
-                        .map(|g| g.onion.trim_end_matches(".onion").to_string())
-                        .collect(),
-                )
-            }
-        };
+        let advertised: Option<std::collections::HashMap<String, &'static ClassPolicy>> =
+            match &self.config.discovery {
+                Discovery::Onions(_) | Discovery::PlainTcp(_) => None,
+                _ => {
+                    let snapshot = match self.canopy_snapshot().await {
+                        Ok(snapshot) => snapshot,
+                        Err(_) => return Vec::new(),
+                    };
+                    Some(
+                        snapshot
+                            .dir
+                            .gateways
+                            .iter()
+                            .filter_map(|g| {
+                                let session = g
+                                    .caps
+                                    .as_ref()
+                                    .and_then(|c| shadenet_proto::canonical_caps(c).session)?;
+                                let class = preferred_class(&session.classes)?;
+                                Some((g.onion.trim_end_matches(".onion").to_string(), class))
+                            })
+                            .collect(),
+                    )
+                }
+            };
         gateways
             .iter()
-            .filter(|g| {
-                Self::onion_of(g).is_some_and(|onion| {
-                    !refused.contains(&onion)
-                        && advertised.as_ref().is_none_or(|set| set.contains(&onion))
-                })
+            .filter_map(|g| {
+                let onion = Self::onion_of(g)?;
+                if refused.contains(&onion) {
+                    return None;
+                }
+                let class = match &advertised {
+                    Some(map) => *map.get(&onion)?,
+                    None => &RESEARCH_V1,
+                };
+                Some((g.clone(), class))
             })
-            .cloned()
             .collect()
     }
 
-    async fn session_candidate(&self, gateways: &[Gateway]) -> Option<Gateway> {
+    async fn session_candidate(
+        &self,
+        gateways: &[Gateway],
+    ) -> Option<(Gateway, &'static shadenet_proto::session::ClassPolicy)> {
         self.session_capable(gateways).await.into_iter().next()
     }
 
@@ -1399,6 +1620,7 @@ impl Client {
                     epoch: self.current_epoch(),
                     receipt: None,
                     session: Some(ticket.ticket_book_digest.clone()),
+                    waited: Duration::ZERO,
                 }))
             }
             Err(transport::Error::GatewayRefused { ack, attempts, .. }) => {
@@ -1438,16 +1660,17 @@ impl Client {
         }
     }
 
-    /// Prove once to open a book at `gateway`, then spend its first ticket for `target`.
+    /// Prove once to open a book of `class` at `gateway`, then spend its first ticket for
+    /// `target`.
     async fn session_init(
         &self,
         target: &str,
         gateway: Gateway,
+        class: &'static shadenet_proto::session::ClassPolicy,
         mut request: transport::ConnectRequest,
     ) -> Result<Tunnel, Error> {
         let onion = Self::onion_of(&gateway)
             .ok_or_else(|| Error::Internal("session node without an onion".into()))?;
-        let class = &shadenet_proto::session::RESEARCH_V1;
         let pending = crate::session::PendingBook::draw(&onion, class).map_err(Error::Internal)?;
         request.session = Some(transport::SessionInit {
             class_id: class.class.to_string(),
@@ -1522,6 +1745,172 @@ impl Client {
         self.sessions.summary()
     }
 
+    // ---------------------------------------------------------------- budget and queue
+
+    /// What the member can spend right now (ADR 0013). Reads the slot cursor without locking it.
+    pub fn budget_snapshot(&self) -> Budget {
+        let tier = self.tier();
+        let epoch = self.current_epoch();
+        let slots_used = self
+            .identity
+            .as_ref()
+            .and_then(|identity| self.slot_path(&identity.leaf).ok().flatten())
+            .and_then(|path| slot::peek(&path, epoch).ok())
+            .unwrap_or(0);
+        let class = &shadenet_proto::session::RESEARCH_V1;
+        Budget {
+            tier,
+            epoch_seconds: self.epoch_seconds(),
+            resets_in_seconds: self.resets_in().as_secs(),
+            slots_left: tier.saturating_sub(slots_used),
+            session_tickets: self.config.session_tickets,
+            tickets_per_book: class.tickets,
+            tickets_open: self
+                .sessions
+                .summary()
+                .iter()
+                .map(|(_, left)| *left as u64)
+                .sum(),
+        }
+    }
+
+    /// Requests held in the budget queue right now.
+    pub fn queue_depth(&self) -> u64 {
+        self.queue.depth.load(Ordering::Relaxed)
+    }
+
+    /// The queue as reported in [`Status`].
+    pub fn queue_status(&self) -> QueueStatus {
+        let budget = self.budget_snapshot();
+        let depth = self.queue_depth();
+        QueueStatus {
+            enabled: self.config.queue_max_wait.is_some(),
+            depth,
+            max_wait_seconds: self.config.queue_max_wait.map(|d| d.as_secs()).unwrap_or(0),
+            next_slot_in_seconds: scheduler::queue_eta_seconds(&budget, depth),
+            capacity_per_epoch: budget.capacity_per_epoch(),
+            available_now: budget.available_now(),
+            queued_total: self.queue.queued_total.load(Ordering::Relaxed),
+            waited_seconds_total: self.queue.waited_ms_total.load(Ordering::Relaxed) / 1000,
+        }
+    }
+
+    /// Plan `requests` tunnels behind whatever is queued now.
+    pub fn plan(&self, requests: u64) -> Plan {
+        scheduler::plan(&self.budget_snapshot(), requests, self.queue_depth())
+    }
+
+    // ---------------------------------------------------------------- nodes
+
+    /// Every eligible node with the health and latency this client has measured, in the order
+    /// the next tunnel would try them.
+    pub async fn nodes_status(&self) -> Vec<NodeStatus> {
+        let Ok((gateways, _, _)) = self.candidates(443).await else {
+            return Vec::new();
+        };
+        let dir_health: std::collections::HashMap<String, String> =
+            match self.canopy_snapshot().await {
+                Ok(snapshot) => snapshot
+                    .dir
+                    .gateways
+                    .iter()
+                    .map(|g| {
+                        (
+                            g.onion.trim_end_matches(".onion").to_string(),
+                            g.health.clone(),
+                        )
+                    })
+                    .collect(),
+                Err(_) => std::collections::HashMap::new(),
+            };
+        let cache = self.health.lock().map(|h| h.0.clone()).unwrap_or_default();
+        gateways
+            .iter()
+            .enumerate()
+            .filter_map(|(index, gateway)| {
+                let onion = Self::onion_of(gateway)?;
+                let entry = cache
+                    .get(&format!("{onion}.onion"))
+                    .cloned()
+                    .unwrap_or_default();
+                Some(NodeStatus {
+                    health: dir_health.get(&onion).cloned().unwrap_or_default(),
+                    onion: format!("{onion}.onion"),
+                    latency_ms: entry.latency_ms,
+                    fails: entry.fails,
+                    preferred: index == 0,
+                })
+            })
+            .collect()
+    }
+
+    /// Keep circuits to the `count` best nodes warm: every `every`, open and close one stream
+    /// to each, so the first tunnel after a quiet spell does not pay the full onion rendezvous
+    /// (ADR 0013). The dials also measure latency for [`Status::nodes`]. Only onion nodes are
+    /// warmed; plain-TCP test transports are left alone.
+    pub fn spawn_warmer(
+        self: &Arc<Self>,
+        count: usize,
+        every: Duration,
+    ) -> Option<tokio::task::JoinHandle<()>> {
+        if count == 0
+            || !matches!(
+                self.config.discovery,
+                Discovery::Network
+                    | Discovery::ElderTree { .. }
+                    | Discovery::CanopyFile { .. }
+                    | Discovery::Onions(_)
+            )
+        {
+            return None;
+        }
+        let weak = Arc::downgrade(self);
+        Some(tokio::spawn(async move {
+            // The first warm-up follows the canopy fetch; later ones pace at `every`.
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            loop {
+                let Some(client) = weak.upgrade() else { return };
+                client.warm_nodes(count).await;
+                drop(client);
+                let jitter = every.mul_f64(0.2 * (now_ms() % 1000) as f64 / 1000.0);
+                tokio::time::sleep(every + jitter).await;
+            }
+        }))
+    }
+
+    async fn warm_nodes(&self, count: usize) {
+        let Ok((gateways, _, _)) = self.candidates(443).await else {
+            return;
+        };
+        let mut attempts = Vec::new();
+        for gateway in gateways
+            .iter()
+            .filter(|g| Self::onion_of(g).is_some())
+            .take(count)
+        {
+            let started = Instant::now();
+            let outcome =
+                tokio::time::timeout(self.config.tor_timeout, self.transport.open(gateway)).await;
+            let (ok, error) = match outcome {
+                Ok(Ok(stream)) => {
+                    drop(stream);
+                    (true, None)
+                }
+                Ok(Err(error)) => (false, Some(error)),
+                Err(_) => (false, Some("warm-up dial timed out".to_string())),
+            };
+            let latency = started.elapsed().as_secs_f64() * 1000.0;
+            tracing::debug!(gateway = %gateway.label(), ok, latency_ms = latency as u64, "warm-up dial");
+            attempts.push(transport::Attempt {
+                gateway: gateway.clone(),
+                dial_succeeded: ok,
+                error,
+                latency_ms: ok.then_some(latency),
+            });
+        }
+        self.report_health(&attempts);
+    }
+
     async fn map_transport_error(&self, error: transport::Error) -> Error {
         match error {
             transport::Error::NoGateways => Error::NoEligibleNode("no candidates".into()),
@@ -1561,14 +1950,21 @@ impl Client {
                     ack,
                 }
             }
-            transport::Error::AllCandidatesFailed { attempts } => Error::Transport(format!(
-                "all {} candidate(s) failed; last: {}",
-                attempts.len(),
-                attempts
-                    .last()
-                    .and_then(|a| a.error.as_deref())
-                    .unwrap_or("(none)")
-            )),
+            transport::Error::AllCandidatesFailed { attempts } => {
+                // Only a single-candidate failure names a node worth avoiding on the retry:
+                // with several candidates the transport already rotated through them.
+                if let Ok(mut last) = self.last_failed_gateway.lock() {
+                    *last = (attempts.len() == 1).then(|| attempts[0].gateway.label());
+                }
+                Error::Transport(format!(
+                    "all {} candidate(s) failed; last: {}",
+                    attempts.len(),
+                    attempts
+                        .last()
+                        .and_then(|a| a.error.as_deref())
+                        .unwrap_or("(none)")
+                ))
+            }
         }
     }
 
@@ -1596,6 +1992,9 @@ impl Client {
             tor_ready: self.tor_bootstraps() > 0,
             last_error: self.last_error.lock().ok().and_then(|e| e.clone()),
             problems: Vec::new(),
+            nodes: Vec::new(),
+            queue: QueueStatus::default(),
+            plan: None,
         };
         let mut demo = None;
         let mut incidents = Vec::new();
@@ -1624,6 +2023,7 @@ impl Client {
                     if eligible == 0 {
                         status.state = "degraded".into();
                     }
+                    status.nodes = self.nodes_status().await;
                 }
                 Err(error) => {
                     status.canopy.error = Some(error.to_string());
@@ -1678,6 +2078,8 @@ impl Client {
             }
         }
         status.problems = problems_for(&status, admission_error.as_ref(), &incidents);
+        status.queue = self.queue_status();
+        status.plan = Some(self.plan(1));
         status
     }
 }

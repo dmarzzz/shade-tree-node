@@ -19,6 +19,36 @@ const DEFAULT_CHECK_TIMEOUT_MS: u64 = 2_000;
 const MAX_CHECK_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_NO_PROXY: [&str; 4] = ["127.0.0.1", "localhost", "::1", "host.docker.internal"];
 
+/// Hosts an agent talks to for its own model, control plane and telemetry (ADR 0013, #230). They
+/// bypass ShadeNet by default: routing them spends the member's whole budget before the agent
+/// does any work, and they identify the operator anyway. `--no-default-bypass` turns this off.
+pub const DEFAULT_BYPASS: [&str; 22] = [
+    // Model APIs and their control planes.
+    ".anthropic.com",
+    ".claude.ai",
+    ".openai.com",
+    ".oaistatic.com",
+    ".googleapis.com",
+    ".google.com",
+    ".x.ai",
+    ".mistral.ai",
+    ".cohere.com",
+    ".together.xyz",
+    ".groq.com",
+    ".openrouter.ai",
+    ".huggingface.co",
+    // Telemetry and error reporting SDKs embedded in agent runtimes.
+    ".datadoghq.com",
+    ".sentry.io",
+    ".statsig.com",
+    ".segment.io",
+    ".segment.com",
+    ".posthog.com",
+    ".launchdarkly.com",
+    ".amplitude.com",
+    ".mixpanel.com",
+];
+
 pub const HELP: &str = "\
 shadenet run: start one command with scoped HTTP(S) proxy settings
 
@@ -31,8 +61,11 @@ one `shadenet proxy` uses: SHADENET_PROXY_TOKEN, SHADENET_PROXY_TOKEN_FILE, or t
 proxy_token_file in config.toml (written by `shadenet init`). Only the child
 receives authenticated proxy URLs; the current shell is unchanged. Inherited
 SHADENET_* and SHADE_TREE_* settings and ALL_PROXY escape hatches are stripped.
-Loopback services bypass the proxy; add other agent-local hosts, and your model
-API, with --no-proxy.
+Loopback services, the hosts in NO_PROXY, and the model-API and telemetry hosts
+agents talk to on their own behalf (anthropic.com, openai.com, datadoghq.com,
+sentry.io, ...; --no-default-bypass to disable) bypass the proxy; add other
+agent-local hosts with --no-proxy. To allow only some destinations through
+ShadeNet, start the proxy with --targets.
 ";
 
 /// Defaults from `config.toml`, below flags and environment variables.
@@ -49,6 +82,7 @@ struct ParsedRun {
     check_timeout_ms: Option<String>,
     command: String,
     args: Vec<String>,
+    no_default_bypass: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,6 +190,7 @@ fn parse_run_args(args: &[String]) -> Result<ParsedRun, RunError> {
     let mut proxy = None;
     let mut no_proxy = None;
     let mut check_timeout_ms = None;
+    let mut no_default_bypass = false;
     let mut index = 0;
     while index < separator {
         let arg = &args[index];
@@ -166,6 +201,11 @@ fn parse_run_args(args: &[String]) -> Result<ParsedRun, RunError> {
             },
             None => return Err(RunError(format!("unexpected argument before `--`: {arg}"))),
         };
+        if name == "no-default-bypass" && inline.is_none() {
+            no_default_bypass = true;
+            index += 1;
+            continue;
+        }
         let value = match inline {
             Some(value) if !value.is_empty() => value,
             Some(_) => return Err(RunError(format!("--{name} requires a value"))),
@@ -198,6 +238,7 @@ fn parse_run_args(args: &[String]) -> Result<ParsedRun, RunError> {
         proxy,
         no_proxy,
         check_timeout_ms,
+        no_default_bypass,
         command,
         args: args[separator + 2..].to_vec(),
     })
@@ -246,12 +287,18 @@ fn resolve_config(parsed: &ParsedRun, defaults: &RunDefaults) -> Result<RunConfi
     };
     validate_auth_token(&auth_token).map_err(RunError)?;
 
+    // The caller's own NO_PROXY (either spelling) stays in force, the default bypass list for
+    // model and telemetry hosts is added unless disabled, then --no-proxy / SHADE_TREE_NO_PROXY.
+    let inherited = env::var("NO_PROXY")
+        .ok()
+        .or_else(|| env::var("no_proxy").ok())
+        .unwrap_or_default();
     let no_proxy_extra = parsed
         .no_proxy
         .clone()
         .or_else(|| env::var("SHADE_TREE_NO_PROXY").ok())
         .unwrap_or_default();
-    let no_proxy = build_no_proxy(&no_proxy_extra)?;
+    let no_proxy = build_no_proxy_full(&inherited, !parsed.no_default_bypass, &no_proxy_extra)?;
 
     let timeout_raw = parsed
         .check_timeout_ms
@@ -356,23 +403,48 @@ fn parse_proxy_url(raw: &str) -> Result<ProxyUrl, RunError> {
     })
 }
 
+#[cfg(test)]
 fn build_no_proxy(extra: &str) -> Result<String, RunError> {
+    build_no_proxy_full("", false, extra)
+}
+
+/// Loopback defaults, then the caller's inherited `NO_PROXY`, then the default bypass list
+/// (when `default_bypass`), then the explicit extras; deduplicated, wildcard refused.
+fn build_no_proxy_full(
+    inherited: &str,
+    default_bypass: bool,
+    extra: &str,
+) -> Result<String, RunError> {
     let mut values: Vec<String> = DEFAULT_NO_PROXY
         .iter()
         .map(|value| value.to_string())
         .collect();
-    for value in extra
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        if value == "*" {
-            return Err(RunError(
-                "a wildcard `*` in --no-proxy would bypass ShadeNet".into(),
-            ));
+    let defaults: Vec<&str> = if default_bypass {
+        DEFAULT_BYPASS.to_vec()
+    } else {
+        Vec::new()
+    };
+    for (source, list) in [("NO_PROXY", inherited), ("--no-proxy", extra)] {
+        for value in list
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            if value == "*" {
+                return Err(RunError(format!(
+                    "a wildcard `*` in {source} would bypass ShadeNet"
+                )));
+            }
+            if !values.iter().any(|existing| existing == value) {
+                values.push(value.to_string());
+            }
         }
-        if !values.iter().any(|existing| existing == value) {
-            values.push(value.to_string());
+        if source == "NO_PROXY" {
+            for value in &defaults {
+                if !values.iter().any(|existing| existing == value) {
+                    values.push(value.to_string());
+                }
+            }
         }
     }
     Ok(values.join(","))
@@ -676,6 +748,34 @@ mod tests {
     }
 
     #[test]
+    fn inherited_no_proxy_and_the_default_bypass_list_are_honoured() {
+        let full = build_no_proxy_full("corp.internal, localhost", true, "ollama.local").unwrap();
+        let parts: Vec<&str> = full.split(',').collect();
+        assert_eq!(
+            &parts[..5],
+            &[
+                "127.0.0.1",
+                "localhost",
+                "::1",
+                "host.docker.internal",
+                "corp.internal"
+            ]
+        );
+        assert!(parts.contains(&".anthropic.com"));
+        assert!(parts.contains(&".datadoghq.com"));
+        assert_eq!(parts.last(), Some(&"ollama.local"));
+        assert_eq!(parts.iter().filter(|p| **p == "localhost").count(), 1);
+        let bare = build_no_proxy_full("", false, "").unwrap();
+        assert_eq!(bare, "127.0.0.1,localhost,::1,host.docker.internal");
+        assert!(build_no_proxy_full("*", true, "")
+            .unwrap_err()
+            .0
+            .contains("NO_PROXY"));
+        let parsed = parse_run_args(&strings(&["--no-default-bypass", "--", "true"])).unwrap();
+        assert!(parsed.no_default_bypass);
+    }
+
+    #[test]
     fn child_environment_strips_operator_state_and_escape_hatches() {
         let removed = child_environment_removals(
             strings(&[
@@ -813,10 +913,14 @@ mod tests {
         "#;
         let previous_token = env::var_os("SHADE_TREE_PROXY_TOKEN");
         env::set_var("SHADE_TREE_PROXY_TOKEN", TOKEN);
+        let previous_no_proxy = (env::var_os("NO_PROXY"), env::var_os("no_proxy"));
+        env::remove_var("NO_PROXY");
+        env::remove_var("no_proxy");
         let result = run(
             &[
                 "--proxy".into(),
                 proxy.clone(),
+                "--no-default-bypass".into(),
                 "--no-proxy".into(),
                 "ollama.local".into(),
                 "--".into(),
@@ -833,6 +937,12 @@ mod tests {
         match previous_token {
             Some(value) => env::set_var("SHADE_TREE_PROXY_TOKEN", value),
             None => env::remove_var("SHADE_TREE_PROXY_TOKEN"),
+        }
+        if let Some(value) = previous_no_proxy.0 {
+            env::set_var("NO_PROXY", value);
+        }
+        if let Some(value) = previous_no_proxy.1 {
+            env::set_var("no_proxy", value);
         }
         assert_eq!(result, ExitCode::from(23));
         server.join().unwrap();

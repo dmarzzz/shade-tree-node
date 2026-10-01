@@ -7,6 +7,9 @@
 //! listen = "127.0.0.1:8118"
 //! rpc_url = "https://rpc.sepolia.example"
 //! searxng_url = "http://127.0.0.1:8080"
+//! queue_max_wait_secs = 120              # budget queue (ADR 0013); 0 refuses at once
+//! warm_nodes = 2                         # circuits kept warm by `shadenet proxy`
+//! targets = [".wikipedia.org", "api.ipify.org"]   # proxy allow-list; omit for any host
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -31,6 +34,12 @@ pub struct ConfigFile {
     pub max_setups: Option<usize>,
     pub allow_non_loopback: Option<bool>,
     pub searxng_url: Option<String>,
+    /// Budget queue: longest wait in seconds; 0 refuses at once (ADR 0013).
+    pub queue_max_wait_secs: Option<u64>,
+    /// Nodes to keep warm circuits to (0 disables).
+    pub warm_nodes: Option<usize>,
+    /// Destination allow-list for the proxy (names or `.suffix`); empty allows every host.
+    pub targets: Option<Vec<String>>,
     /// Where this file was read from, for relative paths and `doctor`.
     #[serde(skip)]
     pub path: Option<PathBuf>,

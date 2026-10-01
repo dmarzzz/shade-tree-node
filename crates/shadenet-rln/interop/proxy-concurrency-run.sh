@@ -10,6 +10,9 @@
 #    `429`, `X-ShadeNet-Error: budget_exhausted`, a `Retry-After` header and a JSON body, before any
 #    proof is built.
 # 3. `GET /_shadenet/status` reports 8 used / 0 left for the epoch.
+# 4. With the budget queue on (the default, ADR 0013): a tier-2 member fires four CONNECTs at
+#    once; two open now, two are held for the next epoch and then open, carrying
+#    `X-ShadeNet-Queued`. The status endpoint reports the queue while they wait.
 #
 # Plain TCP keeps Tor out of this blocking layer; the proof, the gateway's verification and the
 # relay are real.
@@ -79,7 +82,7 @@ node "$HERE/wait-log.mjs" "$WORK/gateway.log" "gateway up on" 30000
 SHADENET_SLOT_STATE_DIR="$WORK/slots" \
 SHADENET_PROXY_TOKEN="$PROXY_TOKEN" \
 SHADENET_PROVER_WORKERS=4 \
-  "$SHADENET" proxy --no-cache \
+  "$SHADENET" proxy --no-cache --no-queue \
     --listen "127.0.0.1:${PROXY_PORT}" \
     --plain-tcp "127.0.0.1:${GW_PORT}" \
     --identity "$WORK/identity.json" \
@@ -170,3 +173,131 @@ NODE
 
 kill -0 "$PROXY_PID" 2>/dev/null || { cat "$WORK/proxy.log" >&2; echo "proxy exited" >&2; exit 1; }
 echo "== PROXY CONCURRENCY OK: ${TUNNELS} concurrent tunnels, structured 429, status endpoint =="
+
+# ---------------------------------------------------------------------------------------------
+# Phase 2: the budget queue (ADR 0013). A second gateway and proxy on short epochs with a
+# tier-2 member: four CONNECTs at once, two held for the next epoch. The node accepts the
+# previous epoch's proofs too, so each proof has at least one epoch of slack after its slot.
+QUEUE_GW_PORT=$((GW_PORT + 1))
+QUEUE_PROXY_PORT=$((PROXY_PORT + 1))
+QUEUE_EPOCH_SECONDS="${SHADENET_CONCURRENCY_QUEUE_EPOCH_SECONDS:-90}"
+QUEUE_TIER=2
+QUEUE_TUNNELS=4
+QUEUE_TARGET="127.0.0.1:$((SINK_PORT + 1))"
+mkdir -p "$WORK/queue"
+node "$HERE/egress-derive.mjs" "$WORK/queue" "$SECRET" "$QUEUE_TIER"
+
+SHADE_TREE_MEMBERS_FILE="$WORK/queue/members.json" \
+SHADE_TREE_GATEWAY_PORT="$QUEUE_GW_PORT" \
+SHADE_TREE_EGRESS_ALLOW="$QUEUE_TARGET" \
+SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
+SHADE_TREE_BANNER=never \
+SHADE_TREE_EPOCH_SECONDS="$QUEUE_EPOCH_SECONDS" \
+SHADE_TREE_SLOTS="$QUEUE_TIER" \
+  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/queue-gateway.log" 2>&1 &
+PIDS+=($!)
+node "$HERE/wait-log.mjs" "$WORK/queue-gateway.log" "gateway up on" 30000
+
+# The sink answers each tunnel on its own this time.
+node -e '
+  const net = require("net");
+  net.createServer((s) => s.once("data", (d) => s.end("echo-ok:" + String(d)))).listen(Number(process.argv[1]), "127.0.0.1", () => console.error("sink ready"));
+' "$((SINK_PORT + 1))" > "$WORK/queue-sink.log" 2>&1 &
+PIDS+=($!)
+node "$HERE/wait-log.mjs" "$WORK/queue-sink.log" "sink ready" 15000
+
+SHADENET_SLOT_STATE_DIR="$WORK/queue/slots" \
+SHADENET_PROXY_TOKEN="$PROXY_TOKEN" \
+SHADENET_PROVER_WORKERS=2 \
+SHADENET_EPOCH_SECONDS="$QUEUE_EPOCH_SECONDS" \
+  "$SHADENET" proxy --no-cache \
+    --listen "127.0.0.1:${QUEUE_PROXY_PORT}" \
+    --plain-tcp "127.0.0.1:${QUEUE_GW_PORT}" \
+    --identity "$WORK/queue/identity.json" \
+    --members "$WORK/queue/members.json" \
+    > "$WORK/queue-proxy.log" 2>&1 &
+QUEUE_PROXY_PID=$!
+PIDS+=("$QUEUE_PROXY_PID")
+node "$HERE/wait-log.mjs" "$WORK/queue-proxy.log" "proxy listening on" 15000
+
+echo "== ${QUEUE_TUNNELS} concurrent CONNECTs at tier ${QUEUE_TIER}: two open now, two wait for the next ${QUEUE_EPOCH_SECONDS}s epoch =="
+node - "$QUEUE_PROXY_PORT" "$QUEUE_TARGET" "$PROXY_TOKEN" "$QUEUE_TUNNELS" "$QUEUE_TIER" <<'NODE'
+const net = require("net");
+const http = require("http");
+const [port, target, token, count, tier] = process.argv.slice(2);
+const credential = Buffer.from(`shadenet:${token}`).toString("base64");
+let queuedSeen = 0;
+function one(i) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const s = net.connect(Number(port), "127.0.0.1", () => {
+      s.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\nProxy-Authorization: Basic ${credential}\r\n\r\n`);
+    });
+    let accepted = false;
+    s.setTimeout(900000, () => s.destroy(new Error("timeout")));
+    s.on("data", (c) => {
+      chunks.push(c);
+      const text = Buffer.concat(chunks).toString();
+      if (!accepted && text.startsWith("HTTP/1.1 200 ")) {
+        accepted = true;
+        if (/\r\nX-ShadeNet-Queued: \d+\r\n/.test(text)) queuedSeen += 1;
+        s.write(`ping-${i}`);
+      }
+    });
+    s.on("error", reject);
+    s.on("close", () => {
+      const text = Buffer.concat(chunks).toString();
+      text.includes(`echo-ok:ping-${i}`) ? resolve() : reject(new Error(`tunnel ${i}: ${text.slice(0, 600)}`));
+    });
+  });
+}
+function status() {
+  return new Promise((resolve, reject) => {
+    http.get({ host: "127.0.0.1", port: Number(port), path: "/_shadenet/status", headers: { Authorization: `Bearer ${token}` } }, (res) => {
+      let body = "";
+      res.on("data", (c) => (body += c));
+      res.on("end", () => resolve(JSON.parse(body)));
+    }).on("error", reject);
+  });
+}
+const started = Date.now();
+const all = Promise.all(Array.from({ length: Number(count) }, (_, i) => one(i)));
+// While the batch runs, the queue must become visible: depth >= count - tier at some point.
+let peakDepth = 0;
+const poll = setInterval(async () => {
+  try {
+    const s = await status();
+    peakDepth = Math.max(peakDepth, Number(s.queue?.depth ?? 0));
+    if (s.queue?.enabled !== true) { console.error("FAIL: status says the queue is not enabled"); process.exit(1); }
+  } catch {}
+}, 2000);
+all.then(() => {
+  clearInterval(poll);
+  const elapsed = Date.now() - started;
+  console.log(`all ${count} tunnels relayed in ${elapsed} ms; ${queuedSeen} carried X-ShadeNet-Queued; peak queue depth ${peakDepth}`);
+  const want = Number(count) - Number(tier);
+  if (queuedSeen < want) { console.error(`FAIL: expected at least ${want} queued tunnels, saw ${queuedSeen}`); process.exit(1); }
+  if (peakDepth < 1) { console.error("FAIL: the status endpoint never showed a queued request"); process.exit(1); }
+}).catch((e) => { clearInterval(poll); console.error(`FAIL: ${e.message}`); process.exit(1); });
+NODE
+
+echo "== status reports the queue and a plan =="
+node - "$QUEUE_PROXY_PORT" "$PROXY_TOKEN" <<'NODE'
+const http = require("http");
+const [port, token] = process.argv.slice(2);
+http.get({ host: "127.0.0.1", port: Number(port), path: "/_shadenet/status", headers: { Authorization: `Bearer ${token}` } }, (res) => {
+  let body = "";
+  res.on("data", (c) => (body += c));
+  res.on("end", () => {
+    const s = JSON.parse(body);
+    const ok = s.queue && s.queue.enabled === true && s.queue.depth === 0 && typeof s.queue.nextSlotInSeconds === "number"
+      && s.plan && typeof s.plan.completesInSeconds === "number" && s.plan.requests === 1
+      && Array.isArray(s.nodes);
+    if (!ok) { console.error(`FAIL: unexpected status ${body}`); process.exit(1); }
+    console.log(`PASS: queue ${JSON.stringify(s.queue)} plan ${s.plan.advice}`);
+  });
+}).on("error", (e) => { console.error(`FAIL: ${e.message}`); process.exit(1); });
+NODE
+
+kill -0 "$QUEUE_PROXY_PID" 2>/dev/null || { cat "$WORK/queue-proxy.log" >&2; echo "queue proxy exited" >&2; exit 1; }
+echo "== BUDGET QUEUE OK: ${QUEUE_TUNNELS} CONNECTs at tier ${QUEUE_TIER} completed across two epochs =="

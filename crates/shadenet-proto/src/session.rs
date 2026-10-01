@@ -42,8 +42,29 @@ pub const RESEARCH_V1: ClassPolicy = ClassPolicy {
     max_concurrent_streams: 4,
 };
 
-/// The classes this implementation understands.
-pub const CLASSES: [ClassPolicy; 1] = [RESEARCH_V1];
+/// `research-v2` (ADR 0013): the same book and limits, with a 60 s idle timeout instead of
+/// 15 s, so an agent that opens one connection at a time (curl, httpx without a pool, SearXNG
+/// engines, one-shot fetches through the proxy) keeps its book across the gaps. Nodes that
+/// advertise it are preferred by clients; nodes that do not still serve `research-v1`.
+pub const RESEARCH_V2: ClassPolicy = ClassPolicy {
+    class: "research-v2",
+    tickets: 6,
+    max_payload_bytes: 41_943_040,
+    lifetime_ms: 90_000,
+    idle_timeout_ms: 60_000,
+    max_concurrent_streams: 4,
+};
+
+/// The classes this implementation understands, preferred first.
+pub const CLASSES: [ClassPolicy; 2] = [RESEARCH_V2, RESEARCH_V1];
+
+/// The best class a node that advertises `advertised` can serve, in this implementation's
+/// order of preference.
+pub fn preferred_class(advertised: &[String]) -> Option<&'static ClassPolicy> {
+    CLASSES
+        .iter()
+        .find(|class| advertised.iter().any(|id| id == class.class))
+}
 
 pub fn class_policy(id: &str) -> Option<&'static ClassPolicy> {
     CLASSES.iter().find(|c| c.class == id)
@@ -222,6 +243,20 @@ mod tests {
     #[test]
     fn grammar() {
         assert!(is_class_id("research-v1"));
+        assert!(is_class_id("research-v2"));
+        assert_eq!(
+            class_policy("research-v2").map(|c| c.idle_timeout_ms),
+            Some(60_000)
+        );
+        assert_eq!(
+            preferred_class(&["research-v1".into(), "research-v2".into()]).map(|c| c.class),
+            Some("research-v2")
+        );
+        assert_eq!(
+            preferred_class(&["research-v1".into()]).map(|c| c.class),
+            Some("research-v1")
+        );
+        assert!(preferred_class(&["research-v9".into()]).is_none());
         assert!(!is_class_id("Research"));
         assert!(!is_class_id("-x"));
         assert!(!is_class_id(""));

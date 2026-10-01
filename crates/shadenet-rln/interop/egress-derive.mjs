@@ -15,7 +15,7 @@
 // This is a HARNESS helper (fixed dev secret, single-leaf members.json). Members exporting
 // their real identity for the Rust client should use `shade-tree identity` instead.
 //
-// Usage: node egress-derive.mjs <outdir> [secret]
+// Usage: node egress-derive.mjs <outdir> [secret] [limit]
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { identityFileFor, serializeIdentityFile } from "../../../packages/node/lib/identity-file.mjs";
@@ -27,10 +27,12 @@ if (!outdir) {
   process.exit(2);
 }
 const SECRET = process.argv[3] || "12345678901234567890";
+const LIMIT = process.argv[4] ? Number(process.argv[4]) : undefined;
 
-const { identitySecret, leaf } = identityFileFor(SECRET);
+const file = LIMIT ? identityFileFor(SECRET, LIMIT) : identityFileFor(SECRET);
+const { identitySecret, leaf } = file;
 
-writeFileSync(join(outdir, "identity.json"), serializeIdentityFile({ identitySecret, leaf }));
+writeFileSync(join(outdir, "identity.json"), serializeIdentityFile(file));
 writeFileSync(join(outdir, "members.json"), JSON.stringify({ version: 2, members: [leaf] }, null, 2) + "\n");
 
 console.error("[derive] secret          =", SECRET);
