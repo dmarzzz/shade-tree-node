@@ -298,3 +298,58 @@ Left from this section: the Rust client fails a one-shot `fetch` on the first
 `session-unsupported` instead of retrying that node on the v4 path (the JS client and a second
 call in the same process do fall back); the H2-priced set re-point (about 0.05 Sepolia ETH);
 `www.wikipedia.org` through the proxy was not retried.
+
+## 12. One fleet, two sets: the roll that put #242, #243, #244 and #229 on the canopy (2026-10-01)
+
+Goal: one roll of the fleet (shade-elder-v4-02, the orbital-one Elder, nodes 04/05/06, the Lab) to
+main, with every node admitting both the production set `0xDEB2…4bBC` and the staging set
+`0xf117…7B7E` through the role's `shade_tree_extra_sets` (bootstrap `SHADENET_SETS`), instead of
+the hand-made drop-in on node-06 from the dogfood run. Fleet commit at the end: `190d643`
+(#252 on top of #229); both records re-pinned to it.
+
+**What the roll found and fixed, in order.**
+
+| Attempt | Stopped at | Cause | Fix |
+|---|---|---|---|
+| 1, staging record as primary | controller preflight, `onchain.bytecode.groth16 … does not match pinned` | the staging set's on-chain withdraw verifier predates the ceremony; main's bytecode manifest pins the ceremony verifier. Fail-closed worked as designed | the record the fleet rolls from is production (`sepolia`); the staging set is the extra admitted set (agent-devops #32) |
+| 2, production record + extra set | role postflight on every node, after a correct roll | with `SHADENET_SETS`, bootstrap lowers `SHADE_TREE_FROM_BLOCK` to the earliest deploy block so the combined replay starts early enough; the postflight expected the record set's block | the postflight expects the minimum across admitted sets (#252) |
+| 2, same roll | `shadenet doctor` still said "none advertises the set it reads (pre-0.7.1 fleet)" | `caps.sets` (#243) is computed by the heartbeat from `SHADE_TREE_GROUP_CONTRACT`, which bootstrap rendered only into the gateway unit | the heartbeat unit carries the contract list (#252) |
+| 3, re-roll to `190d643` | checkout refused on every host: `Local modifications exist in /opt/shade-tree` | `package-lock.json` was behind `package.json` (the `shadenet-node` bin from #244), and bootstrap's `npm install` rewrote it on every host during roll 2 | the lockfile carries the bin entry (this PR); the hosts' lockfiles were restored from git before roll 3b |
+| 3, after the roll | Lab e2e `staked` path: "your leaf … is in none of: staked(0xDEB2…) (0 leaves)" | the Lab's staked seat is in the staging set and the Lab probe searched only the record's set | the Lab lists both sets and replays from the earlier block (agent-devops #32) |
+
+**What the fleet runs now** (`git rev-parse` in `/opt/shade-tree`, unit state, Elder directory):
+every DigitalOcean host and the Lab on `190d643`; the orbital-one Elder re-pinned with the
+Elder-only bootstrap (`build_info{commit="190d643…"}`, `bootnode_live_gateways 3`);
+`shade-tree-gateway.socket` active on all three nodes; every node's gateway logs
+`roots: members.json + staked(0xDEB2…) + staked(0xf117…)` and
+`session tickets enabled, classes ["research-v1","research-v2"]`; the Elder-02 directory lists
+all three nodes with `caps.sets = [0xdeb2…, 0xf117…]` and `session.classes = [research-v1,
+research-v2]`.
+
+**Proofs.**
+
+- `shadenet doctor` from halcyon, client built from `337798b`, staging browser identity, staging
+  record: `admission set  3 of 3 advertising node(s) read 0xf117fdea…`, `admission  ready in
+  0xf117… (tier 1, 1 of 1 slots left this epoch)`, both Elders `directory 0s old, 3 node(s)`,
+  member log complete on ethpandaops; publicnode answered 429 while replaying and the line says
+  so with the fix (`put another rpcUrls entry first`).
+- Queued burst, `shadenet proxy --warm 2`, `plan --count 12` first ("6 tunnel(s) available … needs
+  1 more epoch(s): about 8s … tier 2 would do it in one epoch"), then 12 concurrent CONNECTs
+  0.5 s apart: 11 of 12 completed across two epochs with `X-ShadeNet-Queued` 2 to 7 s on ten of
+  them (wall time 19 s to 146 s), one refused `429 budget_exhausted … used 1/1 tunnels` with
+  `X-ShadeNet-ETA: 5` while the first book was opening (#253).
+- research-v2 book across idle: a fetch (7.2 s), 35 s idle, a second fetch (8.7 s) on the same
+  book (`ticket accepted … ticket=1`, then `ticket=2`, same gateway `a6cuyv5v`). Before this
+  roll a book closed after 15 s idle (dogfood #231).
+- Hermes on orbital-one (v0.7.0 client, `hermes chat --oneshot` calling `shadenet_fetch`):
+  `{"ip":"174.138.53.191"}` in 44 s, 2 tool calls, on the first try once the fleet had settled.
+  The three tries made inside the few minutes after the gateway restarts ended `transport`
+  (Tor connect timeout), as did a Lab e2e started right after the roll (#254).
+- Lab e2e (`scripts/shade-tree-v4-e2e.sh`), 10 minutes after the roll: invited and staked paths
+  `gate: accepted`, HTTP 200 on all three nodes; the staked probe found the Lab's leaf in the
+  staging set.
+
+**Left.** The fleet runs an untagged main commit; the records say so (`services.*.commit`), and the
+next release tag is the one to pin. The orbital-one client still runs the v0.7.0 release (no
+tag carries #229 yet), so its one-shots pay a Tor bootstrap each. The deploy wrapper's e2e
+should wait for the onion descriptors after a roll (#254).

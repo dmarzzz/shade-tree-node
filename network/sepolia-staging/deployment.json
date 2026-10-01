@@ -24,15 +24,15 @@
   "services": {
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "e1c7825d3741cd7ba46ec128bb9e858cb026c3cb"
+      "commit": "190d6433bd7a513c40de4f7088dca088560dcbbd"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "e1c7825d3741cd7ba46ec128bb9e858cb026c3cb"
+      "commit": "190d6433bd7a513c40de4f7088dca088560dcbbd"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "e1c7825d3741cd7ba46ec128bb9e858cb026c3cb"
+      "commit": "190d6433bd7a513c40de4f7088dca088560dcbbd"
     }
   },
   "elder": {
@@ -95,7 +95,7 @@
     "legacy": null
   },
   "created": "2026-09-28",
-  "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. Canopy: 2 Elder Trees at e1c7825d3741, recorded by scripts/record-canopy.mjs.",
+  "note": "sepolia-staging: ShadeNet contracts deployed by scripts/deploy-contracts.mjs from network/sepolia-staging/economics.json. Canopy: 2 Elder Trees at 190d6433bd7a, recorded by scripts/record-canopy.mjs.",
   "elders": [
     {
       "onion": "a4xt55gef66pifqebadjobjpy2drsoa63bdok4toisvenmyehslaz4id.onion",
