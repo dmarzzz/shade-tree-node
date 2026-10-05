@@ -217,6 +217,38 @@ mod tests {
     }
 
     #[test]
+    fn a_tier_eight_member_opens_eight_books_an_epoch() {
+        // Eight proof slots per epoch, each buying a six-ticket book: 48 tunnels an epoch.
+        let b = Budget {
+            tier: 8,
+            slots_left: 8,
+            session_tickets: true,
+            ..tier1()
+        };
+        assert_eq!(b.per_proof(), 6);
+        assert_eq!(b.capacity_per_epoch(), 48);
+        assert_eq!(b.available_now(), 48);
+        let p = plan(&b, 48, 0);
+        assert!(p.fits_now);
+        assert_eq!((p.waits, p.epochs_needed, p.one_epoch_tier), (0, 1, 8));
+        // The 49th waits one boundary; three slots spent leaves 30 tunnels plus any open tickets.
+        let p = plan(&b, 49, 0);
+        assert_eq!((p.waits, p.completes_in_seconds), (1, 20));
+        let spent = Budget {
+            slots_left: 5,
+            tickets_open: 2,
+            ..b
+        };
+        assert_eq!(spent.available_now(), 32);
+        // Tickets off: eight tunnels an epoch, one per proof.
+        let off = Budget {
+            session_tickets: false,
+            ..b
+        };
+        assert_eq!(off.capacity_per_epoch(), 8);
+    }
+
+    #[test]
     fn the_queue_ahead_pushes_the_eta_out() {
         let b = Budget {
             tier: 2,

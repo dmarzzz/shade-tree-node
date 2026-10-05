@@ -19,7 +19,8 @@ function limitsOf(network) {
 // A fresh identity from 32 random bytes (WebCrypto in both Node and browsers).
 export async function createIdentity({ network = "sepolia", limit } = {}) {
   const { limits, defaultLimit } = limitsOf(network);
-  const lim = Number(limit ?? defaultLimit ?? 1);
+  // No staked root in the record: the tier every set admits (the contract's DEFAULT_LIMIT).
+  const lim = Number(limit ?? defaultLimit ?? 8);
   if (limits && !limits.includes(lim)) throw new ShadeNetError("InvalidInput", `tier ${lim} is not offered on this network`);
   const seed = globalThis.crypto.getRandomValues(new Uint8Array(32));
   try {

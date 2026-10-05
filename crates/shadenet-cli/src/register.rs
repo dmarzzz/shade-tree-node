@@ -40,8 +40,8 @@ explicit contract/RPC, the bundled network's staking profile is used.
 SHADENET_GROUP_CONTRACT, SHADENET_RPC_URL, SHADENET_LIMIT, and
 SHADENET_BOND are the environment equivalents. SHADENET_CHAIN_ID overrides
 the expected chain; the bundled public contract is pinned to Sepolia. A public Anvil development key
-is selected only for a loopback RPC. The default tier is the bundled staked
-root's defaultLimit (1 for the public canopy)."#;
+is selected only for a loopback RPC. The default tier is the network record's
+staked defaultLimit."#;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct CliOptions {
@@ -465,11 +465,13 @@ mod tests {
 
     #[test]
     fn registration_default_limit_comes_from_the_bundled_staked_root() {
+        // 3 is neither the bundled default nor the legacy fallback (8), so only a value read
+        // from the record's field can produce it.
         let mut deployment: Value = serde_json::from_str(crate::DEFAULT_DEPLOYMENT).unwrap();
-        deployment["admission"]["roots"]["staked"]["defaultLimit"] = json!(1);
+        deployment["admission"]["roots"]["staked"]["defaultLimit"] = json!(3);
         let parsed = crate::parse_bundled_deployment(&deployment.to_string()).unwrap();
         let (_, _, limit, _) = registration_defaults_from(parsed).unwrap();
-        assert_eq!(limit, 1);
+        assert_eq!(limit, 3);
     }
 
     #[test]

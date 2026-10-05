@@ -25,7 +25,7 @@ const recordPath = join(ROOT, "network", network, "deployment.json");
 const record = JSON.parse(readFileSync(recordPath, "utf8"));
 const staked = record.admission.roots.staked;
 const rpcUrl = args["rpc-url"] || staked.rpcUrl;
-const tier = Number(args.tier || staked.defaultLimit || 1);
+const tier = Number(args.tier || staked.defaultLimit || staked.tiers[0].limit);
 const out = resolve(args.out || join(ROOT, "cache", `browser-stake-${network}-${Date.now()}`));
 const shadenetBin = args.shadenet || "shadenet";
 const fetchUrl = args["fetch-url"] || "https://api.ipify.org?format=json";

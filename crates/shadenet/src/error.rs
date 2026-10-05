@@ -137,7 +137,7 @@ pub fn explain_reason(gateway: &str, reason: &str, ack: &serde_json::Value) -> E
         ),
         "payload-limit" | "payload-exceeded" => Explanation::new(
             "this tunnel moved more bytes than one slot allows (40 MiB on Sepolia)",
-            "open a new tunnel for the next request; keep large downloads off ShadeNet or stake a higher tier",
+            "open a new tunnel for the next request and keep large downloads off ShadeNet",
         ),
         "target-not-allowed" | "target-private" | "target-denied" => Explanation::new(
             format!("{node} refuses that destination (private address or an operator deny rule)"),
@@ -252,7 +252,7 @@ impl Error {
             ),
             Self::BudgetExhausted { detail, retry_after } => Explanation::new(
                 format!("the per-epoch budget is spent: {detail}"),
-                format!("wait {}s (the epoch reset), reuse open connections, keep model APIs off ShadeNet, or stake a higher tier", retry_after.as_secs().max(1)),
+                format!("wait {}s (the epoch reset), reuse open connections and keep model APIs off ShadeNet", retry_after.as_secs().max(1)),
             ),
             Self::PortNotAllowed { port, allowed } => Explanation::new(
                 format!("no node egresses to port {port}; the canopy serves {allowed}"),
