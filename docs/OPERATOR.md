@@ -842,7 +842,7 @@ light-client sidecar so the root is verified against Ethereum consensus instead:
 SHADE_TREE_HELIOS=1 \
 SHADE_TREE_HELIOS_CONSENSUS_RPC=https://lodestar-sepolia.chainsafe.io \   # a beacon API with the light-client endpoints
 SHADE_TREE_RPC_URL=<execution RPC that serves eth_getProof at finalized> \
-SHADE_TREE_GROUP_CONTRACT=0xFe48De8b9aCA4386DC31C845d579ae62f04f9d25 \   # rln-v4-tiers (on-chain root; network/sepolia/contracts.json)
+SHADE_TREE_GROUP_CONTRACT=0x789967F0bDD7f3a96fb60F6D315e93F103b5680b \   # the live ShadeNet staking set (on-chain root; network/sepolia/deployment.json)
   sudo bash packages/node/bootnode/deploy/bootstrap.sh          # composes with SHADE_TREE_BOOTNODE_ONION (gateway-only)
 journalctl -u shade-tree-helios -f                       # 'consensus client in sync with checkpoint', then 'finalized block number=…'
 journalctl -u shade-tree-gateway | grep stateRootSource  # expect: helios (sync-committee verified)

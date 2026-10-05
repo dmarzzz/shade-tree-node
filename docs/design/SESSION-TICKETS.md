@@ -2,7 +2,7 @@
 
 > **Status (ADR 0011, #103):** implemented behind the `sessionTickets` switch with one deviation from section 6: `session-v1` rides the existing v4 onion port as two new envelope kinds instead of an HTTP/2 side port (see the ADR for why). Sections 8 to 10 and 13 to 17 are implemented as written; section 11 advertises `{ version, classes }` without a port.
 
-**Status: detailed design; not implemented.**
+**Status: implemented** (ADR 0011, #103) and on in the live record (`sessionTickets: true`); see the status note above for how the shipped design deviates from this page. The sections below are the original detailed design, kept for the rationale.
 
 **Roadmap track:** gateway-bound session tickets, before transferable zkAPI credits.
 

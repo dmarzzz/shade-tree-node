@@ -208,9 +208,11 @@ use structured JSON logs and separate loopback metrics for each role. See the
   Allocation happens before proving, so a crash or local proof failure consumes a
   slot; state resets only when the protocol epoch advances.
 
-One proof admits one CONNECT tunnel, not one HTTP request. HTTP/2 and keep-alive
-can carry many requests inside it. Both opaque traffic directions share a 40 MiB
-allowance per RLN epoch slot on each node; reaching it closes the tunnel. Read the [protocol](specs/protocol.md) and
+One proof buys one epoch slot, not one HTTP request. With session tickets on — as in
+the live record — that slot is a book of six single-use tunnel tickets at one node (see
+[ECONOMICS.md](docs/ECONOMICS.md)); with tickets off it is a single CONNECT tunnel. Either way
+HTTP/2 and keep-alive can carry many requests inside a tunnel. Both opaque traffic directions
+share a 40 MiB allowance per RLN epoch slot on each node; reaching it closes the tunnel. Read the [protocol](specs/protocol.md) and
 [threat model](docs/THREAT-MODEL.md) for the exact guarantees.
 
 ## Repository

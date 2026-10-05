@@ -290,7 +290,9 @@ Keep the contract address in the agent-devops inventory (group vars) as the sing
 truth for the fleet; `contracts/deployed.local.json` stays the deployer-box local cache.
 
 **Flipping the fleet to a new member set (historical: rln-v3 → rln-v4-tiers).** The live set
-today is the ShadeNet set `0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC`; the sets named here are
+today is the one-tier ShadeNet set `0x789967F0bDD7f3a96fb60F6D315e93F103b5680b` (redeployed
+2026-10-05; the previous two-tier set `0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC` is still
+admitted while it holds a member); the sets named here are
 retired pre-v4 history, kept as a worked example of the flip. At the time, gateways slashed
 against `SHADE_TREE_SLASH_CONTRACT` (rln-v3 `0xdAE242AE…20FC`) and gated on
 `group/members.json`; the rln-v4 set `0xFe48De8b…9d25` was recorded but the units were

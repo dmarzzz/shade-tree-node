@@ -72,8 +72,10 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | [`VERSIONING.md`](VERSIONING.md) | The v4 boundary, legacy rejection, artifact rotation, coordinated rollout |
 | [`RECEIPTS.md`](RECEIPTS.md) | Signed egress success receipts |
 | [`ONCHAIN.md`](ONCHAIN.md) | Staked reputation set, gateway registry, root provider |
+| [`ECONOMICS.md`](ECONOMICS.md) | The bond, the slot and what it buys, and what misuse costs |
 | [`../contracts/README.md`](../contracts/README.md) | The contract map |
 | [`PAYMENTS.md`](PAYMENTS.md) | The HTTP 402 rails (x402 v2, MPP, EIP-3009) and their leak ledger |
+| [`ERRORS.md`](ERRORS.md) | The stable error codes across the SDK, CLI, proxy and MCP, with cause and fix |
 | [`PROTOCOL.md`](PROTOCOL.md), [`PROTOCOL-API.md`](PROTOCOL-API.md), [`PROTOCOL-VERSIONING.md`](PROTOCOL-VERSIONING.md), [`PUBLIC-GROVE.md`](PUBLIC-GROVE.md) | Redirect pages kept so old links resolve |
 
 ## Security
@@ -92,8 +94,8 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | Doc | What it is |
 |-----|------------|
 | [`OVERVIEW.md`](OVERVIEW.md) | How a request flows, the anonymity ledger per admission path, what is not done |
-| [`adr/`](adr/README.md) | Decision records 0001 to 0010: context, decision, consequences, rejected alternatives |
-| [`design/SESSION-TICKETS.md`](design/SESSION-TICKETS.md) | Session tickets: one proof buys a bounded research session (built behind a flag) |
+| [`adr/`](adr/README.md) | Decision records 0001 to 0013: context, decision, consequences, rejected alternatives |
+| [`design/SESSION-TICKETS.md`](design/SESSION-TICKETS.md) | Session tickets: one proof buys a bounded research session (implemented behind the `sessionTickets` switch; on in the live record) |
 | [`exit-blocking-benchmark.md`](exit-blocking-benchmark.md) | The motivating measurement: 51 Tor exits against web and search destinations |
 | [`ROADMAP.md`](ROADMAP.md) | The forward roadmap |
 
@@ -106,6 +108,7 @@ Kept as written. They describe earlier versions and must not be executed as curr
 | [`history/SHIP-PLAN.md`](history/SHIP-PLAN.md) | The implementation ledger through v0.6 |
 | [`history/ROADMAP-v1.md`](history/ROADMAP-v1.md), [`history/NEXT-VERSION.md`](history/NEXT-VERSION.md), [`history/RLN-MIGRATION.md`](history/RLN-MIGRATION.md) | Earlier designs; what they specified is built |
 | [`history/GO-LIVE.md`](history/GO-LIVE.md), [`history/GO-LIVE-LOG-2026-08-17.md`](history/GO-LIVE-LOG-2026-08-17.md), [`history/GO-LIVE-LOG-2026-08-25-v4.md`](history/GO-LIVE-LOG-2026-08-25-v4.md) | The August go-live runbook and logs |
+| [`STAGING-REHEARSAL.md`](STAGING-REHEARSAL.md), [`LAUNCH-REPORT.md`](LAUNCH-REPORT.md), [`DOGFOOD-2026-10-01.md`](DOGFOOD-2026-10-01.md) | The ShadeNet launch rehearsal, the launch report, and the 2026-10-01 dogfood pass |
 | [`history/REPORT.md`](history/REPORT.md), [`history/STATUS.md`](history/STATUS.md), [`history/DEPLOY.md`](history/DEPLOY.md), [`history/DEPLOYMENT.md`](history/DEPLOYMENT.md), [`history/walkthrough.html`](history/walkthrough.html) | The June 2026 PoC report, status and deploy guide, the July fleet record, the request walkthrough |
 | [`history/MIGRATING-TO-SHADE-TREE.md`](history/MIGRATING-TO-SHADE-TREE.md) | The v3 to v4 (RGOE to Shade Tree) name map |
 | [`history/adversarial-review.md`](history/adversarial-review.md) | Per-party worst case against the PoC; superseded by the threat model |
