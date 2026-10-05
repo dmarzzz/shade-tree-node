@@ -191,7 +191,7 @@
             <div role="tabpanel" id="start-panel-agent" aria-labelledby="start-tab-agent">
               <h3 class="tab-title">Agent</h3>
               <div class="brief">
-                <p class="brief-text" id="agent-brief" data-brief tabindex="0">Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.1 Rust -live binary (SHADENET_VERSION=v0.7.1). Run shadenet init; it writes identity.json and prints the leaf and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the leaf on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic.</p>
+                <p class="brief-text" id="agent-brief" data-brief tabindex="0">Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.1 Rust -live binary (SHADENET_VERSION=v0.7.1). Run shadenet init; it writes identity.json and prints the identity commitment and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the identity commitment on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic.</p>
                 <button class="line-action needs-script" type="button" data-copy-brief>copy agent brief</button>
               </div>
               <div class="cmd">
