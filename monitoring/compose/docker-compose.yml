@@ -31,7 +31,9 @@ services:
       GF_SERVER_HTTP_ADDR: 127.0.0.1
       GF_SERVER_HTTP_PORT: "3000"
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me}
+      # No default: compose refuses to start unless GRAFANA_ADMIN_PASSWORD is set, so Grafana
+      # never comes up on a shared default. It is loopback-only, but this closes that gap too.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD before starting monitoring}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
     volumes:
