@@ -379,7 +379,7 @@ function mount() {
     }
   }
 
-  function show(panel, { focus = true, push = true } = {}) {
+  function show(panel, { focus = true, push = true, animate = false } = {}) {
     if (!PANELS.includes(panel)) return;
     state.panel = panel;
     if (STEPS.includes(panel)) state.lastStep = panel;
@@ -387,6 +387,8 @@ function mount() {
       const current = section.dataset.panel === panel;
       section.hidden = !current;
       section.toggleAttribute("data-current", current);
+      // The step you moved to settles in; the one you were on just leaves. Never on first paint.
+      section.toggleAttribute("data-stepping", current && animate);
     }
     // Leave and details is a screen of its own, outside the three steps.
     el.stepper.hidden = panel === "details";
@@ -412,7 +414,7 @@ function mount() {
       el.input.focus();
       return;
     }
-    show(target);
+    show(target, { animate: true });
   }
 
   async function copyText(text) {
@@ -436,7 +438,8 @@ function mount() {
       selection.addRange(range);
     }
     button.textContent = ok ? "copied" : "select and copy";
-    window.setTimeout(() => { button.textContent = label; }, 1600);
+    if (ok) button.dataset.copied = "";
+    window.setTimeout(() => { button.textContent = label; delete button.dataset.copied; }, 1600);
   }
 
   async function request(method, params = []) {
@@ -694,7 +697,7 @@ function mount() {
     });
   }
   window.addEventListener("popstate", (event) => {
-    if (event.state?.panel) show(event.state.panel, { push: false });
+    if (event.state?.panel) show(event.state.panel, { push: false, animate: true });
   });
   el.input.addEventListener("input", () => { readInput(); update(); save(); });
   el.input.addEventListener("keydown", (event) => {

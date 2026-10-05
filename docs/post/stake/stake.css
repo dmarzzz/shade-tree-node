@@ -103,6 +103,7 @@ html {
 }
 
 .stepper a {
+  position: relative;
   display: flex;
   gap: 0.6rem;
   align-items: center;
@@ -115,13 +116,35 @@ html {
   transition: color 160ms var(--ease), border-color 160ms var(--ease);
 }
 
+/* The amber signal: it marks the live step and wipes forward when you advance. One identity
+   object, event-driven, off under reduced motion. */
+.stepper a::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: var(--signal);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 220ms var(--ease);
+}
+
 .stepper a:hover {
   color: var(--ink);
 }
 
 .stepper a[aria-current="step"] {
-  border-top-color: var(--ink);
   color: var(--ink);
+}
+
+.stepper a[aria-current="step"]::after {
+  transform: scaleX(1);
+}
+
+.stepper a[aria-current="step"] .step-n {
+  color: var(--signal);
 }
 
 .stepper a[data-done] {
@@ -320,6 +343,11 @@ html[data-access="ready"] .cmd pre:not([data-more]) {
 
 .cmd button:focus-visible {
   outline-offset: -2px;
+}
+
+/* The copy landed: the word turns to the success colour for a moment. */
+.cmd button[data-copied] {
+  color: var(--ok);
 }
 
 /* The one field */
@@ -550,11 +578,12 @@ html[data-access="ready"] .cmd pre:not([data-more]) {
   overflow: hidden;
 }
 
+/* The amber signal travels along the bar as the stake nears finality. */
 .finality-bar i {
   display: block;
   width: 0;
   height: 100%;
-  background: var(--ink);
+  background: var(--signal);
   transition: width 600ms var(--ease);
 }
 
@@ -893,8 +922,52 @@ html[data-access="ready"] .cmd pre:not([data-more]) {
   }
 }
 
+/* Juice: motion only where a real state changed, 180ms, one easing, opacity and transform.
+   Each of these elements is shown by removing [hidden] (display none to block), so the entrance
+   plays once, the moment the state arrives, and never on first paint. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes step-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  @keyframes signal-arrive {
+    from { opacity: 0; transform: scale(0.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  @keyframes copied-press {
+    from { transform: scale(0.92); }
+    to { transform: none; }
+  }
+
+  /* A step advance: the panel you moved to settles in. [data-stepping] is set only on a real
+     navigation, so the first step never animates on page load. */
+  .panel[data-stepping] {
+    animation: step-enter 180ms var(--ease) both;
+  }
+
+  /* Wallet connected, transaction sent, finality begun: each row arrives as its state does. */
+  .facts [data-wallet-row]:not([hidden]),
+  [data-receipt]:not([hidden]),
+  [data-finality-panel]:not([hidden]) {
+    animation: signal-arrive 160ms var(--ease) both;
+  }
+
+  /* Admitted: the one the whole flow is for, so it lands with a touch more. */
+  [data-member-state]:not([hidden]) {
+    animation: signal-arrive 220ms var(--ease) both;
+  }
+
+  .cmd button[data-copied] {
+    animation: copied-press 150ms var(--ease);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .access * {
+  .access *,
+  .access *::after {
     transition: none !important;
+    animation: none !important;
   }
 }

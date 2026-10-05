@@ -174,6 +174,11 @@ check("errors use an assertive alert region and progress a polite status", /data
 check("the stylesheet leaves the shared nav and the site's type tokens alone", !/\.site-nav|\.wordmark|\.nav-links|\.site-footer/.test(css)
   && !/--(display|sans|serif|mono|page)\s*:/.test(css) && !/^\.stake-page\s*{[^}]*font/m.test(css)
   && !/gradient\((?!to right, #000)/.test(css) && !/border-radius:\s*(999|50%|[2-9]\dpx)/.test(css));
+check("juice is event-only: motion lives under no-preference, nothing loops, and reduced motion stops every animation", /@media \(prefers-reduced-motion: no-preference\)/.test(css)
+  && !/animation:[^;]*\binfinite\b/.test(css)
+  && /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?animation: none !important;[\s\S]*?}/.test(css)
+  && /\.finality-bar i\s*{[^}]*background: var\(--signal\)/.test(css)
+  && /\.stepper a\[aria-current="step"\]::after\s*{[^}]*transform: scaleX\(1\)/.test(css));
 check("touch targets are 44 px: steps, buttons, copy, tabs and the tier choice", /--tap: 2\.75rem/.test(css) && count(css, /min-height: var\(--tap\)/g) >= 8);
 check("commands never wrap inside a flag: they are preformatted and scroll sideways in place", /\.cmd pre\s*{[^}]*overflow-x: auto;[^}]*white-space: pre;/.test(css) && /mask-image/.test(css));
 const balanceOk = describeBalance({ balanceWei: 10n ** 18n, tier: TIERS[0], gasPriceWei: 10n ** 9n });
