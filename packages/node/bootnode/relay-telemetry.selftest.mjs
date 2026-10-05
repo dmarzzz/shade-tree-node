@@ -45,10 +45,13 @@ const signer = rawPair();
 const id = nodeIdentity();
 const announced = new Set([id.onion]);
 const aggregator = makeRelayAggregator({ signer, now: () => now, isAnnounced: (onion) => announced.has(onion) });
+let allowTelemetry = true;
 const registry = {
   size: () => announced.size,
   admission: "open",
   ttlSec: 900,
+  // The telemetry route shares this global peer-write bucket; flip allowTelemetry to assert 429.
+  announceBucket: { take: () => allowTelemetry, retryAfterSec: () => 1 },
   // None of these discovery functions should be reached by telemetry paths.
   directoryWithEtag() { throw new Error("directory route reached"); },
   delta() { throw new Error("delta route reached"); },
@@ -69,6 +72,13 @@ try {
   const { report } = buildRelayReport({ counter, onion: id.onion, onionSeedHex: id.seed, now: Date.parse(counter.updatedAt) });
   const accepted = await request(server.address().port, "POST", "/telemetry/relay", report);
   assert.deepEqual(accepted, { status: 200, headers: accepted.headers, body: { ok: true } });
+
+  // The shared peer-write bucket refuses a report before the body is read.
+  allowTelemetry = false;
+  const limited = await request(server.address().port, "POST", "/telemetry/relay", report);
+  assert.equal(limited.status, 429, "a report is rate limited when the peer-write bucket is empty");
+  assert.equal(limited.body.err, "global-rate-limited");
+  allowTelemetry = true;
 
   const heartbeatId = nodeIdentity();
   announced.add(heartbeatId.onion);

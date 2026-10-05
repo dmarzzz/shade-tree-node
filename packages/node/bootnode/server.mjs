@@ -711,7 +711,9 @@ export function makeServer(registry, { signerPub, limits = {}, pay = null, relay
         if (!relayAggregator) return send(res, 404, { ok: false, err: "telemetry-disabled" });
         // Share the global peer-write bucket with /announce so a flood of reports cannot be used
         // to drive the aggregator's per-report work. Refused before the body is even read.
-        if (!registry.announceBucket.take()) return send(res, 429, { ok: false, err: "global-rate-limited" }, { "retry-after": String(registry.announceBucket.retryAfterSec() || 1) });
+        if (registry.announceBucket && !registry.announceBucket.take()) {
+          return send(res, 429, { ok: false, err: "global-rate-limited" }, { "retry-after": String(registry.announceBucket.retryAfterSec() || 1) });
+        }
         let report;
         try { report = JSON.parse(await readBody(req, 16 * 1024)); }
         catch { return send(res, 400, { ok: false, err: "bad-report" }); }

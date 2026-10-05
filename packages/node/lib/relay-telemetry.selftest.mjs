@@ -237,6 +237,29 @@ try {
     }
     assert.ok(capped.rawContributionCount() <= 5, `one onion is capped (${capped.rawContributionCount()} <= 5)`);
     assert.equal(capped.rawNodeCount(), 1, "the node map still holds exactly the one onion");
+
+    // The total cap drops the globally oldest across onions, independent of the per-onion cap.
+    // Six distinct onions, one first report each, so only the total cap can trip.
+    const totalIds = Array.from({ length: 6 }, () => identity());
+    const totalAnnounced = new Set(totalIds.map((i) => i.onion));
+    const totalCapped = makeRelayAggregator({
+      signer: elderSigner(),
+      now: () => Date.parse("2026-08-25T12:30:00.000Z"),
+      isAnnounced: (onion) => totalAnnounced.has(onion),
+      maxContributionsPerOnion: 100,
+      maxContributions: 4,
+    });
+    for (const capId2 of totalIds) {
+      const built = buildRelayReport({
+        counter: counter("0b".repeat(16), "2026-08-25T12:00:00.000Z", 1000, 1000),
+        previous: null,
+        onion: capId2.onion,
+        onionSeedHex: capId2.seed,
+        now: Date.parse("2026-08-25T12:30:00.000Z"),
+      });
+      assert.deepEqual(await totalCapped.accept(built.report), { ok: true });
+    }
+    assert.ok(totalCapped.rawContributionCount() <= 4, `the total is capped (${totalCapped.rawContributionCount()} <= 4)`);
   }
 
   assert.equal(validRelayCounterState({ ...localState, counters: { ...localState.counters, destination: "forbidden" } }), false, "counter exact-key validation rejects metadata grafts");
