@@ -11,5 +11,5 @@ import deployment from "../network/sepolia/deployment.json" with { type: "json" 
 export const SITE_NETWORK = "sepolia";
 // The newest release whose installer puts a `shadenet` binary on the PATH (v0.6.0 shipped only
 // `shade-tree`, without `init`, `status` or `mcp`). Install lines pin it until it is Latest.
-export const CLIENT_RELEASE = "v0.7.0";
+export const CLIENT_RELEASE = "v0.7.1";
 export default deployment;

@@ -63,16 +63,16 @@
     <header class="guide-intro">
       <h1>Add ShadeNet to an agent.</h1>
       <p>Install one verified Rust binary, start its embedded-Arti Proxy, then give that route to one agent process.</p>
-      <p class="guide-status"><strong>Research preview.</strong> v0.7.0 bundles the public Sepolia staked profile, <code>shadenet init</code>, <code>status</code>, <code>mcp</code> and private member exit. A tier-1 stake admits one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload ceiling; the bond comes from the current network record and is shown on the <a href="/stake/">Get access</a> page.</p>
+      <p class="guide-status"><strong>Research preview.</strong> v0.7.1 bundles the public Sepolia staked profile, <code>shadenet init</code>, <code>status</code>, <code>mcp</code> and private member exit. A tier-1 stake admits one CONNECT tunnel per fixed 60-second epoch with a 40 MiB combined payload ceiling; the bond comes from the current network record and is shown on the <a href="/stake/">Get access</a> page.</p>
     </header>
 
     <div class="guide-steps">
       <section class="guide-step" aria-labelledby="agent-install">
         <h2 id="agent-install">1. Download and verify</h2>
-        <p>The installer detects the platform, downloads the matching v0.7.0 <code>-live</code> binary and checksum, verifies both digest and filename, and installs into <code>~/.local/bin</code>. The binary includes the Proxy, RLN prover, private member lifecycle, and Arti; the agent machine needs neither Node.js nor a system Tor daemon.</p>
-        <div class="command" aria-label="Install the ShadeNet v0.7.0 live binary">
-          <code>curl -q -fsSL --proto '=https' --proto-redir '=https' \<br>&nbsp;&nbsp;https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \<br>&nbsp;&nbsp;| SHADENET_VERSION=v0.7.0 sh<br>shadenet --version</code>
-          <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' \&#10;  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \&#10;  | SHADENET_VERSION=v0.7.0 sh&#10;shadenet --version" aria-label="Copy v0.7.0 live binary installation commands">copy</button>
+        <p>The installer detects the platform, downloads the matching v0.7.1 <code>-live</code> binary and checksum, verifies both digest and filename, and installs into <code>~/.local/bin</code>. The binary includes the Proxy, RLN prover, private member lifecycle, and Arti; the agent machine needs neither Node.js nor a system Tor daemon.</p>
+        <div class="command" aria-label="Install the ShadeNet v0.7.1 live binary">
+          <code>curl -q -fsSL --proto '=https' --proto-redir '=https' \<br>&nbsp;&nbsp;https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \<br>&nbsp;&nbsp;| SHADENET_VERSION=v0.7.1 sh<br>shadenet --version</code>
+          <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' \&#10;  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \&#10;  | SHADENET_VERSION=v0.7.1 sh&#10;shadenet --version" aria-label="Copy v0.7.1 live binary installation commands">copy</button>
         </div>
         <p>Every published target has a live binary, Intel macOS included. The macOS binaries are checksummed and attested but not yet notarized. The <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/crates/INSTALL.md">Rust installation guide</a> lists published targets, manual checksum and attestation verification, and source builds.</p>
       </section>
