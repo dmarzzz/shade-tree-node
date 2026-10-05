@@ -243,7 +243,7 @@ Read by `packages/node/payments/registrar.mjs` (the operator's HTTP-402 service 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
 | `SHADE_TREE_PROXY_URL` | `http://127.0.0.1:<SHADE_TREE_SHIM_PORT>` | HTTP CONNECT Proxy URL installed only into the child process. Only `http://` URLs containing a host and port are accepted. | `shade-tree run` | `--proxy` |
-| `SHADE_TREE_NO_PROXY` | (unset) | Extra comma-separated agent-local hosts appended to the fixed loopback bypass list. `*` is rejected because it would bypass Shade Tree. | `shade-tree run` | `--no-proxy` |
+| `SHADE_TREE_NO_PROXY` | (unset) | Extra comma-separated agent-local hosts appended to the fixed loopback bypass list. `*` is rejected because it would bypass ShadeNet. | `shade-tree run` | `--no-proxy` |
 | `SHADE_TREE_PROXY_CHECK_TIMEOUT_MS` | `2000` | TCP preflight deadline before the child is started; integer 1..30000 milliseconds. | `shade-tree run` | `--check-timeout-ms` |
 
 ## Binary installer (`scripts/install.sh`)

@@ -454,7 +454,7 @@ decentralized than several self-verifying mirrors.
 
 Do not conflate gateway discovery with paid-API discovery. x402 and MPP both have service
 metadata/discovery mechanisms. Those tell an agent **what API exists and how it wants to
-be paid**. Shade Tree boot nodes tell the client **which anonymous egress gateways exist**.
+be paid**. ShadeNet boot nodes tell the client **which anonymous egress gateways exist**.
 The client can consume both, but they are different trust domains.
 
 ---
@@ -463,11 +463,11 @@ The client can consume both, but they are different trust domains.
 
 There are two payment questions and they should not be mixed:
 
-1. **Pay for Shade Tree itself.** How does a member buy/stake/renew access without making its
+1. **Pay for ShadeNet itself.** How does a member buy/stake/renew access without making its
    later requests linkable to the payer? The strongest current design is still
    [PAYMENTS.md](PAYMENTS.md): anonymous on-chain deposit / commitment plus off-chain ZK
    redemption, with no required facilitator.
-2. **Use Shade Tree to access a paid downstream API.** How does an anonymous client satisfy an
+2. **Use ShadeNet to access a paid downstream API.** How does an anonymous client satisfy an
    x402, MPP, or future zkAPI payment challenge while preserving the desired privacy
    properties?
 
@@ -491,12 +491,12 @@ The general payment API should therefore expose a policy such as:
 x402 V2 is an HTTP `402 Payment Required` payment standard with pluggable payment
 schemes, facilitators, discovery, and current schemes including exact, usage-bounded
 (`upto`), and batch-settlement patterns. Treat x402 as a protocol adapter, not as the
-identity model of Shade Tree.
+identity model of ShadeNet.
 
 ### 5.1 x402-A: transport compatibility — P1, very small
 
-First prove that an ordinary x402 buyer can use the existing local Shade Tree proxy unchanged:
-TLS and the HTTP 402/payment headers remain end-to-end between client and API; Shade Tree is
+First prove that an ordinary x402 buyer can use the existing local ShadeNet proxy unchanged:
+TLS and the HTTP 402/payment headers remain end-to-end between client and API; ShadeNet is
 only the transport. Add an interoperability test and example before adding custom code.
 
 **Privacy.** This hides the client's network IP from the API, but the API still sees
@@ -508,10 +508,10 @@ payer-anonymous**.
 Add an x402-aware request loop to the library for agents that use `ShadeTreeClient.fetch`
 directly rather than a generic HTTP proxy:
 
-1. make request through Shade Tree;
+1. make request through ShadeNet;
 2. receive the destination's 402 challenge end-to-end;
 3. invoke the configured x402 payment method;
-4. retry through Shade Tree with the payment credential;
+4. retry through ShadeNet with the payment credential;
 5. return the x402 receipt alongside the Shade Tree gateway receipt.
 
 Start with `exact`; add `upto` / batch settlement only when there is a real workload that
@@ -528,10 +528,10 @@ Instead:
 3. the gateway pays/signs with a gateway-owned x402 wallet and returns the payment
    credential to the client;
 4. client retries the destination request end-to-end using that credential;
-5. member is charged separately through its Shade Tree anonymous balance/credit mechanism.
+5. member is charged separately through its ShadeNet anonymous balance/credit mechanism.
 
 The destination can now link the payment to the **gateway**, which is already the public
-egress identity, rather than to the hidden member. This turns Shade Tree into a privacy adapter
+egress identity, rather than to the hidden member. This turns ShadeNet into a privacy adapter
 for machine payments without giving the gateway plaintext API content.
 
 **Open issue.** Pricing and fraud risk move to the gateway: it must not spend a $10
@@ -539,9 +539,9 @@ payment for a member whose anonymous balance covers $0.10. The authorization fro
 to gateway therefore has to bind `maxAmount`, destination/challenge hash, expiry, and
 idempotency before the gateway signs or settles anything.
 
-### 5.4 x402 seller mode for Shade Tree access — optional
+### 5.4 x402 seller mode for ShadeNet access — optional
 
-Shade Tree itself could respond with x402 to sell access. That is useful for adoption, but a
+ShadeNet itself could respond with x402 to sell access. That is useful for adoption, but a
 plain x402 purchase can reveal a payer wallet to the Shade Tree operator. If seller mode is
 added, label it a convenience/privacy-weaker mode unless issuance is blinded or the
 payment buys an anonymously redeemable commitment as in `PAYMENTS.md`.
@@ -562,11 +562,11 @@ its TypeScript stack also supports compatible x402 exact flows.
 
 ### 6.1 MPP-A: direct charge compatibility — P1
 
-As with x402, first make the simple path work through the Shade Tree transport. A client gets
+As with x402, first make the simple path work through the ShadeNet transport. A client gets
 an MPP 402 Challenge, signs an authorization Credential, and receives a Receipt. This
 should remain end-to-end through the tunnel.
 
-**Privacy.** The destination sees the MPP payment identity/credential semantics. Shade Tree
+**Privacy.** The destination sees the MPP payment identity/credential semantics. ShadeNet
 hides the client IP but does not magically make that payment unlinkable.
 
 ### 6.2 MPP-B: native client adapter — P1/P2
@@ -576,7 +576,7 @@ running a separate proxy stack. Reuse one internal `PaymentAdapter` interface fo
 MPP and x402 so we do not fork the request lifecycle.
 
 MPP already supports x402 exact through the `mppx` SDK, so an implementation should
-investigate whether `mppx` can be the compatibility layer while Shade Tree remains the custom
+investigate whether `mppx` can be the compatibility layer while ShadeNet remains the custom
 transport.
 
 ### 6.3 MPP-C: gateway-owned sessions — P2
@@ -586,7 +586,7 @@ usage because the client authorizes a funded session once and then incrementally
 the cumulative authorization off the hot on-chain path.
 
 A member-owned session, however, is intentionally persistent state with a merchant and
-can become a stable payment pseudonym. For the strongest Shade Tree privacy mode, make the
+can become a stable payment pseudonym. For the strongest ShadeNet privacy mode, make the
 **gateway/payment service own the MPP session** to the API while anonymous members debit
 against the gateway internally. The destination sees one or more gateway payment
 sessions, not a member session.
@@ -596,7 +596,7 @@ explicit: either pin paid traffic to a gateway for the lifetime of that gateway-
 session, or let several gateways maintain independent provider sessions and select among
 them. Do not accidentally move a member-specific session identifier across gateways.
 
-### 6.4 MPP seller mode for Shade Tree access — optional
+### 6.4 MPP seller mode for ShadeNet access — optional
 
 MPP can also sell the egress service itself via charge/session/subscription. As with
 x402 seller mode, this is an interoperability/convenience path and must not overwrite
@@ -609,7 +609,7 @@ Official references: <https://mpp.dev/> and the MPP session/discovery specificat
 ## 7. zkAPI / anonymous API usage credits — research track
 
 **Status: theoretical. There is no implementation to integrate today.** Treat zkAPI
-as a protocol research project that can later become a payment method for Shade Tree, x402,
+as a protocol research project that can later become a payment method for ShadeNet, x402,
 or MPP rather than pretending an SDK exists.
 
 The intended primitive is an **anonymous prepaid API credit**:
@@ -623,7 +623,7 @@ The intended primitive is an **anonymous prepaid API credit**:
 5. repeated/double use is rejected and, where RLN-style construction is used, can be
    made punishable.
 
-This is closely aligned with Shade Tree because both systems are already asking the same
+This is closely aligned with ShadeNet because both systems are already asking the same
 question: **how do I authorize a scarce action without naming the authorized actor?**
 
 ### 7.1 The central design fork: online check vs channel
@@ -719,7 +719,7 @@ it adds a separate HTTP/2 onion-service port and does not change Protocol v4 or 
 
 ---
 
-## 8. One payment adapter layer inside Shade Tree
+## 8. One payment adapter layer inside ShadeNet
 
 Do not implement x402, MPP, and zkAPI as three unrelated branches in the networking
 code. Add a small internal interface that separates payment negotiation from transport.
@@ -775,10 +775,10 @@ GitHub directory update, and compromise of one boot node cannot insert a fake ga
 - unified `PaymentAdapter` interface and privacy-mode policy;
 - prototype delegated-payer control flow while preserving end-to-end destination TLS;
 - evaluate gateway-owned MPP sessions for high-frequency paid APIs;
-- keep native Shade Tree access funding in `PAYMENTS.md` as the strongest payer-use-unlinkable
+- keep native ShadeNet access funding in `PAYMENTS.md` as the strongest payer-use-unlinkable
   mode.
 
-**Exit condition:** an agent can reach paid x402/MPP APIs through Shade Tree with an explicit,
+**Exit condition:** an agent can reach paid x402/MPP APIs through ShadeNet with an explicit,
 tested choice between direct payment identity and gateway-delegated payment identity.
 
 ### Phase D — gateway-bound session tickets (P1/P2)

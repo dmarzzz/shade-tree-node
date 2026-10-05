@@ -1,7 +1,7 @@
 # ShadeNet Data API
 
 The [Grove](https://shade-tree-node.vercel.app/grove/) is a deliberately small
-public view of Shade Tree. It shows how many gateway identities appeared in the
+public view of ShadeNet. It shows how many gateway identities appeared in the
 last signed directory that the hosted observer could verify. It is topology,
 not territory: there are no locations, identities, traffic paths, or selectable
 nodes on the page.
@@ -42,7 +42,7 @@ announcement expires.
 The count is also not a count of people, operators, physical machines, public
 IPs, or independent organizations. One operator can announce more than one
 gateway identity. It is the directory visible through this observer and this
-bootnode, not a claim about every Shade Tree deployment.
+bootnode, not a claim about every ShadeNet deployment.
 
 Publishing an exact total makes growth and churn observable. That is an
 intentional privacy tradeoff. The view avoids adding the much more identifying

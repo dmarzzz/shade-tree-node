@@ -1,7 +1,7 @@
 # ShadeNet specifications
 
-These files are the canonical, implementation-grounded contracts for Shade Tree
-Grove. Presentation names do not rename wire roles or identifiers.
+These files are the canonical, implementation-grounded contracts for ShadeNet.
+Presentation names do not rename wire roles or identifiers.
 
 | Specification | Scope |
 | --- | --- |

@@ -2,13 +2,13 @@
 
 ## Status
 
-This is a research preview on Sepolia. A live canopy (one Elder Tree and three
+This is a research preview on Sepolia. A live canopy (two Elder Trees and three
 Shade Tree nodes) admits invited members and permissionless Sepolia stakers; its
 record is [`network/sepolia/deployment.json`](network/sepolia/deployment.json).
 Everything in it is testnet material:
 
 - The code is **unaudited** by a third party. An internal contract review found
-  issues that need a fresh deployment
+  issues that needed a fresh deployment
   ([issue #113](https://github.com/dmarzzz/shade-tree-node/issues/113), all fixed
   and regression-tested); the ShadeNet launch set `StakedReputationSet`
   (`0xDEB2…4bBC`, 2026-09-30) carries those fixes; the earlier set `0xEB67…4275`
@@ -17,7 +17,7 @@ Everything in it is testnet material:
   output, adopted after an independent re-verification
   (`docs/ceremony/PSE-VERIFICATION.md`); an outside verifier's signed statement
   is still pending. The
-  production trusted-setup ceremony has not been run
+  project's own community ceremony has not been run and stays as the fallback
   ([issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6),
   `docs/CEREMONY.md`).
 - The private-IP SSRF flaw in the default egress policy was fixed in
@@ -47,7 +47,7 @@ Reports that show a real defect in the shipped code, for example:
   authority (see below).
 - A contract bug in `StakedReputationSet`, `PaidAccessSet` or `GatewayRegistry`
   (stake lifecycle, slash authorization, insert authorization, fund custody).
-- A 402 registrar defect (`payments/`): settling without inserting, inserting
+- A 402 registrar defect (`packages/node/payments/`): settling without inserting, inserting
   without a valid settlement, replaying an authorization, or a challenge that
   can be edited without breaking its binding.
 - A secret reaching a log or the wire (member identity secret, seed, onion
@@ -59,8 +59,9 @@ These are documented limitations, not vulnerabilities. Please do not file them
 as new reports; concrete improvements to them are welcome as pull requests
 instead.
 
-- **Unaudited, testnet ZK artifacts.** Untrusted ceremony output.
-  (`docs/AUDIT.md` "Known unaudited surfaces"; residual T-HARD-1.)
+- **Trusted-setup ZK artifacts.** PSE's RLN ceremony output, sound only if at least one
+  contributor to each chain was honest; no outside verifier's signed statement yet.
+  (`docs/ceremony/PSE-VERIFICATION.md`; residual T-HARD-1.)
 - **Cross-gateway exact-envelope replay is opt-in.** Target binding stops a proof
   being redirected, and a single gateway rejects an exact-envelope replay outside
   the 5s honest-retry window (`replayed-envelope`, T-FEAT-12). Non-colluding
@@ -87,7 +88,7 @@ instead.
   operator never inserts has public evidence but no on-chain recourse
   (`docs/PAYMENTS.md` "Leak ledger", `docs/THREAT-MODEL.md` §5).
 - Anything under "What is and is not anonymous" and "Not done" in `docs/OVERVIEW.md`
-  (and the README "What it does not protect against") that is called out as deliberately
+  (and the README "Boundaries") that is called out as deliberately
   out of scope or an operator responsibility (sourcing clean egress IPs, rendezvous DoS with PoW off, one operator, and so on).
 
 `docs/history/SHIP-PLAN.md` is the historical residual list; open work is tracked in the

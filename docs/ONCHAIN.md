@@ -388,7 +388,7 @@ we actually need — not a prerequisite.
 ## Fleet composition: where single-node slashing still breaks (see FLEET.md)
 
 Everything above is correct for **one** node. Across a fleet, slashing remains local.
-A slash needs two distinct RLN shares under one nullifier on the same node. Shade Tree
+A slash needs two distinct RLN shares under one nullifier on the same node. ShadeNet
 does not send shares between nodes because those are the values that reconstruct the
 member secret once the threshold is crossed.
 

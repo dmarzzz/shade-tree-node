@@ -1,6 +1,6 @@
 # Envelope and artifact versioning
 
-Shade Tree negotiates two independent versions:
+ShadeNet negotiates two independent versions:
 
 1. the **envelope version**, which defines the client-to-node wire shape; and
 2. the **artifact id**, which identifies the proving and verification key set.

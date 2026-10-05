@@ -1,8 +1,8 @@
-# Shade Tree protocol
+# ShadeNet protocol
 
 **Status:** research preview · protocol v4 · testnet only · unaudited
 
-Shade Tree carries an HTTPS tunnel from a local client to a destination through a
+ShadeNet carries an HTTPS tunnel from a local client to a destination through a
 proof-gated Tor onion service. This page describes the current protocol and its
 boundaries. [`WIRE-SPEC.md`](../docs/WIRE-SPEC.md) contains the byte-level directory,
 announce, and error formats.
@@ -49,7 +49,7 @@ application      local client          Tor             node.onion       destinat
      | CONNECT host:443 |                |                   |                 |
      |----------------->|                |                   |                 |
      |                  |-- onion dial --|------------------>|                 |
-     |                  |       Shade Tree v4 envelope       |                 |
+     |                  |        ShadeNet v4 envelope        |                 |
      |                  |----------------------------------->|                 |
      |                  |                 verify + TCP connect---------------->|
      |                  |<-------------- {"ok":true} --------|                 |

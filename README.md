@@ -121,9 +121,9 @@ chain.
 
 ## How it works
 
-![Shade Tree reputation gate and network path](docs/post/fig/shade-tree-readme.svg)
+![ShadeNet reputation gate and network path](docs/post/fig/shade-tree-readme.svg)
 
-Shade Tree is a Tor-based egress layer. The node sees Tor, not the Proxy host's
+ShadeNet is a Tor-based egress layer. The node sees Tor, not the Proxy host's
 source IP. Each CONNECT tunnel carries a Groth16 RLN proof that a
 rate-commitment leaf belongs to an admitted Merkle root without revealing which
 leaf. The proof binds the target-and-nonce signal to a private per-epoch message
@@ -144,7 +144,7 @@ and can omit, reorder, or add candidates. See the [threat
 model](docs/THREAT-MODEL.md) for the exact trust boundary.
 
 [Tor exit addresses are public][tor-exit-list], and [shared traffic often trips
-abuse controls][tor-captchas]. Shade Tree gates each tunnel and publishes no
+abuse controls][tor-captchas]. ShadeNet gates each tunnel and publishes no
 egress-IP list. Destinations still see and can block a node IP.
 
 ## Run a node
@@ -220,8 +220,8 @@ cargo test --workspace
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the test layout. Report security
 issues through the private channel in [SECURITY.md](SECURITY.md). Ask questions
-in [Discussions](https://github.com/dmarzzz/shade-tree-node/discussions). Shade
-Tree is open source under the [MIT license](LICENSE).
+in [Discussions](https://github.com/dmarzzz/shade-tree-node/discussions).
+ShadeNet is open source under the [MIT license](LICENSE).
 
 [ci-badge]: https://github.com/dmarzzz/shade-tree-node/actions/workflows/ci.yml/badge.svg
 [ci-url]: https://github.com/dmarzzz/shade-tree-node/actions/workflows/ci.yml

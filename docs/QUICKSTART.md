@@ -1,6 +1,6 @@
 # Quickstart
 
-Shade Tree has a local **Proxy** (protocol client), an access-gated **Shade Tree node**
+ShadeNet has a local **Proxy** (protocol client), an access-gated **Shade Tree node**
 (protocol gateway), and an **Elder Tree** (discovery bootnode). Source paths, environment
 variables, flags, and service units retain `client`, `gateway`, and `bootnode` where
 compatibility matters.

@@ -1,6 +1,6 @@
 # Threat model
 
-This is the consolidated, auditor-facing threat model for the Shade Tree
+This is the consolidated, auditor-facing threat model for the ShadeNet
 system. It names the assets, the actors and adversary classes, states what each party is trusted
 for and — more importantly — what it is *not* trusted for, and maps each security property to the
 exact code that enforces it (`file:function`). It ends with the known residual risks (honestly, and

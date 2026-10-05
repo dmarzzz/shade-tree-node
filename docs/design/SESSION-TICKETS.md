@@ -165,8 +165,8 @@ the node.
 
 If the desired unit really is one LLM call, RPC method invocation, image generation,
 or other API operation, the destination API must verify the ticket at the application
-layer after terminating its own TLS. The credential can ride end to end through Shade
-Tree in an `Authorization`, x402, MPP, or future zkAPI field. Shade Tree then supplies
+layer after terminating its own TLS. The credential can ride end to end through
+ShadeNet in an `Authorization`, x402, MPP, or future zkAPI field. ShadeNet then supplies
 network privacy but does not act as the usage-credit verifier.
 
 That API-origin mode and this gateway-session mode can coexist, but they solve different
@@ -226,7 +226,7 @@ carry many independently flow-controlled streams, and a standard CONNECT request
 one stream into a tunnel to a `host:port`. After a successful response, DATA frames are
 the tunneled TCP bytes.
 
-That is preferable to a new Shade Tree binary multiplexer because HTTP/2 supplies:
+That is preferable to a new ShadeNet binary multiplexer because HTTP/2 supplies:
 
 - stream identifiers and lifecycle states;
 - connection and stream flow control;
@@ -307,7 +307,7 @@ The destination sees:
 - whichever account, cookies, API key, payment credential, or fingerprint the agent
   sends end to end.
 
-It does not receive the Shade Tree RLN proof, ticket, ticket-book digest, or member leaf.
+It does not receive the ShadeNet RLN proof, ticket, ticket-book digest, or member leaf.
 
 ### 7.4 Elder Tree / canopy directory
 
@@ -1717,7 +1717,7 @@ that maximum cumulative spend is covered by deposit plus authenticated refunds, 
 an RLN nullifier to make index reuse detectable or slashable. Its variable-cost version
 updates a rerandomized, server-signed homomorphic refund total after service.
 
-This session design adopts only the parts that fit Shade Tree's current transport:
+This session design adopts only the parts that fit ShadeNet's current transport:
 
 | zkAPI concept | `session-v1` analogue |
 |---|---|
@@ -1766,7 +1766,7 @@ Privacy Pass provides a useful architecture:
 3. client later redeems one token at an origin;
 4. origin checks token validity and an atomic spent-token set.
 
-For Shade Tree, an RLN proof could authorize one fixed-size blind issuance batch. A
+For ShadeNet, an RLN proof could authorize one fixed-size blind issuance batch. A
 publicly verifiable token could be checked by several nodes, but those nodes would still
 need an atomic shared spent service before providing egress. A privately verifiable
 token centralizes verification at its issuer.
@@ -1864,7 +1864,7 @@ count.
 ### Terminate destination TLS at the node
 
 Rejected because it exposes plaintext requests, responses, cookies, prompts, and payment
-credentials to the node and changes Shade Tree from a network-privacy layer into a trusted
+credentials to the node and changes ShadeNet from a network-privacy layer into a trusted
 application proxy.
 
 ### A custom binary multiplexing protocol
@@ -1953,7 +1953,7 @@ Do not enable session tickets on a public profile until:
 
 ## 35. References
 
-- [Shade Tree Protocol](../../specs/protocol.md) — current v4 one-proof/one-CONNECT-tunnel
+- [ShadeNet Protocol](../../specs/protocol.md) — current v4 one-proof/one-CONNECT-tunnel
   semantics.
 - [ADR 0009](../adr/0009-epoch-bandwidth-envelope.md) — provisional six-target, 40 MiB,
   90-second research-session envelope.
