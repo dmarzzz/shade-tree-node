@@ -785,3 +785,31 @@
     mode: "0600"
     modification_time: preserve
     access_time: preserve
+
+# Issue #254. Runs after the marker on purpose: the reconcile itself is correct once the checks
+# above pass, so a slow descriptor must not make the next run repeat the bootstrap (and restart
+# Tor again). A timeout here still fails the play, which keeps the wrapper from starting the
+# fleet e2e or the next host against a node clients cannot reach yet.
+- name: Wait until this host's onion answers through Tor and its heartbeat is accepted
+  ansible.builtin.shell:
+    cmd: |
+      set -eu
+      since=0
+      for unit in tor@default.service{% if shade_tree_runs_node %} shade-tree-gateway.service shade-tree-heartbeat.service{% endif %}{% if shade_tree_runs_elder %} shade-tree-bootnode.service{% endif %}; do
+        entered="$(systemctl show "$unit" --property=ActiveEnterTimestamp --value)"
+        test -n "$entered" || continue
+        at="$(date -d "$entered" +%s)"
+        test "$at" -le "$since" || since="$at"
+      done
+      exec node {{ (shade_tree_install_dir ~ '/scripts/onion-ready.mjs') | quote }} \
+        --tor-port {{ shade_tree_tor_socks_port | int }} \
+        --timeout {{ shade_tree_ready_timeout_seconds | int }} \
+        --since "$since" \
+        {% for onion in shade_tree_remote_identity_checks | map(attribute='onion') | unique %}--onion {{ onion | quote }} {% endfor %}{% if shade_tree_runs_node %}--heartbeat-metrics {{ ('http://127.0.0.1:' ~ (shade_tree_heartbeat_metrics_port | string) ~ '/metrics') | quote }} --elders {{ shade_tree_ready_elders | quote }}{% endif %}
+
+  args:
+    executable: /bin/bash
+  async: "{{ (shade_tree_ready_timeout_seconds | int) + 120 }}"
+  poll: 10
+  changed_when: false
+  when: shade_tree_wait_ready | bool

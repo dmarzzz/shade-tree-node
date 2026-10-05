@@ -48,5 +48,17 @@ ok(/Refuse public service or metrics listeners/.test(TASKS) && /127\[\.\]0\[\.\]
 ok(/shade_tree_reconcile_fingerprint/.test(TASKS) && /\.applied/.test(TASKS) && /only after every check passes/.test(TASKS), "re-runs use a configuration fingerprint written only after postflight success");
 ok(/hosts: shade_tree_v4/.test(PLAYBOOK) && !/(ansible_host|[0-9]{1,3}(?:\.[0-9]{1,3}){3})/.test(PLAYBOOK), "playbook contains no target or provider address");
 
+console.log("reachability gate (issue #254):");
+const markerAt = TASKS.indexOf("Record successful reconciliation only after every check passes");
+const readyAt = TASKS.indexOf("Wait until this host's onion answers through Tor and its heartbeat is accepted");
+const readyTask = readyAt >= 0 ? TASKS.slice(readyAt) : "";
+ok(markerAt >= 0 && readyAt > markerAt && !/\n- name:/.test(readyTask.slice(1)), "the wait is the last task, after the reconciliation marker (a slow descriptor never forces a second bootstrap)");
+ok(/scripts\/onion-ready\.mjs/.test(readyTask) && /--onion \{\{ onion \| quote \}\}/.test(readyTask) && /shade_tree_remote_identity_checks \| map\(attribute='onion'\) \| unique/.test(readyTask), "it dials every onion this host serves, the same list the identity postflight verified");
+ok(/\{% if shade_tree_runs_node %\}--heartbeat-metrics/.test(readyTask) && /shade_tree_heartbeat_metrics_port/.test(readyTask) && /--elders \{\{ shade_tree_ready_elders \| quote \}\}/.test(readyTask), "a node also needs its heartbeat accepted by the Elder Trees");
+ok(/ActiveEnterTimestamp/.test(readyTask) && /tor@default\.service/.test(readyTask) && /--since "\$since"/.test(readyTask), "an announce from before the Tor or unit restart does not count");
+ok(/--timeout \{\{ shade_tree_ready_timeout_seconds \| int \}\}/.test(readyTask) && /async: "\{\{ \(shade_tree_ready_timeout_seconds \| int\) \+ 120 \}\}"/.test(readyTask) && /poll: 10/.test(readyTask), "the wait is bounded on the host and on the controller");
+ok(/when: shade_tree_wait_ready \| bool/.test(readyTask) && !/no_log|ignore_errors|failed_when: false/.test(readyTask), "a timeout fails the play with the script's message; the gate can be switched off explicitly");
+ok(/shade_tree_wait_ready:\s*true/.test(DEFAULTS) && /shade_tree_ready_timeout_seconds:\s*600/.test(DEFAULTS) && /shade_tree_ready_elders:\s*all/.test(DEFAULTS) && /shade_tree_tor_socks_port:\s*9050/.test(DEFAULTS), "defaults: on, 600 s, every Elder, the host's system Tor");
+
 console.log(failures ? `\n${failures} FAILED` : "\nall v4 Ansible safety checks passed");
 process.exit(failures ? 1 : 0);
