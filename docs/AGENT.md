@@ -240,7 +240,9 @@ applications use the JavaScript SDK ([SDK.md](SDK.md)).
 - The target host, port, timing, duration and traffic volume of each tunnel.
 - Not the request path or body (TLS runs to the destination), and not who you
   are: the proof shows only that some admitted member is asking, within budget.
-- One proof admits one CONNECT tunnel, not every request inside it.
+- One proof buys one epoch slot, not every request inside a tunnel. With session tickets on
+  (as in the live record) that slot is a book of six single-use tunnel tickets at one node; with
+  tickets off it is a single CONNECT tunnel.
 - Tor does not stop an observer who watches both ends from correlating timing.
 - A SearXNG query that fans out to several routed engines creates several
   tunnels close together in time; nodes may link them to one another, though

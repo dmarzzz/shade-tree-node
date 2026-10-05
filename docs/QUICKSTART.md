@@ -201,7 +201,9 @@ curl -x http://127.0.0.1:8888 https://api.ipify.org?format=json
 
 The returned IP belongs to the node. The node application receives a Tor onion connection,
 not the Proxy's source IP. It still sees the target, timing, lifetime, and traffic volume.
-One RLN proof admits one CONNECT tunnel, not each HTTP request carried inside it.
+One RLN proof buys one epoch slot, not each HTTP request carried inside a tunnel. With session
+tickets on (as in the live record) that slot is a book of six single-use tunnel tickets at one
+node; with tickets off it is a single CONNECT tunnel.
 
 ## Path C: your own canopy on a droplet (one command)
 

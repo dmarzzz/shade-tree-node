@@ -103,7 +103,7 @@ async function main() {
   ]);
   assert.notEqual(wildcard.code, 0);
   assert.doesNotMatch(wildcard.out, /WILDCARD_CHILD_STARTED/);
-  assert.match(wildcard.out, /would bypass Shade Tree/);
+  assert.match(wildcard.out, /would bypass ShadeNet/);
 
   await new Promise((resolve) => server.close(resolve));
   const unavailable = await runCli([

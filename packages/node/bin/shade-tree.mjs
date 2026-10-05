@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// shade-tree — one entrypoint for Shade Tree.
+// shade-tree — one entrypoint for ShadeNet.
 //
 // Every subcommand is a thin router: it maps clean --flags onto the SHADE_TREE_* environment the
 // underlying module already reads (so flags and env vars stay in one-to-one sync and either
@@ -81,7 +81,7 @@ const FLAG_ENV = {
 
 // command -> { script, help }. `long` marks a durable service (just for the help hint).
 const COMMANDS = {
-  run:               { help: "run an agent with process-scoped Shade Tree routing: shade-tree run [--proxy http://127.0.0.1:8888] -- <command> [args]" },
+  run:               { help: "run an agent with process-scoped ShadeNet routing: shade-tree run [--proxy http://127.0.0.1:8888] -- <command> [args]" },
   drain:             { help: "operator: shade-tree-node drain on|off|status [--wait] -- announce a planned stop (clients route around this node), then restart or stop it" },
   keygen:            { script: "packages/node/bootnode/keygen.mjs",       help: "mint an onion identity (refuses overwrite): shade-tree-node keygen <hsDir> [--label name] [--force]" },
   elder:             { script: "packages/node/bootnode/server.mjs",       help: "run the Elder Tree, which signs the canopy directory", long: true },
@@ -156,7 +156,7 @@ function parse(argv) {
 }
 
 function topHelp() {
-  console.log(`shade-tree ${pkg.version}: Shade Tree\n`);
+  console.log(`shade-tree ${pkg.version}: ShadeNet\n`);
   console.log("usage: shade-tree <command> [--flags] [args]\n");
   const order = ["run", "proxy", "node", "elder", "join", "keygen", "heartbeat", "enroll", "identity", "register-member", "pay", "leaves", "register-gateway", "exit-gateway", "withdraw-gateway", "gateway-status", "sign-directory", "doctor", "drain", "backup", "restore", "record-deploy", "client", "shim", "gateway", "bootnode"];
   for (const name of order) console.log(`  ${name.padEnd(18)}${COMMANDS[name].help}`);
@@ -238,7 +238,7 @@ function noProxyFor(flags, env) {
   const values = [...DEFAULT_NO_PROXY, ...String(extra).split(",")]
     .map((value) => value.trim())
     .filter(Boolean);
-  if (values.includes("*")) throw new Error("a wildcard `*` in --no-proxy would bypass Shade Tree");
+  if (values.includes("*")) throw new Error("a wildcard `*` in --no-proxy would bypass ShadeNet");
   return [...new Set(values)].join(",");
 }
 

@@ -463,8 +463,10 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
   captured envelope to peers (each accepts it once), and a member spreading requests across `N`
   gateways gets up to `N`× its intended budget.
 - **Exit-auth verifier, real in the live ShadeNet set.** The live set
-  (`0xDEB2…4bBC`) wires the real Groth16 `WithdrawVerifier` (`contracts/WithdrawVerifier.sol`,
+  (`0x7899…680b`, one tier) wires the real Groth16 `WithdrawVerifier` (`contracts/WithdrawVerifier.sol`,
   taking the member's recorded tier); its VK comes from the adopted PSE trusted setup (T-HARD-1).
+  The previous two-tier set (`0xDEB2…4bBC`), which wires the same real verifier, is still admitted
+  during the migration while it holds a member.
   The earlier rln-v4-tiers set (`0xFe48De8b…9d25`, 2026-08-17) and the rln-v3 set
   (`0xdAE242AE…20FC`, which kept the mock) are retired pre-v4 history.
 - **RLN leaf-removal parity (T-DEV-2) — closed.** `reconstructRoot` now follows the contract's

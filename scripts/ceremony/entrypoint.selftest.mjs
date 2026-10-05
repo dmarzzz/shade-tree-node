@@ -35,7 +35,7 @@ try {
   const alias = join(scratch, 'tools-alias');
   symlinkSync(tools, alias, process.platform === 'win32' ? 'junction' : 'dir');
   for (const [name, help, expected] of [
-    ['cli.mjs', 'help', /Shade Tree community Groth16 setup[\s\S]*node scripts\/ceremony\/cli\.mjs verify/],
+    ['cli.mjs', 'help', /ShadeNet community Groth16 setup[\s\S]*node scripts\/ceremony\/cli\.mjs verify/],
     ['build-inputs.mjs', '--help', /Usage: node scripts\/ceremony\/build-inputs\.mjs --out[\s\S]*Never runs a phase-2 ceremony\./],
   ]) {
     check(`${name}: physical entrypoint`, [join(tools, name), help], expected);

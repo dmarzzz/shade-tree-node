@@ -104,8 +104,9 @@ identity-backup, rollback, and preflight evidence; none is safe to infer from th
 
 - Elder `/health` and signed canopy directory are reachable over Tor and reject tampering.
 - The node is reachable only through its onion and advertises protocol v4.
-- An authorized proof opens one CONNECT tunnel; malformed, stale, wrong-root,
-  wrong-artifact, replayed, and unauthorized proofs fail closed.
+- An authorized proof opens one epoch slot — a session-ticket book (six tunnels at one node)
+  when the record turns session tickets on, otherwise one CONNECT tunnel; malformed, stale,
+  wrong-root, wrong-artifact, replayed, and unauthorized proofs fail closed.
 - Nullifier accounting enforces the node's configured per-epoch view. If a
   cross-node tally is enabled, its fail-open behavior is tested and documented.
 - Private and reserved destinations fail before any outbound connection.

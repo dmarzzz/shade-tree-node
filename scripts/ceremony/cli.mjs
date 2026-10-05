@@ -292,7 +292,7 @@ async function finalize(o) {
   await finish(base, v.manifest, state, true);
   console.log('Exports are staged inside this bundle. Active artifacts, lock, contracts and deployments have not been changed.');
 }
-const HELP = `Shade Tree community Groth16 setup — RESEARCH PREVIEW, NOT PRODUCTION
+const HELP = `ShadeNet community Groth16 setup — RESEARCH PREVIEW, NOT PRODUCTION
 
 Install: npm ci --prefix scripts/ceremony --ignore-scripts
 

@@ -4,8 +4,9 @@ The public Protocol v4 profile is deliberately narrow:
 
 - stake exactly the record's bond at tier `8`, the only tier the set admits
   (**0.01 Sepolia ETH** from the one-tier deploy of 2026-10-05, see [ECONOMICS.md](ECONOMICS.md));
-- receive **eight proof slots per fixed 60-second epoch**, each a new HTTPS `CONNECT` tunnel
-  (a six-tunnel book at one node when the record turns session tickets on);
+- receive **eight proof slots per fixed 60-second epoch**; with session tickets on (as in the
+  live record) each slot is a book of six single-use tunnel tickets at one node, otherwise a
+  single HTTPS `CONNECT` tunnel;
 - relay at most **40 MiB (41,943,040 bytes) of combined payload** through each slot;
 - recover the stake after the ZK-authorized 24-hour exit window unless the member is slashed.
 
