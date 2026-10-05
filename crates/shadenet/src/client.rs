@@ -30,8 +30,7 @@ use crate::scheduler::{self, Budget, Plan};
 use crate::transport::{self, BoxStream, Gateway};
 use crate::{slot, Error};
 
-/// Epoch length used by custom canopies that sign no rate policy.
-pub const LEGACY_EPOCH_SECONDS: u64 = 120;
+pub use crate::config::{CURRENT_EPOCH_SECONDS, LEGACY_EPOCH_SECONDS};
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -162,7 +161,7 @@ struct MemberSnapshot {
     fetched_at: Instant,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct MemberKey {
     contract: String,
     /// Failover order (ADR 0012): an explicit rpc_url (comma-separated allowed), else the
@@ -329,6 +328,10 @@ pub struct CanopyStatus {
 pub struct Client {
     config: Config,
     profile: Option<PublicProfile>,
+    /// The record's staking profile whenever the record's contract is the member source:
+    /// `profile` on the zero-configuration path, and the same record behind `--onion`, a named
+    /// Elder or an explicit `--contract` that is the record's own.
+    staking: Option<PublicProfile>,
     identity: Option<IdentityMaterial>,
     transport: transport::Client,
     canopy: Mutex<Option<CanopySnapshot>>,
@@ -387,6 +390,12 @@ impl Client {
                 )));
             }
         }
+        // The record also names the member set when the canopy is skipped or the contract is
+        // spelled out (#249, #250): same contract, RPC list, deploy block and finalized read.
+        let staking = match &profile {
+            Some(profile) => Some(profile.clone()),
+            None => config.record_staking_profile(),
+        };
         let identity = config
             .identity
             .as_ref()
@@ -397,6 +406,7 @@ impl Client {
         Ok(Self {
             config,
             profile,
+            staking,
             identity,
             transport,
             canopy: Mutex::new(None),
@@ -433,14 +443,7 @@ impl Client {
 
     /// Effective epoch length.
     pub fn epoch_seconds(&self) -> u64 {
-        self.config
-            .epoch_seconds
-            .or_else(|| {
-                self.profile
-                    .as_ref()
-                    .map(|profile| profile.rate_policy.epoch_seconds)
-            })
-            .unwrap_or(LEGACY_EPOCH_SECONDS)
+        self.config.effective_epoch_seconds()
     }
 
     fn current_epoch(&self) -> u64 {
@@ -459,13 +462,13 @@ impl Client {
         self.config
             .limit
             .or_else(|| self.identity.as_ref().and_then(|identity| identity.limit))
-            .or_else(|| self.profile.as_ref().map(|profile| profile.default_limit))
+            .or_else(|| self.staking.as_ref().map(|profile| profile.default_limit))
             .unwrap_or(crate::profile::LEGACY_DEFAULT_LIMIT)
     }
 
     fn block_tag(&self) -> String {
         self.config.block_tag.clone().unwrap_or_else(|| {
-            if self.profile.is_some() {
+            if self.staking.is_some() {
                 "finalized".into()
             } else {
                 "latest".into()
@@ -833,7 +836,7 @@ impl Client {
                             "leaf source demo, but the canopy advertises no demo set".into(),
                         )
                     })?
-                } else if let Some(profile) = &self.profile {
+                } else if let Some(profile) = &self.staking {
                     profile.contract.clone()
                 } else {
                     return Err(Error::Config(
@@ -856,12 +859,12 @@ impl Client {
                         .collect::<Vec<_>>()
                 })
                 .filter(|urls| !urls.is_empty())
-                .or_else(|| self.profile.as_ref().map(|p| p.rpc_urls.clone()))
+                .or_else(|| self.staking.as_ref().map(|p| p.rpc_urls.clone()))
                 .unwrap_or_else(|| vec!["http://127.0.0.1:8545".into()]),
             from_block: self
                 .config
                 .from_block
-                .or_else(|| self.profile.as_ref().map(|p| p.deploy_block))
+                .or_else(|| self.staking.as_ref().map(|p| p.deploy_block))
                 .unwrap_or(0),
             block_tag: self.block_tag(),
         }))
@@ -2352,6 +2355,96 @@ mod tests {
         assert_eq!(dir.issued, 200);
         // The shared node comes from the newer directory.
         assert_eq!(dir.gateways[0].weight, 7);
+    }
+
+    fn pinned(configure: impl FnOnce(crate::ConfigBuilder) -> crate::ConfigBuilder) -> Client {
+        let builder = Config::builder()
+            .cache_dir(None)
+            .discovery(Discovery::Onions(vec!["a".repeat(56)]));
+        Client::new(configure(builder).build().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_pinned_onion_finds_the_records_member_source() {
+        // #250: `--onion` with nothing but the network record used to end in "no member source".
+        let record = crate::Network::bundled("sepolia")
+            .unwrap()
+            .public_profile()
+            .unwrap();
+        let client = pinned(|builder| builder);
+        assert!(client.public_profile().is_none(), "no canopy path");
+        let key = client.member_key(None).unwrap().unwrap();
+        assert_eq!(key.contract, record.contract);
+        assert_eq!(key.rpc_urls, record.rpc_urls);
+        assert_eq!(key.from_block, record.deploy_block);
+        assert_eq!(key.block_tag, "finalized");
+        assert_eq!(client.epoch_seconds(), record.rate_policy.epoch_seconds);
+        assert_eq!(client.tier(), record.default_limit);
+
+        // The same holds for a record loaded from a path (`--network <path>`).
+        let mut staging: serde_json::Value =
+            serde_json::from_str(crate::profile::SEPOLIA_DEPLOYMENT).unwrap();
+        staging["network"] = "sepolia-staging".into();
+        staging["admission"]["roots"]["staked"]["contract"] =
+            "0x3333333333333333333333333333333333333333".into();
+        staging["admission"]["roots"]["staked"]["deployBlock"] = 12_345.into();
+        let network = crate::Network::from_json("sepolia-staging", &staging.to_string()).unwrap();
+        let client = pinned(|builder| builder.network(network));
+        let key = client.member_key(None).unwrap().unwrap();
+        assert_eq!(key.contract, "0x3333333333333333333333333333333333333333");
+        assert_eq!(key.from_block, 12_345);
+        assert_eq!(key.rpc_urls, record.rpc_urls);
+    }
+
+    #[test]
+    fn an_explicit_contract_and_rpc_prove_under_the_records_policy() {
+        // #249: `--onion --contract <the record's set> --rpc-url <url>` used to prove against
+        // the 120 s epoch, read at `latest` and replay the log from block 0.
+        let record = crate::Network::bundled("sepolia")
+            .unwrap()
+            .public_profile()
+            .unwrap();
+        let client = pinned(|builder| {
+            builder
+                .members(Members::Contract(record.contract.to_ascii_lowercase()))
+                .rpc_url(Some("https://rpc.example".into()))
+        });
+        let key = client.member_key(None).unwrap().unwrap();
+        assert_eq!(key.rpc_urls, vec!["https://rpc.example".to_string()]);
+        assert_eq!(key.from_block, record.deploy_block);
+        assert_eq!(key.block_tag, "finalized");
+        assert_eq!(client.epoch_seconds(), 60);
+        assert_eq!(client.tier(), record.default_limit);
+
+        // A contract the record does not name gets the policy's epoch and nothing else from
+        // the record: its deploy block and RPC are not ours to guess.
+        let client = pinned(|builder| {
+            builder
+                .members(Members::Contract(
+                    "0x1111111111111111111111111111111111111111".into(),
+                ))
+                .rpc_url(Some("https://rpc.example".into()))
+        });
+        let key = client.member_key(None).unwrap().unwrap();
+        assert_eq!(key.from_block, 0);
+        assert_eq!(key.block_tag, "latest");
+        assert_eq!(client.epoch_seconds(), 60);
+        assert_eq!(client.tier(), crate::profile::LEGACY_DEFAULT_LIMIT);
+    }
+
+    #[test]
+    fn a_members_file_behind_a_pinned_onion_is_still_the_legacy_path() {
+        let client = pinned(|builder| builder.members(Members::File("members.json".into())));
+        assert!(client.member_key(None).unwrap().is_none());
+        assert_eq!(client.epoch_seconds(), LEGACY_EPOCH_SECONDS);
+        assert_eq!(client.tier(), crate::profile::LEGACY_DEFAULT_LIMIT);
+        // An invited leaf with no members file still has no member source.
+        let client = pinned(|builder| builder.leaf_source(Some("invited".into())));
+        assert!(client
+            .member_key(None)
+            .unwrap_err()
+            .to_string()
+            .contains("no member source"));
     }
 
     #[test]

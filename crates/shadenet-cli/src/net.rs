@@ -441,6 +441,62 @@ mod tests {
     }
 
     #[test]
+    fn an_onion_and_a_record_path_are_enough_for_the_member_source() {
+        // #250 and #249: `--onion --network <path>` names the record's staking set, and adding
+        // the record's own `--contract` and an `--rpc-url` does not drop to the legacy defaults.
+        // SHADENET_* in a developer shell would change the answer; only assert without them.
+        for name in [
+            "GROUP_CONTRACT",
+            "LEAF_SOURCE",
+            "EPOCH_SECONDS",
+            "RPC_URL",
+            "NETWORK",
+        ] {
+            if shadenet::env::var(name).ok().flatten().is_some() {
+                return;
+            }
+        }
+        let mut record: serde_json::Value =
+            serde_json::from_str(shadenet::profile::SEPOLIA_DEPLOYMENT).unwrap();
+        record["network"] = "sepolia-staging".into();
+        record["admission"]["roots"]["staked"]["contract"] =
+            "0x3333333333333333333333333333333333333333".into();
+        let dir = std::env::temp_dir().join(format!("shadenet-net-args-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("deployment.json");
+        std::fs::write(&path, record.to_string()).unwrap();
+        let ctx = Context {
+            network: Some(path.display().to_string()),
+            file: ConfigFile::default(),
+        };
+
+        let args = NetArgs {
+            onion: Some("a".repeat(56)),
+            ..NetArgs::default()
+        };
+        let config = args.to_config(&ctx, false).unwrap();
+        assert!(!config.uses_public_profile());
+        assert_eq!(config.network.name, "sepolia-staging");
+        let staking = config.record_staking_profile().unwrap();
+        assert_eq!(
+            staking.contract,
+            "0x3333333333333333333333333333333333333333"
+        );
+        assert_eq!(config.effective_epoch_seconds(), 60);
+
+        let args = NetArgs {
+            onion: Some("a".repeat(56)),
+            contract: Some("0x3333333333333333333333333333333333333333".into()),
+            rpc_url: Some("https://rpc.example".into()),
+            ..NetArgs::default()
+        };
+        let config = args.to_config(&ctx, false).unwrap();
+        assert!(config.record_staking_profile().is_some());
+        assert_eq!(config.effective_epoch_seconds(), 60);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn unsafe_slots_need_the_loud_flag() {
         let args = NetArgs {
             slot: Some(1),

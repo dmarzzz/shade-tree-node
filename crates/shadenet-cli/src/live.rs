@@ -196,17 +196,7 @@ pub(crate) fn build_client_queued(
     need_identity: bool,
 ) -> Result<Client, String> {
     let mut config = net.to_config(ctx, need_identity)?;
-    let epoch_seconds = config
-        .epoch_seconds
-        .or_else(|| {
-            config
-                .network
-                .deployment
-                .rate_policy
-                .as_ref()
-                .map(|policy| policy.epoch_seconds)
-        })
-        .unwrap_or(shadenet::client::LEGACY_EPOCH_SECONDS);
+    let epoch_seconds = config.effective_epoch_seconds();
     config.queue_max_wait = queue_max_wait(queue, ctx, epoch_seconds)?;
     Client::new(config).map_err(|e| e.to_string())
 }
