@@ -258,107 +258,6 @@ export function canonicalCaps(caps) {
   if (rate) out.rate = rate;
   const session = canonicalSession(caps.session);
   if (session) out.session = session;
-  // Operator drain (day-two ops): a node announces `draining: true` before a planned stop so
-  // clients deprioritise it (pickGateway / spreadSelectionOrder treat it like health "down").
-  // Appended LAST and only when exactly `true`, so every pre-existing caps object canonicalizes
-  // to byte-identical JSON and an old Elder/client simply never sees the key.
-  if (caps.draining === true) out.draining = true;
-  // Admission sets (dogfood #234): the contract addresses this gateway reads roots from, so a
-  // client can tell "this node reads another network's set" before it proves. Lowercase
-  // addresses only, deduped, sorted, count-bounded; appended LAST, same rule as above.
-  const sets = canonicalSets(caps.sets);
-  if (sets.length) out.sets = sets;
-  return out;
-}
-export const MAX_CAPS_SETS = 8;
-const SET_ADDRESS_RE = /^0x[0-9a-f]{40}$/;
-export function canonicalSets(list) {
-  if (!Array.isArray(list)) return [];
-  const sets = [...new Set(list.filter((a) => typeof a === "string").map((a) => a.toLowerCase()).filter((a) => SET_ADDRESS_RE.test(a)))].sort();
-  return sets.length <= MAX_CAPS_SETS ? sets : [];
-}
-// The sets a directory entry advertises, or null when it advertises none (a legacy node).
-export function setsOf(entry) {
-  const sets = canonicalCaps(entry && entry.caps).sets;
-  return Array.isArray(sets) ? sets : null;
-}
-
-// --- forward compatibility: tolerate UNKNOWN signed capability fields (task 52) ----------
-// Root cause of tasks 51/52: `canonicalCaps` is a WHITELIST that DROPS any field it does not
-// know, and the signature is checked over a re-canonicalization of the caps. So the first time a
-// newer fleet signs a directory carrying a capability field an older client has never heard of
-// (as `caps.sets` did to every v0.7.0 client), the older client rebuilds caps WITHOUT that field,
-// gets different bytes, and rejects the whole directory as `bad-signature` — a brick on every new
-// signed field. The durable fix: the BYTES the signature covers PRESERVE unknown capability fields
-// verbatim (deterministically ordered), so a client verifies "over the bytes as signed" even when a
-// field is beyond its vocabulary, while INTERPRETATION (`canonicalCaps`, selection, `setsOf`) still
-// ignores what it does not understand. When no unknown field is present this is a no-op and the
-// golden canonicalCaps/canonicalDirectoryBytes vectors are byte-identical, so it is purely additive.
-export const KNOWN_CAPS_KEYS = new Set([
-  "ports", "region", "proto", "artifacts", "admits", "pay", "rate", "session", "draining", "sets",
-]);
-// Bounds so an unknown-field passthrough cannot be used to balloon a directory (DoS) or recurse without
-// end. A caps object that trips a bound drops its unknowns entirely — failing toward today's behavior
-// (no unknowns in the signed bytes), never throwing.
-export const MAX_CAPS_UNKNOWN_KEYS = 16;
-export const MAX_CAPS_UNKNOWN_BYTES = 4096;
-const MAX_CAPS_UNKNOWN_DEPTH = 8;
-
-// Recursively canonicalize a parsed-JSON value so JSON.stringify is deterministic regardless of the
-// sender's key order: object keys are sorted; arrays keep order (it is semantic); primitives pass
-// through (numbers use JS's own JSON number form — signer and the JS verifier share it). Returns
-// { ok, value }; ok=false when the value is not JSON-representable or exceeds the depth bound.
-function canonicalJsonValue(v, depth) {
-  if (depth > MAX_CAPS_UNKNOWN_DEPTH) return { ok: false };
-  if (v === null || typeof v === "boolean" || typeof v === "string") return { ok: true, value: v };
-  if (typeof v === "number") return Number.isFinite(v) ? { ok: true, value: v } : { ok: false };
-  if (Array.isArray(v)) {
-    const out = [];
-    for (const item of v) {
-      const c = canonicalJsonValue(item, depth + 1);
-      if (!c.ok) return { ok: false };
-      out.push(c.value);
-    }
-    return { ok: true, value: out };
-  }
-  if (typeof v === "object") {
-    const out = {};
-    for (const k of Object.keys(v).sort()) {
-      const c = canonicalJsonValue(v[k], depth + 1);
-      if (!c.ok) return { ok: false };
-      out[k] = c.value;
-    }
-    return { ok: true, value: out };
-  }
-  return { ok: false }; // undefined / function (never from JSON.parse, but stay total)
-}
-
-// The unknown (non-whitelisted) capability fields, canonicalized and ordered by key, or null when
-// there are none / a bound is tripped. TOTAL: never throws.
-export function canonicalUnknownCaps(caps) {
-  if (!caps || typeof caps !== "object" || Array.isArray(caps)) return null;
-  const keys = Object.keys(caps).filter((k) => !KNOWN_CAPS_KEYS.has(k)).sort();
-  if (keys.length === 0 || keys.length > MAX_CAPS_UNKNOWN_KEYS) return null;
-  const out = {};
-  for (const k of keys) {
-    const c = canonicalJsonValue(caps[k], 1);
-    if (!c.ok) return null;
-    out[k] = c.value;
-  }
-  if (utf8(JSON.stringify(out)).length > MAX_CAPS_UNKNOWN_BYTES) return null;
-  return out;
-}
-
-// The caps as they appear in the SIGNED bytes: the whitelisted canonical fields (fixed order) with
-// any unknown capability fields preserved AFTER them (sorted). Used only by the byte builders, never
-// for interpretation. Byte-identical to canonicalCaps when there are no unknown fields.
-export function canonicalCapsForBytes(caps) {
-  const known = canonicalCaps(caps);
-  const unknown = canonicalUnknownCaps(caps);
-  if (!unknown) return known;
-  const out = {};
-  for (const k of Object.keys(known)) out[k] = known[k]; // keep the canonicalCaps field order
-  for (const k of Object.keys(unknown)) out[k] = unknown[k]; // then unknown keys, sorted
   return out;
 }
 
@@ -366,12 +265,7 @@ export function canonicalCapsForBytes(caps) {
 // canonical bytes when empty, keeping absent/empty-caps records byte-identical to before.
 export function hasCaps(caps) {
   const c = canonicalCaps(caps);
-  if (c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined || c.session !== undefined || c.draining === true || c.sets !== undefined) {
-    return true;
-  }
-  // An entry whose ONLY capabilities are fields this build does not know still "has caps": they must
-  // ride in (and be covered by) the signed bytes so a future field-only advert verifies here (task 52).
-  return canonicalUnknownCaps(caps) !== null;
+  return c.ports !== undefined || c.region !== undefined || c.proto !== undefined || c.artifacts !== undefined || c.admits !== undefined || c.pay !== undefined || c.rate !== undefined || c.session !== undefined;
 }
 
 // Domain-separated, onion-bound canonical bytes the ONION key signs to attest its caps.
@@ -380,11 +274,11 @@ export function hasCaps(caps) {
 // already verified against onionToPubkey(onion), so a caps sig can't be pasted onto a
 // different gateway). Runs caps through canonicalCaps so key order/junk can't shift bytes.
 export function canonicalCapsBytes(onion, caps) {
-  return utf8(CAPS_DOMAIN + JSON.stringify({ onion: String(onion), caps: canonicalCapsForBytes(caps) }));
+  return utf8(CAPS_DOMAIN + JSON.stringify({ onion: String(onion), caps: canonicalCaps(caps) }));
 }
 
 export function canonicalPreV4CapsBytes(onion, caps) {
-  return utf8(PRE_V4_CAPS_DOMAIN + JSON.stringify({ onion: String(onion), caps: canonicalCapsForBytes(caps) }));
+  return utf8(PRE_V4_CAPS_DOMAIN + JSON.stringify({ onion: String(onion), caps: canonicalCaps(caps) }));
 }
 
 export function signCaps(onion, caps, onionSeedHex) {
@@ -426,7 +320,7 @@ export function canonicalDirectoryBytes(dir) {
       // present, appended AFTER the four legacy fields. An entry WITHOUT caps serializes
       // byte-identically to before, so the golden canonicalDirectoryBytes vector is unchanged.
       if (hasCaps(g.caps)) {
-        e.caps = canonicalCapsForBytes(g.caps);
+        e.caps = canonicalCaps(g.caps);
         if (typeof g.capsSig === "string") e.capsSig = g.capsSig;
       }
       return e;
@@ -684,17 +578,11 @@ function clampWeight(g) {
   return Number.isFinite(w) ? Math.max(0, Math.min(MAX_WEIGHT, w)) : 1;
 }
 
-// A gateway whose SIGNED caps say `draining: true` is about to stop for maintenance: still
-// listed, still able to serve, but a client should only pick it when nothing else is left.
-export function isDraining(g) {
-  return Boolean(g && g.caps && g.caps.draining === true);
-}
-
 export function pickGateway(dir, { exclude = new Set(), rng = Math.random } = {}) {
   const all = (dir.gateways || []).filter((g) => !exclude.has(g.onion));
   if (all.length === 0) return null;
-  const healthy = all.filter((g) => g.health !== "down" && !isDraining(g));
-  const pool = healthy.length ? healthy : all; // last resort: try a "down" or draining one
+  const healthy = all.filter((g) => g.health !== "down");
+  const pool = healthy.length ? healthy : all; // last resort: try a "down" one
   const total = pool.reduce((s, g) => s + clampWeight(g), 0);
   if (total <= 0) return pool[Math.floor(rng() * pool.length)];
   let r = rng() * total;

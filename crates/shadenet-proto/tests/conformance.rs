@@ -18,8 +18,8 @@ use shadenet_proto::{
     ed25519_verify, is_draining, onion_to_pubkey, operator_auth_message, pubkey_to_onion,
     request_signal, select_proto_version, sign_receipt, verify_announce, verify_caps_sig,
     verify_directory, verify_directory_threshold, verify_operator_sig, verify_receipt, Announce,
-    Caps, Directory, EnvelopeVersion, GatewayEntry, PayCaps, ProtoCaps, RateCaps, Receipt,
-    REASON_BAD_VERSION, REASON_NO_MUTUAL_VERSION, REASON_UNSUPPORTED_VERSION,
+    Caps, CapsValue, Directory, EnvelopeVersion, GatewayEntry, PayCaps, ProtoCaps, RateCaps,
+    Receipt, REASON_BAD_VERSION, REASON_NO_MUTUAL_VERSION, REASON_UNSUPPORTED_VERSION,
 };
 
 /// Load `testdata/vectors.json` relative to this crate's manifest dir.
@@ -1640,4 +1640,330 @@ fn caps_with_session_match_vector_and_are_onion_signed() {
             .classes,
         vec!["alpha".to_string(), "zeta".to_string()]
     );
+}
+
+// -- task 52: forward compatibility over UNKNOWN signed capability fields ----------
+//
+// The cross-version invariant that protects a v0.7.1 client against what a v0.7.3+ fleet serves:
+// a directory whose capabilities carry a field this build does not recognize must STILL verify
+// (verify "over the bytes as signed", preserving unknown fields), never be rejected `bad-signature`
+// for carrying an unknown signed field. This is the exact Rust analog of the JS
+// packages/node/lib/directory-compat.selftest.mjs. It is an IN-FORMAT unknown-field test: it signs
+// with these same functions (which now preserve unknown fields) and shows (a) this verifier accepts
+// it, and (b) a verifier that re-canonicalizes the OLD way — dropping unknowns, exactly what the
+// shipped v0.7.0 client did — computes DIFFERENT bytes and rejects it, reproducing the brick. (The
+// literal previous-release verifier lives in JS; its genuine cross-version run is
+// test/directory-forward-compat.selftest.mjs.)
+
+/// Rebuild the directory signed bytes the PRE-FIX / v0.7.0 way: caps through `canonical_caps`,
+/// which DROPS unknown fields. A v0.7.0 client reconstructs exactly these bytes, so if they differ
+/// from the signer's, its signature check fails — the 51/52 brick.
+fn old_canonical_directory_bytes(dir: &Directory) -> Vec<u8> {
+    let mut s = String::new();
+    s.push_str("{\"version\":");
+    s.push_str(&dir.version.to_string());
+    s.push_str(",\"issued\":");
+    s.push_str(&dir.issued.to_string());
+    s.push_str(",\"gateways\":[");
+    for (i, g) in dir.gateways.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push_str("{\"onion\":\"");
+        s.push_str(&g.onion);
+        s.push_str("\",\"pubkey\":\"");
+        s.push_str(&g.pubkey);
+        s.push_str("\",\"weight\":");
+        s.push_str(&g.weight.to_string());
+        s.push_str(",\"health\":\"");
+        s.push_str(&g.health);
+        s.push('"');
+        if let Some(caps) = &g.caps {
+            if shadenet_proto::has_caps(caps) {
+                // OLD behavior: JSON.stringify(canonicalCaps(caps)) — unknown fields gone. Only the
+                // simple known fields used by this test (sets) need reproducing byte-exactly.
+                let cc = shadenet_proto::canonical_caps(caps);
+                s.push_str(",\"caps\":{");
+                if let Some(sets) = &cc.sets {
+                    s.push_str("\"sets\":[");
+                    for (j, a) in sets.iter().enumerate() {
+                        if j > 0 {
+                            s.push(',');
+                        }
+                        s.push('"');
+                        s.push_str(a);
+                        s.push('"');
+                    }
+                    s.push(']');
+                }
+                s.push('}');
+                if let Some(sig) = &g.caps_sig {
+                    s.push_str(",\"capsSig\":\"");
+                    s.push_str(sig);
+                    s.push('"');
+                }
+            }
+        }
+        s.push('}');
+    }
+    s.push_str("]}");
+    s.into_bytes()
+}
+
+/// Sign a one-gateway directory carrying `caps` under a deterministic signer + onion key, exactly
+/// as the fleet does: an onion-bound `capsSig` over the caps, then the directory signature.
+fn signed_dir_with_caps(caps: &Caps) -> (Directory, [u8; 32], [u8; 32]) {
+    let onion_seed = [0x33u8; 32];
+    let onion_pub = ed25519_public_key(&onion_seed);
+    let onion = pubkey_to_onion(&onion_pub);
+    let signer_seed = [0x44u8; 32];
+    let signer_pub = ed25519_public_key(&signer_seed);
+
+    let caps_sig = hex::encode(ed25519_sign(
+        &canonical_caps_bytes(&onion, caps),
+        &onion_seed,
+    ));
+    let mut dir = Directory {
+        version: 1,
+        issued: 1000,
+        gateways: vec![GatewayEntry {
+            onion,
+            pubkey: hex::encode(onion_pub),
+            weight: 100,
+            health: "up".to_string(),
+            operator: None,
+            staked: None,
+            caps: Some(caps.clone()),
+            caps_sig: Some(caps_sig),
+        }],
+        signer: Some(hex::encode(signer_pub)),
+        signature: None,
+        signers: None,
+        signatures: None,
+        threshold: None,
+    };
+    dir.signature = Some(hex::encode(ed25519_sign(
+        &canonical_directory_bytes(&dir),
+        &signer_seed,
+    )));
+    (dir, signer_pub, signer_seed)
+}
+
+const SET_ADDR: &str = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+#[test]
+fn directory_with_only_known_caps_is_byte_identical_and_verifies() {
+    // No-op / additive: a caps with only known fields has no unknowns, so the signed bytes are
+    // byte-identical to the pre-fix path and the OLD (unknown-dropping) verifier accepts them too.
+    // (Only `sets` is set so the compact `old_canonical_directory_bytes` helper, which reproduces
+    // just this test's known field, reconstructs the exact signed bytes.)
+    let caps = Caps {
+        sets: Some(vec![SET_ADDR.into()]),
+        ..Default::default()
+    };
+    assert!(
+        canonical_unknown_caps_is_none(&caps),
+        "a known-only caps carries no unknown fields"
+    );
+    let (dir, signer_pub, signer_seed) = signed_dir_with_caps(&caps);
+    verify_directory(&dir, &hex::encode(signer_pub)).expect("known-only directory verifies");
+    // The previous-release (unknown-dropping) verifier accepts the SAME bytes -> additive no-op.
+    let old = old_canonical_directory_bytes(&dir);
+    let sig: [u8; 64] = hex::decode(dir.signature.as_ref().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert!(
+        ed25519_verify(&old, &sig, &signer_pub),
+        "old verifier accepts a known-only directory (byte-identical)"
+    );
+    let _ = signer_seed;
+}
+
+#[test]
+fn directory_carrying_an_unknown_signed_cap_field_still_verifies() {
+    // A gateway whose caps carry a FUTURE field this build has never heard of, alongside a known
+    // one. The field rides in the SIGNED bytes; this verifier accepts the directory (no brick),
+    // while interpretation ignores the field.
+    let caps = Caps {
+        sets: Some(vec![SET_ADDR.into()]),
+        unknown: Some(vec![
+            (
+                "canopyWindow".into(),
+                CapsValue::Object(vec![
+                    ("min".into(), CapsValue::UInt(4)),
+                    ("max".into(), CapsValue::UInt(4)),
+                ]),
+            ),
+            ("futureFlag".into(), CapsValue::Bool(true)),
+        ]),
+        ..Default::default()
+    };
+    assert!(
+        shadenet_proto::has_caps(&caps),
+        "an entry whose caps carry an unknown field has caps (they must be signed)"
+    );
+    assert!(
+        shadenet_proto::canonical_unknown_caps(&caps).is_some(),
+        "the unknown fields are captured"
+    );
+    // INTERPRETATION still ignores the unknown field: canonical_caps reads only `sets`.
+    let cc = shadenet_proto::canonical_caps(&caps);
+    assert_eq!(cc.sets.as_deref(), Some(&[SET_ADDR.to_string()][..]));
+
+    let (dir, signer_pub, _) = signed_dir_with_caps(&caps);
+    let bytes = String::from_utf8(canonical_directory_bytes(&dir)).unwrap();
+    assert!(
+        bytes.contains("canopyWindow") && bytes.contains("futureFlag"),
+        "the unknown fields ride in the SIGNED bytes"
+    );
+    // Unknown fields are appended AFTER the known `sets`, key-sorted.
+    assert!(
+        bytes.contains("\"sets\":[\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],\"canopyWindow\":{\"max\":4,\"min\":4},\"futureFlag\":true"),
+        "unknowns are preserved after known fields, key-sorted (nested keys sorted too): {bytes}"
+    );
+    verify_directory(&dir, &hex::encode(signer_pub))
+        .expect("THIS build verifies the directory despite the unknown fields (no brick)");
+
+    // Reproduce the brick: the shipped v0.7.0 client drops the unknown field, rebuilds DIFFERENT
+    // bytes, and rejects the exact same signed directory.
+    let old = old_canonical_directory_bytes(&dir);
+    let sig: [u8; 64] = hex::decode(dir.signature.as_ref().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    assert!(
+        !ed25519_verify(&old, &sig, &signer_pub),
+        "a previous-release verifier (drops unknowns) REJECTS it — the brick the fix removes"
+    );
+}
+
+#[test]
+fn grafting_an_unknown_field_breaks_the_onion_bound_caps_sig() {
+    // capsSig stays unforgeable: a directory signer (no onion key) grafts an unknown field onto a
+    // signed entry's caps. It can re-sign the DIRECTORY but not the onion-bound capsSig, so the
+    // directory is rejected `bad-caps-sig` — an intermediary cannot smuggle a field in.
+    let caps = Caps {
+        sets: Some(vec![SET_ADDR.into()]),
+        ..Default::default()
+    };
+    let (mut dir, signer_pub, signer_seed) = signed_dir_with_caps(&caps);
+    verify_directory(&dir, &hex::encode(signer_pub)).expect("baseline verifies");
+
+    dir.gateways[0].caps = Some(Caps {
+        sets: Some(vec![SET_ADDR.into()]),
+        unknown: Some(vec![(
+            "smuggled".into(),
+            CapsValue::Object(vec![("x".into(), CapsValue::UInt(1))]),
+        )]),
+        ..Default::default()
+    });
+    // Re-sign the directory (the signer CAN do this) but leave the old onion-bound capsSig.
+    dir.signature = Some(hex::encode(ed25519_sign(
+        &canonical_directory_bytes(&dir),
+        &signer_seed,
+    )));
+    let err = verify_directory(&dir, &hex::encode(signer_pub)).unwrap_err();
+    assert!(
+        err.to_string().starts_with("bad-caps-sig"),
+        "grafting a field breaks the onion-bound capsSig -> rejected: {err}"
+    );
+}
+
+#[test]
+fn unknown_caps_passthrough_is_bounded() {
+    // Bounds: too many / oversized / too-deep unknown fields drop to today's behavior, never panic.
+    let too_many: Vec<(String, CapsValue)> = (0..(shadenet_proto::MAX_CAPS_UNKNOWN_KEYS + 1))
+        .map(|i| (format!("z{i}"), CapsValue::UInt(i as u64)))
+        .collect();
+    let caps = Caps {
+        unknown: Some(too_many),
+        ..Default::default()
+    };
+    assert!(
+        shadenet_proto::canonical_unknown_caps(&caps).is_none(),
+        "> MAX_CAPS_UNKNOWN_KEYS unknown keys -> dropped"
+    );
+    assert!(!shadenet_proto::has_caps(&caps));
+
+    let huge = Caps {
+        unknown: Some(vec![(
+            "blob".into(),
+            CapsValue::Str("x".repeat(shadenet_proto::MAX_CAPS_UNKNOWN_BYTES + 10)),
+        )]),
+        ..Default::default()
+    };
+    assert!(
+        shadenet_proto::canonical_unknown_caps(&huge).is_none(),
+        "> MAX_CAPS_UNKNOWN_BYTES of unknowns -> dropped"
+    );
+
+    // A too-deeply-nested value is dropped.
+    let mut nested = CapsValue::UInt(1);
+    for _ in 0..12 {
+        nested = CapsValue::Array(vec![nested]);
+    }
+    let deep = Caps {
+        unknown: Some(vec![("deep".into(), nested)]),
+        ..Default::default()
+    };
+    assert!(
+        shadenet_proto::canonical_unknown_caps(&deep).is_none(),
+        "a too-deeply-nested unknown value -> dropped"
+    );
+
+    // A non-finite number is never emitted.
+    let not_finite = Caps {
+        unknown: Some(vec![("bad".into(), CapsValue::Float(f64::INFINITY))]),
+        ..Default::default()
+    };
+    assert!(
+        shadenet_proto::canonical_unknown_caps(&not_finite).is_none(),
+        "a non-finite number -> dropped"
+    );
+}
+
+#[test]
+fn unknown_caps_canonicalize_independent_of_sender_key_order() {
+    // The preserved unknown fields canonicalize the same regardless of the order the sender listed
+    // them (keys sorted, nested object keys sorted too) — so sign and verify agree on the bytes.
+    let a = Caps {
+        sets: Some(vec![SET_ADDR.into()]),
+        unknown: Some(vec![
+            (
+                "beta".into(),
+                CapsValue::Object(vec![
+                    ("q".into(), CapsValue::UInt(1)),
+                    ("a".into(), CapsValue::UInt(2)),
+                ]),
+            ),
+            ("alpha".into(), CapsValue::UInt(9)),
+        ]),
+        ..Default::default()
+    };
+    let b = Caps {
+        sets: Some(vec![SET_ADDR.into()]),
+        unknown: Some(vec![
+            ("alpha".into(), CapsValue::UInt(9)),
+            (
+                "beta".into(),
+                CapsValue::Object(vec![
+                    ("a".into(), CapsValue::UInt(2)),
+                    ("q".into(), CapsValue::UInt(1)),
+                ]),
+            ),
+        ]),
+        ..Default::default()
+    };
+    let onion = pubkey_to_onion(&ed25519_public_key(&[0x33u8; 32]));
+    assert_eq!(
+        canonical_caps_bytes(&onion, &a),
+        canonical_caps_bytes(&onion, &b),
+        "unknown fields canonicalize independent of sender key order"
+    );
+}
+
+/// Local helper: true iff a caps carries no canonical unknown fields.
+fn canonical_unknown_caps_is_none(caps: &Caps) -> bool {
+    shadenet_proto::canonical_unknown_caps(caps).is_none()
 }

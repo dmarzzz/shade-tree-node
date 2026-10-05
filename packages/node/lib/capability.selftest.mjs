@@ -73,7 +73,11 @@ async function main() {
       let threw = false; try { canonicalCaps(bad); } catch { threw = true; }
       ok(!threw, `canonicalCaps(${JSON.stringify(bad)}) is total (no throw)`);
     }
-    ok(hasCaps({}) === false && hasCaps({ junk: 1 }) === false, "hasCaps is false for empty / all-invalid caps");
+    ok(hasCaps({}) === false && hasCaps({ ports: "no" }) === false, "hasCaps is false for empty caps / only-invalid KNOWN fields");
+    // Task 52 forward-compat: an UNKNOWN (future) cap field now counts as caps so it rides in — and
+    // is covered by — the signed bytes, letting a client that predates the field still verify the
+    // directory instead of bricking. INTERPRETATION still ignores it (canonicalCaps drops it).
+    ok(hasCaps({ junk: 1 }) === true, "hasCaps is TRUE for an unknown future cap field (it must ride in the signed bytes)");
     ok(hasCaps({ ports: [443] }) === true, "hasCaps is true when a valid field is present");
     ok(JSON.stringify(canonicalCaps({ rate }).rate) === JSON.stringify(rate), "fixed v4 rate policy canonicalizes in signed field order");
     ok(canonicalCaps({ rate: { ...rate, epochSeconds: 0 } }).rate === undefined, "malformed rate policy is dropped whole");
