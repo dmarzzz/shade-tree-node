@@ -136,15 +136,16 @@ node; once one egress establishes, peers reject that nullifier for the epoch.
 This rejection begins only after the asynchronous announcement arrives. A dropped push,
 concurrent attempt, or partition remains fail-open.
 
-### Provisional public tier-1 parameters
+### Provisional public tier parameters
 
 These parameters define the public-staking profile. They are not fields in the v4 envelope; the
-gateway applies them to the RLN epoch and slot identified by a verified proof:
+gateway applies them to the RLN epoch and slot identified by a verified proof. The set admits one
+tier, limit 8:
 
 | parameter | provisional value |
 |---|---:|
-| stake network and amount | `0.1 Sepolia ETH` |
-| RLN `userMessageLimit` | `1` |
+| stake network and amount | `0.01 Sepolia ETH` |
+| RLN `userMessageLimit` | `8` |
 | fixed epoch | `60 seconds` |
 | estimated text-oriented search-and-fetch workload | `4 MiB` combined payload |
 | bandwidth safety factor | `10 ×` estimated workload |
@@ -154,8 +155,8 @@ gateway applies them to the RLN epoch and slot identified by a verified proof:
 The 40 MiB limit is a protocol parameter, not a claim that HTTP requests are visible through TLS.
 The gateway counts opaque relayed chunks under `(externalNullifier, nullifier)`, truncates the final
 chunk at the boundary, and closes both sides. Retries and concurrent copies on one gateway share the
-same allowance. A tier-1 member has one slot per epoch; higher tiers receive 40 MiB for each private
-slot. `SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=0` is an explicit operator opt-out.
+same allowance. A tier-`K` member has `K` slots per epoch, each with its own 40 MiB allowance; the
+public set's tier 8 has eight. `SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=0` is an explicit operator opt-out.
 
 Because a v4 proof remains target-bound, aggregating one allowance across a search origin and several
 result origins still requires the bounded multi-target session capability in

@@ -12,7 +12,7 @@ contract/runtime record for other fleets rather than silently reviving the histo
 The ShadeNet staking contracts are deployed by one wrapper,
 [`scripts/deploy-contracts.mjs`](../scripts/deploy-contracts.mjs), from one input per network:
 `network/<network>/economics.json` (tiers and bonds, default tier, unbonding, slash split,
-sponsor seats, session tickets). The wrapper validates that file, checks that the pinned
+session tickets). The wrapper validates that file, checks that the pinned
 Poseidon libraries exist on the chain, runs `DeployRegistry.s.sol` with the key in the
 environment (never argv), reads every constructor value, getter and runtime bytecode back
 through the preflight on-chain gate, and writes `network/<network>/deployment.json` plus an

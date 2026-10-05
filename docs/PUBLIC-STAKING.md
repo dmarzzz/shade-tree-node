@@ -2,10 +2,11 @@
 
 The public Protocol v4 profile is deliberately narrow:
 
-- stake exactly the record's tier-1 bond at tier `1` (0.1 Sepolia ETH on the pre-launch contract;
-  **0.01 Sepolia ETH** from the ShadeNet launch deploy, see [ECONOMICS.md](ECONOMICS.md));
-- receive **one new HTTPS `CONNECT` tunnel per fixed 60-second epoch**;
-- relay at most **40 MiB (41,943,040 bytes) of combined payload** through that slot;
+- stake exactly the record's bond at tier `8`, the only tier the set admits
+  (**0.01 Sepolia ETH** from the one-tier deploy of 2026-10-05, see [ECONOMICS.md](ECONOMICS.md));
+- receive **eight proof slots per fixed 60-second epoch**, each a new HTTPS `CONNECT` tunnel
+  (a six-tunnel book at one node when the record turns session tickets on);
+- relay at most **40 MiB (41,943,040 bytes) of combined payload** through each slot;
 - recover the stake after the ZK-authorized 24-hour exit window unless the member is slashed.
 
 The deployed proof keys come from an adopted, re-verified RLN trusted setup (PSE's 2023
@@ -20,7 +21,7 @@ is `floor(unixSeconds / 60)`, not a rolling window, so uses immediately before a
 boundary are possible.
 
 The v4 external nullifier is canopy-wide, not egress-specific. Honest JavaScript and Rust clients
-therefore allocate one tier-1 slot total and reuse the identical proof only for gateway failover.
+therefore allocate one slot per request and reuse the identical proof only for gateway failover.
 Using the same private slot for two different target-bound requests produces slash evidence.
 
 Nodes also exchange spent-nullifier notices. That fleet tally closes ordinary sequential replay,
@@ -34,10 +35,9 @@ external nullifier and a new protocol version.
 | parameter | public value |
 |---|---:|
 | network | Sepolia (`11155111`) |
-| tier-1 bond | from the record: `0.1 ETH` pre-launch, `0.01 ETH` at launch (H2) |
-| tier-8 bond | from the record: `0.8 ETH` pre-launch, `0.08 ETH` at launch (H2) |
-| allowed limits | `[1, 8]` |
-| default member limit | `1` |
+| tier-8 bond | from the record: `0.01 ETH` (the only tier, deploy of 2026-10-05) |
+| allowed limits | `[8]` |
+| default member limit | `8` |
 | epoch | fixed `60 seconds` |
 | previous epochs accepted | `1` |
 | superseded-root lifetime | `60 seconds` |
@@ -46,7 +46,8 @@ external nullifier and a new protocol version.
 | contract minimum safety window | `3,720 seconds` (`F + E + C`) |
 | deployed unbonding | `86,400 seconds` (24 hours) |
 
-Tier 8 is priced linearly so the compatibility tier cannot buy eight slots for the tier-1 price.
+The set admits one tier (limit 8); the contract fixes the tier table at deployment and always
+admits tier 8, so a one-tier set is tier 8 alone (see [ECONOMICS.md](ECONOMICS.md)).
 The 40 MiB payload is the 4 MiB text-oriented search-and-fetch estimate from
 [ADR 0009](adr/0009-epoch-bandwidth-envelope.md), multiplied by the chosen `10×` safety factor.
 Both relay directions spend one shared allowance. The boundary chunk is truncated and both sockets

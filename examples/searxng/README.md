@@ -43,9 +43,9 @@ or query `http://127.0.0.1:8080/search?q=…&format=json` directly.
 ## Budget
 
 Each query spends one tunnel per routed engine (fewer while keep-alive
-connections last). On the public tier 1 (one tunnel per 60-second epoch) that is
-one routed engine per minute, so trim `engines:` in `settings.yml` to one engine
-or stake tier 8. `shadenet status` shows what is left.
+connections last). The public tier (limit 8) gives eight proof slots per
+60-second epoch — a six-tunnel book per slot when session tickets are on — so
+several routed engines per minute. `shadenet status` shows what is left.
 
 ## Notes
 

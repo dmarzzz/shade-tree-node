@@ -79,10 +79,10 @@ fixed build. v0.6.0 installs only the older `shade-tree` binary, without `init`,
 provide transfer integrity; GitHub attestations provide the stronger build
 provenance check.
 
-The bundled Sepolia canopy defaults to public staked tier 1: the bond in the
+The bundled Sepolia canopy admits one public staked tier, limit 8: the bond in the
 current network record (`shadenet init` prints it; the [Get access][stake] page
-shows it) buys one CONNECT tunnel per fixed 60-second epoch with a 40 MiB
-combined payload ceiling. `init` creates an owner-only identity, a proxy token
+shows it) buys eight proof slots per fixed 60-second epoch, each a CONNECT tunnel
+with a 40 MiB payload ceiling. `init` creates an owner-only identity, a proxy token
 and `config.toml`; then stake the leaf from a separately funded testnet key, or
 have a sponsor stake it from the Get access page:
 

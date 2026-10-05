@@ -98,19 +98,9 @@
                 <dt>identity commitment</dt>
                 <dd><output data-commitment-shown>None yet. Enter it in step 1.</output> <button class="text-action" type="button" data-copy-link hidden>copy link</button></dd>
               </div>
-              <div data-tier-row>
-                <dt id="tier-label">tier</dt>
-                <dd>
-                  <div class="tier-pick" role="radiogroup" aria-labelledby="tier-label" aria-describedby="tier-hint">
-                    <label><input type="radio" name="tier" value="1" data-tier data-bond-text="0.01 Sepolia ETH" data-buys-text="1 session per minute" checked> tier 1</label>
-                    <label><input type="radio" name="tier" value="8" data-tier data-bond-text="0.08 Sepolia ETH" data-buys-text="8 sessions per minute"> tier 8</label>
-                  </div>
-                  <p class="hint" id="tier-hint" data-tier-hint>Stake the tier the identity was made for. <code>shadenet init</code> makes tier 1 unless you pass <code>--limit</code>.</p>
-                </dd>
-              </div>
               <div>
                 <dt>bond</dt>
-                <dd><span data-bond>0.01 Sepolia ETH</span>, returned 24 hours after you leave. It buys <span data-buys>1 session per minute</span>.</dd>
+                <dd><span data-bond>0.01 Sepolia ETH</span>, returned 24 hours after you leave. It buys <span data-buys>8 sessions per minute</span>.</dd>
               </div>
               <div data-wallet-row hidden>
                 <dt>wallet</dt>
@@ -213,7 +203,7 @@
           <div class="split-main more">
             <h2 id="details-title" tabindex="-1">Leave and details</h2>
             <details name="access-details" open>
-              <summary>Leave or change tier</summary>
+              <summary>Leave</summary>
               <p>Leave from the machine that holds <code>identity.json</code>. The key only pays gas.</p>
               <div class="cmd">
             <pre tabindex="0" aria-label="Start the exit"><code>shadenet exit-member --identity ~/.config/shadenet/identity.json --key-file gas.key</code></pre>
@@ -224,13 +214,12 @@
             <pre tabindex="0" aria-label="Withdraw the bond"><code>shadenet withdraw-member --identity ~/.config/shadenet/identity.json --recipient 0xFRESH --key-file gas.key</code></pre>
             <button class="needs-script" type="button" data-copy-block aria-label="Copy: Withdraw the bond">copy</button>
           </div>
-              <p>To change tier, make a new identity with <code>shadenet init --dir NEW_FOLDER --limit N</code>, stake it, then exit the old one.</p>
             </details>
             <details name="access-details">
               <summary>The bond</summary>
-              <p>The bond is refundable collateral. Tier 1 buys 1 session per minute, up to 6 connections and 40 MiB each. Sending two different requests from the same slot in one minute reveals the secret and lets anyone slash the bond. A valid slash pays 1/10 of the bond to whoever reports it and burns the rest.</p>
+              <p>The bond is refundable collateral. Tier 8 buys 8 sessions per minute, up to 6 connections and 40 MiB each. Sending two different requests from the same slot in one minute reveals the secret and lets anyone slash the bond. A valid slash pays 1/10 of the bond to whoever reports it and burns the rest.</p>
               <p>Exit and withdraw need <code>identity.json</code>. Nobody can recover it for you: lose it and the bond stays locked for good.</p>
-              <p>The contract is <a href="https://sepolia.etherscan.io/address/0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC" rel="noreferrer">0xDEB2…4bBC</a> on Sepolia. It, the bond and the unbonding time can change at the next deployment. <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/PUBLIC-STAKING.md" rel="noreferrer">Protocol parameters</a></p>
+              <p>The contract is <a href="https://sepolia.etherscan.io/address/0x789967F0bDD7f3a96fb60F6D315e93F103b5680b" rel="noreferrer">0x7899…680b</a> on Sepolia. It, the bond and the unbonding time can change at the next deployment. <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/PUBLIC-STAKING.md" rel="noreferrer">Protocol parameters</a></p>
             </details>
             <details name="access-details">
               <summary>What each party learns</summary>

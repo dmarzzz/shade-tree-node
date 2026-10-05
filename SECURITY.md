@@ -19,7 +19,13 @@ Reasons it should not be considered secure against a motivated actor:
 
 The live canopy is recorded in
 [`network/sepolia/deployment.json`](network/sepolia/deployment.json), and key
-rotations in [`docs/KEY-ROTATIONS.md`](docs/KEY-ROTATIONS.md). The private-IP
+rotations in [`docs/KEY-ROTATIONS.md`](docs/KEY-ROTATIONS.md). The record's
+staking set is the one-tier set `0x789967F0bDD7f3a96fb60F6D315e93F103b5680b`
+(limit 8, bond 0.01 Sepolia ETH); during the migration the fleet also still
+admits the previous set `0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC`
+(tiers 1 and 8), listed as superseded in
+[`network/sepolia/contracts.json`](network/sepolia/contracts.json) because it
+still holds a member. The private-IP
 SSRF flaw in the default egress policy was fixed in
 [issue #73](https://github.com/dmarzzz/shade-tree-node/issues/73); nodes resolve
 and reject non-public destinations before dialing the checked numeric address.
