@@ -1712,11 +1712,19 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
                     .staked
                     .as_ref()
                     .and_then(|s| s.deploy_tx.clone());
+                // `--rpc` rates the endpoints for operators (deploys and preflights read
+                // receipts); the default run is a client checking that it can prove.
+                let audience = if args.rpc {
+                    shadenet::doctor::RpcAudience::Operator
+                } else {
+                    shadenet::doctor::RpcAudience::Client
+                };
                 let (rpc_checks, verdicts) = shadenet::doctor::check_rpcs(
                     &profile,
                     deploy_tx.as_deref(),
                     overrides.as_deref(),
                     rln_identifier,
+                    audience,
                 );
                 checks.extend(rpc_checks);
                 rpc_verdicts = verdicts;
