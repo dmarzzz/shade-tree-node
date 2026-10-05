@@ -65,7 +65,7 @@
             <div class="cmd">
             <pre tabindex="0" aria-label="Install the ShadeNet client"><code>curl -fsSL --proto '=https' --proto-redir '=https'<span class="cont"> \
  </span> https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh<span class="cont"> \
- </span> | SHADENET_VERSION=v0.7.1 sh</code></pre>
+ </span> | SHADENET_VERSION=v0.7.3 sh</code></pre>
             <button class="needs-script" type="button" data-copy-block aria-label="Copy: Install the ShadeNet client">copy</button>
           </div>
             <p class="cmd-label">Create the identity</p>
@@ -78,8 +78,7 @@
             <p class="field-message needs-script" id="commitment-message" data-commitment-message role="status" aria-live="polite"></p>
           </div>
           <div class="split-notes">
-            <p class="note" id="commitment-hint">The identity commitment is public. The secret stays in <code>identity.json</code> on that machine, and this page never asks for it. To stake for someone else, paste theirs.</p>
-            <p class="caution" data-leaf-caution><code>shadenet v0.7.1</code> prints a leaf, which is a different number. A bond staked on a leaf is lost. Until a release prints the identity commitment, stake from the terminal (step 2).</p>
+            <p class="note" id="commitment-hint"><code>shadenet init</code> prints it. The identity commitment is public. The secret stays in <code>identity.json</code> on that machine, and this page never asks for it. To stake for someone else, paste theirs.</p>
           </div>
         </div>
         <div class="panel-nav">
@@ -180,7 +179,7 @@
             <div role="tabpanel" id="start-panel-agent" aria-labelledby="start-tab-agent">
               <h3 class="tab-title">Agent</h3>
               <div class="brief">
-                <p class="brief-text" id="agent-brief" data-brief tabindex="0">Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.1 Rust -live binary (SHADENET_VERSION=v0.7.1). Run shadenet init; it writes identity.json and prints the identity commitment and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the identity commitment on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic.</p>
+                <p class="brief-text" id="agent-brief" data-brief tabindex="0">Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.3 Rust -live binary (SHADENET_VERSION=v0.7.3). Run shadenet init; it writes identity.json and prints the identity commitment and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the identity commitment on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic.</p>
                 <button class="line-action needs-script" type="button" data-copy-brief>copy agent brief</button>
               </div>
               <div class="cmd">
