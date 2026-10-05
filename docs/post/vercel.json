@@ -120,6 +120,16 @@
   ],
   "redirects": [
     {
+      "source": "/install.sh",
+      "destination": "https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh",
+      "permanent": false
+    },
+    {
+      "source": "/network/sepolia.json",
+      "destination": "https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json",
+      "permanent": false
+    },
+    {
       "source": "/pricing",
       "destination": "/stake/",
       "permanent": false
