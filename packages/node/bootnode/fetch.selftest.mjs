@@ -102,6 +102,7 @@ async function main() {
   });
   ok(routed.ok === true && dial.destination.host === onion && dial.destination.port === 8879, "SOCKS dials the configured onion virtual port, not hard-coded port 80");
   ok(writes.join("").includes(`Host: ${onion}:8879\r\n`), "the HTTP Host authority carries the non-default onion port");
+  ok(dial.timeout === 1000, "the SOCKS dial gets the caller's timeout, not the library's 30 s default");
   try {
     await postOverTor(onion, "/", {}, { destinationPort: 70000, attempts: 1, socksClient });
     ok(false, "invalid destination port is rejected");
