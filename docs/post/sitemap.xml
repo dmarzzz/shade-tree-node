@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://shade-tree-node.vercel.app/</loc>
+    <loc>https://shadenet.xyz/</loc>
   </url>
   <url>
-    <loc>https://shade-tree-node.vercel.app/research/</loc>
+    <loc>https://shadenet.xyz/research/</loc>
   </url>
   <url>
-    <loc>https://shade-tree-node.vercel.app/canopy/</loc>
+    <loc>https://shadenet.xyz/canopy/</loc>
   </url>
   <url>
-    <loc>https://shade-tree-node.vercel.app/agent/</loc>
+    <loc>https://shadenet.xyz/agent/</loc>
   </url>
   <url>
-    <loc>https://shade-tree-node.vercel.app/stake/</loc>
+    <loc>https://shadenet.xyz/stake/</loc>
   </url>
   <url>
-    <loc>https://shade-tree-node.vercel.app/operator/</loc>
+    <loc>https://shadenet.xyz/operator/</loc>
   </url>
 </urlset>

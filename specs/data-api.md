@@ -1,6 +1,6 @@
 # ShadeNet Data API
 
-The [Grove](https://shade-tree-node.vercel.app/grove/) is a deliberately small
+The [Grove](https://shadenet.xyz/grove/) is a deliberately small
 public view of ShadeNet. It shows how many gateway identities appeared in the
 last signed directory that the hosted observer could verify. It is topology,
 not territory: there are no locations, identities, traffic paths, or selectable
@@ -145,7 +145,7 @@ head and production consumer independently:
 ```bash
 gh api 'repos/<owner/repo>/contents/grove-v2.json?ref=network-state'
 curl --fail --show-error \
-  https://shade-tree-node.vercel.app/api/v2/data/grove/sepolia/head
+  https://shadenet.xyz/api/v2/data/grove/sepolia/head
 ```
 
 Deploy Vercel only when the function, schema, static site, or pinned publication

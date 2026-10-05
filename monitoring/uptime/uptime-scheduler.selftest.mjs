@@ -177,7 +177,7 @@ function main() {
     ok(publicVerify?.needs === "publish" && publicVerify?.permissions?.contents === "read", "public data-plane check runs after publish with read-only permissions");
     // The origin lives in the step's env (GROVE_ORIGIN), the paths in its script.
     const publicOrigin = (publicVerify?.steps || []).map((s) => s.env?.GROVE_ORIGIN || "").join("\n");
-    ok(/shade-tree-node\.vercel\.app/.test(publicOrigin + publicRun) && /\/grove\//.test(publicRun), "public data-plane check reaches the production Grove page");
+    ok(/shadenet\.xyz/.test(publicOrigin + publicRun) && /\/grove\//.test(publicRun), "public data-plane check reaches the production Grove page");
     ok(/api\/v1\/data\/grove\/sepolia\/head/.test(publicRun) && /api\/v2\/data\/grove\/sepolia\/head/.test(publicRun), "public data-plane check reaches both signed heads");
     ok(/shade-tree-public-grove-v1/.test(publicRun) && /shade-tree-public-grove-v2/.test(publicRun), "public data-plane check validates both schema names");
     ok(/for attempt in \$\(seq 1 12\)/.test(publicRun) && /sleep 5/.test(publicRun), "public data-plane check allows bounded propagation time");
@@ -205,7 +205,7 @@ function main() {
     ok(/permissions:\n  contents: read/.test(wf) && /publish:[\s\S]*permissions:\n      contents: write/.test(wf), "read-only collector and isolated write publisher (structural)");
     ok(/persist-credentials: false/.test(wf) && !/actions\/(?:checkout|setup-node)@v\d/.test(wf), "collector drops credentials and actions are SHA-pinned (structural)");
     ok(/parents:\[\]/.test(wf) && /path:\"grove\.json\"/.test(wf), "publisher emits a one-file parentless commit (structural)");
-    ok(/verify-public:[\s\S]*needs: publish[\s\S]*shade-tree-node\.vercel\.app[\s\S]*api\/v1\/data\/grove[\s\S]*api\/v2\/data\/grove/.test(wf), "publisher is followed by a production data-plane check (structural)");
+    ok(/verify-public:[\s\S]*needs: publish[\s\S]*shadenet\.xyz[\s\S]*api\/v1\/data\/grove[\s\S]*api\/v2\/data\/grove/.test(wf), "publisher is followed by a production data-plane check (structural)");
     ok(/::warning title=public Grove NOT published::/.test(wf) && !/::notice[^\n]*SHADE_TREE_NETWORK must be sepolia/.test(wf), "non-sepolia publisher skip is a ::warning:: (structural)");
     ok(/\n  freshness:\n[\s\S]*needs: \[probe, publish\][\s\S]*if: always\(\)[\s\S]*contents: read[\s\S]*refs\/heads\/network-state[\s\S]*scripts\/grove-freshness\.mjs/.test(wf), "freshness check runs on every run and reads the published branch (structural)");
   }

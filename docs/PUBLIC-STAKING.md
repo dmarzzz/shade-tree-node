@@ -54,7 +54,7 @@ close with reason `payload-limit`.
 ## Member flow
 
 The privacy-first browser flow is available at
-[shade-tree-node.vercel.app/stake](https://shade-tree-node.vercel.app/stake/). It generates the
+[shadenet.xyz/stake](https://shadenet.xyz/stake/). It generates the
 identity entirely in the tab, requires a plaintext recovery download before staking, and calls the
 pinned contract through the user's injected wallet. The static page has no identity or commitment
 API and stores neither in browser storage. Loading any website can still expose an IP address to its

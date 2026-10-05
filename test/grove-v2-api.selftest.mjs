@@ -88,14 +88,14 @@ try {
     return new Response(JSON.stringify(snapshot), { status: 200, headers: { "content-type": "application/json" } });
   };
   console.error = () => {};
-  const invalidProductionSignature = await GET(new Request("https://shade-tree-node.vercel.app/api/v2/data/grove/sepolia/head"));
+  const invalidProductionSignature = await GET(new Request("https://shadenet.xyz/api/v2/data/grove/sepolia/head"));
   assert.equal(called, true);
   assert.equal(invalidProductionSignature.status, 503, "wrong publication key never reaches browsers");
   assert.equal(invalidProductionSignature.headers.get("cache-control"), "no-store");
   assert.equal(await invalidProductionSignature.text(), '{"error":"network_snapshot_unavailable"}\n');
 
   called = false;
-  const query = await GET(new Request("https://shade-tree-node.vercel.app/api/v2/data/grove/sepolia/head?x=1"));
+  const query = await GET(new Request("https://shadenet.xyz/api/v2/data/grove/sepolia/head?x=1"));
   assert.equal(query.status, 400);
   assert.equal(called, false, "unsupported queries fail before upstream I/O");
 } finally {

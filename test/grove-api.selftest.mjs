@@ -84,7 +84,7 @@ try {
 
   const conditional = await requestWith(
     async () => upstream(snapshot),
-    new Request("https://shade-tree-node.vercel.app/api/v1/data/grove/sepolia/head", {
+    new Request("https://shadenet.xyz/api/v1/data/grove/sepolia/head", {
       headers: { "If-None-Match": success.headers.get("etag") },
     }),
   );
@@ -92,7 +92,7 @@ try {
 
   const weakListConditional = await requestWith(
     async () => upstream(snapshot),
-    new Request("https://shade-tree-node.vercel.app/api/v1/data/grove/sepolia/head", {
+    new Request("https://shadenet.xyz/api/v1/data/grove/sepolia/head", {
       headers: { "If-None-Match": `"unrelated", W/${expectedEtag}` },
     }),
   );
@@ -100,7 +100,7 @@ try {
 
   const wildcardConditional = await requestWith(
     async () => upstream(snapshot),
-    new Request("https://shade-tree-node.vercel.app/api/v1/data/grove/sepolia/head", {
+    new Request("https://shadenet.xyz/api/v1/data/grove/sepolia/head", {
       headers: { "If-None-Match": "*" },
     }),
   );
@@ -112,7 +112,7 @@ try {
       queryReachedUpstream = true;
       return upstream(snapshot);
     },
-    new Request("https://shade-tree-node.vercel.app/api/v1/data/grove/sepolia/head?cache-bust=1"),
+    new Request("https://shadenet.xyz/api/v1/data/grove/sepolia/head?cache-bust=1"),
   );
   check("API rejects unsupported query parameters before reaching upstream", unsupportedQuery.status === 400 && !queryReachedUpstream);
   check("unsupported query responses are generic and not cached", unsupportedQuery.headers.get("cache-control") === "no-store" && await unsupportedQuery.text() === '{"error":"unsupported_query"}\n');

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-const origin = new URL(process.env.SITE_BASE_URL || "https://shade-tree-node.vercel.app/");
+const origin = new URL(process.env.SITE_BASE_URL || "https://shadenet.xyz/");
 const attempts = Number(process.env.SITE_SMOKE_ATTEMPTS || 6);
 const retryDelay = Number(process.env.SITE_SMOKE_RETRY_MS || 2500);
 
