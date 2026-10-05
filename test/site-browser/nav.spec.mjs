@@ -1,14 +1,14 @@
 /* global document, getComputedStyle */
 
 // One nav on every page: same items, same destinations, same type, same box, same place on screen.
-// Each page is measured against the agent guide in both viewport projects, so a page that draws
+// Each page is measured against the Get access page in both viewport projects, so a page that draws
 // the nav a few pixels off, in another face, or with another label fails here by name.
 
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { NAV_ITEMS, NAV_PAGES } from "../../site-src/site-nav.mjs";
 
-const REFERENCE = NAV_PAGES.find((entry) => entry.file === "agent/index.html");
+const REFERENCE = NAV_PAGES.find((entry) => entry.file === "stake/index.html");
 const MISSING_ROUTE = "/__shade_tree_missing_page__";
 const routeOf = (entry) => (entry.file === "404.html" ? MISSING_ROUTE : entry.route);
 
@@ -43,8 +43,8 @@ async function measure(page, entry) {
       const style = getComputedStyle(element);
       return { weight: style.fontWeight, color: style.color, decoration: style.textDecorationLine };
     };
-    // Where a link leads, whichever of the three written forms the page uses: /agent/, ./agent/
-    // and ../agent/index.html are one page, and the canopy page's own file lives at /grove/.
+    // Where a link leads, whichever of the three written forms the page uses: /stake/, ./stake/
+    // and ../stake/index.html are one page, and the canopy page's own file lives at /grove/.
     const destination = (anchor) => {
       const url = new URL(anchor.href);
       if (url.origin !== document.location.origin) return url.href;
@@ -124,7 +124,7 @@ for (const entry of NAV_PAGES) {
   const route = routeOf(entry);
   const run = PARKED.has(entry.file) ? test.fixme : test;
 
-  run(`the nav on ${route} is the generated one, drawn where the agent guide draws it`, async ({ page }, testInfo) => {
+  run(`the nav on ${route} is the generated one, drawn where the Get access page draws it`, async ({ page }, testInfo) => {
     const phone = testInfo.project.use.viewport.width <= 600;
     const reference = await measure(page, REFERENCE);
     const measured = entry === REFERENCE ? reference : await measure(page, entry);

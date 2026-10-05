@@ -4,19 +4,21 @@
 // test/site-browser/nav.spec.mjs fails if two pages draw it differently.
 // `file` is the same target as a relative path, for pages that must also open as direct-file
 // previews (the canopy page).
+// `get-started` is a cross-page anchor into the landing page's Get Started section: it has no page
+// of its own, so no NAV_PAGES entry ever marks it current. Its `anchor` makes its link forms follow
+// HOME — root /#get-started, landing #get-started (same-page), file ../index.html#get-started.
 export const NAV_ITEMS = Object.freeze([
-  { id: "agent", href: "/agent/", file: "../agent/index.html", label: "Agents" },
-  { id: "operator", href: "/operator/", file: "../operator/index.html", label: "Operators" },
-  { id: "stake", href: "/stake/", file: "../stake/index.html", label: "Get access" },
+  { id: "get-started", anchor: "get-started", href: "/#get-started", file: "../index.html#get-started", label: "Get Started" },
+  { id: "stake", href: "/stake/", file: "../stake/index.html", label: "Get Access" },
   { id: "canopy", href: "/canopy/", file: "../grove/index.html", label: "Network" },
   { id: "research", href: "/research/", file: "../research/index.html", label: "Research" },
   { id: "source", href: "https://github.com/dmarzzz/shade-tree-node", file: "https://github.com/dmarzzz/shade-tree-node", label: "Source" },
 ]);
 
 // The three ways a page writes the same destinations:
-//   root     /agent/               pages that are only ever served by the site
-//   landing  ./agent/              the landing page, whose routes must also resolve when opened directly
-//   file     ../agent/index.html   the canopy page, which opens as a direct-file preview
+//   root     /stake/               pages that are only ever served by the site
+//   landing  ./stake/              the landing page, whose routes must also resolve when opened directly
+//   file     ../stake/index.html   the canopy page, which opens as a direct-file preview
 const HOME = Object.freeze({ root: "/", landing: "./", file: "../index.html" });
 
 // Every page that carries the nav: its file under docs/post/, the route it is served at, the item
@@ -25,8 +27,6 @@ const HOME = Object.freeze({ root: "/", landing: "./", file: "../index.html" });
 // site.css and carries a generated copy of the nav's rules instead.
 export const NAV_PAGES = Object.freeze([
   { file: "index.html", route: "/", current: null, links: "landing" },
-  { file: "agent/index.html", route: "/agent/", current: "agent", links: "root" },
-  { file: "operator/index.html", route: "/operator/", current: "operator", links: "root" },
   { file: "stake/index.html", route: "/stake/", current: "stake", links: "root", rendered: "site-src/stake-page.mjs" },
   { file: "grove/index.html", route: "/canopy/", current: "canopy", links: "file" },
   { file: "research/index.html", route: "/research/", current: "research", links: "root", inlineCss: true },
@@ -34,6 +34,10 @@ export const NAV_PAGES = Object.freeze([
 ]);
 
 function hrefFor(item, links) {
+  if (item.anchor) {
+    if (links === "landing") return `#${item.anchor}`;
+    return links === "file" ? item.file : item.href;
+  }
   if (!item.href.startsWith("/")) return item.href;
   if (links === "file") return item.file;
   return links === "landing" ? `.${item.href}` : item.href;

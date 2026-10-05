@@ -46,8 +46,6 @@ console.log(`Smoke testing ${origin.origin}`);
 const home = await checkPage("/", /id="home-title"/);
 await checkPage("/research/", /id="references"/);
 await checkPage("/grove/", /id="grove-main"/);
-await checkPage("/agent/", /<main\b/);
-await checkPage("/operator/", /<main\b/);
 await checkPage("/stake/", /data-panel="setup"/);
 
 assert.doesNotMatch(home.html, /href="[^"]*\/lab\//, "the removed Lab page must not be linked");
@@ -94,6 +92,13 @@ if (origin.protocol === "https:") {
   assert.equal(lab.status, 200, "/lab/ should redirect to a page that loads");
   assert.equal(new URL(lab.url).pathname, "/", "/lab/ should redirect to the landing page");
   console.log("  ok   /lab/ redirects to the landing page");
+
+  for (const path of ["/agent/", "/operator/"]) {
+    const response = await fetchWithRetry(path);
+    assert.equal(response.status, 200, `${path} should redirect to a page that loads`);
+    assert.equal(new URL(response.url).pathname, "/", `${path} should redirect to the Get Started section on the landing page`);
+    console.log(`  ok   ${path} redirects to the landing page`);
+  }
 }
 
 console.log("PASS: production site smoke test");

@@ -156,7 +156,7 @@ async function history(page, direction, path) {
 
 test("only the root background sits behind each page", async ({ page }) => {
   const reader = await openPixelReader(page);
-  for (const path of ["/", "/agent/", "/operator/", "/stake/", "/canopy/", "/research/", "/__shade_tree_missing_page__"]) {
+  for (const path of ["/", "/stake/", "/canopy/", "/research/", "/__shade_tree_missing_page__"]) {
     await page.goto(path, { waitUntil: "load" });
     await settle(page);
     const description = await describePage(page);
@@ -169,8 +169,7 @@ test("Get access, then another tab, matches a clean load", async ({ page }) => {
   test.slow();
   const reader = await openPixelReader(page);
   const stake = await cleanLoad(page, "/stake/");
-  const agent = await cleanLoad(page, "/agent/");
-  const operator = await cleanLoad(page, "/operator/");
+  const research = await cleanLoad(page, "/research/");
 
   await page.goto("/", { waitUntil: "load" });
   await follow(page, '.nav-links a[href$="stake/"]', "/stake/");
@@ -179,24 +178,20 @@ test("Get access, then another tab, matches a clean load", async ({ page }) => {
   // Leave from partway down the page, the way a reader does.
   await page.evaluate(() => window.scrollTo({ top: 900, behavior: "instant" }));
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
-  await follow(page, '.nav-links a[href="/agent/"]', "/agent/");
-  await expectCleanPage(page, reader, agent);
+  await follow(page, '.nav-links a[href$="research/"]', "/research/");
+  await expectCleanPage(page, reader, research);
 
   await history(page, "back", "/stake/");
   await expectCleanPage(page, reader, stake);
-  await history(page, "forward", "/agent/");
-  await expectCleanPage(page, reader, agent);
-
-  await follow(page, '.nav-links a[href="/stake/"]', "/stake/");
-  await follow(page, '.nav-links a[href="/operator/"]', "/operator/");
-  await expectCleanPage(page, reader, operator);
+  await history(page, "forward", "/research/");
+  await expectCleanPage(page, reader, research);
 });
 
 test("Research, then another tab, matches a clean load", async ({ page }) => {
   test.slow();
   const reader = await openPixelReader(page);
   const research = await cleanLoad(page, "/research/");
-  const agent = await cleanLoad(page, "/agent/");
+  const canopy = await cleanLoad(page, "/canopy/");
   const home = await cleanLoad(page, "/");
 
   await page.goto("/", { waitUntil: "load" });
@@ -205,8 +200,9 @@ test("Research, then another tab, matches a clean load", async ({ page }) => {
 
   await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
-  await follow(page, 'a[href="/agent/"]', "/agent/");
-  await expectCleanPage(page, reader, agent);
+  // The canopy page runs a live WebGL globe, so it is held to its structure and its backdrop.
+  await follow(page, '.nav-links a[href$="canopy/"]', "/canopy/");
+  await expectCleanPage(page, reader, canopy, { pixels: false });
 
   await history(page, "back", "/research/");
   await expectCleanPage(page, reader, research);
@@ -215,6 +211,6 @@ test("Research, then another tab, matches a clean load", async ({ page }) => {
   await expectCleanPage(page, reader, home, { pixels: false });
 
   await history(page, "forward", "/research/");
-  await history(page, "forward", "/agent/");
-  await expectCleanPage(page, reader, agent);
+  await history(page, "forward", "/canopy/");
+  await expectCleanPage(page, reader, canopy, { pixels: false });
 });

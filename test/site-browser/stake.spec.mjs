@@ -205,17 +205,17 @@ test("the shared nav on Get access is the one every page has", async ({ page }) 
       links: links.map((link) => ({ label: link.textContent, ...box(link), family: getComputedStyle(link).fontFamily, size: getComputedStyle(link).fontSize, weight: getComputedStyle(link).fontWeight })),
     };
   });
-  await page.goto("/agent/", { waitUntil: "networkidle" });
-  const agent = await measure();
+  await page.goto("/canopy/", { waitUntil: "load" });
+  const reference = await measure();
   await open(page);
   const stake = await measure();
-  expect(stake.wordmark).toEqual(agent.wordmark);
-  expect(stake.firstLink.family).toBe(agent.firstLink.family);
-  expect(stake.firstLink.size).toBe(agent.firstLink.size);
-  expect(stake.firstLink.weight).toBe(agent.firstLink.weight);
-  expect(stake.firstLink.spacing).toBe(agent.firstLink.spacing);
-  expect(stake.links).toEqual(agent.links);
-  expect(stake.nav).toEqual(agent.nav);
+  expect(stake.wordmark).toEqual(reference.wordmark);
+  expect(stake.firstLink.family).toBe(reference.firstLink.family);
+  expect(stake.firstLink.size).toBe(reference.firstLink.size);
+  expect(stake.firstLink.weight).toBe(reference.firstLink.weight);
+  expect(stake.firstLink.spacing).toBe(reference.firstLink.spacing);
+  expect(stake.links).toEqual(reference.links);
+  expect(stake.nav).toEqual(reference.nav);
 });
 
 test("the pasted value is checked and each mistake is named", async ({ page }) => {
