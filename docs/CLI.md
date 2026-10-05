@@ -12,7 +12,7 @@ For module-backed commands, every mapped `--flag` is a thin alias: it sets the m
 
 See `docs/CONFIG.md` for the full env-var reference and defaults.
 
-## Run one process through Shade Tree
+## Run one process through ShadeNet
 
 After `shade-tree proxy` has started the local proxy, `run` scopes standard proxy variables to
 one child process:
@@ -42,7 +42,7 @@ argv and shell history; clear the shell variable with `unset SHADE_TREE_REGISTER
 
 | Command | Script | What it does | Example |
 |---|---|---|---|
-| `run` | built into the CLI | Run one proxy-aware child with process-scoped Shade Tree routing. Refuses to spawn if the local proxy is unavailable. | `shade-tree run -- hermes` |
+| `run` | built into the CLI | Run one proxy-aware child with process-scoped ShadeNet routing. Refuses to spawn if the local proxy is unavailable. | `shade-tree run -- hermes` |
 | `join` | `group/join.mjs` | Guided front door. `shade-tree-node join [member] [label]` self-enrolls a member (secret on stderr, commitment + next commands on stdout); `shade-tree-node join node [hsDir]` mints an onion identity and prints the operator's next commands. `gateway` remains an input alias. Composes `enroll` / `keygen`; never reimplements crypto. | `shade-tree-node join` / `shade-tree-node join node tor/hs` |
 | `keygen` | `packages/node/bootnode/keygen.mjs` | Mint an onion identity: a Tor v3 hidden-service key plus the announce-signing seed. Writes `hs_ed25519_secret_key`, `hs_ed25519_public_key`, `hostname`, and `identity.local.json` into `<hsDir>`. Refuses to overwrite any identity file; `--force` is only for intentional rotation. | `shade-tree-node keygen tor/hs --label node-1` |
 | `elder` | `packages/node/bootnode/server.mjs` | Run the Elder Tree as an onion service. It verifies node announcements and serves the signed canopy directory. Long-running. | `shade-tree-node elder --port 8877 --admission stake --gateway-registry 0xReg --rpc-url https://rpc.example` |

@@ -1,4 +1,4 @@
-# Shade Tree wire formats and HTTP APIs
+# ShadeNet wire formats and HTTP APIs
 
 Wire-format and HTTP-API contract for the bootnode and its record types. This is the
 reimplementation target for the Rust conformance client (T-RUST-1). Every claim cites a
@@ -16,7 +16,7 @@ Golden fixtures: [`testdata/vectors.json`](../testdata/vectors.json). See [Confo
 | signal prefix | `shade-tree:v4` | tunnel-signal line 1 | `packages/node/lib/rln.mjs` `requestSignal` |
 | onion | v3 | Tor onion address version byte `0x03` | `packages/node/lib/directory.mjs:104` |
 
-Shade Tree protocol v4, Tor onion-service v3, and the announce/directory schema version `1`
+ShadeNet protocol v4, Tor onion-service v3, and the announce/directory schema version `1`
 are independent tags. Keep them distinct.
 
 ## 1. Canonical byte encodings

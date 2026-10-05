@@ -4,7 +4,64 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
-Nothing yet.
+Signed and hashed v4 wire strings are unchanged (`test/wire-freeze.selftest.mjs`); `research-v2`
+is a new session class next to `research-v1`.
+
+### The proxy is a scheduler (ADR 0013, #229)
+
+- Budget queue: with the epoch budget spent, `shadenet proxy`, `mcp` and `fetch` hold a request
+  for the next epoch instead of answering `429 budget_exhausted`, up to `--max-wait` (default two
+  epochs; `SHADENET_QUEUE_MAX_WAIT_SECS`, `queue_max_wait_secs`). A queued `200` carries
+  `X-ShadeNet-Queued`; a refusal carries `X-ShadeNet-ETA`. `--no-queue` restores the old contract.
+  The Rust SDK queues only when asked (`Config::queue_max_wait`, `Client::wait_for_budget`,
+  `connect_queued`); the JS SDK keeps the 429 contract (dogfood #235).
+- `shadenet plan --url …|--count N [--json]`, the MCP tool `shadenet_plan` and
+  `GET /_shadenet/plan?count=N` say what a batch costs: tunnels available now, epochs needed,
+  seconds until the last tunnel, and the tier that fits it in one epoch. `status` gains `queue`,
+  `plan` and `nodes`.
+- Session class `research-v2`: `research-v1` with a 60 s idle limit instead of 15 s, so a client
+  that opens one connection at a time keeps its book. Nodes advertise every class they serve and
+  clients prefer v2. A client opens one book per node at a time; concurrent tunnels share the
+  first proof's book (dogfood #231).
+- Same-envelope failover: a root refusal (`wrong-group-root`, `gate:*`) on a plain tunnel envelope
+  moves the same bytes to the next node; an onion dial is retried once at the same node; a session
+  init that fails in transport or with `upstream:*` is retried once at another node with a new
+  slot (dogfood #232, #233).
+- `shadenet run` keeps the caller's `NO_PROXY` and bypasses a default list of model-API and
+  telemetry hosts (`--no-default-bypass` turns it off); `shadenet proxy --targets` is an
+  allow-list that refuses other hosts with `403 target_not_allowed` before anything is spent
+  (dogfood #230).
+- `status`, `plan` and `fetch` use a proxy that is already listening; `--direct` starts an own
+  client (dogfood #236).
+- Warm circuits to the two best nodes (`--warm N`, `--no-warm`, `SHADENET_WARM_NODES`); metrics
+  `shadenet_queue_depth`, `shadenet_queue_next_slot_seconds`, `shadenet_queued_total` and
+  `shadenet_queue_wait_seconds_total`.
+
+### CLI
+
+- `shadenet init` prints the bond in ether with the tier and the network name ("tier 1 (1 session
+  per 60s epoch) for a bond of 0.01 Sepolia ETH on Sepolia") instead of wei and a chain id
+  (dogfood #239, #246).
+- `shadenet doctor`: the umask probe file is unique per call, so concurrent callers no longer
+  collide (#247).
+
+### Node and operations
+
+- Bootstrap renders the admitted contract list into the heartbeat unit as well as the gateway
+  unit, so a node advertises its sets (`caps.sets`); the v4 role's postflight expects the earliest
+  deploy block across the record set and `shade_tree_extra_sets` (#252).
+- `node-image.yml` is a reusable workflow: `release.yml` calls it for every tag, and it can be
+  dispatched for an existing tag. Its smoke test no longer dies on a closed pipe, which had kept
+  the 0.7.1 release run from pushing the image (#248).
+- Fleet records: both deployment records are pinned to `190d643` and every node admits the
+  production set and the staging set; `package-lock.json` carries the `shadenet-node` bin entry;
+  `docs/STAGING-REHEARSAL.md` section 12 records the two-set roll (#255).
+
+### Docs
+
+- Dogfood report (`docs/DOGFOOD-2026-10-01.md`): six tasks timed on the staging canopy and eleven
+  ranked findings, filed as #230 to #240. The agent docs, `llms.txt` and the README install line
+  moved from v0.7.0-rc.1 to v0.7.0 (#241).
 
 ## 0.7.1 — the node container
 
