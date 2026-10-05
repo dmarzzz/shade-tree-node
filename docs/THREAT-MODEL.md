@@ -152,7 +152,9 @@ may still correlate uses. Adversary A1 (including a colluding set).
 The client allocates each slot through `packages/node/client/slot-state.mjs` before proving.
 The versioned `{epoch,nextSlot}` state is serialized by an atomic directory lock
 shared with the Rust client, durably replaced, and namespaced by the public
-member leaf; no bearer secret is written. Restart, local proof failure, and a
+identity commitment Poseidon1(identitySecret) -- the same file for every leaf of
+one secret, so two leaves can never both issue messageId 0 in an epoch; no bearer
+secret is written. Restart, local proof failure, and a
 crash after allocation therefore burn capacity rather than reuse a nullifier.
 Missing state is accepted only as first use; corrupt, unavailable, locked, or
 future-epoch state is refused, and the cursor resets only on a strictly newer

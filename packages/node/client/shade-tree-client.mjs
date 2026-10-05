@@ -40,6 +40,7 @@ import {
   ShadeTreeSlotStateError,
   allocatePersistentSlot,
   defaultSlotStatePath,
+  migrateLeafCursor,
 } from "./slot-state.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -149,7 +150,7 @@ export function makeSlotPool({
   // stop at K and wait for the next epoch instead of manufacturing slashable evidence.
   unsafeAllowSlotReuseForTests = false,
   // Default-on durable state. `slotStatePath` is an exact advanced override;
-  // `slotStateDir` changes only the parent while retaining per-public-leaf namespacing.
+  // `slotStateDir` changes only the parent while retaining per-identity-commitment namespacing (#B).
   // There is intentionally no production "off" value. The unsafe reuse seam above is
   // the sole opt-out and exists only for isolated slashing tests.
   slotStatePath,
@@ -187,10 +188,17 @@ export function makeSlotPool({
       resolvedStatePath = slotStatePath;
       return resolvedStatePath;
     }
-    // The rate commitment is public enrollment data and is already K-bound. It gives
-    // JS and Rust a common per-member filename without storing the bearer secret.
-    const leaf = rln.rateCommitmentOf(rln.identityFor(secret), K).toString();
-    resolvedStatePath = defaultSlotStatePath({ leaf, dir: slotStateDir });
+    // Key by the identity commitment Poseidon1(identitySecret): the same value for every tier
+    // and every staking set of this secret, so all its leaves share one per-epoch messageId
+    // budget and can never collide on a nullifier. Public (what registerIdentity stakes), so no
+    // secret material lands in the path. On first use, carry forward a pre-existing per-leaf
+    // cursor so a mid-epoch upgrade keeps its place (JS and Rust agree on both filenames).
+    const identity = rln.identityFor(secret);
+    const commitment = rln.identityCommitmentOf(identity).toString();
+    const newPath = defaultSlotStatePath({ key: commitment, dir: slotStateDir });
+    const legacyPath = defaultSlotStatePath({ key: rln.rateCommitmentOf(identity, K).toString(), dir: slotStateDir });
+    migrateLeafCursor(newPath, legacyPath, slotLockTimeoutMs != null ? { lockTimeoutMs: slotLockTimeoutMs } : {});
+    resolvedStatePath = newPath;
     return resolvedStatePath;
   }
 

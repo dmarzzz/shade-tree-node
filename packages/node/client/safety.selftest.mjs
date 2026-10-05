@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { identityFor, rateCommitmentOf } from "../lib/rln.mjs";
+import { identityCommitmentOf, identityFor, rateCommitmentOf } from "../lib/rln.mjs";
 import {
   ShadeTreeClient,
   ShadeTreeEpochBudgetError,
@@ -122,17 +122,32 @@ function clientHarness(modes, { ackTimeoutMs = 15, ackMaxBytes = 32 } = {}) {
 
 console.log("local epoch budget:");
 
-await test("default state is namespaced by the public member leaf and stores no bearer secret", () => {
+await test("default state is namespaced by the public identity commitment and stores no bearer secret", () => {
   const secret = "0x01";
+  const dir = join(slotWork, "default-state");
   const pool = makeSlotPool({
     secret, K: 2, epochOf: () => 9n, loadGroupFn: fakeGroup, prove: fakeProve,
-    slotStateDir: join(slotWork, "default-state"),
+    slotStateDir: dir,
   });
-  const publicLeaf = rateCommitmentOf(identityFor(secret), 2).toString();
-  assert.equal(basename(pool.statePath()), `${publicLeaf}.json`);
+  // #B: the cursor is named by the identity commitment Poseidon1(secret), not the per-tier leaf,
+  // so every leaf of one secret shares one per-epoch budget and two leaves can never both issue
+  // messageId 0. The filename still carries only a PUBLIC value (the commitment is what
+  // registerIdentity stakes), never the bearer secret.
+  const commitment = identityCommitmentOf(identityFor(secret)).toString();
+  const leafTier2 = rateCommitmentOf(identityFor(secret), 2).toString();
+  const leafTier8 = rateCommitmentOf(identityFor(secret), 8).toString();
+  assert.equal(basename(pool.statePath()), `${commitment}.json`);
+  assert.notEqual(basename(pool.statePath()), `${leafTier2}.json`, "no longer the leaf");
+  // The whole point of B: a tier-2 leaf and a tier-8 leaf of this secret map to the SAME file.
+  const tier8Pool = makeSlotPool({
+    secret, K: 8, epochOf: () => 9n, loadGroupFn: fakeGroup, prove: fakeProve, slotStateDir: dir,
+  });
+  assert.notEqual(leafTier2, leafTier8, "the two tiers really are different leaves");
+  assert.equal(tier8Pool.statePath(), pool.statePath(), "both leaves of one secret share one cursor");
   assert.equal(pool.nextSlot().slot, 0);
   const raw = readFileSync(pool.statePath(), "utf8");
   assert.equal(raw.includes(secret), false);
+  assert.equal(raw.includes(commitment), false, "not even the public commitment is in the file body");
   assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), ["epoch", "nextSlot", "version"]);
 });
 
