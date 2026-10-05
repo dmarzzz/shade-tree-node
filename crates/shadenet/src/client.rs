@@ -518,11 +518,34 @@ impl Client {
         }
     }
 
-    fn slot_path(&self, leaf: &str) -> Result<Option<PathBuf>, Error> {
+    /// The crash-safe slot cursor for this identity.
+    ///
+    /// The file is keyed by the identity commitment `Poseidon1(identitySecret)`, not the leaf, so
+    /// every tier and every staking set of one secret shares one per-epoch messageId budget and
+    /// two leaves can never both issue messageId 0 in an epoch (which would reveal the secret
+    /// through a shared RLN nullifier). On first use it is seeded from the legacy per-leaf file so
+    /// a mid-epoch upgrade keeps its place. A passphrase-locked identity has no secret in hand
+    /// (status/doctor only, no proving): there we fall back to the legacy leaf-named file for the
+    /// informational peek.
+    fn slot_path(&self, identity: &IdentityMaterial) -> Result<Option<PathBuf>, Error> {
         match &self.config.slots {
-            Slots::CrashSafe => slot::default_path(leaf)
-                .map(Some)
-                .map_err(|e| Error::Slot(e.to_string())),
+            Slots::CrashSafe => {
+                let to_slot = |e: String| Error::Slot(e);
+                if identity.secret.is_empty() {
+                    return slot::default_path(&identity.leaf)
+                        .map(Some)
+                        .map_err(|e| to_slot(e.to_string()));
+                }
+                let commitment = shadenet_rln::identity::identity_commitment_from_identity_secret(
+                    &identity.secret,
+                )
+                .map_err(to_slot)?;
+                let path = slot::default_path(&commitment).map_err(|e| to_slot(e.to_string()))?;
+                let legacy =
+                    slot::default_path(&identity.leaf).map_err(|e| to_slot(e.to_string()))?;
+                slot::migrate_leaf_cursor(&path, &legacy).map_err(|e| to_slot(e.to_string()))?;
+                Ok(Some(path))
+            }
             Slots::Cursor(path) => Ok(Some(path.clone())),
             Slots::UnsafeForSlashingTest(_) => Ok(None),
         }
@@ -1511,7 +1534,7 @@ impl Client {
                 }
                 _ => transport::SlotPolicy::CrashSafe {
                     cursor: self
-                        .slot_path(&identity.leaf)?
+                        .slot_path(identity)?
                         .ok_or_else(|| Error::Internal("no slot path".into()))?,
                 },
             };
@@ -1855,7 +1878,7 @@ impl Client {
         let slots_used = self
             .identity
             .as_ref()
-            .and_then(|identity| self.slot_path(&identity.leaf).ok().flatten())
+            .and_then(|identity| self.slot_path(identity).ok().flatten())
             .and_then(|path| slot::peek(&path, epoch).ok())
             .unwrap_or(0);
         let class = &shadenet_proto::session::RESEARCH_V1;
@@ -2168,7 +2191,7 @@ impl Client {
                 admission_error = Some(error);
             }
         }
-        if let Ok(Some(path)) = self.slot_path(&identity.leaf) {
+        if let Ok(Some(path)) = self.slot_path(identity) {
             if let Ok(used) = slot::peek(&path, epoch) {
                 let tier = self.tier();
                 status.slots_used = Some(used);

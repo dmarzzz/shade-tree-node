@@ -67,17 +67,27 @@ fn parent(path: &Path) -> &Path {
         .unwrap_or_else(|| Path::new("."))
 }
 
-/// Same public-leaf-namespaced default path used by `client/slot-state.mjs`.
+/// The default slot-state file for `key`, the same path `client/slot-state.mjs` builds.
+///
+/// `key` is the member's identity commitment `Poseidon1(identitySecret)` (a canonical decimal
+/// field element): the same value for every tier and every staking set of one secret, and public
+/// (it is what `registerIdentity` stakes), so it never writes secret material to disk. Keying by
+/// the commitment rather than by the per-tier/per-set leaf gives every leaf of one secret ONE
+/// per-epoch messageId budget, so two leaves can never both issue messageId 0 in an epoch and
+/// reveal the secret through a shared RLN nullifier (the nullifier is `f(identitySecret, epoch,
+/// rlnIdentifier, messageId)` and ignores the leaf/tier/set). `rlnIdentifier` is globally `1` and
+/// not part of the record, so it is not in the name; if per-set identifiers are ever introduced
+/// the key must fold it in.
 ///
 /// The directory is `…/shade-tree/rln-slots/` and deliberately keeps that name through the ShadeNet
 /// rename: a renamed binary that started from a fresh directory inside an epoch would re-issue slot
 /// 0, reuse a nullifier with a different signal and get the member slashed. `SHADENET_SLOT_STATE_DIR`
 /// and `SHADE_TREE_SLOT_STATE_DIR` are the same setting; setting both to different values fails
 /// closed.
-pub fn default_path(leaf: &str) -> Result<PathBuf, Error> {
+pub fn default_path(key: &str) -> Result<PathBuf, Error> {
     let configured = crate::env::var("SLOT_STATE_DIR").map_err(Error::Unavailable)?;
     default_path_with(
-        leaf,
+        key,
         configured.as_deref(),
         std::env::var("XDG_STATE_HOME").ok().as_deref(),
         std::env::var("LOCALAPPDATA").ok().as_deref(),
@@ -87,15 +97,15 @@ pub fn default_path(leaf: &str) -> Result<PathBuf, Error> {
 
 /// [`default_path`] with its inputs made explicit, for tests.
 pub fn default_path_with(
-    leaf: &str,
+    key: &str,
     configured: Option<&str>,
     xdg_state_home: Option<&str>,
     local_app_data: Option<&str>,
     home: Option<&str>,
 ) -> Result<PathBuf, Error> {
-    if leaf.is_empty() || !leaf.bytes().all(|byte| byte.is_ascii_digit()) {
+    if key.is_empty() || !key.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(Error::Unavailable(
-            "member leaf is not canonical decimal".into(),
+            "slot-state key is not a canonical decimal field element".into(),
         ));
     }
     let root = match configured {
@@ -128,7 +138,40 @@ pub fn default_path_with(
             }
         }
     };
-    Ok(root.join(format!("{leaf}.json")))
+    Ok(root.join(format!("{key}.json")))
+}
+
+/// Seed a per-commitment cursor from a legacy per-leaf cursor on first use (the migration from
+/// leaf-keyed to commitment-keyed state). When `new` is absent and `legacy` exists, copy the
+/// legacy epoch/nextSlot into `new` under `new`'s lock, so a client upgrading mid-epoch continues
+/// the same member's cursor instead of restarting at messageId 0 and colliding with the proofs it
+/// already made this epoch. The legacy file is left in place (a downgrade keeps working). No-op
+/// when `new` already exists or `legacy` does not. Fails closed on a corrupt legacy file.
+///
+/// It carries forward only the leaf the caller names; a secret that proved under TWO leaves in one
+/// epoch on the old binary is not retroactively merged, which is why the same secret must not be
+/// used on a second set within the same epoch even after this change.
+pub fn migrate_leaf_cursor(new: &Path, legacy: &Path) -> Result<(), Error> {
+    if new.exists() || !legacy.exists() {
+        return Ok(());
+    }
+    fs::create_dir_all(parent(new))
+        .map_err(|e| unavailable(new, "cannot create parent directory", e))?;
+    let lock = Lock::acquire(new)?;
+    let result = (|| {
+        if new.exists() {
+            return Ok(());
+        }
+        match load(legacy)? {
+            Some(state) => save(new, state),
+            None => Ok(()),
+        }
+    })();
+    let unlock = lock.release(new);
+    match (result, unlock) {
+        (_, Err(error)) => Err(error),
+        (result, Ok(())) => result,
+    }
 }
 
 /// Slots already used in `epoch`, without taking the lock. Informational only (status output);
@@ -454,13 +497,18 @@ pub fn allocate(path: &Path, epoch: u64, limit: u64) -> Result<u64, Error> {
             Some(saved) if saved.epoch == epoch => saved.next_slot,
             _ => 0,
         };
-        if next > limit {
+        if next > MAX_LIMIT {
             return Err(Error::Corrupt(format!(
-                "{}: nextSlot {next} exceeds limit {limit}",
+                "{}: nextSlot {next} exceeds the RLN range {MAX_LIMIT}",
                 path.display()
             )));
         }
-        if next == limit {
+        // `>= limit`, not `== limit`: with the per-commitment cursor (migrate_leaf_cursor) a
+        // higher-tier leaf of the same secret may have advanced nextSlot past this proof's tier.
+        // Those lower messageIds are already spent for this secret+epoch, so this tier is
+        // exhausted — not corrupt. A single-leaf member only ever reaches `== limit`, so this is
+        // unchanged for them.
+        if next >= limit {
             return Err(Error::Exhausted { epoch, limit });
         }
         save(
@@ -625,5 +673,129 @@ mod tests {
             assert!(!lock.exists(), "the recovered lock is released");
             let _ = fs::remove_dir_all(root);
         }
+    }
+
+    fn scratch_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "shadenet-slot-{tag}-{}-{}",
+            std::process::id(),
+            TEMP_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn two_leaves_of_one_secret_share_one_per_epoch_budget() {
+        // #B: before the fix each leaf had its own `<leaf>.json`, so both started at messageId 0
+        // in an epoch and a cross-set pair revealed the secret. Keyed by the commitment, both
+        // leaves resolve to ONE file, so the second leaf continues the cursor instead of reusing
+        // messageId 0. A tier-1 leaf and a tier-8 leaf of one secret, same commitment:
+        let dir = scratch_dir("shared-budget");
+        let commitment = "42";
+        let path =
+            default_path_with(commitment, Some(dir.to_str().unwrap()), None, None, None).unwrap();
+        // The new one-tier (limit 8) set proves first: messageIds 0,1,2.
+        assert_eq!(allocate(&path, 100, 8).unwrap(), 0);
+        assert_eq!(allocate(&path, 100, 8).unwrap(), 1);
+        assert_eq!(allocate(&path, 100, 8).unwrap(), 2);
+        // The old tier-1 leaf of the SAME secret, same epoch, same file: messageId 0 is gone, and
+        // tier 1 is already past its one slot -> exhausted, never a second messageId 0.
+        assert!(matches!(
+            allocate(&path, 100, 1),
+            Err(Error::Exhausted {
+                epoch: 100,
+                limit: 1
+            })
+        ));
+        // Next epoch both tiers start fresh at 0 against the shared cursor.
+        assert_eq!(allocate(&path, 101, 1).unwrap(), 0);
+        assert!(matches!(allocate(&path, 101, 8), Ok(1)));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_higher_tier_cursor_exhausts_a_lower_tier_rather_than_reporting_corruption() {
+        // nextSlot past this tier's limit (a higher-tier leaf of the same secret advanced it) is
+        // exhaustion, not a corrupt file; only beyond the RLN range is corrupt.
+        let dir = scratch_dir("cross-tier");
+        let path = default_path_with("7", Some(dir.to_str().unwrap()), None, None, None).unwrap();
+        for expected in 0..6 {
+            assert_eq!(allocate(&path, 5, 8).unwrap(), expected);
+        }
+        // Cursor is now 6; a tier-1 and tier-4 proof are both exhausted (<= 6 spent), no reuse.
+        assert!(matches!(
+            allocate(&path, 5, 1),
+            Err(Error::Exhausted { .. })
+        ));
+        assert!(matches!(
+            allocate(&path, 5, 4),
+            Err(Error::Exhausted { .. })
+        ));
+        // A file beyond the RLN range is still corrupt.
+        save(
+            &path,
+            State {
+                version: STATE_VERSION,
+                epoch: 5,
+                next_slot: MAX_LIMIT + 1,
+            },
+        )
+        .unwrap();
+        assert!(matches!(allocate(&path, 5, 8), Err(Error::Corrupt(_))));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn migrate_seeds_the_new_cursor_from_the_legacy_leaf_file_once() {
+        // A client upgrading mid-epoch: the legacy per-leaf file has advanced to nextSlot 2; the
+        // new per-commitment file must continue at 2, never restart at 0 (which would reuse the
+        // member's own messageId 0,1 with new signals and slash).
+        let dir = scratch_dir("migrate");
+        let legacy =
+            default_path_with("111", Some(dir.to_str().unwrap()), None, None, None).unwrap();
+        let new = default_path_with("222", Some(dir.to_str().unwrap()), None, None, None).unwrap();
+        assert_eq!(allocate(&legacy, 7, 8).unwrap(), 0);
+        assert_eq!(allocate(&legacy, 7, 8).unwrap(), 1);
+        assert!(!new.exists());
+        migrate_leaf_cursor(&new, &legacy).unwrap();
+        assert_eq!(peek(&new, 7).unwrap(), 2);
+        assert_eq!(
+            allocate(&new, 7, 8).unwrap(),
+            2,
+            "continues, never reissues 0 or 1"
+        );
+        // Idempotent and non-destructive: re-running does not overwrite the advanced new cursor,
+        // and the legacy file is left in place for a downgrade.
+        assert_eq!(allocate(&new, 7, 8).unwrap(), 3);
+        migrate_leaf_cursor(&new, &legacy).unwrap();
+        assert_eq!(peek(&new, 7).unwrap(), 4);
+        assert!(legacy.exists());
+        // No legacy file: a fresh start, no error.
+        let fresh =
+            default_path_with("333", Some(dir.to_str().unwrap()), None, None, None).unwrap();
+        let absent =
+            default_path_with("444", Some(dir.to_str().unwrap()), None, None, None).unwrap();
+        migrate_leaf_cursor(&fresh, &absent).unwrap();
+        assert!(!fresh.exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_cursor_is_named_by_the_identity_commitment_shared_with_js() {
+        // The shared fixture (testdata/identity/vectors.json) pins the identity commitment; the
+        // cursor filename is `<commitment>.json`, the same basename the JS client builds
+        // (packages/node/client/slot-state.selftest.mjs asserts the other half).
+        let vectors: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../testdata/identity/vectors.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let commitment = vectors["identityCommitment"].as_str().unwrap();
+        let path = default_path_with(commitment, Some("/state"), None, None, None).unwrap();
+        assert_eq!(path, PathBuf::from(format!("/state/{commitment}.json")));
     }
 }

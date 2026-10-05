@@ -2,8 +2,12 @@
 //
 // The state file is deliberately tiny and interoperable with the Rust client:
 //   { "version": 1, "epoch": 42, "nextSlot": 3 }
-// It is stored under the member's PUBLIC rate-commitment leaf. Neither the bearer
-// secret, identity secret, nullifier, target, nor proof is persisted.
+// It is stored under the member's identity commitment Poseidon1(identitySecret) -- the same
+// value for every tier and every staking set of one secret, and PUBLIC (it is what
+// registerIdentity stakes), so every leaf of one secret shares one per-epoch messageId budget
+// and two leaves can never both issue messageId 0 in an epoch and reveal the secret through a
+// shared RLN nullifier. Neither the bearer secret, identity secret, nullifier, target, nor proof
+// is persisted. `migrateLeafCursor` carries a pre-existing per-leaf cursor forward on first use.
 
 import {
   closeSync,
@@ -23,6 +27,9 @@ import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 
 export const SLOT_STATE_VERSION = 1;
+// The RLN(20,16) circuit range-checks messageId against a 16-bit limit; a cursor beyond it is
+// corrupt. Matches Rust slot.rs MAX_LIMIT.
+const MAX_RLN_LIMIT = 65535;
 // Durable fsyncs can serialize slowly on loaded or network-backed home volumes.
 // Ten seconds still fails closed on a stale lock while allowing a bounded burst of
 // Proxy/Rust allocators to drain without sacrificing slot uniqueness.
@@ -63,14 +70,41 @@ function stateRoot(env = process.env) {
   return join(home, ".local", "state", "shade-tree", "rln-slots");
 }
 
-// `leaf` is public enrollment data. Using it as the filename gives JS and Rust the
-// same default coordinator without persisting any secret-derived bearer material.
-export function defaultSlotStatePath({ leaf, env = process.env, dir } = {}) {
-  const value = String(leaf ?? "");
+// `key` is the identity commitment Poseidon1(identitySecret), a canonical decimal field element.
+// Using it as the filename gives JS and Rust the same default coordinator without persisting any
+// secret-derived bearer material, and groups every leaf of one secret under one cursor.
+export function defaultSlotStatePath({ key, env = process.env, dir } = {}) {
+  const value = String(key ?? "");
   if (!/^[0-9]+$/.test(value)) {
-    throw new ShadeTreeSlotStateError("SHADE_TREE_SLOT_STATE_UNAVAILABLE", "cannot derive state path from a non-decimal member leaf");
+    throw new ShadeTreeSlotStateError("SHADE_TREE_SLOT_STATE_UNAVAILABLE", "cannot derive state path from a non-decimal slot-state key");
   }
   return join(dir || stateRoot(env), `${value}.json`);
+}
+
+// Seed a per-commitment cursor from a legacy per-leaf cursor on first use (the migration from
+// leaf-keyed to commitment-keyed state). When `path` is absent and `legacyPath` exists, copy its
+// epoch/nextSlot into `path` under `path`'s lock, so a client upgrading mid-epoch continues the
+// same member's cursor instead of restarting at messageId 0 and colliding with the proofs it
+// already made this epoch. The legacy file is left in place. No-op when `path` exists or
+// `legacyPath` does not; fails closed on a corrupt legacy file. It carries forward only the leaf
+// named, so a secret proved under two leaves in one epoch on the old client is not retroactively
+// merged -- which is why the same secret must not be used on a second set within the same epoch.
+export function migrateLeafCursor(path, legacyPath, { lockTimeoutMs = DEFAULT_SLOT_LOCK_TIMEOUT_MS } = {}) {
+  if (typeof path !== "string" || typeof legacyPath !== "string") return;
+  if (existsSync(path) || !existsSync(legacyPath)) return;
+  try { mkdirSync(dirname(path), { recursive: true, mode: 0o700 }); }
+  catch (cause) { throw stateError("SHADE_TREE_SLOT_STATE_UNAVAILABLE", path, "directory cannot be created", cause); }
+  const lockPath = acquireLock(path, lockTimeoutMs);
+  let failure;
+  try {
+    if (!existsSync(path)) {
+      const legacy = loadState(legacyPath);
+      if (legacy) saveState(path, { epoch: legacy.epoch, nextSlot: legacy.nextSlot });
+    }
+  } catch (error) { failure = error; }
+  try { rmdirSync(lockPath); }
+  catch (cause) { throw stateError("SHADE_TREE_SLOT_STATE_UNAVAILABLE", path, "lock cannot be released", cause); }
+  if (failure) throw failure;
 }
 
 function parseState(raw, path) {
@@ -187,9 +221,13 @@ export function allocatePersistentSlot({ path, epoch, limit, lockTimeoutMs = DEF
       );
     }
     let nextSlot = !saved || saved.epoch < current ? 0 : saved.nextSlot;
-    if (nextSlot > k) throw stateError("SHADE_TREE_SLOT_STATE_CORRUPT", path, `has nextSlot ${nextSlot} beyond limit ${k}`);
-    if (nextSlot === k) {
-      result = { exhausted: true, epoch: ep, used: k, nextSlot: k };
+    // `> MAX_LIMIT` is corrupt; `>= k` is exhausted, not corrupt: with the per-commitment cursor
+    // a higher-tier leaf of the same secret may have advanced nextSlot past this proof's tier, and
+    // those lower messageIds are already spent for this secret+epoch. A single-leaf member only
+    // reaches `=== k`, so this is unchanged for them.
+    if (nextSlot > MAX_RLN_LIMIT) throw stateError("SHADE_TREE_SLOT_STATE_CORRUPT", path, `has nextSlot ${nextSlot} beyond the RLN range ${MAX_RLN_LIMIT}`);
+    if (nextSlot >= k) {
+      result = { exhausted: true, epoch: ep, used: k, nextSlot };
     } else {
       const slot = nextSlot;
       nextSlot += 1;
