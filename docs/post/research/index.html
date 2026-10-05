@@ -230,6 +230,7 @@
       max-width: none;
       margin: 0;
       padding: 0 1.5rem 6rem;
+      overflow-x: hidden;
       color: var(--ink);
       background: var(--paper);
       font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
@@ -354,9 +355,15 @@
     }
     .shade-links {
       display: flex;
-      gap: 1rem;
+      flex-wrap: wrap;
+      gap: 0.25rem 1rem;
       margin: 1.3rem 0 0;
       letter-spacing: 0.06em;
+    }
+    .shade-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.75rem;
     }
     .article-kicker {
       margin-bottom: 0.75rem;

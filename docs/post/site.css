@@ -581,13 +581,28 @@ img {
   padding: 1rem 1.1rem;
   font-size: 0.78rem;
   line-height: 1.7;
-  overflow-wrap: anywhere;
+  /* Long multi-part guide commands wrap at their spaces and `&&`; break-word (not anywhere)
+     splits a token only when it cannot fit, so a hyphenated name is not broken by choice. */
+  overflow-wrap: break-word;
   white-space: normal;
 }
 
+/* The one-line release install never wraps (a flag like --proto-redir must not break at its
+   hyphen); it scrolls instead. A right-edge shadow, shown only while there is more to the right
+   (a local cover riding over a pinned shadow), cues that it continues past the copy button. */
 .agent-install code {
   overflow-x: auto;
   white-space: nowrap;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  background:
+    linear-gradient(90deg, transparent calc(100% - 1.6rem), rgba(16, 34, 25, 0.72)) right center / 1.6rem 100% no-repeat,
+    radial-gradient(farthest-side at 100% 50%, rgba(226, 190, 103, 0.45), transparent) right center / 0.55rem 100% no-repeat;
+  background-attachment: local, scroll;
+}
+
+.agent-install code::-webkit-scrollbar {
+  display: none;
 }
 
 .copy-command {
