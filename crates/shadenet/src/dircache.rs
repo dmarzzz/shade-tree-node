@@ -86,6 +86,44 @@ pub struct CapsDto {
     // Admission sets this node reads (dogfood #234); canonicalized by shadenet-proto.
     #[serde(default)]
     pub sets: Option<Vec<String>>,
+    // Forward-compat passthrough (task 52): every caps key NOT named above — a capability field
+    // added by a newer fleet that this build does not recognize. `#[serde(flatten)]` collects
+    // exactly the non-whitelisted keys here; `into_proto` carries them into `Caps::unknown` so
+    // `shadenet-proto` preserves them in the SIGNED bytes (the directory still verifies instead of
+    // bricking with `bad-signature`). Semantics still ignore them. Absent/empty = byte-identical
+    // to before. Mirrors the JS `canonicalUnknownCaps` capture in `lib/directory.mjs`.
+    #[serde(flatten)]
+    pub unknown: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+/// Map an untrusted `serde_json::Value` into the serde-free `shadenet_proto::CapsValue` so the
+/// proto crate (which stays off serde) can canonicalize + reserialize the unknown caps fields.
+/// Integers prefer `u64`, then `i64`, else a finite `f64`; order within objects is irrelevant
+/// because `canonical_unknown_caps` re-sorts keys.
+fn json_to_caps_value(v: serde_json::Value) -> shadenet_proto::CapsValue {
+    use shadenet_proto::CapsValue;
+    match v {
+        serde_json::Value::Null => CapsValue::Null,
+        serde_json::Value::Bool(b) => CapsValue::Bool(b),
+        serde_json::Value::Number(n) => {
+            if let Some(u) = n.as_u64() {
+                CapsValue::UInt(u)
+            } else if let Some(i) = n.as_i64() {
+                CapsValue::Int(i)
+            } else {
+                CapsValue::Float(n.as_f64().unwrap_or(f64::NAN))
+            }
+        }
+        serde_json::Value::String(s) => CapsValue::Str(s),
+        serde_json::Value::Array(a) => {
+            CapsValue::Array(a.into_iter().map(json_to_caps_value).collect())
+        }
+        serde_json::Value::Object(m) => CapsValue::Object(
+            m.into_iter()
+                .map(|(k, val)| (k, json_to_caps_value(val)))
+                .collect(),
+        ),
+    }
 }
 
 /// Untrusted `caps.session`; validation lives in `shadenet_proto::canonical_session`.
@@ -287,6 +325,16 @@ impl DirectoryDto {
                         }),
                         draining: c.draining,
                         sets: c.sets,
+                        unknown: if c.unknown.is_empty() {
+                            None
+                        } else {
+                            Some(
+                                c.unknown
+                                    .into_iter()
+                                    .map(|(k, v)| (k, json_to_caps_value(v)))
+                                    .collect(),
+                            )
+                        },
                     }),
                     caps_sig: g.caps_sig,
                 })
@@ -591,6 +639,46 @@ mod tests {
         assert_eq!(rate.previous_epochs_accepted, 1);
         assert_eq!(rate.root_freshness_seconds, 60);
         assert_eq!(rate.payload_bytes_per_slot, 41_943_040);
+    }
+
+    #[test]
+    fn directory_parser_carries_unknown_caps_fields_into_proto() {
+        // Task 52: a caps field this build does not know (`canopyWindow`) must be CAPTURED (not
+        // silently dropped by serde) and carried into `Caps::unknown`, so shadenet-proto can keep
+        // it in the signed bytes and the directory still verifies. A known field alongside it
+        // (`sets`) must still route to its named DTO field, not into `unknown`.
+        let raw = r#"{
+          "version": 1,
+          "issued": 100,
+          "gateways": [{
+            "onion": "abcdefghijklmnopqrstuvwxabcdefghijklmnopqrstuvwxabcd.onion",
+            "pubkey": "00",
+            "weight": 100,
+            "health": "up",
+            "caps": {
+              "sets": ["0xdeb294e6e9ad6a3fcbdeffd1f67ac9678ac94bbc"],
+              "canopyWindow": {"min": 4, "max": 4},
+              "futureFlag": true
+            }
+          }]
+        }"#;
+        let document = parse_document(raw).unwrap();
+        let caps = document.dir.gateways[0].caps.as_ref().unwrap();
+        // The known `sets` field still interprets normally.
+        assert_eq!(
+            shadenet_proto::canonical_caps(caps).sets.as_deref(),
+            Some(&["0xdeb294e6e9ad6a3fcbdeffd1f67ac9678ac94bbc".to_string()][..])
+        );
+        // The unknown fields are captured (serde flatten), key-sorted by the proto crate, and the
+        // known `sets` key is NOT among them.
+        let unknown =
+            shadenet_proto::canonical_unknown_caps(caps).expect("unknown fields captured");
+        let keys: Vec<&str> = unknown.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, vec!["canopyWindow", "futureFlag"]);
+        // And they ride into the signed directory bytes.
+        let bytes =
+            String::from_utf8(shadenet_proto::canonical_directory_bytes(&document.dir)).unwrap();
+        assert!(bytes.contains("canopyWindow") && bytes.contains("futureFlag"));
     }
 
     #[test]

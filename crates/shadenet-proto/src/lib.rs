@@ -368,6 +368,43 @@ pub struct Caps {
     /// deduped, sorted, at most [`MAX_CAPS_SETS`]; canonicalized after `draining`, so every
     /// older caps byte string is unchanged when absent. Mirrors `caps.sets`.
     pub sets: Option<Vec<String>>,
+    /// Forward-compat passthrough (task 52): RAW capability fields this build does NOT recognize,
+    /// carried through so the SIGNED bytes preserve them verbatim and a directory emitting a
+    /// future `caps.*` field still verifies on a client that predates it (the brick that hit
+    /// every v0.7.0 client when `caps.sets` was added). INTERPRETATION ([`canonical_caps`])
+    /// ignores them entirely; only the byte builders read them, via [`canonical_unknown_caps`].
+    /// `None`/empty is byte-identical to before (every conformance vector is unchanged). The
+    /// client (which owns serde) fills this from the non-whitelisted keys of `g.caps`; this crate
+    /// stays serde-free, so the values are the serde-free [`CapsValue`]. Mirrors the JS
+    /// `canonicalUnknownCaps`/`canonicalCapsForBytes` handling in `lib/directory.mjs`.
+    pub unknown: Option<Vec<(String, CapsValue)>>,
+}
+
+/// A serde-free JSON value for the UNKNOWN (non-whitelisted) capability fields carried in
+/// [`Caps::unknown`] (task 52 forward-compat). `shadenet-proto` stays off serde, so the client
+/// maps `serde_json::Value` -> `CapsValue` when filling the field; this crate owns the
+/// canonicalization ([`canonical_unknown_caps`]) and the deterministic serialization, which MUST
+/// match the JS `canonicalJsonValue` + `JSON.stringify` byte-for-byte so a signer (JS) and this
+/// verifier reconstruct identical signed bytes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CapsValue {
+    /// JSON `null`.
+    Null,
+    /// JSON `true`/`false`.
+    Bool(bool),
+    /// a JSON integer that did not fit `u64` (i.e. negative); serialized as decimal.
+    Int(i64),
+    /// a JSON integer that fit `u64` (the common case); serialized as decimal.
+    UInt(u64),
+    /// a non-integer JSON number; MUST be finite (non-finite is rejected by canonicalization,
+    /// exactly like the JS `Number.isFinite` guard).
+    Float(f64),
+    /// a JSON string.
+    Str(String),
+    /// a JSON array; element ORDER is semantic and preserved (mirrors JS).
+    Array(Vec<CapsValue>),
+    /// a JSON object; keys are sorted at canonicalization (JS `Object.keys(v).sort()`).
+    Object(Vec<(String, CapsValue)>),
 }
 
 /// RAW, untrusted `caps.session`. Validated + normalized only by [`canonical_session`].
@@ -715,7 +752,7 @@ pub fn canonical_caps(caps: &Caps) -> CanonicalCaps {
 /// when empty, keeping absent/empty-caps records byte-identical to before.
 pub fn has_caps(caps: &Caps) -> bool {
     let c = canonical_caps(caps);
-    c.ports.is_some()
+    if c.ports.is_some()
         || c.region.is_some()
         || c.proto.is_some()
         || c.artifacts.is_some()
@@ -725,6 +762,13 @@ pub fn has_caps(caps: &Caps) -> bool {
         || c.session.is_some()
         || c.draining == Some(true)
         || c.sets.is_some()
+    {
+        return true;
+    }
+    // An entry whose ONLY capabilities are fields this build does not know still "has caps": they
+    // must ride in (and be covered by) the signed bytes so a future field-only advert verifies
+    // here (task 52). Mirrors the JS `hasCaps` tail.
+    canonical_unknown_caps(caps).is_some()
 }
 
 /// Serialize canonical caps as the exact `JSON.stringify(canonicalCaps(caps))` bytes:
@@ -886,19 +930,206 @@ fn canonical_caps_json(cc: &CanonicalCaps) -> String {
     s
 }
 
+// --------------------------------------------------------------------------
+// Forward compatibility: tolerate UNKNOWN signed capability fields (task 52)
+// --------------------------------------------------------------------------
+//
+// Root cause of tasks 51/52 (mirror of the note in `lib/directory.mjs`): [`canonical_caps`] is a
+// WHITELIST that DROPS any field it does not know, and the directory/capsSig signature is checked
+// over a re-canonicalization of the caps. So the first time a newer fleet signs a directory
+// carrying a capability field an older client has never heard of (as `caps.sets` did to every
+// v0.7.0 client), the older client rebuilds caps WITHOUT that field, gets different bytes, and
+// rejects the whole directory as `bad-signature`. The durable fix: the BYTES the signature covers
+// PRESERVE unknown capability fields verbatim (deterministically ordered), so a client verifies
+// "over the bytes as signed" even when a field is beyond its vocabulary, while INTERPRETATION
+// ([`canonical_caps`], selection) still ignores what it does not understand. When no unknown field
+// is present this is a NO-OP and every byte-pinned conformance vector is byte-identical.
+
+/// The whitelisted capability keys this build understands (`lib/directory.mjs KNOWN_CAPS_KEYS`).
+/// A key here is NEVER treated as unknown even if a client also routes it into [`Caps::unknown`].
+pub const KNOWN_CAPS_KEYS: [&str; 10] = [
+    "ports",
+    "region",
+    "proto",
+    "artifacts",
+    "admits",
+    "pay",
+    "rate",
+    "session",
+    "draining",
+    "sets",
+];
+/// Bounds so the unknown-field passthrough cannot be used to balloon a directory (DoS) or recurse
+/// without end (`lib/directory.mjs` MAX_CAPS_UNKNOWN_*). A caps object that trips a bound drops its
+/// unknowns entirely — failing toward today's behavior (no unknowns in the signed bytes), never
+/// panicking.
+pub const MAX_CAPS_UNKNOWN_KEYS: usize = 16;
+/// Upper bound on the serialized size of the unknown-field object.
+pub const MAX_CAPS_UNKNOWN_BYTES: usize = 4096;
+const MAX_CAPS_UNKNOWN_DEPTH: usize = 8;
+
+/// JS `Array.prototype.sort()` default order: lexicographic over UTF-16 code units. For the ASCII
+/// caps keys this equals byte order; implemented over code units so a non-ASCII key would still
+/// canonicalize identically to the JS reference.
+fn js_key_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    a.encode_utf16().cmp(b.encode_utf16())
+}
+
+/// Canonicalize one parsed-JSON value (mirror of JS `canonicalJsonValue`): object keys sorted,
+/// array order preserved (it is semantic), non-finite numbers rejected, depth-bounded. Returns
+/// `None` when the value exceeds the depth bound or carries a non-finite number. TOTAL.
+fn canonical_json_value(v: &CapsValue, depth: usize) -> Option<CapsValue> {
+    if depth > MAX_CAPS_UNKNOWN_DEPTH {
+        return None;
+    }
+    match v {
+        CapsValue::Null
+        | CapsValue::Bool(_)
+        | CapsValue::Str(_)
+        | CapsValue::Int(_)
+        | CapsValue::UInt(_) => Some(v.clone()),
+        CapsValue::Float(f) => {
+            if f.is_finite() {
+                Some(CapsValue::Float(*f))
+            } else {
+                None
+            }
+        }
+        CapsValue::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for it in items {
+                out.push(canonical_json_value(it, depth + 1)?);
+            }
+            Some(CapsValue::Array(out))
+        }
+        CapsValue::Object(fields) => {
+            let mut sorted: Vec<&(String, CapsValue)> = fields.iter().collect();
+            sorted.sort_by(|a, b| js_key_cmp(&a.0, &b.0));
+            let mut out = Vec::with_capacity(sorted.len());
+            for (k, val) in sorted {
+                out.push((k.clone(), canonical_json_value(val, depth + 1)?));
+            }
+            Some(CapsValue::Object(out))
+        }
+    }
+}
+
+/// The unknown (non-whitelisted) capability fields, canonicalized and key-sorted, or `None` when
+/// there are none / a bound is tripped (mirror of JS `canonicalUnknownCaps`). TOTAL: never panics.
+pub fn canonical_unknown_caps(caps: &Caps) -> Option<Vec<(String, CapsValue)>> {
+    let raw = caps.unknown.as_ref()?;
+    // Drop any accidentally-routed known key FIRST, then bound the count — exactly as the JS
+    // filters `!KNOWN_CAPS_KEYS.has(k)` before checking `keys.length`.
+    let mut sorted: Vec<&(String, CapsValue)> = raw
+        .iter()
+        .filter(|(k, _)| !KNOWN_CAPS_KEYS.contains(&k.as_str()))
+        .collect();
+    if sorted.is_empty() || sorted.len() > MAX_CAPS_UNKNOWN_KEYS {
+        return None;
+    }
+    sorted.sort_by(|a, b| js_key_cmp(&a.0, &b.0));
+    let mut out: Vec<(String, CapsValue)> = Vec::with_capacity(sorted.len());
+    for (k, v) in sorted {
+        out.push((k.clone(), canonical_json_value(v, 1)?));
+    }
+    // Byte bound measured over the JSON object of the unknowns, exactly like the JS
+    // `utf8(JSON.stringify(out)).length`.
+    let mut probe = String::from("{");
+    append_caps_fields_json(&mut probe, &out);
+    probe.push('}');
+    if probe.len() > MAX_CAPS_UNKNOWN_BYTES {
+        return None;
+    }
+    Some(out)
+}
+
+/// Serialize one [`CapsValue`] as the exact `JSON.stringify` bytes.
+fn append_caps_value_json(s: &mut String, v: &CapsValue) {
+    match v {
+        CapsValue::Null => s.push_str("null"),
+        CapsValue::Bool(b) => s.push_str(if *b { "true" } else { "false" }),
+        CapsValue::Int(i) => s.push_str(&i.to_string()),
+        CapsValue::UInt(u) => s.push_str(&u.to_string()),
+        // Finite by construction (canonical_json_value rejects non-finite). Rust's shortest
+        // round-trip Display matches JS `Number`->string for the integer/decimal magnitudes a
+        // caps field realistically carries (integer-valued floats print without a `.0`, as JS
+        // does); only extreme-exponent values, which caps never use, could differ.
+        CapsValue::Float(f) => s.push_str(&format!("{f}")),
+        CapsValue::Str(st) => push_json_string(s, st),
+        CapsValue::Array(items) => {
+            s.push('[');
+            for (i, it) in items.iter().enumerate() {
+                if i > 0 {
+                    s.push(',');
+                }
+                append_caps_value_json(s, it);
+            }
+            s.push(']');
+        }
+        CapsValue::Object(fields) => {
+            s.push('{');
+            for (i, (k, val)) in fields.iter().enumerate() {
+                if i > 0 {
+                    s.push(',');
+                }
+                push_json_string(s, k);
+                s.push(':');
+                append_caps_value_json(s, val);
+            }
+            s.push('}');
+        }
+    }
+}
+
+/// `"k":v,"k2":v2,...` (no surrounding braces) for an already-canonical unknown-field list.
+fn append_caps_fields_json(s: &mut String, fields: &[(String, CapsValue)]) {
+    for (i, (k, v)) in fields.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        push_json_string(s, k);
+        s.push(':');
+        append_caps_value_json(s, v);
+    }
+}
+
+/// The caps as they appear in the SIGNED bytes: the whitelisted canonical fields (fixed order,
+/// from [`canonical_caps`]) with any UNKNOWN capability fields preserved AFTER them (key-sorted),
+/// mirroring the JS `canonicalCapsForBytes`. Byte-identical to `canonical_caps_json(canonical_caps(..))`
+/// when there are no unknown fields, so it is purely additive over the pinned vectors.
+fn canonical_caps_for_bytes_json(caps: &Caps) -> String {
+    let known = canonical_caps_json(&canonical_caps(caps));
+    let unknown = match canonical_unknown_caps(caps) {
+        Some(u) => u,
+        None => return known,
+    };
+    // `known` is always a JSON object literal `{...}` (possibly the empty `{}`); splice the
+    // unknown fields in before its closing '}'.
+    let mut s = String::with_capacity(known.len() + 32);
+    s.push_str(&known[..known.len() - 1]); // drop trailing '}'
+    if known.len() > 2 {
+        // non-empty known object -> comma before the first unknown field
+        s.push(',');
+    }
+    append_caps_fields_json(&mut s, &unknown);
+    s.push('}');
+    s
+}
+
 /// Domain-separated, onion-bound canonical bytes the ONION key signs to attest its caps
 /// (`lib/directory.mjs:183 canonicalCapsBytes`):
-/// `utf8(CAPS_DOMAIN) || utf8(JSON.stringify({ onion, caps: canonicalCaps(caps) }))`.
+/// `utf8(CAPS_DOMAIN) || utf8(JSON.stringify({ onion, caps: canonicalCapsForBytes(caps) }))`.
 /// DURABLE (no timestamp) so it is reusable across heartbeats and re-verifiable from a
-/// directory entry. Runs caps through [`canonical_caps`] so key order/junk can't shift bytes.
-/// Conformance target: `testdata/vectors.json` `capabilities.canonicalCapsBytesHex`.
+/// directory entry. Runs caps through [`canonical_caps_for_bytes_json`] so key order/junk can't
+/// shift bytes while unknown fields ride through verbatim (task 52).
+/// Conformance target: `testdata/vectors.json` `capabilities.canonicalCapsBytesHex` (no unknown
+/// fields there, so byte-identical to before).
 pub fn canonical_caps_bytes(onion: &str, caps: &Caps) -> Vec<u8> {
-    let cc = canonical_caps(caps);
     let mut s = String::from(CAPS_DOMAIN);
     s.push_str("{\"onion\":");
     push_json_string(&mut s, onion);
     s.push_str(",\"caps\":");
-    s.push_str(&canonical_caps_json(&cc));
+    s.push_str(&canonical_caps_for_bytes_json(caps));
     s.push('}');
     s.into_bytes()
 }
@@ -1011,7 +1242,11 @@ pub fn canonical_directory_bytes(dir: &Directory) -> Vec<u8> {
         if let Some(caps) = &g.caps {
             if has_caps(caps) {
                 s.push_str(",\"caps\":");
-                s.push_str(&canonical_caps_json(&canonical_caps(caps)));
+                // Task 52: preserve UNKNOWN capability fields in the signed bytes (the exact
+                // analog of the JS `canonicalDirectoryBytes` using `canonicalCapsForBytes`), so a
+                // directory carrying a future `caps.*` field still verifies here. Byte-identical
+                // to `canonical_caps_json(canonical_caps(caps))` when there are no unknown fields.
+                s.push_str(&canonical_caps_for_bytes_json(caps));
                 if let Some(sig) = &g.caps_sig {
                     s.push_str(",\"capsSig\":");
                     push_json_string(&mut s, sig);
