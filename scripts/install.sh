@@ -469,8 +469,10 @@ case ":$PATH:" in
 esac
 
 say ""
-say "warning: ShadeNet is a research preview with testnet-only, unaudited RLN setup artifacts;"
-say "         do not use it as a production anonymity or security boundary."
+say "warning: ShadeNet is a research preview on Sepolia. The code is unaudited, the"
+say "         proof keys come from a trusted setup, and it should not be considered"
+say "         secure against a motivated actor: do not use it for real funds or"
+say "         sensitive traffic."
 say "note: the checksum establishes transfer integrity, not publisher provenance;"
 say "      verify the GitHub build attestation when provenance matters (crates/INSTALL.md)."
 say ""

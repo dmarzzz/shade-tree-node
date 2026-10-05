@@ -1,6 +1,6 @@
 # ShadeNet protocol
 
-**Status:** research preview · protocol v4 · testnet only · unaudited
+**Status:** research preview · protocol v4 · Sepolia testnet · unaudited · trusted setup
 
 ShadeNet carries an HTTPS tunnel from a local client to a destination through a
 proof-gated Tor onion service. This page describes the current protocol and its
@@ -264,14 +264,14 @@ anonymity set.
   force availability or honest forwarding.
 - End-to-end timing correlation remains possible for an observer able to watch both
   sides.
-- Development proving artifacts and unaudited code are not production security
-  guarantees.
+- Proving keys from an adopted trusted setup and unaudited code are not production
+  security guarantees.
 
 Read [`THREAT-MODEL.md`](../docs/THREAT-MODEL.md) before operating or depending on a node.
 
 ## Versioning
 
-Protocol v4 is the first Shade Tree release. Envelope-version and proof-artifact
+Protocol v4 is the first ShadeNet release. Envelope-version and proof-artifact
 negotiation are separate axes: a wire shape can remain v4 while verification keys rotate
 through a dual-artifact window. See
 [`VERSIONING.md`](../docs/VERSIONING.md) and

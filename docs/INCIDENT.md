@@ -79,8 +79,8 @@ directory with no re-pin.
 
 **Prevention.** Set `SHADE_TREE_BOOTNODE_STORE` so a restart is not a fleet blank. Run redundant bootnodes,
 federated with `SHADE_TREE_BOOTNODE_PEERS` so each learns the others' gateways (T-FEAT-1,
-`packages/node/bootnode/federation.mjs`); clients pin one bootnode onion at a time (`SHADE_TREE_BOOTNODE_ONION`), so
-re-pointing a client to a surviving peer is still a manual re-point. Keep the LKG cache path
+`packages/node/bootnode/federation.mjs`); since ADR 0012 clients read every Elder the record lists
+and merge each one's canopy, so a failed Elder falls back to the others without a manual re-point. Keep the LKG cache path
 writable so degradation actually works. Publish a static signed directory as a cold fallback.
 
 ---
@@ -370,8 +370,8 @@ member's own rate accounting matches what the gateway enforces. Run the slasher 
   getting the new pubkey into every client's allowlist is out of band; there is no in-band
   rotation message.
 - **Automated bootnode failover** (#1): clients auto-degrade to the LKG cache and bootnodes can
-  federate (T-FEAT-1), but a client pins one bootnode onion; re-pointing it to a healthy peer is
-  manual.
+  federate (T-FEAT-1); since ADR 0012 a client reads every Elder the record lists and merges each
+  one's canopy, so a failed Elder falls back to the others automatically.
 - **Chain / RPC outage** (#5): `SHADE_TREE_RPC_URL` takes up to five endpoints with failover (OPS-8);
   a canopy with every endpoint down still refuses staked members after one root-freshness window.
 - **Cross-node replay suppression is opt-in** (#3, #7): per-gateway replay rejection is always on

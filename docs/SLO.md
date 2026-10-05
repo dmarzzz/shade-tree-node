@@ -80,10 +80,11 @@ exists yet; the 1000-request load test is a proxy, not a 30-day member cohort.
 
 `/directory` responds and the body verifies against the pinned signer, 99.5% of the time, measured by
 an external tor-capable prober (T-MON-4). 99.5% (about 3.6h/month of allowed downtime) rather than a
-higher tier because: (a) a single bootnode today is one process on one box behind one onion
+higher tier because: (a) each Elder is one process on one box behind one onion
 descriptor, and descriptor propagation alone can cost ~30s after a restart (OPERATOR.md); (b) clients
-tolerate bootnode downtime by design, falling back to the last-known-good cached directory
-([INCIDENT.md](INCIDENT.md) #1), so bootnode unavailability rarely becomes member-visible. The path to
+tolerate Elder downtime by design: since ADR 0012 they read every Elder the record lists and merge
+each one's canopy, and otherwise fall back to the last-known-good cached directory
+([INCIDENT.md](INCIDENT.md) #1), so one Elder's unavailability rarely becomes member-visible. The path to
 a stricter target is redundant bootnodes (each its own onion + signer), not a heroic single instance.
 
 Both halves of the SLI are required: a `/directory` that returns 200 but fails signature verification

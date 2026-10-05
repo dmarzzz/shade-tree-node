@@ -383,6 +383,20 @@
       color: #40463d;
       font-size: 0.92rem;
     }
+    .preview-statement {
+      margin-top: -1rem;
+      margin-bottom: 3rem;
+      padding: 1.1rem 1.25rem 1.25rem;
+      border-left: 3px solid var(--moss);
+      background: color-mix(in srgb, var(--soft) 62%, transparent);
+    }
+    .preview-statement h2 {
+      margin-top: 0;
+      font-size: 1.1rem;
+    }
+    .preview-statement ul {
+      margin-bottom: 0;
+    }
     #TOC {
       margin-top: 3rem;
       margin-bottom: 4rem;
@@ -612,6 +626,22 @@ href="https://github.com/dmarzzz/shade-tree-node/blob/main/specs/protocol.md">pr
 and <a
 href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/THREAT-MODEL.md">threat
 model</a> in the repository.</p>
+<section id="research-preview" class="preview-statement" aria-label="Research preview">
+<h2>Research preview</h2>
+<p>ShadeNet is a research preview on Sepolia. The code is unaudited, the proof keys come from a trusted setup, and it should not be considered secure against a motivated actor: do not use it for real funds or sensitive traffic.</p>
+<p>The proof keys are the output of the RLN trusted setup ceremony that Privacy &amp; Scaling Explorations (PSE) ran in 2023. ShadeNet did not run the ceremony. This project adopted its output and re-verified it from public inputs, and no outside verifier has confirmed that check yet. The keys are sound if at least one contributor to each was honest (60 contributed to the membership key, 62 to the withdrawal key). If all of them colluded, proofs could be forged.</p>
+<p>Reasons it should not be considered secure against a motivated actor:</p>
+<ul>
+  <li>One operator runs every Shade Tree node and both Elder Trees, so one party sees the destination and timing of every tunnel.</li>
+  <li>Every Shade Tree node is hosted at one provider.</li>
+  <li>The member set is small, so each member hides among few others.</li>
+  <li>The Elder Trees' signers choose the node list a client sees, and can omit nodes or add their own.</li>
+  <li>Rate limits are enforced per node. Replay protection across nodes is best effort and fails open.</li>
+  <li>A wallet that stakes is linked to its member commitment on chain, publicly and permanently.</li>
+  <li>The node that serves a tunnel sees the destination hostname, the timing and the byte counts.</li>
+  <li>Tor does not stop an observer who watches both ends of a tunnel from correlating timing.</li>
+</ul>
+</section>
 <nav id="TOC" role="doc-toc">
 <p><strong>Table of contents</strong></p>
 <ul>

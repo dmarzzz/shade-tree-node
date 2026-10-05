@@ -71,8 +71,10 @@ wiring. It exits nonzero and names the failing suite if anything breaks.
 
 ## Known unaudited surfaces (review these hardest)
 
-- **ZK artifacts** in `circuits/rln/` came from an untrusted testnet phase-2 ceremony
-  (`circuits/rln/ARTIFACTS.md`). Not for real funds or real anonymity yet.
+- **ZK artifacts** in `circuits/rln/` are the output of PSE's 2023 RLN trusted setup ceremony,
+  adopted and re-verified by this project, not run by it (`circuits/rln/ARTIFACTS.md`). Sound if
+  at least one contributor to each was honest; not for real funds or sensitive traffic
+  (see the [research preview statement](../SECURITY.md#status)).
 - **The onion↔operator binding** in a stake-mode announce is verified by the bootnode at announce
   time; clients re-verify onion control cryptographically and can re-check the operator's live
   stake, but rely on the bootnode's signature for the operator↔onion *pairing* unless they fetch

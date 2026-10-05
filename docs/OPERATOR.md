@@ -190,7 +190,7 @@ default 24.20.0) and caps journald (`SHADE_TREE_JOURNAL_MAX_USE=500M`,
 The current disposable v4 research canopy spans three regions but one provider and ASN. Before
 adding another long-lived node, place it on a different provider network so one DigitalOcean or
 AS14061 incident cannot remove the whole canopy. This changes failure independence; it does not by
-itself make the anonymity set larger or the untrusted testnet artifacts production-safe.
+itself make the anonymity set larger or make a research preview on an adopted trusted setup production-safe.
 
 Use a fresh Ubuntu 24.04 host with a dedicated public address, root or passwordless `sudo`, outbound
 traffic allowed, and **only TCP 22 from the reviewed operator CIDR inbound**. Do not expose the

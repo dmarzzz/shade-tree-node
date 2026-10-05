@@ -8,8 +8,9 @@ The public Protocol v4 profile is deliberately narrow:
 - relay at most **40 MiB (41,943,040 bytes) of combined payload** through that slot;
 - recover the stake after the ZK-authorized 24-hour exit window unless the member is slashed.
 
-The deployed proof artifacts are explicitly untrusted testnet material. This is a disposable
-research canopy, not a production anonymity system.
+The deployed proof keys come from an adopted, re-verified RLN trusted setup (PSE's 2023
+ceremony), not a ceremony this project ran; see the [research preview statement](../SECURITY.md#status).
+This is a disposable research canopy, not a production anonymity system.
 
 ## What “one request” means
 

@@ -102,7 +102,7 @@ requires this explicit key.
 
 The Proxy fetches the signed canopy directory over Tor, verifies it against the pinned signer, and
 selects a node per tunnel. Member page: [JOIN.md](JOIN.md); buying: [PAYMENTS.md](PAYMENTS.md).
-Research preview and untrusted ZK artifacts: see the README warning and Boundaries.
+Research preview and adopted trusted-setup proof keys: see the [research preview statement](../SECURITY.md#status).
 
 ## Path B: the local loop (understand the pieces)
 

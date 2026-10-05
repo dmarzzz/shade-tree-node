@@ -5,10 +5,11 @@ ledger per admission path, the open caveats and why they matter, the exit-blocki
 the Rust binary, the local loop, and the repository layout. Everything here is also in the
 per-topic docs; this page is the one-screen-per-topic version. Index: [`README.md`](README.md).
 
-> **v4 network status.** This checkout speaks envelope v4. There is no repo-maintained
-> production network. The bundled Sepolia profile provides a public, permissionless staking
-> path for the disposable v4 research canopy; see [PUBLIC-STAKING.md](PUBLIC-STAKING.md).
-> Its contracts and proof artifacts are untrusted testnet material. The current profile is
+> **v4 network status.** This checkout speaks envelope v4. The research preview runs a live
+> canopy of two Elder Trees and three Shade Tree nodes on Sepolia. The bundled Sepolia profile
+> provides a public, permissionless staking path for that disposable v4 research canopy; see
+> [PUBLIC-STAKING.md](PUBLIC-STAKING.md). Its contracts are testnet material and its proof keys
+> come from an adopted, re-verified RLN trusted setup. The current profile is
 > recorded in `network/sepolia/deployment.json`; the older `network/sepolia/contracts.json`
 > is incompatible pre-v4 history. Run the local loop below to study the components.
 
@@ -127,12 +128,12 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
 
 ## Not done, and why it matters
 
-- **No trusted-setup ceremony.** `circuits/rln/` is circom-rln's dev phase-2 (two hard-coded
-  contributions, a fixed beacon); anyone can recompute the toxic waste and forge a membership
-  proof under any root or an exit-auth proof against any bond. `testdata/zk-artifacts.lock.json`
-  says so (`trust: "UNTRUSTED-TESTNET"`) and CI verifies the pins; the runbook is
-  [`CEREMONY.md`](CEREMONY.md), the reasoning is
-  [issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6).
+- **Adopted, not run, trusted setup.** `circuits/rln/` carries the output of the RLN trusted
+  setup ceremony that Privacy & Scaling Explorations (PSE) ran in 2023, adopted and re-verified
+  by this project, not run by it. The keys are sound if at least one contributor to each was
+  honest; if all colluded, proofs could be forged, and no outside verifier has confirmed the
+  re-verification yet. `testdata/zk-artifacts.lock.json` pins the artifacts and CI verifies the
+  pins. See the [research preview statement](../SECURITY.md#status).
 - **No audit.** Trust boundaries, per-party threat model and review order:
   [`AUDIT.md`](AUDIT.md), [`CONTRACTS-AUDIT.md`](CONTRACTS-AUDIT.md),
   [`adversarial-review.md`](history/adversarial-review.md). `npm test` runs every

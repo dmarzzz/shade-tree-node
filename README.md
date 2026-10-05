@@ -1,5 +1,7 @@
 ![A low-poly grove crossed by an amber network path](assets/shade-tree-readme-banner.webp)
 
+> **Research preview launched: Sepolia testnet, unaudited, trusted setup.** [What that means](#research-preview)
+
 # ShadeNet
 
 Cover for local agents.
@@ -23,14 +25,23 @@ at a time.
 
 ShadeNet is not affiliated with Shade Network or Shade Protocol.
 
+<a id="research-preview"></a>
+
 > [!WARNING]
-> Research preview. The code is unaudited and the included ZK artifacts are for
-> development. The legacy Sepolia contract and directory records are retired
-> pre-v4 history. [`network/sepolia/deployment.json`](network/sepolia/deployment.json)
-> separately records the live, disposable v4 research canopy behind the public
-> aggregate map; it admits invited and explicitly self-staked Sepolia testnet
-> members through a stake-gated Elder. Do not rely on this preview for real
-> funds or sensitive use.
+> ShadeNet is a research preview on Sepolia. The code is unaudited, the proof keys come from a trusted setup, and it should not be considered secure against a motivated actor: do not use it for real funds or sensitive traffic.
+>
+> The proof keys are the output of the RLN trusted setup ceremony that Privacy & Scaling Explorations (PSE) ran in 2023. ShadeNet did not run the ceremony. This project adopted its output and re-verified it from public inputs, and no outside verifier has confirmed that check yet. The keys are sound if at least one contributor to each was honest (60 contributed to the membership key, 62 to the withdrawal key). If all of them colluded, proofs could be forged.
+>
+> Reasons it should not be considered secure against a motivated actor:
+>
+> - One operator runs every Shade Tree node and both Elder Trees, so one party sees the destination and timing of every tunnel.
+> - Every Shade Tree node is hosted at one provider.
+> - The member set is small, so each member hides among few others.
+> - The Elder Trees' signers choose the node list a client sees, and can omit nodes or add their own.
+> - Rate limits are enforced per node. Replay protection across nodes is best effort and fails open.
+> - A wallet that stakes is linked to its member commitment on chain, publicly and permanently.
+> - The node that serves a tunnel sees the destination hostname, the timing and the byte counts.
+> - Tor does not stop an observer who watches both ends of a tunnel from correlating timing.
 
 ## Implementation maturity
 
@@ -155,8 +166,10 @@ Its public IP becomes the destination-facing egress IP.
 Nodes reject loopback, private, link-local, documentation, multicast, and other
 special-purpose destination addresses after DNS resolution. The explicit
 `SHADE_TREE_ALLOW_PRIVATE_TARGETS=1` escape hatch is for isolated local tests
-only. Public deployment remains blocked on the other [deployment
-gates](docs/DEPLOYMENT-PLAN.md), including replacement ZK artifacts.
+only. The research preview is live on Sepolia (see the warning above and
+[`network/sepolia/deployment.json`](network/sepolia/deployment.json)); a production
+deployment beyond the preview still depends on the other [deployment
+gates](docs/DEPLOYMENT-PLAN.md).
 
 For a local research node, install the current CLI and let the guided command
 prepare its onion identity:
