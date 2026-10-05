@@ -1,19 +1,18 @@
+/* The site nav sits at the top of the page, as on every other page; the framed view fills the
+   rest of the viewport beneath it. */
 .network-page {
+  display: grid;
   height: 100svh;
   min-height: 0;
-  padding: 0.75rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   background: var(--understory);
 }
 
-body.network-page::before {
-  background: none;
-  content: none;
-}
-
 .network-page > main {
-  height: 100%;
   min-height: 0;
+  padding: 0.75rem;
 }
 
 .network-hero {
@@ -21,7 +20,7 @@ body.network-page::before {
   display: grid;
   height: 100%;
   min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   margin: 0;
   overflow: hidden;
   isolation: isolate;
@@ -342,13 +341,12 @@ body.network-page::before {
   .network-page {
     height: auto;
     min-height: 100svh;
-    padding: 0.5rem;
     overflow-x: hidden;
     overflow-y: auto;
   }
 
   .network-page > main {
-    height: auto;
+    padding: 0.5rem;
   }
 
   .network-hero {
@@ -419,14 +417,4 @@ body.network-page::before {
     grid-template-columns: 0.9fr 1.1fr;
   }
 
-}
-
-@media (max-width: 360px) {
-  .network-page .nav-links a[href="../research/index.html"] {
-    display: none;
-  }
-
-  .network-page .nav-links {
-    gap: 0.75rem;
-  }
 }
