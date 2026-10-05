@@ -25,17 +25,17 @@
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
       "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
-      "version": "0.7.2"
+      "version": "0.7.3"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
       "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
-      "version": "0.7.2"
+      "version": "0.7.3"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
       "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
-      "version": "0.7.2"
+      "version": "0.7.3"
     }
   },
   "elder": {

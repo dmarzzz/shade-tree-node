@@ -6,6 +6,12 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 Nothing yet.
 
+## 0.7.3 — first-run polish
+
+The one-tier launch set plus: init shortens the leaf it prints so it cannot be pasted where the identity commitment belongs, and doctor reports a pruned backup RPC as a note for clients instead of a failure.
+
+Nothing yet.
+
 ## 0.7.2 — one tier, more bandwidth
 
 Signed and hashed v4 wire strings are unchanged (`test/wire-freeze.selftest.mjs`); `research-v2`
