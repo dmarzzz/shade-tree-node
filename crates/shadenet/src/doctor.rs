@@ -402,8 +402,12 @@ fn refused_by_arti(dir: &Path) -> Option<(PathBuf, u32)> {
     #[cfg(all(unix, feature = "live"))]
     {
         let existing = dir.ancestors().find(|p| p.exists())?;
+        // permit_readable: Arti creates its own state directory 0700; what it checks on the
+        // way there is that no ancestor is writable by anyone untrusted, which is this rule.
+        // Checked on Ubuntu: `dmarz:dmarz` 0775 accepted, 0777 refused.
         if fs_mistrust::Mistrust::new()
             .verifier()
+            .permit_readable()
             .require_directory()
             .check(existing)
             .is_ok()
