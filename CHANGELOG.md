@@ -11,6 +11,17 @@ Nothing yet.
 Signed and hashed v4 wire strings are unchanged (`test/wire-freeze.selftest.mjs`); `research-v2`
 is a new session class next to `research-v1`.
 
+### Client first run (fresh-install trial of main, 2026-10-05)
+
+- `shadenet init` shortens the leaf (`leaf 103528278813.. (tier 1), derived from it; not for
+  staking`) when it prints the identity commitment. The two were full numbers of similar length on
+  adjacent lines, the stake page cannot tell them apart, and staking the leaf locks a bond nobody
+  can withdraw.
+- `shadenet doctor` no longer exits with a `fail` on a healthy fresh install because one fallback
+  RPC in the record has pruned history (publicnode: `pruned history unavailable`). For a client,
+  when another endpoint returned the complete member set, a failing endpoint is a `warn` saying
+  there is nothing to do on this machine. `shadenet doctor --rpc` (operators) still fails it.
+
 ### Node operators: the first hour (orbital-one join, 2026-10-05)
 
 - An Elder's refusal is logged as one: `heartbeat rejected` with the Elder's `err` and, for
