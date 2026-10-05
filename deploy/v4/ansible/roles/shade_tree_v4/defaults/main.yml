@@ -26,6 +26,16 @@ shade_tree_fleet_tally_peers: ""
 shade_tree_fleet_tally_token: ""
 shade_tree_fleet_tally_port: 8879
 
+# Reachability gate after the postflight (issue #254): a reconcile restarts Tor, the host's onion
+# publishes a new descriptor, and for a few minutes clients cannot connect although every unit is
+# active. The role waits, bounded, until the onion accepts connections through the host's own Tor
+# and (on a node) the heartbeat has been accepted since the restart. `all` requires every Elder
+# Tree the node announces to; use `any` to roll while one Elder is known to be down.
+shade_tree_wait_ready: true
+shade_tree_ready_timeout_seconds: 600
+shade_tree_ready_elders: all
+shade_tree_tor_socks_port: 9050
+
 shade_tree_bootnode_port: 8877
 shade_tree_gateway_port: 8443
 shade_tree_tunnel_max_payload_bytes: 41943040
