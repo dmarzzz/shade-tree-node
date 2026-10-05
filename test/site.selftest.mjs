@@ -361,6 +361,6 @@ check("branded 404 gives visitors useful recovery routes", /<h1>This path leaves
 const sitemapLocations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 check("sitemap contains only the six indexable public pages", sitemapLocations.length === indexablePages.length && indexablePages.every(([, , path]) => sitemapLocations.includes(new URL(path, "https://shadenet.xyz").href)) && !sitemap.includes("/lab/") && !sitemap.includes("404"));
 
-check("staking surface is local-first, responsive, and visibly separates private from public state", /Stake without giving us an identity/.test(stakePage) && /data-leaf-tag/.test(stakePage) && /data-sponsor-step/.test(stakePage) && /@media \(max-width: 900px\)/.test(stakeCss) && /@media \(prefers-reduced-motion: reduce\)/.test(stakeCss) && stakeScript.length > 5_000 && stakeScript.length < 150_000);
+check("staking surface is three steps that take only the public identity commitment, responsive and quiet under reduced motion", /<h1>Get access<\/h1>/.test(stakePage) && ["setup", "stake", "start"].every((step) => stakePage.includes(`data-panel="${step}"`) && stakePage.includes(`data-step-link="${step}"`)) && /data-commitment /.test(stakePage) && !/type="file"|identitySecret/.test(stakePage) && /@media \(max-width: 900px\)/.test(stakeCss) && /@media \(prefers-reduced-motion: reduce\)/.test(stakeCss) && stakeScript.length > 5_000 && stakeScript.length < 150_000);
 
 console.log(`PASS: site selftest (${checks.length} checks)`);
