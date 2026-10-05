@@ -30,7 +30,7 @@ use crate::scheduler::{self, Budget, Plan};
 use crate::transport::{self, BoxStream, Gateway};
 use crate::{slot, Error};
 
-pub use crate::config::{CURRENT_EPOCH_SECONDS, LEGACY_EPOCH_SECONDS};
+pub use crate::config::LEGACY_EPOCH_SECONDS;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -329,9 +329,12 @@ pub struct Client {
     config: Config,
     profile: Option<PublicProfile>,
     /// The record's staking profile whenever the record's contract is the member source:
-    /// `profile` on the zero-configuration path, and the same record behind `--onion`, a named
-    /// Elder or an explicit `--contract` that is the record's own.
+    /// `profile` on the zero-configuration path, and the same record behind `--onion` or an
+    /// explicit `--contract` that is the record's own.
     staking: Option<PublicProfile>,
+    /// Why `staking` is `None` although `Members::Auto` asked for the record's set: the record's
+    /// own validation error, reported with "no member source".
+    staking_error: Option<String>,
     identity: Option<IdentityMaterial>,
     transport: transport::Client,
     canopy: Mutex<Option<CanopySnapshot>>,
@@ -391,10 +394,31 @@ impl Client {
             }
         }
         // The record also names the member set when the canopy is skipped or the contract is
-        // spelled out (#249, #250): same contract, RPC list, deploy block and finalized read.
-        let staking = match &profile {
-            Some(profile) => Some(profile.clone()),
-            None => config.record_staking_profile(),
+        // spelled out (#249, #250): same contract, RPC list, deploy block and finalized read. A
+        // record that fails its own check is fatal when `--contract` named its set (nothing else
+        // could be meant), and the reason behind "no member source" otherwise, so status still
+        // runs without an identity.
+        let mut staking_error = None;
+        let staking = match (&profile, config.record_staking_profile()) {
+            (Some(profile), _) => Some(profile.clone()),
+            (None, Ok(staking)) => staking,
+            (None, Err(error)) if matches!(config.members, Members::Contract(_)) => {
+                let reason = match error {
+                    Error::Config(reason) => reason,
+                    other => other.to_string(),
+                };
+                return Err(Error::Config(format!(
+                    "--contract names the staking set of record {}, which does not hold up: {reason}",
+                    config.network.name
+                )));
+            }
+            (None, Err(error)) => {
+                staking_error = Some(match error {
+                    Error::Config(reason) => reason,
+                    other => other.to_string(),
+                });
+                None
+            }
         };
         let identity = config
             .identity
@@ -407,6 +431,7 @@ impl Client {
             config,
             profile,
             staking,
+            staking_error,
             identity,
             transport,
             canopy: Mutex::new(None),
@@ -462,7 +487,10 @@ impl Client {
         self.config
             .limit
             .or_else(|| self.identity.as_ref().and_then(|identity| identity.limit))
-            .or_else(|| self.staking.as_ref().map(|profile| profile.default_limit))
+            // Only the zero-configuration path takes the record's default tier: an identity
+            // file with no `limit` is a tier-8 identity (the form the older `shade-tree
+            // identity` writes), and `--onion` or `--contract` must not re-tier it.
+            .or_else(|| self.profile.as_ref().map(|profile| profile.default_limit))
             .unwrap_or(crate::profile::LEGACY_DEFAULT_LIMIT)
     }
 
@@ -839,9 +867,13 @@ impl Client {
                 } else if let Some(profile) = &self.staking {
                     profile.contract.clone()
                 } else {
-                    return Err(Error::Config(
-                        "no member source: pass a members file or a contract".into(),
-                    ));
+                    return Err(Error::Config(match &self.staking_error {
+                        Some(reason) => format!(
+                            "no member source: record {} does not hold up ({reason}); pass a members file or a contract",
+                            self.config.network.name
+                        ),
+                        None => "no member source: pass a members file or a contract".into(),
+                    }));
                 }
             }
         };
@@ -2379,7 +2411,8 @@ mod tests {
         assert_eq!(key.from_block, record.deploy_block);
         assert_eq!(key.block_tag, "finalized");
         assert_eq!(client.epoch_seconds(), record.rate_policy.epoch_seconds);
-        assert_eq!(client.tier(), record.default_limit);
+        // The tier stays what it was off the zero-configuration path: the identity file's, else 8.
+        assert_eq!(client.tier(), crate::profile::LEGACY_DEFAULT_LIMIT);
 
         // The same holds for a record loaded from a path (`--network <path>`).
         let mut staging: serde_json::Value =
@@ -2414,7 +2447,7 @@ mod tests {
         assert_eq!(key.from_block, record.deploy_block);
         assert_eq!(key.block_tag, "finalized");
         assert_eq!(client.epoch_seconds(), 60);
-        assert_eq!(client.tier(), record.default_limit);
+        assert_eq!(client.tier(), crate::profile::LEGACY_DEFAULT_LIMIT);
 
         // A contract the record does not name gets the policy's epoch and nothing else from
         // the record: its deploy block and RPC are not ours to guess.
@@ -2445,6 +2478,66 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("no member source"));
+    }
+
+    #[test]
+    fn a_foreign_canopy_never_gets_the_records_set_by_default() {
+        // `--bootnode-onion E --signer S` lists nodes that do not read this record's set; a
+        // production proof must not be sent there on a default. "No member source", as before.
+        let config = Config::builder()
+            .cache_dir(None)
+            .discovery(Discovery::ElderTree {
+                onion: "x".repeat(56),
+                signers: "ab".into(),
+            })
+            .build()
+            .unwrap();
+        let client = Client::new(config).unwrap();
+        let error = client.member_key(None).unwrap_err().to_string();
+        assert!(
+            error.ends_with("no member source: pass a members file or a contract"),
+            "{error}"
+        );
+        assert_eq!(client.epoch_seconds(), LEGACY_EPOCH_SECONDS);
+    }
+
+    #[test]
+    fn a_record_that_fails_its_check_is_reported_not_worked_around() {
+        let mut broken: serde_json::Value =
+            serde_json::from_str(crate::profile::SEPOLIA_DEPLOYMENT).unwrap();
+        broken["admission"]["roots"]["staked"]
+            .as_object_mut()
+            .unwrap()
+            .remove("deployBlock");
+        let network = crate::Network::from_json("broken", &broken.to_string()).unwrap();
+        let contract = network.deployment.staked.as_ref().unwrap().contract.clone();
+        // `--onion` alone: the client builds (status without an identity still works) and the
+        // member lookup names the record's problem.
+        let client = pinned(|builder| builder.network(network.clone()));
+        let error = client.member_key(None).unwrap_err().to_string();
+        assert!(
+            error.contains("no member source: record broken does not hold up (staked admission root has no deployBlock)"),
+            "{error}"
+        );
+        assert!(error.contains("deployBlock"), "{error}");
+        // `--contract <the record's set>`: nothing else can be meant, so the client refuses to
+        // build instead of reading at `latest` from block 0.
+        let error = Client::new(
+            Config::builder()
+                .cache_dir(None)
+                .discovery(Discovery::Onions(vec!["a".repeat(56)]))
+                .network(network)
+                .members(Members::Contract(contract))
+                .build()
+                .unwrap(),
+        )
+        .err()
+        .expect("refused")
+        .to_string();
+        assert!(
+            error.contains("record broken") && error.contains("deployBlock"),
+            "{error}"
+        );
     }
 
     #[test]

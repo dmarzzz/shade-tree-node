@@ -14,11 +14,9 @@ use crate::dircache::MaxAge;
 use crate::profile::{Network, PublicProfile};
 use crate::Error;
 
-/// Epoch length of a members-file canopy that signs no rate policy (a node with no record).
+/// Epoch length of a node that runs with no signed rate policy: a members-file canopy, or a
+/// record that signs none (its nodes get no `SHADE_TREE_EPOCH_SECONDS` and run this default).
 pub const LEGACY_EPOCH_SECONDS: u64 = 120;
-/// Epoch length of the current public rate policy (`public-stake-v1`), used for an on-chain
-/// member set when the network record signs no rate policy.
-pub const CURRENT_EPOCH_SECONDS: u64 = 60;
 
 /// Where the candidate nodes come from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,52 +171,72 @@ impl Config {
             && self.leaf_source.is_none()
     }
 
-    /// The record's staking profile when the member set this configuration proves against is the
-    /// record's staking contract, whatever the discovery: the zero-configuration path, the same
-    /// set behind pinned onions (`--onion`) or a named Elder, or an explicit contract that is the
-    /// record's own. It supplies the contract, the RPC list, the deploy block, the default tier
-    /// and the `finalized` read. `None` for a members file, another contract, a leaf source other
-    /// than staked, or a record with no public staking profile.
-    pub fn record_staking_profile(&self) -> Option<PublicProfile> {
-        if !matches!(self.leaf_source.as_deref(), None | Some("staked")) {
-            return None;
-        }
-        let profile = self.network.public_profile().ok()?;
-        match &self.members {
-            Members::Auto => Some(profile),
-            Members::Contract(contract)
-                if contract.trim().eq_ignore_ascii_case(&profile.contract) =>
-            {
-                Some(profile)
+    /// True when `Members::Auto` means the record's own staking set: the record's canopy, or a
+    /// node of it pinned with `--onion`. A foreign canopy (`--bootnode-onion`, `--directory`) or a
+    /// plain-TCP harness lists nodes that do not read the record's set, so there `Auto` names no
+    /// member source, as before.
+    fn auto_is_the_records_set(&self) -> bool {
+        matches!(self.leaf_source.as_deref(), None | Some("staked"))
+            && matches!(self.discovery, Discovery::Network | Discovery::Onions(_))
+    }
+
+    /// True when `Members::Contract` names the record's own staking contract.
+    fn contract_is_the_records(&self) -> bool {
+        match (&self.members, &self.network.deployment.staked) {
+            (Members::Contract(contract), Some(staked)) => {
+                contract.trim().eq_ignore_ascii_case(&staked.contract)
             }
-            _ => None,
+            _ => false,
         }
+    }
+
+    /// The record's staking profile when the member set this configuration proves against is the
+    /// record's staking contract: the zero-configuration path, the same set behind `--onion`, or
+    /// an explicit `--contract` that is the record's own. It supplies the contract, the RPC list,
+    /// the deploy block and the `finalized` read.
+    ///
+    /// `Ok(None)` for a members file, another contract, a leaf source other than staked, or a
+    /// foreign canopy. `Err` carries the record's own validation error when the record is wanted
+    /// and does not hold up, as the zero-configuration path reports it; the caller decides
+    /// whether that is fatal (an explicit `--contract` naming the set) or the reason behind
+    /// "no member source" (`Auto`).
+    pub fn record_staking_profile(&self) -> Result<Option<PublicProfile>, Error> {
+        let wanted = match &self.members {
+            Members::File(_) => false,
+            Members::Contract(_) => self.contract_is_the_records(),
+            Members::Auto => self.auto_is_the_records_set(),
+        };
+        if !wanted {
+            return Ok(None);
+        }
+        self.network.public_profile().map(Some)
     }
 
     /// The epoch length this configuration proves with: the explicit override, else the network
     /// record's signed `ratePolicy.epochSeconds` when the client dials the record's canopy or
-    /// proves against an on-chain member set. An on-chain set under a record that signs no rate
-    /// policy uses [`CURRENT_EPOCH_SECONDS`]. Only a members file on a custom canopy or a pinned
-    /// node keeps [`LEGACY_EPOCH_SECONDS`]: that is what a node with no record runs.
+    /// proves against an on-chain member set (the record's own, or any explicit `--contract`).
+    /// A record that signs no rate policy, a members file on a pinned node and a foreign canopy
+    /// keep [`LEGACY_EPOCH_SECONDS`]: that is what a node started without a signed policy runs.
     pub fn effective_epoch_seconds(&self) -> u64 {
         if let Some(seconds) = self.epoch_seconds {
             return seconds;
         }
-        let record = self
+        let Some(record) = self
             .network
             .deployment
             .rate_policy
             .as_ref()
-            .map(|rate| rate.epoch_seconds);
-        let on_chain = match &self.members {
-            Members::Contract(_) => true,
-            Members::Auto => self.leaf_source.as_deref() != Some("demo"),
-            Members::File(_) => false,
+            .map(|rate| rate.epoch_seconds)
+        else {
+            return LEGACY_EPOCH_SECONDS;
         };
-        if on_chain {
-            record.unwrap_or(CURRENT_EPOCH_SECONDS)
-        } else if self.discovery == Discovery::Network {
-            record.unwrap_or(LEGACY_EPOCH_SECONDS)
+        let records_nodes = match &self.members {
+            Members::Contract(_) => true,
+            Members::Auto => self.auto_is_the_records_set(),
+            Members::File(_) => false,
+        } || self.discovery == Discovery::Network;
+        if records_nodes {
+            record
         } else {
             LEGACY_EPOCH_SECONDS
         }
@@ -514,14 +532,17 @@ mod tests {
             .unwrap();
         assert_eq!(overridden.effective_epoch_seconds(), 3600);
 
-        // No signed policy in the record: an on-chain set gets the current policy, never 120 s.
-        let unsigned = Config::builder()
-            .network(record_without_rate_policy())
-            .discovery(onion())
-            .members(Members::Contract(contract))
-            .build()
-            .unwrap();
-        assert_eq!(unsigned.effective_epoch_seconds(), CURRENT_EPOCH_SECONDS);
+        // A record that signs no rate policy: its nodes get no epoch setting and run 120 s, so
+        // the client does too, contract or not.
+        for members in [Members::Auto, Members::Contract(contract)] {
+            let unsigned = Config::builder()
+                .network(record_without_rate_policy())
+                .discovery(onion())
+                .members(members)
+                .build()
+                .unwrap();
+            assert_eq!(unsigned.effective_epoch_seconds(), LEGACY_EPOCH_SECONDS);
+        }
     }
 
     #[test]
@@ -535,13 +556,43 @@ mod tests {
                 .unwrap();
             assert_eq!(config.effective_epoch_seconds(), LEGACY_EPOCH_SECONDS);
         }
-        // On the record's own canopy the nodes run the record's policy, whatever the member set.
+        // On the record's own canopy every node runs the record's policy, whatever set the leaf
+        // is in: a members file (invited) and the demo advert prove at the record's epoch, as
+        // the JavaScript client does on that canopy.
         let invited = Config::builder()
             .members(Members::File("members.json".into()))
             .leaf_source(Some("invited".into()))
             .build()
             .unwrap();
         assert_eq!(invited.effective_epoch_seconds(), 60);
+        let demo = Config::builder()
+            .leaf_source(Some("demo".into()))
+            .build()
+            .unwrap();
+        assert_eq!(demo.effective_epoch_seconds(), 60);
+        // A foreign canopy with the record's contract is still an on-chain set under the policy;
+        // without a contract it has no member source and keeps the legacy epoch.
+        let foreign = |members: Members| {
+            Config::builder()
+                .discovery(Discovery::CanopyFile {
+                    path: "canopy.json".into(),
+                    signers: "ab".into(),
+                })
+                .members(members)
+                .build()
+                .unwrap()
+        };
+        assert_eq!(
+            foreign(Members::Contract(
+                "0x1111111111111111111111111111111111111111".into()
+            ))
+            .effective_epoch_seconds(),
+            60
+        );
+        assert_eq!(
+            foreign(Members::Auto).effective_epoch_seconds(),
+            LEGACY_EPOCH_SECONDS
+        );
         let custom = Config::builder()
             .network(record_without_rate_policy())
             .members(Members::File("members.json".into()))
@@ -557,19 +608,22 @@ mod tests {
             .public_profile()
             .unwrap();
         let pinned = Config::builder().discovery(onion()).build().unwrap();
-        assert_eq!(pinned.record_staking_profile().as_ref(), Some(&profile));
+        assert_eq!(
+            pinned.record_staking_profile().unwrap().as_ref(),
+            Some(&profile)
+        );
         let staked = Config::builder()
             .discovery(onion())
             .leaf_source(Some("staked".into()))
             .build()
             .unwrap();
-        assert!(staked.record_staking_profile().is_some());
+        assert!(staked.record_staking_profile().unwrap().is_some());
         let same_contract = Config::builder()
             .discovery(onion())
             .members(Members::Contract(profile.contract.to_ascii_lowercase()))
             .build()
             .unwrap();
-        assert!(same_contract.record_staking_profile().is_some());
+        assert!(same_contract.record_staking_profile().unwrap().is_some());
 
         let other_contract = Config::builder()
             .discovery(onion())
@@ -578,19 +632,69 @@ mod tests {
             ))
             .build()
             .unwrap();
-        assert!(other_contract.record_staking_profile().is_none());
+        assert!(other_contract.record_staking_profile().unwrap().is_none());
         let file = Config::builder()
             .discovery(onion())
             .members(Members::File("members.json".into()))
             .build()
             .unwrap();
-        assert!(file.record_staking_profile().is_none());
+        assert!(file.record_staking_profile().unwrap().is_none());
         let invited = Config::builder()
             .discovery(onion())
             .leaf_source(Some("invited".into()))
             .build()
             .unwrap();
-        assert!(invited.record_staking_profile().is_none());
+        assert!(invited.record_staking_profile().unwrap().is_none());
+        // A foreign canopy or a plain-TCP harness never reads the record's set by default: a
+        // production proof must not go to whatever node a foreign canopy lists.
+        for discovery in [
+            Discovery::ElderTree {
+                onion: "x".repeat(56),
+                signers: "ab".into(),
+            },
+            Discovery::CanopyFile {
+                path: "canopy.json".into(),
+                signers: "ab".into(),
+            },
+            Discovery::PlainTcp(vec!["127.0.0.1:1".into()]),
+        ] {
+            let config = Config::builder().discovery(discovery).build().unwrap();
+            assert!(config.record_staking_profile().unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn a_record_that_fails_its_own_check_says_so_instead_of_falling_back() {
+        // A `--network <path>` record with a staked root that does not validate: the error is
+        // the record's, not "no member source" or a silent read at `latest` from block 0.
+        let mut record: serde_json::Value =
+            serde_json::from_str(crate::profile::SEPOLIA_DEPLOYMENT).unwrap();
+        record["admission"]["roots"]["staked"]
+            .as_object_mut()
+            .unwrap()
+            .remove("deployBlock");
+        let network = Network::from_json("broken", &record.to_string()).unwrap();
+        let contract = network.deployment.staked.as_ref().unwrap().contract.clone();
+        for members in [Members::Auto, Members::Contract(contract)] {
+            let config = Config::builder()
+                .network(network.clone())
+                .discovery(onion())
+                .members(members)
+                .build()
+                .unwrap();
+            let error = config.record_staking_profile().unwrap_err().to_string();
+            assert!(error.contains("deployBlock"), "{error}");
+        }
+        // Another contract, or a members file, never consults the record.
+        let other = Config::builder()
+            .network(network)
+            .discovery(onion())
+            .members(Members::Contract(
+                "0x1111111111111111111111111111111111111111".into(),
+            ))
+            .build()
+            .unwrap();
+        assert!(other.record_staking_profile().unwrap().is_none());
     }
 
     #[test]
