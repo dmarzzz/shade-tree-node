@@ -124,7 +124,8 @@ for (const [name, page] of [["landing", landing], ["agent guide", agentPage], ["
 }
 
 check("both sites use the same nocturnal palette", /--understory:\s*#07100c/.test(landingCss) && /--wet-bark:\s*#102219/.test(landingCss) && /--pulse:\s*#e2be67/.test(landingCss) && !/#f3f0e7|--paper\b/.test(landingCss) && /background:\s*var\(--understory\)/.test(groveCss));
-check("tree imagery remains behind every surface", /body:not\(\.home-page\)::before/.test(landingCss) && /shade-tree-banner\.webp/.test(landingCss) && /forest-fallback/.test(landing) && /canopy-fallback/.test(grovePage));
+// The body is opaque, so a banner fixed behind it only ever showed in the gap that rubber-band scrolling opens.
+check("tree imagery stays in the stage fallbacks, with no banner fixed behind the page", !/body[^{}]*::before/.test(landingCss) && !/shade-tree-banner\.webp/.test(landingCss) && /forest-fallback/.test(landing) && /canopy-fallback/.test(grovePage));
 check("landing reveals fully formed trees and reserves its fallback for WebGL failure", /grove\.scale\.y = 1/.test(landingScene) && !/grove\.scale\.y = Math\.max|easeOutCubic/.test(landingScene) && /\.grove-stage\.use-fallback \.forest-fallback\s*\{\s*opacity:\s*0\.84;\s*\}/.test(landingCss) && /stage\.classList\.add\("use-fallback"\)/.test(loader));
 
 check("landing and README lead with the agent and provider outcomes", /<h2>For agents<\/h2>/.test(landing) && !/Install the Proxy/.test(landing) && /<h2>For shade providers<\/h2>/.test(landing) && /Add ShadeNet to an agent/.test(readme) && /Run a Shade Tree node to provide cover/.test(readme));
