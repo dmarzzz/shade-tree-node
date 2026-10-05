@@ -150,7 +150,7 @@ export function makeSlotPool({
   // stop at K and wait for the next epoch instead of manufacturing slashable evidence.
   unsafeAllowSlotReuseForTests = false,
   // Default-on durable state. `slotStatePath` is an exact advanced override;
-  // `slotStateDir` changes only the parent while retaining per-public-leaf namespacing.
+  // `slotStateDir` changes only the parent while retaining per-identity-commitment namespacing (#B).
   // There is intentionally no production "off" value. The unsafe reuse seam above is
   // the sole opt-out and exists only for isolated slashing tests.
   slotStatePath,

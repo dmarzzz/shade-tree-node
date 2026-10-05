@@ -159,10 +159,11 @@ try {
     assert.equal(client.limit, vectors.limit, "the file's tier, not the default");
     assert.equal(client.pool.K, vectors.limit);
     assert.equal(await client.leafSource(), "invited");
-    // The slot cursor is named by the public leaf: the Rust client's file, shared.
+    // The slot cursor is named by the identity commitment Poseidon1(secret), not the leaf (#B),
+    // so every leaf of one secret shares one file; still the Rust client's file, shared.
     const reservation = client.pool.nextSlot();
     reservation.release?.();
-    assert.ok(readFileSync(join(scratch, "slots", `${vectors.leaf}.json`), "utf8").includes("nextSlot"));
+    assert.ok(readFileSync(join(scratch, "slots", `${vectors.identityCommitment}.json`), "utf8").includes("nextSlot"));
     // The discovery loader finds the leaf of the file in a staked set.
     const loader = makeLeafSourceLoader({
       secret: client.secret, limit: vectors.limit, env: {}, contracts: [{ address: "0xabc", kind: "staked" }],
@@ -175,7 +176,7 @@ try {
     // The pool alone, as the proxy builds it.
     const pool = makeSlotPool({ secret: plain, K: plain.limit, prove: async () => ({}), loadGroupFn: async () => ({ group }), slotStateDir: join(scratch, "pool") });
     pool.nextSlot().release?.();
-    assert.ok(readFileSync(join(scratch, "pool", `${vectors.leaf}.json`), "utf8").includes("nextSlot"));
+    assert.ok(readFileSync(join(scratch, "pool", `${vectors.identityCommitment}.json`), "utf8").includes("nextSlot"));
   });
 
   await test("the credential comes from an option before the environment, and a sealed file asks for its passphrase", () => {

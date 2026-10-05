@@ -70,7 +70,7 @@ an environment fallback is listed below; test injection hooks such as
 | `socksIsolation` | `SHADE_TREE_SOCKS_ISOLATION` | enabled | Give each CONNECT tunnel distinct SOCKS credentials. This isolates Tor streams only when the Tor endpoint enables `IsolateSOCKSAuth`. |
 | `limit` | `SHADE_TREE_LIMIT` | bundled network `defaultLimit` (current Sepolia: `1`), otherwise `8` | The private rate tier used when the member leaf was enrolled. |
 | `ratePolicy` | none | bundled network policy when using bundled discovery | Expected fixed epoch, root freshness, and payload ceiling. Dynamic selection fails closed when a node's onion-signed `caps.rate` is absent or different. |
-| `slotStateDir` | `SHADE_TREE_SLOT_STATE_DIR` | `$XDG_STATE_HOME/shade-tree/rln-slots` or `~/.local/state/shade-tree/rln-slots` | Parent for default-on, per-public-leaf RLN allocation state. |
+| `slotStateDir` | `SHADE_TREE_SLOT_STATE_DIR` | `$XDG_STATE_HOME/shade-tree/rln-slots` or `~/.local/state/shade-tree/rln-slots` | Parent for default-on RLN allocation state, namespaced by the public identity commitment. |
 | `leafSource` | `SHADE_TREE_LEAF_SOURCE` | `auto` | Pin `invited`, `staked`, or `paid` membership discovery. |
 | `maxAnon` | `SHADE_TREE_MAX_ANON` | disabled | Restrict selection to invited-only gateways; requires an invited leaf. |
 

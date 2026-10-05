@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -154,6 +154,55 @@ await test("the cursor is named by the identity commitment shared with the Rust 
   const vectors = JSON.parse(readFile(join(ROOT, "testdata", "identity", "vectors.json"), "utf8"));
   const path = defaultSlotStatePath({ key: vectors.identityCommitment, dir: "/state" });
   assert.equal(path, join("/state", `${vectors.identityCommitment}.json`));
+});
+
+await test("migrateLeafCursor: non-string arguments and the already-migrated no-op do nothing", () => {
+  // Guard branch: a non-string path/legacy is a silent no-op (never throws, never writes).
+  migrateLeafCursor(undefined, "x");
+  migrateLeafCursor("x", 5);
+  // Already migrated: new present -> no-op, legacy left untouched.
+  const dir = join(work, "already");
+  const path = defaultSlotStatePath({ key: "11", dir });
+  const legacy = defaultSlotStatePath({ key: "22", dir });
+  allocatePersistentSlot({ path, epoch: 3n, limit: 8 });            // new exists, nextSlot 1
+  allocatePersistentSlot({ path: legacy, epoch: 3n, limit: 8 });    // legacy exists, nextSlot 1
+  allocatePersistentSlot({ path: legacy, epoch: 3n, limit: 8 });    // legacy nextSlot 2
+  migrateLeafCursor(path, legacy, { lockTimeoutMs: 1000 });
+  assert.equal(JSON.parse(readFile(path, "utf8")).nextSlot, 1, "existing new cursor is untouched");
+  assert.equal(JSON.parse(readFile(legacy, "utf8")).nextSlot, 2, "legacy left in place");
+});
+
+await test("migrateLeafCursor: a corrupt legacy file fails closed instead of seeding a wrong cursor", () => {
+  const dir = join(work, "corrupt-legacy");
+  const path = defaultSlotStatePath({ key: "33", dir });
+  const legacy = defaultSlotStatePath({ key: "44", dir });
+  mkdirSync(dirname(legacy), { recursive: true });
+  writeFileSync(legacy, "{ not json");
+  assert.throws(() => migrateLeafCursor(path, legacy), (e) => e.code === "SHADE_TREE_SLOT_STATE_CORRUPT");
+  assert.equal(existsSync(path), false, "nothing was seeded from a corrupt legacy file");
+  // The lock is released even on the failure path, so a later call can proceed.
+  assert.equal(existsSync(`${path}.lock`), false);
+});
+
+await test("defaultSlotStatePath rejects a non-decimal key", () => {
+  assert.throws(() => defaultSlotStatePath({ key: "0xdeadbeef", dir: work }), (e) => e.code === "SHADE_TREE_SLOT_STATE_UNAVAILABLE");
+  assert.throws(() => defaultSlotStatePath({ dir: work }), (e) => e.code === "SHADE_TREE_SLOT_STATE_UNAVAILABLE");
+});
+
+await test("allocatePersistentSlot rejects invalid path, epoch, limit, and lock timeout", () => {
+  const path = defaultSlotStatePath({ key: "55", dir: join(work, "bad-args") });
+  assert.throws(() => allocatePersistentSlot({ path: "", epoch: 1n, limit: 8 }), (e) => e.code === "SHADE_TREE_SLOT_STATE_UNAVAILABLE");
+  assert.throws(() => allocatePersistentSlot({ path, epoch: -1n, limit: 8 }), (e) => e.code === "SHADE_TREE_SLOT_STATE_UNAVAILABLE");
+  assert.throws(() => allocatePersistentSlot({ path, epoch: 1n, limit: 0 }), (e) => e.code === "SHADE_TREE_SLOT_STATE_UNAVAILABLE");
+  assert.throws(() => allocatePersistentSlot({ path, epoch: 1n, limit: 8, lockTimeoutMs: -1 }), (e) => e.code === "SHADE_TREE_SLOT_STATE_UNAVAILABLE");
+});
+
+await test("a held lock times out with SHADE_TREE_SLOT_STATE_LOCKED", () => {
+  const path = defaultSlotStatePath({ key: "66", dir: join(work, "held") });
+  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(`${path}.lock`, { mode: 0o700 }); // simulate a live holder
+  assert.throws(() => allocatePersistentSlot({ path, epoch: 1n, limit: 8, lockTimeoutMs: 0 }), (e) => e.code === "SHADE_TREE_SLOT_STATE_LOCKED");
+  rmdirSync(`${path}.lock`);
 });
 
 rmSync(work, { recursive: true, force: true });
