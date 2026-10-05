@@ -1,6 +1,9 @@
+// The Get access flow: three steps, one on screen. The page takes one public value, the identity
+// commitment that `shadenet init` prints, and stakes the bond for it from a browser wallet.
+// It never creates, reads, stores or sends a member secret; exit and withdraw run in the CLI.
 import { getAddress } from "ethers";
-import { createIdentity, createStaking, importIdentity, serializeIdentity, identityCommitmentOf, identityFileName } from "../packages/sdk/src/index.mjs";
-import { deriveIdentity as deriveCore, leafFromIdentityCommitment, parseCommitment as parseCore } from "../packages/node/lib/identity-core.mjs";
+import { createStaking } from "../packages/sdk/src/staking.mjs";
+import { FIELD, leafFromIdentityCommitment, parseCommitment as parseCore } from "../packages/node/lib/identity-core.mjs";
 import {
   CHAIN_ID,
   CHAIN_NAME,
@@ -23,60 +26,19 @@ export const CONTRACT = getAddress(RECORD_CONTRACT);
 const SLOT_SECONDS = 12;
 // Gas a register call needs, with room; only used to tell the visitor whether the wallet can pay.
 const REGISTER_GAS = 200_000n;
-// The withdraw circuit the in-browser prover runs, served same-origin by the site build.
-export const PROVER_ARTIFACTS = Object.freeze({ wasm: "/stake/zk/withdraw.wasm", zkey: "/stake/zk/withdraw_final.zkey" });
-const STEPS = ["tier", "identity", "save", "stake", "finality", "handoff"];
+const STEPS = ["setup", "stake", "start"];
+const PANELS = [...STEPS, "details"];
+// Step, public commitment and the stake transaction survive a reload. Nothing here is secret.
+export const STORAGE_KEY = "shadenet.access.v1";
+// A field element drawn at random has 76 or 77 digits; one under 60 digits is a cut-off paste.
+const MIN_DIGITS = 60;
 
-// Stake, sponsor, status, exit and withdraw all go through the SDK. snarkjs inside it loads
-// lazily, only when someone exits or withdraws.
 function staking() {
   if (!window.ethereum?.request) throw new Error("No compatible Ethereum wallet was found in this browser.");
   return createStaking({ network: NETWORK_RECORD, provider: window.ethereum });
 }
 
-export function parseRecipient(text) {
-  const value = String(text || "").trim();
-  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error("Enter the fresh recipient as a 0x address.");
-  const address = getAddress(value);
-  if (/^0x0{40}$/i.test(address)) throw new Error("The recipient cannot be the zero address.");
-  return address;
-}
-
-function offeredTier(limit) {
-  const tier = tierFor(limit);
-  if (!tier) {
-    throw new Error(`This canopy offers tiers ${TIERS.map((t) => t.limit).join(" and ")}; limit ${limit} is not one of them.`);
-  }
-  return tier;
-}
-
-// Seeded derivation, for the shared Rust/Semaphore test vector. The page itself calls the SDK's
-// createIdentity, which draws the seed from WebCrypto.
-export async function deriveIdentity(seed, limit = DEFAULT_LIMIT) {
-  const tier = offeredTier(limit);
-  return deriveCore(seed, Number(tier.limit));
-}
-
-export function parseIdentityFile(text) {
-  let value;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new Error("That is not a valid ShadeNet identity JSON file.");
-  }
-  if (!value || Array.isArray(value) || typeof value !== "object") throw new Error("The identity file must contain one JSON object.");
-  if (Object.keys(value).sort().join(",") !== "identitySecret,leaf,limit") {
-    throw new Error("The identity file must contain only identitySecret, leaf, and limit.");
-  }
-  offeredTier(value.limit);
-  return importIdentity(value, { network: NETWORK_RECORD });
-}
-
-// The value `register` takes for this identity, per the deployment record's ABI.
-export function registerCommitment(identity) {
-  if (REGISTER_INPUT === "identityCommitment") return identityCommitmentOf(BigInt(identity.identitySecret)).toString();
-  return identity.leaf;
-}
+const tierWords = () => (TIERS.length === 1 ? `tier ${TIERS[0].limit}` : `tiers ${TIERS.map((t) => t.limit).join(" and ")}`);
 
 // The member leaf the contract stores for a registration value at `limit`. ShadeNet sets take the
 // identity commitment and derive Poseidon2(idc, limit) themselves (launch audit 2.1.4).
@@ -89,22 +51,93 @@ export function parseCommitment(text) {
   try {
     return parseCore(String(text || "").trim()).toString();
   } catch {
-    throw new Error("Commitment must be a canonical, non-zero decimal field element.");
+    throw new Error("The identity commitment must be a canonical, non-zero decimal field element.");
   }
 }
 
-export const identityBytes = serializeIdentity;
+// One decimal number out of pasted text, with a plain reason when it cannot be one.
+function decimalOf(text, name) {
+  const value = String(text).replace(/[\s,_]/g, "");
+  if (!value) throw new Error(`Paste the ${name} that shadenet init prints.`);
+  if (/^0x[0-9a-f]*$/i.test(value)) throw new Error(`Paste the ${name} as the decimal number shadenet init prints, without 0x.`);
+  if (!/^[0-9]+$/.test(value)) throw new Error(`The ${name} is one decimal number. This has other characters in it.`);
+  if (/^0/.test(value)) throw new Error(`The ${name} does not start with 0. Check that the first digits were copied.`);
+  if (value.length < MIN_DIGITS) throw new Error(`That is ${value.length} ${value.length === 1 ? "digit" : "digits"}. The ${name} has about 77. Check that all of it was copied.`);
+  if (value.length > 77 || BigInt(value) >= FIELD) throw new Error(`That number is too large to be the ${name}. Check that it was pasted once and nothing was added.`);
+  return value;
+}
+
+function offeredLimit(text) {
+  const value = String(text).trim();
+  const tier = /^[0-9]{1,5}$/.test(value) ? tierFor(value) : null;
+  if (!tier) throw new Error(`This canopy offers ${tierWords()}. Tier ${value || "?"} is not one of them.`);
+  return Number(tier.limit);
+}
+
+// What the visitor pasted, or what a link's fragment carried: the identity commitment, and when
+// the text also has them, the tier and the leaf. Accepts the bare number, the lines `shadenet
+// init` prints, or a link to this page. A leaf makes the value checkable: the contract derives
+// leaf = Poseidon2(identityCommitment, tier), so a link or paste that carries both proves the
+// commitment is the right number for an identity made at a tier this canopy offers.
+export function readCommitmentInput(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) throw new Error("Paste the identity commitment that shadenet init prints.");
+  let commitmentText = null;
+  let leafText = null;
+  let limitText = null;
+  const fragment = raw.match(/(?:^|[#?&])c=([^&#\s]*)/);
+  if (fragment) {
+    const params = new URLSearchParams(raw.slice(raw.indexOf("#") + 1).replace(/^.*\?/, ""));
+    commitmentText = params.get("c") ?? fragment[1];
+    leafText = params.get("leaf");
+    limitText = params.get("limit");
+  } else {
+    const labelled = raw.match(/identity[ _-]?commitment["']?\s*[:=]?\s*["']?([0-9][0-9\s,_]*)/i);
+    const leaf = raw.match(/\bleaf["']?\s*[:=]?\s*["']?([0-9][0-9\s,_]*)/i);
+    const tier = raw.match(/\b(?:tier|limit)["']?\s*[:=]?\s*["']?([0-9]{1,5})\b/i);
+    if (leaf && !labelled) {
+      throw new Error("That is the leaf. Paste the identity commitment, which is a different number.");
+    }
+    commitmentText = labelled ? labelled[1] : raw;
+    leafText = leaf ? leaf[1] : null;
+    limitText = tier && (labelled || leaf) ? tier[1] : null;
+  }
+  const commitment = parseCommitment(decimalOf(commitmentText ?? "", "identity commitment"));
+  let limit = limitText == null || limitText === "" ? null : offeredLimit(limitText);
+  let leaf = null;
+  if (leafText != null && leafText !== "") {
+    leaf = decimalOf(leafText, "leaf");
+    const matches = TIERS.map((tier) => Number(tier.limit)).filter((n) => memberLeaf(commitment, n) === leaf);
+    if (!matches.length) {
+      throw new Error(`The leaf does not match this identity commitment at ${tierWords()}, so the two numbers are swapped or the identity was made for another tier or network. Run shadenet init with the current release and paste what it prints.`);
+    }
+    if (limit != null && !matches.includes(limit)) {
+      throw new Error(`The leaf belongs to tier ${matches[0]}, and the link says tier ${limit}. Run shadenet init again and use the link it prints.`);
+    }
+    limit = matches[0];
+  }
+  return { commitment, limit, leaf };
+}
+
+// A link that opens the stake step with the commitment filled in. The fragment is never sent to a
+// server; it carries public values only.
+export function stakeLink({ commitment, limit = null, leaf = null }, base = "/stake/") {
+  const params = [`c=${commitment}`];
+  if (limit != null) params.push(`limit=${limit}`);
+  if (leaf) params.push(`leaf=${leaf}`);
+  return `${base}#${params.join("&")}`;
+}
 
 // Pure status model for a commitment read from the contract: what the page tells the member.
 export function describeMember({ state, limit, withdrawableAt, finalized, now }) {
-  if (state === "active" && finalized === false) return { state: "pending", message: `Registered at tier ${limit}. Nodes accept it once its block is finalized.` };
-  if (state === "active") return { state: "active", message: `Active at tier ${limit} and finalized. Nodes accept it.` };
+  if (state === "active" && finalized === false) return { state: "pending", message: `Staked at tier ${limit}. Nodes admit it once its block is final.` };
+  if (state === "active") return { state: "active", message: `Admitted at tier ${limit}. The stake is final and nodes accept this identity.` };
   if (state === "exiting" || state === "withdrawable") {
     const at = withdrawableAt ? Date.parse(withdrawableAt) / 1000 : 0;
-    if (state === "exiting" && at > now) return { state: "exiting", message: `Exiting. The bond is withdrawable in about ${formatDuration(Math.max(60, Math.ceil((at - now) / 60) * 60))}.` };
-    return { state: "withdrawable", message: "Exit complete. Withdraw the bond to a fresh address, here or with the CLI." };
+    if (state === "exiting" && at > now) return { state: "exiting", message: `This identity is leaving the set. Its bond can be withdrawn in about ${formatDuration(Math.max(60, Math.ceil((at - now) / 60) * 60))}, with shadenet withdraw-member.` };
+    return { state: "withdrawable", message: "This identity has left the set. Withdraw its bond with shadenet withdraw-member." };
   }
-  return { state: "unregistered", message: "Not registered on this contract." };
+  return { state: "unregistered", message: "Not staked on this contract yet." };
 }
 
 export function finalityEstimate(targetBlock, finalizedBlock) {
@@ -118,10 +151,19 @@ export function describeBalance({ balanceWei, tier, gasPriceWei }) {
   const balance = BigInt(balanceWei);
   const gas = BigInt(gasPriceWei ?? 0n) * REGISTER_GAS;
   const need = tier.bondWei + gas;
-  const have = `${formatEth(balance)} ${CHAIN_NAME} ETH`;
-  if (balance >= need) return { enough: true, message: `Balance ${have}: enough for tier ${tier.limit} (${formatEth(tier.bondWei)} ETH plus gas).` };
+  const have = `${approxEth(balance)} ${CHAIN_NAME} ETH`;
+  if (balance >= need) return { enough: true, message: `${have}, enough for the bond and gas.` };
   const short = need - balance;
-  return { enough: false, message: `Balance ${have}. Tier ${tier.limit} needs ${formatEth(tier.bondWei)} ETH plus about ${formatEth(gas)} ETH gas, so about ${formatEth(short)} ETH more. Get ${CHAIN_NAME} ETH below, or send your commitment to a sponsor.` };
+  return { enough: false, message: `${have}. The bond and gas come to about ${approxEth(need)} ETH, so this wallet needs about ${approxEth(short)} ETH more.` };
+}
+
+// Wei as ether to six places, rounded up, for sentences where the exact figure does not help.
+export function approxEth(wei) {
+  const value = BigInt(wei);
+  if (value === 0n) return "0";
+  const unit = 10n ** 12n;
+  if (value < unit) return "under 0.000001";
+  return formatEth(((value + unit - 1n) / unit) * unit);
 }
 
 function short(value, left = 8, right = 7) {
@@ -133,53 +175,86 @@ function hexQuantity(value) {
   return `0x${BigInt(value).toString(16)}`;
 }
 
-function elements() {
-  return {
-    modeButtons: [...document.querySelectorAll("[data-mode]")],
-    memberSteps: document.querySelector("[data-member-steps]"),
-    sponsorStep: document.querySelector("[data-sponsor-step]"),
-    rail: [...document.querySelectorAll("[data-rail-step]")],
-    tierInputs: [...document.querySelectorAll("[data-tier]")],
-    sponsorTierInputs: [...document.querySelectorAll("[data-sponsor-tier]")],
-    createButton: document.querySelector("[data-create-identity]"),
-    importButton: document.querySelector("[data-import-identity]"),
-    fileInput: document.querySelector("[data-identity-file]"),
-    downloadButton: document.querySelector("[data-download-identity]"),
-    copyButton: document.querySelector("[data-copy-leaf]"),
-    recoveryCheck: document.querySelector("[data-recovery-check]"),
-    leaf: document.querySelector("[data-leaf]"),
-    leafTag: document.querySelector("[data-leaf-tag]"),
-    sponsorInput: document.querySelector("[data-sponsor-leaf]"),
-    connectButtons: [...document.querySelectorAll("[data-connect-wallet]")],
-    stakeButtons: [...document.querySelectorAll("[data-stake]")],
-    statusButton: document.querySelector("[data-check-status]"),
-    wallet: document.querySelector("[data-wallet]"),
-    balance: document.querySelector("[data-balance]"),
-    status: document.querySelector("[data-status]"),
-    alert: document.querySelector("[data-alert]"),
-    receipt: document.querySelector("[data-receipt]"),
-    receiptLink: document.querySelector("[data-receipt-link]"),
-    memberState: document.querySelector("[data-member-state]"),
-    exitButton: document.querySelector("[data-exit]"),
-    withdrawButton: document.querySelector("[data-withdraw]"),
-    withdrawTo: document.querySelector("[data-withdraw-to]"),
-    finalityPanel: document.querySelector("[data-finality-panel]"),
-    finality: document.querySelector("[data-finality]"),
-    finalityBar: document.querySelector("[data-finality-bar]"),
-    fileNames: [...document.querySelectorAll("[data-file-name]")],
-    handoff: document.querySelector("[data-handoff]"),
-    handoffNote: document.querySelector("[data-handoff-note]"),
-    copyBlocks: [...document.querySelectorAll("[data-copy-block]")],
-    tabs: document.querySelector("[data-tabs]"),
-  };
+function loadSaved() {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(STORAGE_KEY) || "null");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
 }
 
 function mount() {
-  const el = elements();
-  const state = {
-    mode: "member", identity: null, imported: false, account: null, busy: false, tier: DEFAULT_LIMIT,
-    finalityTimer: null, stakeStep: "idle", admitted: false, balanceOk: null, balanceHave: null, finalityStart: null,
+  const $ = (selector) => document.querySelector(selector);
+  const $$ = (selector) => [...document.querySelectorAll(selector)];
+  const el = {
+    panels: $$("[data-panel]"),
+    stepper: $("[data-stepper]"),
+    stepLinks: $$("[data-step-link]"),
+    goLinks: $$("[data-go]"),
+    input: $("[data-commitment]"),
+    inputMessage: $("[data-commitment-message]"),
+    shown: $("[data-commitment-shown]"),
+    copyLink: $("[data-copy-link]"),
+    bond: $("[data-bond]"),
+    buys: $("[data-buys]"),
+    tierInputs: $$("[data-tier]"),
+    tierHint: $("[data-tier-hint]"),
+    beforeStake: $("[data-before-stake]"),
+    primary: $("[data-primary]"),
+    changeWallet: $("[data-change-wallet]"),
+    stakePanel: $('[data-panel="stake"]'),
+    walletRow: $("[data-wallet-row]"),
+    wallet: $("[data-wallet]"),
+    tierRow: $("[data-tier-row]"),
+    tierPick: $(".tier-pick"),
+    terminal: $("[data-terminal]"),
+    terminalText: $("[data-terminal-text]"),
+    balance: $("[data-balance]"),
+    status: $("[data-status]"),
+    alert: $("[data-alert]"),
+    receipt: $("[data-receipt]"),
+    receiptLink: $("[data-receipt-link]"),
+    finalityPanel: $("[data-finality-panel]"),
+    finality: $("[data-finality]"),
+    finalityBar: $("[data-finality-bar]"),
+    memberState: $("[data-member-state]"),
+    nextStart: $("[data-next-start]"),
+    startState: $("[data-start-state]"),
+    copyBlocks: $$("[data-copy-block]"),
+    brief: $("[data-brief]"),
+    copyBrief: $("[data-copy-brief]"),
+    tabs: $("[data-tabs]"),
+    scrollers: $$(".cmd pre"),
+    details: $$("details[name]"),
   };
+  const tierHintDefault = el.tierHint?.innerHTML;
+  const buysText = new Map(el.tierInputs.map((input) => [input.value, input.dataset.buysText]));
+  const saved = loadSaved();
+  const state = {
+    panel: PANELS.includes(saved.panel) ? saved.panel : "setup",
+    lastStep: "setup",
+    commitment: null, limit: null, leaf: null,
+    // The last value that arrived with its leaf (a link or a full paste), so the check and the
+    // tier it proved survive the field being read again as a bare number.
+    checked: null,
+    account: null, busy: false,
+    // idle: no wallet yet. ready: may stake. sent: transaction in flight. confirmed: mined, waiting
+    // for finality. final: admitted. left: the identity is exiting or has exited. resume: a stake
+    // was sent before a reload and the wallet is not connected yet.
+    stage: "idle",
+    tx: null, finalityTimer: null, finalityStart: null,
+  };
+
+  function save() {
+    try {
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+        panel: state.panel, input: el.input.value.slice(0, 600), tx: state.tx, limit: state.limit,
+      }));
+    } catch {
+      // Private windows and blocked storage: the page works, a reload starts over.
+    }
+  }
 
   function announce(message, kind = "plain") {
     // Errors go to an assertive alert region; progress goes to the polite status region.
@@ -200,169 +275,172 @@ function mount() {
     else el.alert.removeAttribute("title");
   }
 
-  function sponsorTier() {
-    const checked = el.sponsorTierInputs.find((input) => input.checked);
-    return checked ? BigInt(checked.value) : DEFAULT_LIMIT;
-  }
+  const stakeLimit = () => BigInt(state.limit ?? DEFAULT_LIMIT);
+  const hasWallet = () => Boolean(window.ethereum?.request);
 
-  function stakeTier() {
-    return state.mode === "member" ? BigInt(state.identity?.limit ?? state.tier) : sponsorTier();
-  }
-
-  function selectedCommitment() {
-    if (state.mode === "member") return state.identity ? registerCommitment(state.identity) : null;
+  // Read the field. Returns true when it holds a usable identity commitment.
+  function readInput({ origin = "" } = {}) {
+    const previous = state.commitment;
     try {
-      return parseCommitment(el.sponsorInput.value);
-    } catch {
-      return null;
+      const parsed = readCommitmentInput(el.input.value);
+      if (parsed.leaf) state.checked = parsed;
+      const checked = state.checked?.commitment === parsed.commitment ? state.checked : null;
+      state.commitment = parsed.commitment;
+      state.leaf = checked?.leaf ?? null;
+      const limit = checked?.limit ?? parsed.limit;
+      if (limit != null) state.limit = limit;
+      else if (state.limit == null || !tierFor(state.limit)) state.limit = Number(DEFAULT_LIMIT);
+      // A link or a full paste leaves only the number in the field.
+      if (el.input.value.trim() !== parsed.commitment) el.input.value = parsed.commitment;
+      el.input.removeAttribute("aria-invalid");
+      el.inputMessage.dataset.kind = "good";
+      el.inputMessage.textContent = state.leaf
+        ? `${origin}Checked against its leaf: a tier ${state.limit} identity.`
+        : `${origin}${parsed.commitment.length} digits, ending ${parsed.commitment.slice(-6)}.`;
+    } catch (error) {
+      state.commitment = null;
+      state.leaf = null;
+      if (!el.input.value.trim()) {
+        el.input.removeAttribute("aria-invalid");
+        el.inputMessage.textContent = "";
+      } else {
+        el.input.setAttribute("aria-invalid", "true");
+        el.inputMessage.dataset.kind = "bad";
+        el.inputMessage.textContent = origin ? `The link is not usable. ${error.message}` : error.message;
+      }
     }
+    if (previous !== state.commitment && previous !== null) resetStake();
+    return Boolean(state.commitment);
   }
 
-  // Where the member is on the rail: every step before the current one is done.
-  function railState() {
-    const hasIdentity = Boolean(state.identity);
-    const saved = hasIdentity && (el.recoveryCheck.checked || state.imported);
-    let current = "tier";
-    if (hasIdentity) current = "save";
-    if (saved) current = "stake";
-    if (state.stakeStep === "confirmed") current = "finality";
-    if (state.stakeStep === "final") current = "handoff";
-    if (state.admitted) current = "done";
-    return current;
-  }
-
-  function paintRail() {
-    const current = railState();
-    const index = current === "done" ? STEPS.length : STEPS.indexOf(current);
-    for (const item of el.rail) {
-      const i = STEPS.indexOf(item.dataset.railStep);
-      item.dataset.state = i < index ? "done" : i === index ? "current" : "todo";
-      if (i === index) item.setAttribute("aria-current", "step");
-      else item.removeAttribute("aria-current");
-    }
+  function resetStake() {
+    window.clearInterval(state.finalityTimer);
+    state.tx = null;
+    state.finalityStart = null;
+    state.stage = state.account ? "ready" : "idle";
+    el.receipt.hidden = true;
+    el.finalityPanel.hidden = true;
+    el.memberState.hidden = true;
+    announce("");
   }
 
   function update() {
-    const hasIdentity = Boolean(state.identity);
-    const saved = hasIdentity && el.recoveryCheck.checked;
-    const commitment = selectedCommitment();
-    const tier = tierFor(stakeTier());
-    el.memberSteps.hidden = state.mode !== "member";
-    el.sponsorStep.hidden = state.mode !== "sponsor";
-    for (const button of el.modeButtons) button.setAttribute("aria-pressed", String(button.dataset.mode === state.mode));
-    for (const input of el.tierInputs) input.disabled = hasIdentity || state.busy;
-    el.downloadButton.disabled = !hasIdentity || state.imported || state.busy;
-    el.copyButton.disabled = !hasIdentity || state.busy;
-    el.recoveryCheck.disabled = !hasIdentity || state.imported || state.busy;
-    for (const button of el.connectButtons) {
-      button.disabled = state.busy;
-      button.textContent = state.account ? "change wallet" : "connect wallet";
+    const tier = tierFor(stakeLimit());
+    const bond = tier ? `${formatEth(tier.bondWei)} ${CHAIN_NAME} ETH` : "";
+    const staked = ["sent", "confirmed", "final", "left"].includes(state.stage);
+    const resume = state.stage === "resume";
+    el.shown.textContent = state.commitment ? short(state.commitment, 10, 8) : "None yet. Enter it in step 1.";
+    el.shown.title = state.commitment || "";
+    el.copyLink.hidden = !state.commitment;
+    if (tier) el.bond.textContent = bond;
+    if (tier && buysText.size) el.buys.textContent = `${buysText.get(String(tier.limit))}`;
+    for (const input of el.tierInputs) {
+      input.checked = BigInt(input.value) === stakeLimit();
+      input.disabled = state.busy || staked || resume || Boolean(state.leaf);
     }
-    for (const button of el.stakeButtons) {
-      const memberBlocked = state.mode === "member" && (!saved || state.imported);
-      button.disabled = state.busy || !state.account || !commitment || !tier || memberBlocked;
-      button.textContent = state.mode === "sponsor"
-        ? `stake ${tier ? formatEth(tier.bondWei) : "?"} ${CHAIN_NAME} ETH for this commitment`
-        : `stake ${tier ? formatEth(tier.bondWei) : "?"} ${CHAIN_NAME} ETH`;
+    // A leaf settles the tier: no choice to make, so none is shown.
+    if (el.tierPick) el.tierPick.hidden = Boolean(state.leaf);
+    if (el.tierHint) {
+      if (state.leaf) el.tierHint.textContent = `Tier ${state.limit}, checked against the identity's leaf.`;
+      else el.tierHint.innerHTML = tierHintDefault;
     }
-    if (el.statusButton) el.statusButton.disabled = state.busy || !state.account || !commitment;
-    const canProve = hasIdentity && Boolean(state.account) && !state.busy && state.mode === "member";
-    if (el.exitButton) el.exitButton.disabled = !canProve;
-    if (el.withdrawButton) {
-      let recipientOk = false;
-      try { parseRecipient(el.withdrawTo.value); recipientOk = true; } catch {}
-      el.withdrawButton.disabled = !canProve || !recipientOk;
+    el.stakePanel.dataset.stage = state.stage;
+    el.beforeStake.hidden = staked || resume;
+    el.primary.hidden = staked;
+    el.primary.disabled = state.busy;
+    el.primary.textContent = state.stage === "ready" ? `Stake ${bond}` : "Connect wallet";
+    el.walletRow.hidden = !state.account;
+    el.wallet.textContent = state.account ? short(state.account, 8, 6) : "";
+    el.wallet.title = state.account || "";
+    el.changeWallet.hidden = staked;
+    el.balance.hidden = staked;
+    el.changeWallet.disabled = state.busy;
+    if (el.tierRow) el.tierRow.hidden = staked || resume;
+    el.terminal.hidden = staked || resume;
+    el.terminalText.textContent = hasWallet()
+      ? "Without a browser wallet, stake from the terminal with a funded key."
+      : "No wallet in this browser. On a phone, open this page inside your wallet app. Or stake from the terminal with a funded key.";
+    // One primary action per screen: once the stake is in, going on is the action.
+    const onward = state.stage === "confirmed" || state.stage === "final";
+    el.nextStart.className = onward ? "solid-action" : "line-action";
+    el.startState.textContent = state.stage === "final"
+      ? "Admitted. Nodes accept this identity."
+      : state.stage === "confirmed" || state.stage === "sent" || resume
+        ? "The stake is in. Nodes admit the identity once it is final, usually 13 to 16 minutes after it confirms."
+        : "Nodes admit the identity once its stake is final, usually 13 to 16 minutes after it confirms.";
+    el.startState.dataset.kind = state.stage === "final" ? "good" : "plain";
+    // A step is done when its work is: the commitment is in, the stake is mined.
+    const done = { setup: Boolean(state.commitment), stake: state.stage === "confirmed" || state.stage === "final", start: false };
+    for (const link of el.stepLinks) {
+      const step = link.dataset.stepLink;
+      if (step === state.panel) link.setAttribute("aria-current", "step");
+      else link.removeAttribute("aria-current");
+      link.toggleAttribute("data-done", done[step] && step !== state.panel);
     }
-    el.leaf.textContent = hasIdentity ? registerCommitment(state.identity) : "Create or import an identity to reveal its public commitment.";
-    el.leafTag.dataset.ready = String(hasIdentity);
-    el.wallet.textContent = state.account ? `Connected: ${short(state.account, 8, 6)}` : "No wallet connected";
-    const name = hasIdentity ? identityFileName(state.identity) : "shadenet-identity-XXXXXXXX.json";
-    for (const node of el.fileNames) node.textContent = name;
-    if (el.handoffNote) {
-      el.handoffNote.textContent = hasIdentity
-        ? `The commands below name your file, ${name}. They work the same for a file made by shadenet init.`
-        : "The commands below fill in your identity file's name once you create one. They work the same for a file made by shadenet init.";
-    }
-    if (el.handoff) el.handoff.dataset.ready = String(state.stakeStep === "final" || state.admitted);
-    paintRail();
   }
 
-  async function onCreateIdentity() {
-    state.busy = true;
+  function show(panel, { focus = true, push = true } = {}) {
+    if (!PANELS.includes(panel)) return;
+    state.panel = panel;
+    if (STEPS.includes(panel)) state.lastStep = panel;
+    for (const section of el.panels) {
+      const current = section.dataset.panel === panel;
+      section.hidden = !current;
+      section.toggleAttribute("data-current", current);
+    }
+    // Leave and details is a screen of its own, outside the three steps.
+    el.stepper.hidden = panel === "details";
     update();
-    try {
-      state.identity = await createIdentity({ network: NETWORK_RECORD, limit: Number(state.tier) });
-      state.imported = false;
-      state.stakeStep = "idle";
-      state.admitted = false;
-      el.recoveryCheck.checked = false;
-      announce(`Tier ${state.identity.limit} identity created in this tab. Download it and confirm you saved it before staking.`, "good");
-    } catch (error) {
-      fail(error, { action: "creating the identity" });
-    } finally {
-      state.busy = false;
-      update();
+    save();
+    if (push) {
+      try { window.history.pushState({ panel }, ""); } catch {}
     }
+    window.scrollTo(0, 0);
+    if (focus) document.querySelector(`[data-panel="${panel}"] h2`)?.focus({ preventScroll: true });
+    markScrollers();
+    if (panel === "stake" && state.stage === "ready" && !state.busy) refreshMember();
   }
 
-  async function importIdentityFile(file) {
-    try {
-      if (!file || file.size > 16 * 1024) throw new Error("Choose a ShadeNet identity file under 16 KiB.");
-      state.identity = parseIdentityFile(await file.text());
-      state.imported = true;
-      state.stakeStep = "idle";
-      state.admitted = false;
-      el.recoveryCheck.checked = false;
-      announce("Identity validated locally and not uploaded. Imported identities can check status, exit and withdraw; stake a new identity for a new bond.", "good");
-    } catch (error) {
-      state.identity = null;
-      state.imported = false;
-      el.recoveryCheck.checked = false;
-      fail(error, { action: "importing the identity" });
-    } finally {
-      el.fileInput.value = "";
-      update();
+  function go(target) {
+    if (target === "back") target = state.lastStep;
+    if (target === "stake" && state.panel === "setup" && !readInput()) {
+      if (!el.input.value.trim()) {
+        el.input.setAttribute("aria-invalid", "true");
+        el.inputMessage.dataset.kind = "bad";
+        el.inputMessage.textContent = "Paste the identity commitment that shadenet init prints.";
+      }
+      el.input.focus();
+      return;
     }
+    show(target);
   }
 
-  function downloadIdentity() {
-    if (!state.identity) return;
-    const blob = new Blob([identityBytes(state.identity)], { type: "application/json" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.href = url;
-    link.download = identityFileName(state.identity);
-    link.click();
-    URL.revokeObjectURL(url);
-    announce(`Download started: ${link.download}. Check the file is saved, then tick the box. It is a bearer credential.`, "good");
-    update();
-  }
-
-  async function copyText(text, okMessage) {
+  async function copyText(text) {
     try {
       await navigator.clipboard.writeText(text);
-      announce(okMessage, "good");
       return true;
-    } catch (error) {
-      fail(error, { action: "copying" });
+    } catch {
       return false;
     }
   }
 
-  async function copyLeaf() {
-    if (!state.identity) return;
-    const ok = await copyText(registerCommitment(state.identity), "Public commitment copied. It is safe to give to a sponsor.");
-    if (!ok) {
-      const selection = window.getSelection();
+  // "copied" on the button itself; if the clipboard is closed, select the text to copy by hand.
+  async function copyFrom(button, source, text) {
+    const label = button.dataset.label || (button.dataset.label = button.textContent);
+    const ok = await copyText(text);
+    if (!ok && source) {
       const range = document.createRange();
-      range.selectNodeContents(el.leaf);
+      range.selectNodeContents(source);
+      const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
     }
+    button.textContent = ok ? "copied" : "select and copy";
+    window.setTimeout(() => { button.textContent = label; }, 1600);
   }
 
   async function request(method, params = []) {
-    if (!window.ethereum?.request) throw new Error("No compatible Ethereum wallet was found in this browser.");
+    if (!hasWallet()) throw new Error("No compatible Ethereum wallet was found in this browser.");
     return window.ethereum.request({ method, params });
   }
 
@@ -385,24 +463,117 @@ function mount() {
 
   // Say up front whether the wallet can pay, instead of letting the stake fail later.
   async function readBalance() {
-    if (!state.account || !el.balance) return;
-    const tier = tierFor(stakeTier());
-    if (!tier) return;
+    const tier = tierFor(stakeLimit());
+    if (!state.account || !tier) return;
     try {
       const [balanceWei, gasPriceWei] = await Promise.all([request("eth_getBalance", [state.account, "latest"]), request("eth_gasPrice").catch(() => "0x0")]);
       const verdict = describeBalance({ balanceWei, tier, gasPriceWei });
-      state.balanceOk = verdict.enough;
-      state.balanceHave = `${formatEth(BigInt(balanceWei))} ${CHAIN_NAME} ETH`;
       el.balance.textContent = verdict.message;
-      el.balance.dataset.kind = verdict.enough ? "good" : "warn";
-      el.balance.hidden = false;
+      el.balance.dataset.kind = verdict.enough ? "plain" : "warn";
     } catch {
-      el.balance.hidden = true;
-      state.balanceOk = null;
+      el.balance.textContent = "";
     }
   }
 
+  function showReceipt(hash) {
+    if (EXPLORER_URL) el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
+    el.receiptLink.textContent = short(hash, 10, 8);
+    el.receipt.hidden = false;
+  }
+
+  function admitted(view) {
+    window.clearInterval(state.finalityTimer);
+    state.stage = "final";
+    el.finalityPanel.hidden = true;
+    el.memberState.textContent = view.message;
+    el.memberState.dataset.state = "active";
+    el.memberState.hidden = false;
+    announce("");
+    update();
+  }
+
+  // What the contract says about this commitment at this tier, read through the wallet's RPC.
+  async function readMember() {
+    const status = await staking().memberStatus(memberLeaf(state.commitment, stakeLimit()));
+    return describeMember({ ...status, now: Math.floor(Date.now() / 1000) });
+  }
+
+  function paintFinality(estimate, finalizedBlock, targetBlock) {
+    if (estimate.final) {
+      el.finalityBar.style.width = "100%";
+      return;
+    }
+    if (state.finalityStart == null) state.finalityStart = Number(finalizedBlock);
+    const total = Math.max(1, Number(targetBlock) - state.finalityStart);
+    const done = Math.max(0, Number(finalizedBlock) - state.finalityStart);
+    el.finalityBar.style.width = `${Math.min(97, Math.max(3, Math.round((done / total) * 100)))}%`;
+  }
+
+  // Follow the chain's own finalized block until it passes the stake's block, then confirm with
+  // the contract that the member is active. Without a known block, poll the contract alone.
+  function watchFinality(blockNumber) {
+    window.clearInterval(state.finalityTimer);
+    state.finalityStart = null;
+    const commitment = state.commitment;
+    const tick = async () => {
+      if (commitment !== state.commitment) return;
+      try {
+        let final = blockNumber == null;
+        if (blockNumber != null) {
+          const finalized = await request("eth_getBlockByNumber", ["finalized", false]);
+          const finalizedBlock = finalized?.number ?? 0;
+          const estimate = finalityEstimate(blockNumber, finalizedBlock);
+          paintFinality(estimate, finalizedBlock, blockNumber);
+          final = estimate.final;
+          if (!final) {
+            const minutes = Math.max(1, Math.round(estimate.seconds / 60));
+            el.finality.textContent = `Waiting for ${CHAIN_NAME} finality, about ${minutes} min left. You can go on to step 3 meanwhile.`;
+          }
+        }
+        if (final) {
+          const view = await readMember();
+          if (view.state === "active") admitted(view);
+          else el.finality.textContent = `Waiting for ${CHAIN_NAME} finality, usually 13 to 16 minutes after the stake confirms. You can go on to step 3 meanwhile.`;
+        }
+      } catch {
+        el.finality.textContent = `Could not read finality through the wallet. It usually takes 13 to 16 minutes; shadenet status --wait returns when it is done.`;
+      }
+    };
+    el.finalityPanel.hidden = false;
+    el.finalityBar.style.width = blockNumber == null ? "0" : "3%";
+    tick();
+    state.finalityTimer = window.setInterval(tick, SLOT_SECONDS * 1000);
+  }
+
+  // A commitment that is already staked (from the terminal, by someone else, or before a reload)
+  // goes straight to its real state, so nothing is sent twice.
+  async function refreshMember() {
+    if (!state.account || !state.commitment) return;
+    const commitment = state.commitment;
+    const view = await readMember().catch(() => null);
+    if (!view || commitment !== state.commitment) return;
+    if (view.state === "active") admitted(view);
+    else if (view.state === "pending") {
+      state.stage = "confirmed";
+      if (state.tx?.hash) showReceipt(state.tx.hash);
+      watchFinality(state.tx?.block ?? null);
+    } else if (view.state === "exiting" || view.state === "withdrawable") {
+      state.stage = "left";
+      el.memberState.textContent = view.message;
+      el.memberState.dataset.state = view.state;
+      el.memberState.hidden = false;
+    } else if (state.tx?.hash) {
+      announce("That transaction has not confirmed. Follow its link before staking again.");
+    }
+    update();
+  }
+
   async function connectWallet() {
+    if (!hasWallet()) {
+      // The line above the terminal command already says what to do.
+      announce("No wallet was found in this browser.", "bad");
+      return;
+    }
     state.busy = true;
     update();
     try {
@@ -412,11 +583,14 @@ function mount() {
       state.account = getAddress(accounts[0]);
       const code = await request("eth_getCode", [CONTRACT, "latest"]);
       if (!code || code === "0x") throw new Error(`The pinned staking contract is not deployed on this wallet's ${CHAIN_NAME} network.`);
-      announce(`Wallet connected on ${CHAIN_NAME}. Its address and the staking transaction will be public.`, "good");
+      announce("");
       await readBalance();
+      state.stage = "ready";
+      if (state.commitment) await refreshMember();
+      else announce("Enter the identity commitment in step 1 before staking.");
     } catch (error) {
       state.account = null;
-      el.balance.hidden = true;
+      state.stage = "idle";
       fail(error, { action: "connecting the wallet" });
     } finally {
       state.busy = false;
@@ -424,188 +598,56 @@ function mount() {
     }
   }
 
-  function paintFinality(estimate, finalizedBlock, targetBlock) {
-    if (!el.finalityBar) return;
-    if (estimate.final) {
-      el.finalityBar.style.width = "100%";
-      return;
-    }
-    if (state.finalityStart == null) state.finalityStart = Number(finalizedBlock);
-    const total = Math.max(1, Number(targetBlock) - state.finalityStart);
-    const done = Math.max(0, Number(finalizedBlock) - state.finalityStart);
-    el.finalityBar.style.width = `${Math.min(97, Math.round((done / total) * 100))}%`;
-  }
-
-  async function confirmAdmitted(commitment, limit) {
-    try {
-      const status = await staking().memberStatus(memberLeaf(commitment, limit));
-      if (status.state === "active" && status.finalized) {
-        state.admitted = true;
-        state.stakeStep = "final";
-        el.memberState.textContent = describeMember({ ...status, now: Math.floor(Date.now() / 1000) }).message;
-        el.memberState.dataset.state = "active";
-        el.memberState.hidden = false;
-        announce("Admitted. Nodes accept this identity; hand the file to your agent below.", "good");
-        el.handoff?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-      }
-    } catch {
-      // The finality text already says what to do; a failed read here is not an error worth an alert.
-    }
-    update();
-  }
-
-  function watchFinality(blockNumber, commitment, limit) {
-    window.clearInterval(state.finalityTimer);
-    state.finalityStart = null;
-    const tick = async () => {
-      try {
-        const finalized = await request("eth_getBlockByNumber", ["finalized", false]);
-        const finalizedBlock = finalized?.number ?? 0;
-        const estimate = finalityEstimate(blockNumber, finalizedBlock);
-        paintFinality(estimate, finalizedBlock, blockNumber);
-        if (estimate.final) {
-          window.clearInterval(state.finalityTimer);
-          state.stakeStep = "final";
-          el.finality.textContent = "Finalized. Nodes accept this membership once their next root refresh lands, usually within a minute.";
-          el.finality.dataset.kind = "good";
-          update();
-          await confirmAdmitted(commitment, limit);
-        } else {
-          const minutes = Math.max(1, Math.round(estimate.seconds / 60));
-          el.finality.textContent = `Waiting for ${CHAIN_NAME} finality: about ${minutes} min left (finalized block ${Number(finalizedBlock)}, yours is ${Number(blockNumber)}). Keep this tab open, or come back and check status.`;
-          el.finality.dataset.kind = "plain";
-        }
-      } catch {
-        el.finality.textContent = "Could not read finality from the wallet. It usually takes 13 to 16 minutes after the stake confirms; check status below afterwards.";
-      }
-    };
-    el.finalityPanel.hidden = false;
-    tick();
-    state.finalityTimer = window.setInterval(tick, SLOT_SECONDS * 1000);
-  }
-
-  async function checkStatus() {
-    let commitment;
-    try {
-      commitment = parseCommitment(selectedCommitment());
-    } catch (error) {
-      fail(error, { action: "checking status" });
-      return;
-    }
-    state.busy = true;
-    update();
-    try {
-      await selectChain();
-      const status = await staking().memberStatus(memberLeaf(commitment, stakeTier()));
-      const view = describeMember({ ...status, now: Math.floor(Date.now() / 1000) });
-      el.memberState.textContent = view.message;
-      el.memberState.dataset.state = view.state;
-      el.memberState.hidden = false;
-      if (view.state === "active") {
-        state.admitted = true;
-        state.stakeStep = "final";
-      }
-      announce("Status read through your wallet's RPC. This page sent it nowhere else.", "good");
-    } catch (error) {
-      fail(error, { action: "checking status" });
-    } finally {
-      state.busy = false;
-      update();
-    }
-  }
-
-  // Exit and withdraw prove knowledge of the identity secret in this tab (Groth16 over the
-  // withdraw circuit). The wallet only pays gas; use one unrelated to the funder.
-  async function leave(action) {
-    if (!state.identity || !state.account) return;
-    let recipient;
-    if (action === "withdraw") {
-      try {
-        recipient = parseRecipient(el.withdrawTo.value);
-      } catch (error) {
-        fail(error, { action });
-        return;
-      }
-    }
-    state.busy = true;
-    update();
-    try {
-      announce(`Checking the membership, then loading the prover (${PROVER_MB_TEXT} MB, once)…`);
-      const sdk = staking();
-      const status = await sdk.memberStatus(state.identity.leaf);
-      if (action === "exit" && status.state !== "active") throw new Error("Only an active membership can start an exit.");
-      if (action === "withdraw" && status.state !== "withdrawable") {
-        throw new Error(status.state === "exiting" ? "Still unbonding. Withdraw after the deadline passes." : "There is no finished exit to withdraw.");
-      }
-      announce("Proving in this tab. This can take a few seconds; the secret never leaves the page.");
-      const onSent = (hash) => {
-        if (EXPLORER_URL) el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
-        el.receiptLink.textContent = short(hash, 12, 10);
-        el.receipt.hidden = false;
-        announce("Transaction sent. Waiting for one confirmation…");
-      };
-      const sent = action === "exit"
-        ? await sdk.exit({ identity: state.identity, from: state.account, artifacts: PROVER_ARTIFACTS, onSent })
-        : await sdk.withdraw({ identity: state.identity, recipient, from: state.account, artifacts: PROVER_ARTIFACTS, onSent });
-      const receipt = await sent.wait();
-      if (!receipt) announce("Still pending after three minutes. Follow the transaction link; do not send again blindly.");
-      else announce(action === "exit"
-        ? "Exit started. The bond unlocks after the unbonding period; withdraw it here to a fresh address."
-        : "Withdrawn. The bond went to the recipient address.", "good");
-    } catch (error) {
-      fail(error, { action, proverMb: PROVER_MB_TEXT });
-    } finally {
-      state.busy = false;
-      update();
-    }
-  }
-
   async function stake() {
-    let commitment;
-    try {
-      commitment = parseCommitment(selectedCommitment());
-    } catch (error) {
-      fail(error, { action: "stake" });
+    if (!state.commitment) {
+      announce("Enter the identity commitment in step 1 before staking.", "bad");
       return;
     }
-    const tier = tierFor(stakeTier());
+    const tier = tierFor(stakeLimit());
     if (!tier) {
       announce("Choose a tier this canopy offers.", "bad");
       return;
     }
+    const commitment = state.commitment;
     state.busy = true;
     el.receipt.hidden = true;
     update();
     try {
       await selectChain();
-      announce(`Confirm the exact ${formatEth(tier.bondWei)} ${CHAIN_NAME} ETH transaction in your wallet.`);
+      announce(`Confirm the ${formatEth(tier.bondWei)} ${CHAIN_NAME} ETH transaction in your wallet.`);
       const sent = await staking().stake({
         commitment,
         limit: Number(tier.limit),
         from: state.account,
         onSent: (hash) => {
-          if (EXPLORER_URL) el.receiptLink.href = `${EXPLORER_URL}/tx/${hash}`;
-          el.receiptLink.textContent = short(hash, 12, 10);
-          el.receipt.hidden = false;
-          state.stakeStep = "sent";
-          announce("Transaction sent. Waiting for one confirmation…");
+          showReceipt(hash);
+          state.stage = "sent";
+          state.tx = { hash, block: null };
+          save();
+          announce("Transaction sent. Waiting for one confirmation.");
+          update();
         },
       });
       if (sent.alreadyActive) {
-        announce("This commitment is already active. Nothing was sent.", "good");
-        state.stakeStep = "confirmed";
+        state.stage = "confirmed";
+        announce("This identity commitment is already staked. Nothing was sent.");
+        watchFinality(null);
         return;
       }
       const receipt = await sent.wait();
       if (!receipt) {
-        announce("Still pending after three minutes. Use the transaction link to follow it; do not send again blindly.", "plain");
+        announce("Still pending after three minutes. Follow the transaction link; do not send again.");
       } else {
-        state.stakeStep = "confirmed";
-        announce("Stake confirmed. Finality comes next; the hand-off commands below are ready meanwhile.", "good");
-        watchFinality(receipt.blockNumber, commitment, tier.limit);
+        state.stage = "confirmed";
+        state.tx = { hash: sent.hash, block: Number(BigInt(receipt.blockNumber)) };
+        save();
+        announce("Stake confirmed.", "good");
+        watchFinality(state.tx.block);
       }
     } catch (error) {
-      fail(error, { action: "stake", need: `${formatEth(tier.bondWei)} ${CHAIN_NAME} ETH`, balance: state.balanceHave });
+      if (state.stage === "sent") state.stage = "ready";
+      // The wallet row already shows the balance and the shortfall; the alert stays short.
+      fail(error, { action: "stake" });
     } finally {
       state.busy = false;
       update();
@@ -623,6 +665,7 @@ function mount() {
         panels[i].hidden = i !== index;
       });
       if (focus) tabs[index].focus();
+      markScrollers();
     };
     tabs.forEach((tab, i) => {
       tab.addEventListener("click", () => select(i));
@@ -633,60 +676,95 @@ function mount() {
         else if (step) { event.preventDefault(); select((i + step + tabs.length) % tabs.length, true); }
       });
     });
+    select(0);
   }
 
-  for (const button of el.modeButtons) button.addEventListener("click", () => {
-    state.mode = button.dataset.mode;
-    announce(state.mode === "member"
-      ? "Member mode: the identity stays in this tab until you download it."
-      : "Sponsor mode: paste only the member’s public commitment and tier. The member keeps the secret.");
-    update();
-    readBalance();
+  // A command wider than its plate fades at the right edge until it is scrolled to its end.
+  function markScrollers() {
+    for (const pre of el.scrollers) {
+      const more = pre.scrollWidth - pre.clientWidth - pre.scrollLeft > 2;
+      pre.toggleAttribute("data-more", more);
+    }
+  }
+
+  for (const link of [...el.stepLinks, ...el.goLinks]) {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      go(link.dataset.stepLink || link.dataset.go);
+    });
+  }
+  window.addEventListener("popstate", (event) => {
+    if (event.state?.panel) show(event.state.panel, { push: false });
+  });
+  el.input.addEventListener("input", () => { readInput(); update(); save(); });
+  el.input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") { event.preventDefault(); go("stake"); }
   });
   for (const input of el.tierInputs) input.addEventListener("change", () => {
-    if (input.checked) state.tier = BigInt(input.value);
+    if (input.checked) state.limit = Number(input.value);
     update();
+    save();
     readBalance();
+    if (state.stage === "ready") refreshMember();
   });
-  for (const input of el.sponsorTierInputs) input.addEventListener("change", () => { update(); readBalance(); });
-  el.createButton.addEventListener("click", onCreateIdentity);
-  el.importButton.addEventListener("click", () => el.fileInput.click());
-  el.fileInput.addEventListener("change", () => importIdentityFile(el.fileInput.files?.[0]));
-  el.downloadButton.addEventListener("click", downloadIdentity);
-  el.copyButton.addEventListener("click", copyLeaf);
-  el.recoveryCheck.addEventListener("change", update);
-  el.sponsorInput.addEventListener("input", update);
-  el.statusButton?.addEventListener("click", checkStatus);
-  el.exitButton?.addEventListener("click", () => leave("exit"));
-  el.withdrawButton?.addEventListener("click", () => leave("withdraw"));
-  el.withdrawTo?.addEventListener("input", update);
-  for (const button of el.connectButtons) button.addEventListener("click", connectWallet);
-  for (const button of el.stakeButtons) button.addEventListener("click", stake);
-  for (const button of el.copyBlocks) button.addEventListener("click", async () => {
+  el.primary.addEventListener("click", () => (state.stage === "ready" ? stake() : connectWallet()));
+  el.changeWallet.addEventListener("click", connectWallet);
+  el.copyLink.addEventListener("click", () => {
+    if (!state.commitment) return;
+    const base = `${window.location.origin}${window.location.pathname}`;
+    copyFrom(el.copyLink, null, stakeLink({ commitment: state.commitment, limit: Number(stakeLimit()), leaf: state.leaf }, base));
+  });
+  for (const button of el.copyBlocks) button.addEventListener("click", () => {
     const code = button.parentElement.querySelector("code");
-    const ok = await copyText(code.textContent, "Copied.");
-    button.textContent = ok ? "copied" : "copy";
-    window.setTimeout(() => { button.textContent = "copy"; }, 1600);
+    copyFrom(button, code, code.textContent);
+  });
+  el.copyBrief?.addEventListener("click", () => copyFrom(el.copyBrief, el.brief, el.brief.textContent.trim()));
+  for (const pre of el.scrollers) pre.addEventListener("scroll", markScrollers, { passive: true });
+  window.addEventListener("resize", markScrollers);
+  // One details section open at a time, also where the name attribute is not supported.
+  for (const item of el.details) item.addEventListener("toggle", () => {
+    if (item.open) for (const other of el.details) if (other !== item) other.open = false;
   });
   mountTabs();
   window.ethereum?.on?.("accountsChanged", (accounts) => {
     state.account = accounts?.[0] ? getAddress(accounts[0]) : null;
-    announce(state.account ? "Wallet account changed." : "Wallet disconnected.");
+    if (!state.account && !["sent", "confirmed", "final"].includes(state.stage)) state.stage = "idle";
     update();
     readBalance();
   });
   window.ethereum?.on?.("chainChanged", () => {
+    if (["sent", "confirmed", "final"].includes(state.stage)) return;
     state.account = null;
-    el.balance.hidden = true;
-    announce("Wallet network changed. Reconnect to verify the chain.");
+    state.stage = "idle";
+    announce("The wallet changed network. Connect it again.");
     update();
   });
-  update();
+
+  // Where to start: a link's fragment wins, then what this tab had before a reload.
+  let start = state.panel;
+  const fragment = window.location.hash.slice(1);
+  if (/(^|&)c=/.test(fragment)) {
+    el.input.value = fragment;
+    start = readInput({ origin: "From your link. " }) ? "stake" : "setup";
+  } else {
+    if (PANELS.includes(fragment)) start = fragment;
+    if (typeof saved.input === "string" && saved.input) {
+      el.input.value = saved.input;
+      if (saved.limit != null && tierFor(saved.limit)) state.limit = Number(saved.limit);
+      readInput();
+    }
+    if (start === "stake" && !state.commitment) start = "setup";
+  }
+  if (state.commitment && state.commitment === saved.input && saved.tx?.hash) {
+    // A stake sent before the reload: show it, and follow it again once the wallet is back.
+    state.tx = { hash: String(saved.tx.hash), block: saved.tx.block ?? null };
+    state.stage = "resume";
+    showReceipt(state.tx.hash);
+    announce("Connect the wallet again to follow finality here, or run shadenet status --wait.");
+  }
+  document.documentElement.dataset.access = "ready";
+  try { window.history.replaceState({ panel: start }, ""); } catch {}
+  show(start, { focus: false, push: false });
 }
 
-// Stated on the page before any download; the build writes the same number into the HTML.
-const PROVER_MB_TEXT = typeof document !== "undefined"
-  ? (document.querySelector("[data-prover-mb]")?.textContent || "1.8")
-  : "1.8";
-
-if (typeof document !== "undefined" && document.querySelector("[data-member-steps]")) mount();
+if (typeof document !== "undefined" && document.querySelector("[data-panel]")) mount();

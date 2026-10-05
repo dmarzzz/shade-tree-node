@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Get anonymous Tor egress for an AI agent: create a ShadeNet identity locally and stake 0.01 Sepolia ETH, or sponsor someone else's.">
+  <meta name="description" content="Get proof-gated Tor egress for an AI agent: set up the shadenet CLI, stake 0.01 Sepolia ETH for its public identity commitment, and start.">
   <meta name="theme-color" content="#07100c">
   <meta property="og:title" content="Get Access · ShadeNet">
-  <meta property="og:description" content="Create the member secret locally, save its recovery file, and send only the public commitment to Sepolia.">
+  <meta property="og:description" content="Three steps: set up the shadenet CLI, stake the bond on Sepolia for its public identity commitment, and start. The member secret never reaches this page.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://shadenet.xyz/stake/">
   <meta property="og:site_name" content="ShadeNet">
@@ -26,7 +26,7 @@
   <title>Get Access · ShadeNet</title>
 </head>
 <body class="stake-page">
-  <a class="skip-link" href="#staking">Skip to staking</a>
+  <a class="skip-link" href="#access">Skip to the steps</a>
   <nav class="site-nav" aria-label="Primary navigation">
     <a class="wordmark" href="/" aria-label="ShadeNet home">
       <span class="tree-mark" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -42,320 +42,227 @@
     </div>
   </nav>
 
-  <main id="staking" class="stake-main">
-    <header class="stake-hero">
-      <div class="shade-light" aria-hidden="true"></div>
-      <div class="stake-hero-copy">
-        <p class="instrument">get access <span aria-hidden="true">//</span> sepolia research preview</p>
-        <h1>Stake without giving us an identity.</h1>
-        <p class="lede">A refundable bond on Sepolia buys your agent a budget of anonymous HTTPS tunnels through the canopy. The identity is made in this tab and stays with you. Only its public commitment goes on chain, and nodes only ever see a proof of membership.</p>
-        <dl class="live-row" aria-label="Live network">
-          <div><dt>network</dt><dd>Sepolia testnet</dd></div>
-          <div><dt>nodes announced</dt><dd data-live-nodes>…</dd></div>
-          <div><dt>staked members</dt><dd class="signal" data-live-members>…</dd></div>
-        </dl>
-        <p class="set-note" data-live-set>Your privacy is only as large as the staked set. The live count loads from this site's aggregate API.</p>
-      </div>
+  <main id="access" class="access">
+    <header class="access-head">
+      <h1>Get access</h1>
+      <p class="access-net">Research preview on Sepolia</p>
     </header>
 
-    <section class="who-learns" aria-labelledby="privacy-title">
-      <h2 id="privacy-title">What each party learns</h2>
-      <dl class="ledger">
-        <div><dt>This page</dt><dd>Generates and validates locally. No identity API exists.</dd></div>
-        <div><dt>Your wallet and its RPC</dt><dd>Sees your address, public commitment, bond, and timing.</dd></div>
-        <div><dt>The canopy</dt><dd>Later sees a valid anonymous membership proof, not which leaf made it.</dd></div>
-        <div><dt>The destination</dt><dd>Sees a Shade Tree node's IP, never yours.</dd></div>
-      </dl>
-      <p class="fine">Loading any website can expose your IP to its host. This static page never sends the commitment or recovery file to the ShadeNet server.</p>
-    </section>
-
-    <div class="role-switch" aria-label="Choose a staking role">
-      <button type="button" data-mode="member" aria-pressed="true">I’m joining</button>
-      <button type="button" data-mode="sponsor" aria-pressed="false">I’m sponsoring someone</button>
-    </div>
-
-    <div class="flow">
-      <ol class="rail" data-rail aria-label="Progress">
-        <li data-rail-step="tier" data-state="current"><span>01</span> tier</li>
-        <li data-rail-step="identity" data-state="todo"><span>02</span> identity</li>
-        <li data-rail-step="save" data-state="todo"><span>03</span> save</li>
-        <li data-rail-step="stake" data-state="todo"><span>04</span> stake</li>
-        <li data-rail-step="finality" data-state="todo"><span>05</span> finality</li>
-        <li data-rail-step="handoff" data-state="todo"><span>06</span> hand off</li>
+    <nav class="stepper" aria-label="Steps" data-stepper>
+      <ol>
+        <li><a href="#setup" data-step-link="setup" aria-current="step"><span class="step-n">1</span> Set up</a></li>
+        <li><a href="#stake" data-step-link="stake"><span class="step-n">2</span> Stake</a></li>
+        <li><a href="#start" data-step-link="start"><span class="step-n">3</span> Start</a></li>
       </ol>
+    </nav>
 
-      <div class="flow-body">
-    <section class="stake-trail" data-member-steps aria-label="Member staking steps">
-      <article class="step" data-step-panel="tier">
-        <p class="step-index" aria-hidden="true">01</p>
-        <h2>Choose a tier</h2>
-        <p>A session is one visit to a node: it opens up to 6 HTTPS connections to different sites within 90 seconds and carries up to 40 MiB in both directions combined. Each tier gets that many new sessions per minute, canopy-wide. A search plus five result pages is about one session. The tier is part of the identity, so pick it first.</p>
-        <fieldset class="tier-pick">
-          <legend class="sr-only">Tier</legend>
-          <label class="tier-row">
-            <input type="radio" name="tier" value="1" data-tier checked>
-            <span class="tier-name">tier 1</span>
-            <span class="tier-bond">0.01 ETH</span>
-            <span class="tier-buys">1 session per minute, up to 6 connections, 40 MiB</span>
-          </label>
-          <label class="tier-row">
-            <input type="radio" name="tier" value="8" data-tier>
-            <span class="tier-name">tier 8</span>
-            <span class="tier-bond">0.08 ETH</span>
-            <span class="tier-buys">8 sessions per minute, up to 6 connections, 40 MiB</span>
-          </label>
-        </fieldset>
-        <p class="fine">The bond is refundable collateral, not a fee: exit whenever you like and withdraw it after 24 hours. Sending two different requests from the same slot in one minute reveals your secret and lets anyone slash the bond. A valid slash pays 1/10 of the bond to whoever reports it and burns the rest. To change tier later, stake a new identity and exit the old one.</p>
-      </article>
+    <div class="panels">
+      <section class="panel" id="setup" data-panel="setup" data-current aria-labelledby="setup-title">
+        <h2 class="sr-only" id="setup-title" tabindex="-1">Step 1: set up with the CLI</h2>
+        <div class="panel-split">
+          <div class="split-main">
+            <p class="lead">Run these on the machine where your agent runs.</p>
+            <p class="cmd-label">Install the client</p>
+            <div class="cmd">
+            <pre tabindex="0" aria-label="Install the ShadeNet client"><code>curl -fsSL --proto '=https' --proto-redir '=https'<span class="cont"> \
+ </span> https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh<span class="cont"> \
+ </span> | SHADENET_VERSION=v0.7.1 sh</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Install the ShadeNet client">copy</button>
+          </div>
+            <p class="cmd-label">Create the identity</p>
+            <div class="cmd">
+            <pre tabindex="0" aria-label="Create the identity"><code>shadenet init</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Create the identity">copy</button>
+          </div>
+            <label class="cmd-label needs-script" for="commitment">Paste the identity commitment</label>
+            <textarea class="needs-script" id="commitment" data-commitment rows="2" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="commitment-hint commitment-message"></textarea>
+            <p class="field-message needs-script" id="commitment-message" data-commitment-message role="status" aria-live="polite"></p>
+          </div>
+          <div class="split-notes">
+            <p class="note" id="commitment-hint">The identity commitment is public. The secret stays in <code>identity.json</code> on that machine, and this page never asks for it. To stake for someone else, paste theirs.</p>
+            <p class="caution" data-leaf-caution><code>shadenet v0.7.1</code> prints a leaf, which is a different number. A bond staked on a leaf is lost. Until a release prints the identity commitment, stake from the terminal (step 2).</p>
+          </div>
+        </div>
+        <div class="panel-nav">
+          <a class="solid-action" href="#stake" data-go="stake">Next</a>
+          <a class="more-link" href="#details" data-go="details">Leave and details</a>
+        </div>
+      </section>
 
-      <article class="step" data-step-panel="identity">
-        <p class="step-index" aria-hidden="true">02</p>
-        <h2>Create the identity</h2>
-        <p>The secret comes from your operating system's randomness and never leaves this tab. Already have an identity file? Import it to check its status, exit, or withdraw; each new stake needs a new identity.</p>
-        <div class="button-row">
-          <button class="solid-action" type="button" data-create-identity>create identity</button>
-          <button class="line-action" type="button" data-import-identity>import an identity file</button>
-          <input type="file" accept="application/json,.json" data-identity-file hidden>
+      <section class="panel" id="stake" data-panel="stake" data-stage="idle" aria-labelledby="stake-title">
+        <h2 class="sr-only" id="stake-title" tabindex="-1">Step 2: stake the bond</h2>
+        <div class="panel-split">
+          <div class="split-main split-facts">
+            <dl class="facts">
+              <div class="needs-script">
+                <dt>identity commitment</dt>
+                <dd><output data-commitment-shown>None yet. Enter it in step 1.</output> <button class="text-action" type="button" data-copy-link hidden>copy link</button></dd>
+              </div>
+              <div data-tier-row>
+                <dt id="tier-label">tier</dt>
+                <dd>
+                  <div class="tier-pick" role="radiogroup" aria-labelledby="tier-label" aria-describedby="tier-hint">
+                    <label><input type="radio" name="tier" value="1" data-tier data-bond-text="0.01 Sepolia ETH" data-buys-text="1 session per minute" checked> tier 1</label>
+                    <label><input type="radio" name="tier" value="8" data-tier data-bond-text="0.08 Sepolia ETH" data-buys-text="8 sessions per minute"> tier 8</label>
+                  </div>
+                  <p class="hint" id="tier-hint" data-tier-hint>Stake the tier the identity was made for. <code>shadenet init</code> makes tier 1 unless you pass <code>--limit</code>.</p>
+                </dd>
+              </div>
+              <div>
+                <dt>bond</dt>
+                <dd><span data-bond>0.01 Sepolia ETH</span>, returned 24 hours after you leave. It buys <span data-buys>1 session per minute</span>.</dd>
+              </div>
+              <div data-wallet-row hidden>
+                <dt>wallet</dt>
+                <dd><span data-wallet></span> <button class="text-action" type="button" data-change-wallet>change</button><br><span data-balance></span></dd>
+              </div>
+            </dl>
+          </div>
+          <div class="split-notes" data-before-stake>
+            <p class="note" data-privacy-note>Staking links your wallet to this membership on chain, permanently. To keep a wallet you care about out of it, shield ETH with <a href="https://www.railgun.org/" rel="noreferrer">Railgun</a>, send it to a fresh wallet, and stake from that one. An agent can do the same through <a href="https://github.com/dmarzzz/agent-boost" rel="noreferrer">agent-boost</a>.</p>
+            <p class="note" data-preview-statement>ShadeNet is a research preview on Sepolia. The code is unaudited, the proof keys come from a trusted setup, and it should not be considered secure against a motivated actor: do not use it for real funds or sensitive traffic.</p>
+          </div>
+          <div class="split-main split-act">
+            <noscript><p class="caution">Staking from a browser wallet needs JavaScript. The terminal command below does not.</p></noscript>
+            <div class="button-row needs-script">
+              <button class="solid-action" type="button" data-primary>Connect wallet</button>
+            </div>
+            <p class="status" data-status role="status" aria-live="polite"></p>
+            <p class="alert" data-alert role="alert"></p>
+            <p class="status" data-receipt hidden>Transaction <a data-receipt-link href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">view</a></p>
+            <div class="finality" data-finality-panel hidden>
+              <div class="finality-bar" aria-hidden="true"><i data-finality-bar></i></div>
+              <p data-finality role="status" aria-live="polite"></p>
+            </div>
+            <p class="admitted" data-member-state hidden></p>
+            <div class="quiet" data-terminal>
+              <p data-terminal-text>Without a browser wallet, stake from the terminal with a funded key.</p>
+              <div class="cmd">
+            <pre tabindex="0" aria-label="Stake from the terminal"><code>shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded.key</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Stake from the terminal">copy</button>
+          </div>
+            </div>
+          </div>
         </div>
-        <div class="leaf-tag" data-leaf-tag data-ready="false">
-          <span class="label">public commitment</span>
-          <output data-leaf>Create or import an identity to reveal its public commitment.</output>
-          <button class="line-action small" type="button" data-copy-leaf disabled>copy</button>
+        <div class="panel-nav">
+          <a class="line-action" href="#setup" data-go="setup">Back</a>
+          <a class="line-action" href="#start" data-go="start" data-next-start>Next</a>
+          <a class="more-link" href="#details" data-go="details">Leave and details</a>
         </div>
-      </article>
+      </section>
 
-      <article class="step" data-step-panel="save">
-        <p class="step-index" aria-hidden="true">03</p>
-        <h2>Save the file</h2>
-        <p>The ShadeNet client reads this file directly. Whoever holds it can use the membership and authorise its exit, and nobody can recover it for you.</p>
-        <div class="button-row">
-          <button class="solid-action" type="button" data-download-identity disabled>download identity file</button>
+      <section class="panel" id="start" data-panel="start" aria-labelledby="start-title">
+        <h2 class="sr-only" id="start-title" tabindex="-1">Step 3: start</h2>
+        <div class="panel-split">
+          <div class="split-notes">
+            <p class="note" data-start-state>Nodes admit the identity once its stake is final, usually 13 to 16 minutes after it confirms.</p>
+          </div>
+          <div class="split-main tabs" data-tabs>
+            <div role="tablist" aria-label="Who starts it">
+              <button type="button" role="tab" id="start-tab-human" aria-controls="start-panel-human" aria-selected="true">Human</button>
+              <button type="button" role="tab" id="start-tab-agent" aria-controls="start-panel-agent" aria-selected="false">Agent</button>
+            </div>
+            <div role="tabpanel" id="start-panel-human" aria-labelledby="start-tab-human">
+              <h3 class="tab-title">Human</h3>
+              <ol class="runs">
+                <li>
+                  <div class="cmd">
+            <pre tabindex="0" aria-label="Wait until the identity is admitted"><code>shadenet status --wait</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Wait until the identity is admitted">copy</button>
+          </div>
+                  <p>Returns once the stake is final and nodes admit the identity.</p>
+                </li>
+                <li>
+                  <div class="cmd">
+            <pre tabindex="0" aria-label="Start the proxy"><code>shadenet proxy</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Start the proxy">copy</button>
+          </div>
+                  <p>Starts the local proxy. Leave it running.</p>
+                </li>
+                <li>
+                  <div class="cmd">
+            <pre tabindex="0" aria-label="Run your agent through the proxy"><code>shadenet run --no-proxy api.openai.com -- your-agent</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Run your agent through the proxy">copy</button>
+          </div>
+                  <p>Runs your agent with its web traffic on ShadeNet. Keep your model API host on <code>--no-proxy</code>.</p>
+                </li>
+              </ol>
+            </div>
+            <div role="tabpanel" id="start-panel-agent" aria-labelledby="start-tab-agent">
+              <h3 class="tab-title">Agent</h3>
+              <div class="brief">
+                <p class="brief-text" id="agent-brief" data-brief tabindex="0">Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.1 Rust -live binary (SHADENET_VERSION=v0.7.1). Run shadenet init; it writes identity.json and prints the leaf and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the leaf on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic.</p>
+                <button class="line-action needs-script" type="button" data-copy-brief>copy agent brief</button>
+              </div>
+              <div class="cmd">
+            <pre tabindex="0" aria-label="Serve the ShadeNet MCP tools"><code>shadenet mcp</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Serve the ShadeNet MCP tools">copy</button>
+          </div>
+              <p>Serves <code>shadenet_fetch</code> and <code>shadenet_status</code> to any MCP client over stdio. In Claude Code: <code>claude mcp add shadenet -- shadenet mcp</code>.</p>
+            </div>
+          </div>
         </div>
-        <ul class="checklist">
-          <li>Keep it on an encrypted disk or in a secrets vault.</li>
-          <li>Never paste it into chat, email, or a ticket. The public commitment is the only thing to share.</li>
-          <li>Lose it and the bond stays locked for good.</li>
-        </ul>
-        <label class="recovery-check"><input type="checkbox" data-recovery-check disabled> I saved the file somewhere private and recoverable.</label>
-      </article>
+        <div class="panel-nav">
+          <a class="line-action" href="#stake" data-go="stake">Back</a>
+          <a class="more-link" href="#details" data-go="details">Leave and details</a>
+        </div>
+      </section>
 
-      <article class="step transaction-step" data-step-panel="stake">
-        <p class="step-index" aria-hidden="true">04</p>
-        <h2>Fund and stake</h2>
-        <p>The wallet sends exactly the tier's bond to the pinned contract, plus gas. Its address is linked to the commitment forever, so use a wallet you don't mind linking, or let a sponsor stake for you.</p>
-        <p class="contract-line"><span class="label">contract</span> <a href="https://sepolia.etherscan.io/address/0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC">0xDEB2…4bBC</a></p>
-        <div class="button-row">
-          <button class="line-action" type="button" data-connect-wallet>connect wallet</button>
-          <button class="solid-action" type="button" data-stake disabled>stake 0.01 Sepolia ETH</button>
+      <section class="panel" id="details" data-panel="details" aria-labelledby="details-title">
+        <div class="panel-split">
+          <div class="split-main more">
+            <h2 id="details-title" tabindex="-1">Leave and details</h2>
+            <details name="access-details" open>
+              <summary>Leave or change tier</summary>
+              <p>Leave from the machine that holds <code>identity.json</code>. The key only pays gas.</p>
+              <div class="cmd">
+            <pre tabindex="0" aria-label="Start the exit"><code>shadenet exit-member --identity ~/.config/shadenet/identity.json --key-file gas.key</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Start the exit">copy</button>
+          </div>
+              <p>The bond unlocks 24 hours later. Withdraw it to a fresh address, so the refund does not point back at the funder.</p>
+              <div class="cmd">
+            <pre tabindex="0" aria-label="Withdraw the bond"><code>shadenet withdraw-member --identity ~/.config/shadenet/identity.json --recipient 0xFRESH --key-file gas.key</code></pre>
+            <button class="needs-script" type="button" data-copy-block aria-label="Copy: Withdraw the bond">copy</button>
+          </div>
+              <p>To change tier, make a new identity with <code>shadenet init --dir NEW_FOLDER --limit N</code>, stake it, then exit the old one.</p>
+            </details>
+            <details name="access-details">
+              <summary>The bond</summary>
+              <p>The bond is refundable collateral. Tier 1 buys 1 session per minute, up to 6 connections and 40 MiB each. Sending two different requests from the same slot in one minute reveals the secret and lets anyone slash the bond. A valid slash pays 1/10 of the bond to whoever reports it and burns the rest.</p>
+              <p>Exit and withdraw need <code>identity.json</code>. Nobody can recover it for you: lose it and the bond stays locked for good.</p>
+              <p>The contract is <a href="https://sepolia.etherscan.io/address/0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC" rel="noreferrer">0xDEB2…4bBC</a> on Sepolia. It, the bond and the unbonding time can change at the next deployment. <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/PUBLIC-STAKING.md" rel="noreferrer">Protocol parameters</a></p>
+            </details>
+            <details name="access-details">
+              <summary>What each party learns</summary>
+              <dl class="ledger">
+                <div><dt>This page</dt> <dd>The identity commitment you paste, which it hands only to your wallet.</dd></div>
+                <div><dt>Your wallet and its RPC</dt> <dd>Your address, the identity commitment, the bond and the time.</dd></div>
+                <div><dt>Shade Tree nodes</dt> <dd>A valid proof, the destination host, timing and byte counts. They cannot tell which member sent it.</dd></div>
+                <div><dt>The destination</dt> <dd>A Shade Tree node's address, never yours.</dd></div>
+              </dl>
+              <p data-live-set>A proof hides you among the staked members, so your privacy is only as large as that set.</p>
+            </details>
+            <details name="access-details">
+              <summary>No Sepolia ETH</summary>
+              <p>Faucet drips are often smaller than the bond, so funding can take a few tries. Someone else can also stake for you: copy the link in step 2 and send it to them. They never see the secret.</p>
+              <ul>
+                <li><a href="https://sepolia-faucet.pk910.de/" rel="noreferrer">pk910 proof-of-work faucet</a>, no account.</li>
+                <li><a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" rel="noreferrer">Google Cloud Web3 faucet</a>, needs a Google account.</li>
+                <li><a href="https://www.alchemy.com/faucets/ethereum-sepolia" rel="noreferrer">Alchemy faucet</a>, may ask for a small mainnet balance.</li>
+              </ul>
+            </details>
+            <details name="access-details">
+              <summary>The name</summary>
+              <p>ShadeNet is not affiliated with Shade Network, Shade Protocol or any other project with Shade in its name.</p>
+            </details>
+          </div>
         </div>
-        <p class="wallet-state" data-wallet>No wallet connected</p>
-        <p class="wallet-state" data-balance hidden></p>
-        <details class="funding">
-          <summary>No Sepolia ETH? Two ways in</summary>
-          <p>Faucet drips are usually smaller than a bond, so funding can take a few tries. No ETH at all: copy your public commitment above and send it to a sponsor. The sponsor never sees the secret.</p>
-          <ul>
-            <li><a href="https://sepolia-faucet.pk910.de/">pk910 proof-of-work faucet</a>: mine in the browser, no account.</li>
-            <li><a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia">Google Cloud Web3 faucet</a>: needs a Google account.</li>
-            <li><a href="https://www.alchemy.com/faucets/ethereum-sepolia">Alchemy faucet</a> and <a href="https://faucet.quicknode.com/ethereum/sepolia">QuickNode faucet</a>: may ask for a small mainnet balance.</li>
-          </ul>
-        </details>
-      </article>
-    </section>
-
-    <section class="sponsor-panel" data-sponsor-step hidden aria-labelledby="sponsor-title">
-      <p class="step-index" aria-hidden="true">01</p>
-      <h2 id="sponsor-title">Stake someone else’s public commitment</h2>
-      <p>Ask the member or agent for its decimal identity commitment and tier only. Any wallet may fund it; only the secret holder can prove as that member or authorise the withdrawal.</p>
-      <label class="label" for="sponsor-leaf">public commitment</label>
-      <textarea id="sponsor-leaf" data-sponsor-leaf rows="3" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="decimal field element"></textarea>
-      <fieldset class="tier-pick">
-        <legend class="label">their tier</legend>
-          <label class="tier-row">
-            <input type="radio" name="sponsor-tier" value="1" data-sponsor-tier checked>
-            <span class="tier-name">tier 1</span>
-            <span class="tier-bond">0.01 ETH</span>
-            <span class="tier-buys">1 session per minute, up to 6 connections, 40 MiB</span>
-          </label>
-          <label class="tier-row">
-            <input type="radio" name="sponsor-tier" value="8" data-sponsor-tier>
-            <span class="tier-name">tier 8</span>
-            <span class="tier-bond">0.08 ETH</span>
-            <span class="tier-buys">8 sessions per minute, up to 6 connections, 40 MiB</span>
-          </label>
-      </fieldset>
-      <p class="fine"><strong>Know the tradeoff:</strong> your wallet, amount, commitment, and timing are public. The member controls the bearer credential and chooses the eventual refund recipient. Misuse can slash your sponsored bond.</p>
-      <div class="button-row">
-        <button class="line-action" type="button" data-connect-wallet>connect wallet</button>
-        <button class="solid-action" type="button" data-stake disabled>stake this commitment</button>
-      </div>
-    </section>
-
-    <section class="stake-feedback" aria-label="Progress and status">
-      <p data-status role="status" aria-live="polite">Member mode: the identity stays in this tab until you download it.</p>
-      <p data-alert role="alert"></p>
-      <p data-receipt hidden>Transaction: <a data-receipt-link href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">view</a></p>
-      <div class="finality" data-finality-panel hidden>
-        <p class="label">05 finality</p>
-        <p data-finality role="status" aria-live="polite"></p>
-        <div class="finality-bar" aria-hidden="true"><i data-finality-bar></i></div>
-        <p class="fine">Nodes read the finalized member set, so a reorg can never admit or drop a member. Sepolia finality is usually 13 to 16 minutes after the stake confirms; the bar follows the chain's own finalized block.</p>
-      </div>
-      <p data-member-state hidden></p>
-      <div class="button-row">
-        <button class="line-action" type="button" data-check-status disabled>check status through my wallet</button>
-      </div>
-    </section>
-
-    <section class="handoff-section" data-handoff aria-labelledby="handoff-title">
-      <p class="step-index" aria-hidden="true">06</p>
-      <h2 id="handoff-title">Hand it to your agent</h2>
-      <p data-handoff-note>The commands below fill in your identity file's name once you create one. They work the same for a file made by <code>shadenet init</code>.</p>
-      <div class="handoff-tabs" data-tabs>
-        <div role="tablist" aria-label="Where the identity goes">
-        <button type="button" role="tab" id="handoff-tab-cli" aria-controls="handoff-panel-cli" aria-selected="true" tabindex="0">CLI</button>
-        <button type="button" role="tab" id="handoff-tab-hermes" aria-controls="handoff-panel-hermes" aria-selected="false" tabindex="-1">Hermes</button>
-        <button type="button" role="tab" id="handoff-tab-mcp" aria-controls="handoff-panel-mcp" aria-selected="false" tabindex="-1">Claude Code / Codex</button>
-        <button type="button" role="tab" id="handoff-tab-searxng" aria-controls="handoff-panel-searxng" aria-selected="false" tabindex="-1">SearXNG</button>
-        <button type="button" role="tab" id="handoff-tab-js" aria-controls="handoff-panel-js" aria-selected="false" tabindex="-1">JavaScript</button>
+        <div class="panel-nav">
+          <a class="line-action" href="#setup" data-go="back">Back to the steps</a>
+          <a class="more-link" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/THREAT-MODEL.md" rel="noreferrer">Threat model</a>
         </div>
-      <div role="tabpanel" id="handoff-panel-cli" aria-labelledby="handoff-tab-cli">
-        <p>Install the <code>shadenet</code> binary (it embeds Tor), put the file where it looks, and run the proxy. Every command after <code>init</code> reads the identity from that folder.</p>
-        <div class="code-block">
-          <pre tabindex="0" aria-label="Install the ShadeNet client"><code>curl -fsSL --proto '=https' --proto-redir '=https' \
-  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \
-  | SHADENET_VERSION=v0.7.1 sh</code></pre>
-          <button class="copy-block" type="button" data-copy-block aria-label="Copy: Install the ShadeNet client">copy</button>
-        </div>
-        <div class="code-block">
-          <pre tabindex="0" aria-label="Move the identity file into place and start the proxy"><code>mkdir -p ~/.config/shadenet &amp;&amp; chmod 700 ~/.config/shadenet
-mv ~/Downloads/<span data-file-name>shadenet-identity-XXXXXXXX.json</span> ~/.config/shadenet/identity.json
-chmod 600 ~/.config/shadenet/identity.json
-shadenet init            # keeps that identity, writes the proxy token and config
-shadenet status --wait   # returns once the stake is final
-shadenet proxy           # leave this running
-shadenet run --no-proxy api.openai.com -- your-agent</code></pre>
-          <button class="copy-block" type="button" data-copy-block aria-label="Copy: Move the identity file into place and start the proxy">copy</button>
-        </div>
-        <p><code>run</code> gives only the child process the proxy settings. Keep your model API host on <code>--no-proxy</code>: it has its own network path and would waste tunnels.</p>
-      </div>
-      <div role="tabpanel" id="handoff-panel-hermes" aria-labelledby="handoff-tab-hermes" hidden>
-        <p>Hermes calls ShadeNet as an MCP tool. After the CLI steps, register the server and drop the skill file in so the model knows when to use it.</p>
-        <div class="code-block">
-          <pre tabindex="0" aria-label="Register the ShadeNet MCP server in Hermes"><code>hermes mcp add shadenet --command shadenet --args mcp
-cp -r examples/hermes ~/.hermes/skills/shadenet   # from a checkout of the repo</code></pre>
-          <button class="copy-block" type="button" data-copy-block aria-label="Copy: Register the ShadeNet MCP server in Hermes">copy</button>
-        </div>
-        <p>The model then has <code>shadenet_fetch</code> and <code>shadenet_status</code>. Add <code>--env SHADENET_SEARXNG_URL=http://127.0.0.1:8080</code> to the first line for <code>shadenet_search</code> as well.</p>
-      </div>
-      <div role="tabpanel" id="handoff-panel-mcp" aria-labelledby="handoff-tab-mcp" hidden>
-        <p>Any MCP client works the same way: the server is <code>shadenet mcp</code> on stdio.</p>
-        <div class="code-block">
-          <pre tabindex="0" aria-label="Register the server in Claude Code"><code>claude mcp add shadenet -- shadenet mcp</code></pre>
-          <button class="copy-block" type="button" data-copy-block aria-label="Copy: Register the server in Claude Code">copy</button>
-        </div>
-        <div class="code-block">
-          <pre tabindex="0" aria-label="Register the server in Codex (config.toml)"><code>[mcp_servers.shadenet]
-command = "shadenet"
-args = ["mcp"]</code></pre>
-          <button class="copy-block" type="button" data-copy-block aria-label="Copy: Register the server in Codex (config.toml)">copy</button>
-        </div>
-      </div>
-      <div role="tabpanel" id="handoff-panel-searxng" aria-labelledby="handoff-tab-searxng" hidden>
-        <p>A private SearXNG whose blocked engines reach the web through ShadeNet. The identity lives next to the compose file.</p>
-        <div class="code-block">
-          <pre tabindex="0" aria-label="Run SearXNG through ShadeNet"><code>git clone https://github.com/dmarzzz/shade-tree-node.git &amp;&amp; cd shade-tree-node/examples/searxng
-mkdir -p shadenet &amp;&amp; mv ~/Downloads/<span data-file-name>shadenet-identity-XXXXXXXX.json</span> shadenet/identity.json
-chmod 600 shadenet/identity.json
-shadenet init --dir ./shadenet --offline
-shadenet status --identity ./shadenet/identity.json --wait
-mkdir -m 0755 state
-SHADENET_UID=$(id -u) SHADENET_GID=$(id -g) docker compose up -d
-open http://127.0.0.1:8080</code></pre>
-          <button class="copy-block" type="button" data-copy-block aria-label="Copy: Run SearXNG through ShadeNet">copy</button>
-        </div>
-        <p>Keep <code>./state</code>: it holds the slot state that stops a nullifier being reused inside an epoch.</p>
-      </div>
-      <div role="tabpanel" id="handoff-panel-js" aria-labelledby="handoff-tab-js" hidden>
-        <p>The same SDK this page runs. In Node it reads the identity file and talks to a local <code>shadenet proxy</code>; in a browser it can check status and prove exit and withdraw.</p>
-        <div class="code-block">
-          <pre tabindex="0" aria-label="Check the membership from Node with @shadenet/sdk"><code>import { readFileSync } from "node:fs";
-import { createStaking, importIdentity, jsonRpcProvider } from "@shadenet/sdk";
-
-const identity = importIdentity(readFileSync("<span data-file-name>shadenet-identity-XXXXXXXX.json</span>", "utf8"));
-const staking = createStaking({ provider: jsonRpcProvider(process.env.SHADENET_RPC_URL) });
-console.log(await staking.memberStatus(identity.leaf));   // { state, limit, withdrawableAt, finalized }</code></pre>
-          <button class="copy-block" type="button" data-copy-block aria-label="Copy: Check the membership from Node with @shadenet/sdk">copy</button>
-        </div>
-      </div>
-      </div>
-      <p class="fine">Nodes admit the identity once its stake is final: <code>shadenet status --wait</code> returns then, and one request through the proxy returns a Tor exit address, not yours (<code>shadenet run -- curl -s https://api.ipify.org</code>).</p>
-    </section>
-
-    <section class="stake-lifecycle" aria-labelledby="leave-title">
-      <h2 id="leave-title">Change tier or leave</h2>
-      <p>Exit and withdraw are zero-knowledge proofs of the identity secret. Made here, they take a few seconds in this tab after a one-time <span data-prover-mb>1.8</span> MB prover download; the secret never leaves the page. The connected wallet only pays gas, so it can be one unrelated to the funder.</p>
-      <ol class="leave-steps">
-        <li>Import the identity file above and connect a wallet that only pays gas.</li>
-        <li>Start the exit. The bond unlocks 24 hours later.</li>
-        <li>Withdraw to a fresh address so the refund doesn't link back to the funder.</li>
-      </ol>
-      <div class="leave-actions">
-        <button class="line-action" type="button" data-exit disabled>start exit</button>
-        <label class="label" for="withdraw-to">fresh recipient address</label>
-        <input id="withdraw-to" data-withdraw-to type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="0x…">
-        <button class="line-action" type="button" data-withdraw disabled>withdraw bond</button>
-      </div>
-      <p class="fine">From a terminal instead: <code>shadenet exit-member --identity identity.json --key-file gas.key</code>, then after 24 hours <code>shadenet withdraw-member --identity identity.json --recipient 0xFRESH --key-file gas.key</code>. To change tier, stake a new identity at the new tier, then exit the old one; both bonds are locked for 24 hours.</p>
-    </section>
-
-    <section class="stake-faq" aria-labelledby="faq-title">
-      <h2 id="faq-title">Questions</h2>
-      <details>
-        <summary>What do Shade Tree nodes see?</summary>
-        <p>The destination hostname, timing, and how many bytes flow, as any proxy would. They see a valid membership proof, not which member made it. Destinations see the node's IP, not yours.</p>
-      </details>
-      <details>
-        <summary>Why wait for finality?</summary>
-        <p>Nodes and the proxy both read the finalized member set, so a reorg can't admit or drop a member. On Sepolia that is usually 13 to 16 minutes after the stake confirms.</p>
-      </details>
-      <details>
-        <summary>What if I lose the identity file?</summary>
-        <p>Nobody can recover it for you. Without it you can't use the membership, exit, or withdraw, so the bond stays locked for good.</p>
-      </details>
-      <details>
-        <summary>Can nodes limit me across the whole canopy?</summary>
-        <p>The per-minute budget is canopy-wide, but nodes share spent proofs on a best-effort basis today. Double use across two nodes at the same moment may not be caught immediately; it is still slashable once seen.</p>
-      </details>
-      <details>
-        <summary>Is there a free or paid path?</summary>
-        <p>Operators can admit invited members from a private members file; ask one for their <a href="../agent/index.html">setup details</a>. A paid path exists in the code but is not offered on this canopy.</p>
-      </details>
-      <details>
-        <summary>Will these addresses and prices change?</summary>
-        <p>Yes. This is a research preview. The contract, bonds, tiers and unbonding time can change at the next deployment, and this page is rebuilt from that deployment's record.</p>
-      </details>
-      <details>
-        <summary>Is ShadeNet related to Shade Network or Shade Protocol?</summary>
-        <p>No. ShadeNet is not affiliated with Shade Network, Shade Protocol or any other project with Shade in its name. It is one word, and it is this: proof-gated Tor egress for AI agents.</p>
-      </details>
-    </section>
-
-    <section class="stake-boundary" aria-labelledby="boundary-title">
-      <h2 id="boundary-title">Honest boundary</h2>
-      <p>Tier 1 buys 1 session per fixed 60-second epoch, capped at 40 MiB combined traffic each and 6 connections per session. Registration becomes usable after Sepolia finality. The wallet-to-commitment link is permanent; use a separately funded wallet or a sponsor if address-graph separation matters. Exit and withdraw are proof-authorised and return the testnet bond to a fresh recipient after 24 hours. The proof keys come from the published trusted-setup ceremony. Never use mainnet ETH or sensitive traffic.</p>
-    </section>
-      </div>
+      </section>
     </div>
   </main>
-
-  <footer class="site-footer">
-    <span>Research preview</span>
-    <nav aria-label="Project links">
-      <a href="../index.html">Home</a>
-      <a href="../agent/index.html">Agent guide</a>
-      <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/PUBLIC-STAKING.md">Protocol parameters</a>
-      <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/THREAT-MODEL.md">Threat model</a>
-    </nav>
-  </footer>
 </body>
 </html>

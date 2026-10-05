@@ -1,8 +1,8 @@
-// Live, identity-free numbers for the Get access page: staked set size and announced nodes.
-// Both come from same-origin aggregate endpoints (the CSP allows only 'self'). Nothing about the
-// visitor's identity, commitment or wallet is read or sent here; see test/stake-site.selftest.mjs.
+// The one live number on the Get access page: how many members are staked, which is how large
+// the set a proof hides in is. It comes from a same-origin aggregate endpoint (the CSP allows
+// only 'self'). Nothing the visitor typed or connected is read or sent here; see
+// test/stake-site.selftest.mjs.
 export const STAKE_HEAD_URL = "/api/v1/data/stake/sepolia/head";
-export const CANOPY_HEAD_URL = "/api/v1/data/grove/sepolia/head";
 
 async function getJson(url) {
   const response = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store", credentials: "omit" });
@@ -10,30 +10,20 @@ async function getJson(url) {
   return response.json();
 }
 
-export function describeSetSize(activeCount) {
+// `tierCount` is how many tiers the set offers: with more than one, the tier narrows the set too.
+export function describeSetSize(activeCount, tierCount = 1) {
   const n = Number(activeCount);
   if (!Number.isSafeInteger(n) || n < 0) return null;
-  if (n === 0) return "0 staked members today. The first stakers are easy to single out; a launch cohort is being seeded.";
-  if (n < 20) return `${n} staked members today. A proof hides you among ${n}, so timing and tier can still single you out.`;
+  const tell = tierCount > 1 ? "timing and tier" : "timing";
+  if (n === 0) return "0 staked members today. The first stakers are easy to single out.";
+  if (n < 20) return `${n} staked ${n === 1 ? "member" : "members"} today. A proof hides you among ${n}, so ${tell} can still single you out.`;
   return `${n} staked members today. A proof hides you among them.`;
 }
 
-function fill(selector, text) {
-  for (const node of document.querySelectorAll(selector)) node.textContent = text;
-}
-
 export async function loadLive() {
-  const [stake, canopy] = await Promise.allSettled([getJson(STAKE_HEAD_URL), getJson(CANOPY_HEAD_URL)]);
-  if (stake.status === "fulfilled") {
-    const size = describeSetSize(stake.value.activeCount);
-    if (size) {
-      fill("[data-live-members]", String(stake.value.activeCount));
-      fill("[data-live-set]", size);
-    }
-  }
-  if (canopy.status === "fulfilled" && Number.isSafeInteger(canopy.value?.nodes?.announced)) {
-    fill("[data-live-nodes]", String(canopy.value.nodes.announced));
-  }
+  const head = await getJson(STAKE_HEAD_URL);
+  const size = describeSetSize(head.activeCount, Array.isArray(head.tiers) ? head.tiers.length : 1);
+  if (size) for (const node of document.querySelectorAll("[data-live-set]")) node.textContent = size;
 }
 
-if (typeof document !== "undefined" && document.querySelector("[data-live-members]")) loadLive().catch(() => {});
+if (typeof document !== "undefined" && document.querySelector("[data-live-set]")) loadLive().catch(() => {});

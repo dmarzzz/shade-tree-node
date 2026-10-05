@@ -48,7 +48,7 @@ await checkPage("/research/", /id="references"/);
 await checkPage("/grove/", /id="grove-main"/);
 await checkPage("/agent/", /<main\b/);
 await checkPage("/operator/", /<main\b/);
-await checkPage("/stake/", /data-member-steps/);
+await checkPage("/stake/", /data-panel="setup"/);
 
 assert.doesNotMatch(home.html, /href="[^"]*\/lab\//, "the removed Lab page must not be linked");
 assert.doesNotMatch(home.html, /The best shade asks for proof, not a name\.<\/p>/, "removed footer copy must stay removed");

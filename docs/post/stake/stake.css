@@ -1,664 +1,550 @@
-/* Get access: one mono, hairlines, one signal colour. The dappled canopy light behind the
-   hero is the page's only ambient object; everything else moves on an event. */
+/* Get access: three steps, one on screen, each inside one viewport. The site's own type (site.css):
+   sans for sentences, mono for commands, values and labels. Hairlines, one amber signal per
+   screen: the primary action. Nothing here styles the shared nav; it renders as on every page. */
+
+/* Pages that scroll reserve a scrollbar; this one does not scroll. Reserving the same gutter
+   keeps the shared nav at the same x on every page. */
+html {
+  scrollbar-gutter: stable;
+}
 
 .stake-page {
   --ink: #e3e9dd;
-  --dim: rgba(227, 233, 221, 0.62);
-  --faint: rgba(227, 233, 221, 0.58);
-  --hair: rgba(227, 233, 221, 0.13);
-  --hair-strong: rgba(227, 233, 221, 0.3);
-  --panel: rgba(255, 255, 255, 0.06);
+  --dim: rgba(227, 233, 221, 0.76);
+  --hair: rgba(227, 233, 221, 0.14);
+  --hair-strong: rgba(227, 233, 221, 0.34);
   --plate: #030906;
   --signal: #e2be67;
   --ok: #82c89b;
   --no: #f08a63;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --display: var(--mono);
-  --sans: var(--mono);
-  --serif: var(--mono);
   --radius: 6px;
   --tap: 2.75rem;
   --ease: cubic-bezier(0.33, 1, 0.68, 1);
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
-  background: var(--understory);
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 15px;
-  line-height: 1.55;
+  min-height: 100dvh;
 }
 
-.stake-page .site-nav,
-.stake-page .site-footer {
-  font-family: var(--mono);
-}
-
-.stake-page .wordmark {
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.stake-page code {
-  font-family: inherit;
-  font-size: 0.94em;
-  color: var(--ink);
-}
-
-.stake-page a {
-  color: var(--signal);
-  text-decoration: underline;
-  text-decoration-color: rgba(226, 190, 103, 0.4);
-  text-underline-offset: 0.18em;
-}
-
-.stake-page .site-nav a,
-.stake-page .site-footer a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.stake-main {
-  width: min(66rem, calc(100% - 2rem));
+.access {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  width: var(--page);
   margin: 0 auto;
-  padding: 0 0 5rem;
-}
-
-.label,
-.instrument,
-.live-row dt,
-.rail li,
-.step-index,
-.tier-pick legend {
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-
-.instrument {
-  margin: 0 0 1.4rem;
-}
-
-.instrument span {
-  margin: 0 0.35em;
-  color: var(--faint);
-}
-
-.fine {
-  color: var(--dim);
-  font-size: 0.86rem;
-  line-height: 1.55;
-}
-
-.fine strong {
   color: var(--ink);
-  font-weight: 700;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
-/* Hero: the dappled light is a veil, held dark under the text. */
-
-.stake-hero {
-  position: relative;
-  margin: 0 0 3rem;
-  padding: clamp(3rem, 7vw, 5.5rem) 0 2.6rem;
-  overflow: hidden;
-  isolation: isolate;
+.access code,
+.access pre,
+.access textarea,
+.access output {
+  font-family: var(--mono);
 }
 
-/* Sun through leaves: a few soft patches of leaf green and gold, drifting on the compositor.
-   Still under reduced motion. This is the page's one ambient object. */
-.shade-light {
-  position: absolute;
-  z-index: -1;
-  inset: -20% -10% -20% 20%;
-  pointer-events: none;
-  opacity: 0.85;
-  background:
-    radial-gradient(ellipse 14% 22% at 72% 38%, rgba(226, 190, 103, 0.34), transparent 70%),
-    radial-gradient(ellipse 22% 30% at 58% 62%, rgba(130, 200, 155, 0.22), transparent 70%),
-    radial-gradient(ellipse 18% 26% at 86% 66%, rgba(147, 164, 134, 0.26), transparent 70%),
-    radial-gradient(ellipse 10% 16% at 80% 22%, rgba(226, 190, 103, 0.22), transparent 70%),
-    radial-gradient(ellipse 26% 34% at 66% 30%, rgba(83, 107, 84, 0.3), transparent 70%);
-  filter: blur(26px);
-  mask-image: radial-gradient(ellipse 60% 70% at 70% 45%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0) 100%);
-  -webkit-mask-image: radial-gradient(ellipse 60% 70% at 70% 45%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 0.5) 50%, rgba(0, 0, 0, 0) 100%);
-  animation: shade-drift 46s ease-in-out infinite alternate;
-  will-change: transform;
+.access p code {
+  font-size: 0.9em;
+  color: var(--ink);
 }
 
-@keyframes shade-drift {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  to { transform: translate3d(-3%, 2.5%, 0) scale(1.06); }
+.access [hidden] {
+  display: none !important;
 }
 
-.stake-hero-copy {
-  position: relative;
-  max-width: 44rem;
+.access a:not(.solid-action, .line-action, [data-step-link]) {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--hair-strong);
+  text-underline-offset: 0.2em;
 }
 
-.stake-hero h1 {
-  margin: 0 0 1.2rem;
-  font-size: clamp(1.8rem, 3.6vw, 2.9rem);
-  font-weight: 700;
-  line-height: 1.12;
-  letter-spacing: -0.02em;
+.access a:not(.solid-action, .line-action, [data-step-link]):hover {
+  text-decoration-color: var(--ink);
 }
 
-.stake-hero .lede {
-  max-width: 40rem;
-  margin: 0;
-  color: var(--dim);
-  font-size: 0.98rem;
-  line-height: 1.65;
-}
+/* Title row */
 
-.live-row {
-  margin: 2rem 0 0;
-  padding: 1rem 0 0;
+.access-head {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.8rem 2.6rem;
-  border-top: 1px solid var(--hair);
-}
-
-.live-row div {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.live-row dd {
-  margin: 0;
-  font-size: 1.15rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.live-row dd.signal {
-  color: var(--signal);
-}
-
-.set-note {
-  max-width: 40rem;
-  margin: 1rem 0 0;
-  color: var(--dim);
-  font-size: 0.86rem;
-}
-
-/* Who learns what: a list with hairlines, not a box. */
-
-.who-learns {
-  max-width: 44rem;
-  margin: 0 0 3rem;
-}
-
-.who-learns h2,
-.step h2,
-.sponsor-panel h2,
-.handoff-section h2,
-.stake-lifecycle h2,
-.stake-faq h2,
-.stake-boundary h2 {
-  margin: 0 0 0.8rem;
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.ledger {
-  margin: 0;
-}
-
-.ledger div {
-  display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
+  align-items: baseline;
+  justify-content: space-between;
   gap: 1rem;
-  padding: 0.6rem 0;
-  border-top: 1px solid var(--hair);
+  padding: 2.4rem 0 1.5rem;
 }
 
-.ledger div:last-child {
-  border-bottom: 1px solid var(--hair);
+.access-head h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(1.7rem, 3.2vw, 2.7rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.035em;
 }
 
-.ledger dt {
-  color: var(--ink);
-}
-
-.ledger dd {
+.access-net {
   margin: 0;
   color: var(--dim);
+  font-family: var(--mono);
+  font-size: 0.8rem;
 }
 
-/* Role switch: two words, an underline on the active one. */
+/* Stepper: three segments under the title. The current one is bright, a finished one green. */
 
-.role-switch {
+.stepper ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepper a {
   display: flex;
-  gap: 1.6rem;
-  margin: 0 0 2rem;
-  border-bottom: 1px solid var(--hair);
-}
-
-.role-switch button {
+  gap: 0.6rem;
+  align-items: center;
   min-height: var(--tap);
-  padding: 0.6rem 0;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  background: transparent;
+  border-top: 2px solid var(--hair);
   color: var(--dim);
-  font: inherit;
-  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  text-decoration: none;
   transition: color 160ms var(--ease), border-color 160ms var(--ease);
 }
 
-.role-switch button[aria-pressed="true"] {
+.stepper a:hover {
   color: var(--ink);
-  border-bottom-color: var(--signal);
 }
 
-/* The flow: a rail on the left that says where you are, the steps on the right. */
+.stepper a[aria-current="step"] {
+  border-top-color: var(--ink);
+  color: var(--ink);
+}
 
-.flow {
+.stepper a[data-done] {
+  border-top-color: var(--ok);
+}
+
+.stepper .step-n {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Panels: with scripting, only the current one shows. Without it, all four read in order.
+   Each step sits on the stepper's three columns: what to do under the first two, what to know
+   under the third. */
+
+.panels {
+  flex: 1 0 auto;
+}
+
+.panel {
+  padding: 1.5rem 0 1.2rem;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+@media (scripting: enabled) {
+  .panel:not([data-current]) {
+    display: none;
+  }
+}
+
+/* Without scripting the page is a document: the steps in order, the commands to run, and no
+   control that cannot work. */
+@media (scripting: none) {
+  .panel + .panel {
+    margin-top: 1.5rem;
+    border-top: 1px solid var(--hair);
+  }
+
+  .access .needs-script,
+  .tabs [role="tablist"] {
+    display: none !important;
+  }
+
+  .tabs [role="tabpanel"] + [role="tabpanel"] {
+    margin-top: 1.6rem;
+  }
+}
+
+@media (scripting: enabled) {
+  .tab-title {
+    display: none;
+  }
+}
+
+.tab-title {
+  margin: 0 0 0.7rem;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+
+.panel-split {
   display: grid;
-  grid-template-columns: 11rem minmax(0, 1fr);
-  gap: 0 3rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 0.75rem;
   align-items: start;
 }
 
-.rail {
-  position: sticky;
-  top: 1.5rem;
-  margin: 0;
-  padding: 0.2rem 0 0;
-  list-style: none;
+.split-main {
+  grid-column: 1 / span 2;
+  min-width: 0;
+  padding-right: 3.5rem;
+}
+
+.split-notes {
   display: grid;
-  gap: 0.55rem;
-}
-
-.rail li {
-  display: flex;
-  gap: 0.7rem;
-  align-items: baseline;
-  padding-left: 0.85rem;
-  border-left: 2px solid var(--hair);
-  color: var(--faint);
-  transition: color 220ms var(--ease), border-color 220ms var(--ease);
-}
-
-.rail li span {
-  font-variant-numeric: tabular-nums;
-}
-
-.rail li[data-state="current"] {
-  color: var(--ink);
-  border-left-color: var(--signal);
-}
-
-.rail li[data-state="done"] {
-  color: var(--dim);
-  border-left-color: var(--ok);
-}
-
-.flow-body {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  gap: 1rem;
   min-width: 0;
 }
 
-.stake-trail {
-  display: grid;
-  gap: 0;
+.split-notes[hidden] {
+  display: none;
 }
 
-.step,
-.sponsor-panel,
-.handoff-section,
-.stake-lifecycle,
-.stake-faq,
-.stake-boundary {
-  padding: 2rem 0 2.2rem;
-  border-top: 1px solid var(--hair);
+.split-act {
+  margin-top: 1.4rem;
 }
 
-.step-index {
-  margin: 0 0 0.6rem;
-  color: var(--signal);
-  font-variant-numeric: tabular-nums;
+.lead {
+  margin: 0 0 1.1rem;
 }
 
-.step > p,
-.sponsor-panel > p,
-.handoff-section > p,
-.stake-lifecycle > p,
-.stake-faq p,
-.stake-boundary p {
-  max-width: 44rem;
-  margin: 0 0 1rem;
+.note,
+.hint,
+.quiet p,
+.runs p,
+[role="tabpanel"] > p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.hint,
+.quiet p,
+.runs p,
+[role="tabpanel"] > p {
   color: var(--dim);
 }
 
-/* Tiers: rows with hairlines; the chosen one lights its name. */
-
-.tier-pick {
-  margin: 1.2rem 0;
-  padding: 0;
-  border: 0;
-  display: grid;
+.note[data-kind="good"],
+.admitted {
+  color: var(--ok);
 }
 
-.tier-pick legend {
-  margin-bottom: 0.4rem;
+.caution {
+  margin: 0;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--no);
+  font-size: 0.95rem;
 }
 
-.tier-row {
+/* A command on a plate. Preformatted, so nothing breaks inside a flag; a line wider than the
+   plate scrolls sideways in place and fades at the edge it continues past. */
+
+.cmd-label {
+  display: block;
+  margin: 0 0 0.35rem;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.cmd {
   display: grid;
-  grid-template-columns: auto 6rem 7rem minmax(0, 1fr);
-  gap: 1rem;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 0 0 1rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--plate);
+}
+
+.cmd pre {
+  margin: 0;
+  padding: 0.72rem 0.9rem;
+  overflow-x: auto;
+  color: var(--ink);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair-strong) transparent;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.2rem), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 2.2rem), transparent);
+}
+
+/* With scripting the fade shows only while there is more to the right. */
+html[data-access="ready"] .cmd pre:not([data-more]) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.cmd .cont {
+  white-space: pre;
+}
+
+.cmd pre:focus-visible {
+  outline-offset: -2px;
+}
+
+.cmd pre code::before {
+  content: "$ ";
+  color: var(--dim);
+}
+
+.cmd button {
+  min-width: 4rem;
   min-height: var(--tap);
-  padding: 0.55rem 0.2rem;
-  border-top: 1px solid var(--hair);
+  padding: 0 0.8rem;
+  border: 0;
+  border-left: 1px solid var(--hair);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.78rem;
   cursor: pointer;
 }
 
-.tier-row:last-child {
-  border-bottom: 1px solid var(--hair);
+.cmd button:hover {
+  background: rgba(227, 233, 221, 0.06);
 }
 
-.tier-row input {
-  width: 1rem;
-  height: 1rem;
+.cmd button:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The one field */
+
+.access textarea {
+  display: block;
+  width: 100%;
+  min-height: 3.9rem;
   margin: 0;
-  accent-color: var(--signal);
-}
-
-.tier-name {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--hair-strong);
+  border-radius: var(--radius);
+  background: var(--plate);
   color: var(--ink);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  resize: none;
 }
 
-.tier-bond {
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
+.access textarea:focus-visible {
+  outline-offset: 2px;
 }
 
-.tier-buys {
-  color: var(--dim);
-  font-size: 0.9rem;
+.access textarea[aria-invalid="true"] {
+  border-color: var(--no);
 }
 
-.tier-row:has(input:checked) .tier-name {
-  color: var(--signal);
+.field-message {
+  min-height: 1.5em;
+  margin: 0.45rem 0 0;
+  font-size: 0.95rem;
 }
 
-.tier-row:has(input:disabled) {
-  cursor: default;
-  opacity: 0.6;
+.field-message[data-kind="good"] {
+  color: var(--ok);
 }
 
-/* Buttons: one solid per step, the rest hairline. 44px tall. */
+.field-message[data-kind="bad"] {
+  color: var(--no);
+}
 
-.button-row {
-  margin: 1.2rem 0 0;
+/* Buttons: one solid per screen, the rest hairline. 44px tall. */
+
+.button-row,
+.panel-nav {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
 }
 
-.stake-page button.solid-action,
-.stake-page button.line-action,
-.stake-page a.line-action {
+.panel-nav {
+  align-items: center;
+  margin: 1.6rem 0 0;
+}
+
+.more-link {
+  display: inline-flex;
+  align-items: center;
   min-height: var(--tap);
-  padding: 0.6rem 1rem;
+  margin-left: auto;
+  font-size: 0.9rem;
+}
+
+.access .solid-action,
+.access .line-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 6.5rem;
+  min-height: var(--tap);
+  padding: 0.55rem 1.1rem;
   border-radius: var(--radius);
-  font: inherit;
-  font-size: 0.92rem;
+  font-family: var(--mono);
+  font-size: 0.88rem;
   text-decoration: none;
   cursor: pointer;
-  transition: background-color 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease), transform 140ms var(--ease);
+  transition: background-color 140ms var(--ease), border-color 140ms var(--ease), transform 140ms var(--ease);
 }
 
-.stake-page button.solid-action {
+.access .solid-action {
   border: 1px solid var(--signal);
   background: var(--signal);
   color: var(--understory);
   font-weight: 700;
 }
 
-.stake-page button.solid-action:not(:disabled):active {
+.access .solid-action:not(:disabled):active {
   transform: translateY(1px);
 }
 
-.stake-page button.line-action,
-.stake-page a.line-action {
+.access .line-action {
   border: 1px solid var(--hair-strong);
   background: transparent;
   color: var(--ink);
 }
 
-.stake-page button.line-action:not(:disabled):hover,
-.stake-page a.line-action:hover {
+.access .line-action:not(:disabled):hover {
   border-color: var(--ink);
 }
 
-.stake-page button.line-action.small {
-  min-height: 2rem;
-  padding: 0.25rem 0.7rem;
-  font-size: 0.8rem;
+.access button:disabled {
+  cursor: progress;
+  opacity: 0.5;
 }
 
-.stake-page button:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
-
-/* The commitment: a plate with the value, ready state in the signal colour. */
-
-.leaf-tag {
-  margin: 1.2rem 0 0;
-  padding: 0.9rem 1rem;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.4rem 1rem;
-  align-items: start;
-  border: 1px solid var(--hair);
-  border-radius: var(--radius);
-  background: var(--plate);
-}
-
-.leaf-tag .label {
-  grid-column: 1 / -1;
-}
-
-.leaf-tag[data-ready="true"] .label {
-  color: var(--signal);
-}
-
-.leaf-tag output {
-  display: block;
-  overflow-wrap: anywhere;
-  color: var(--dim);
-  font-size: 0.82rem;
-  line-height: 1.55;
-}
-
-.leaf-tag[data-ready="true"] output {
-  color: var(--ink);
-}
-
-.checklist {
-  max-width: 40rem;
-  margin: 1rem 0 0;
-  padding-left: 1.1rem;
-  color: var(--dim);
-  font-size: 0.9rem;
-}
-
-.checklist li + li {
-  margin-top: 0.3rem;
-}
-
-.recovery-check {
-  margin-top: 1.2rem;
-  display: flex;
-  gap: 0.65rem;
-  align-items: flex-start;
+.text-action {
   min-height: var(--tap);
+  margin: -0.8rem 0 -0.8rem 0.4rem;
+  padding: 0 0.4rem;
+  border: 0;
+  background: transparent;
   color: var(--ink);
-  font-size: 0.92rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-decoration-color: var(--hair-strong);
+  text-underline-offset: 0.2em;
   cursor: pointer;
 }
 
-.recovery-check input {
-  width: 1.1rem;
-  height: 1.1rem;
-  flex: 0 0 auto;
-  margin-top: 0.15rem;
-  accent-color: var(--signal);
+/* Stake: the facts as rows, then the one action. */
+
+.facts {
+  margin: 0;
 }
 
-.contract-line {
-  margin: 0 0 0.4rem;
-  font-size: 0.86rem;
-}
-
-.contract-line .label {
-  margin-right: 0.6rem;
-}
-
-.wallet-state {
-  margin: 0.8rem 0 0;
-  color: var(--dim);
-  font-size: 0.86rem;
-}
-
-.wallet-state[data-kind="good"] {
-  color: var(--ok);
-}
-
-.wallet-state[data-kind="warn"] {
-  color: var(--signal);
-}
-
-.funding {
-  max-width: 44rem;
-  margin: 1.4rem 0 0;
+.facts > div {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 0.7rem 0;
   border-top: 1px solid var(--hair);
+}
+
+.facts > div[hidden] {
+  display: none;
+}
+
+.facts > div:last-child,
+.facts > div:has(+ div[hidden]:last-child) {
   border-bottom: 1px solid var(--hair);
 }
 
-.funding summary,
-.stake-faq summary {
-  min-height: var(--tap);
+.facts dt {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.75;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.facts output,
+.facts [data-wallet] {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.facts [data-balance] {
+  color: var(--dim);
+  font-size: 0.95rem;
+}
+
+.tier-pick {
   display: flex;
-  gap: 0.7rem;
+  gap: 1.6rem;
+  margin: -0.7rem 0 0;
+}
+
+.tier-pick label {
+  display: inline-flex;
+  gap: 0.55rem;
   align-items: center;
-  list-style: none;
+  min-height: var(--tap);
+  font-family: var(--mono);
+  font-size: 0.88rem;
   cursor: pointer;
-  color: var(--ink);
 }
 
-.funding summary::-webkit-details-marker,
-.stake-faq summary::-webkit-details-marker {
-  display: none;
-}
-
-.funding summary::before,
-.stake-faq summary::before {
-  content: "+";
+.tier-pick input {
   width: 1rem;
-  flex: 0 0 auto;
-  color: var(--signal);
-  text-align: center;
-}
-
-.funding[open] summary::before,
-.stake-faq details[open] summary::before {
-  content: "\2212";
-}
-
-.funding p,
-.funding li {
-  color: var(--dim);
-  font-size: 0.9rem;
-}
-
-.funding ul {
-  margin: 0 0 1rem;
-  padding-left: 1.1rem;
-}
-
-/* Sponsor */
-
-.sponsor-panel textarea {
-  width: 100%;
-  margin: 0.3rem 0 0.4rem;
-  padding: 0.8rem;
-  border: 1px solid var(--hair-strong);
-  border-radius: var(--radius);
-  background: var(--plate);
-  color: var(--ink);
-  font: 0.86rem/1.5 var(--mono);
-  resize: vertical;
-}
-
-.sponsor-panel[hidden],
-.stake-trail[hidden] {
-  display: none;
-}
-
-/* Feedback: the status line is the page's voice. */
-
-.stake-feedback {
+  height: 1rem;
   margin: 0;
-  padding: 1.2rem 0 1.6rem;
-  border-top: 1px solid var(--hair);
+  accent-color: var(--ink);
 }
 
-.stake-feedback p {
-  max-width: 44rem;
-  margin: 0;
+.tier-pick label:has(input:disabled) {
+  cursor: default;
+}
+
+.status,
+.alert,
+.admitted,
+.finality p {
+  margin: 0.8rem 0 0;
+  font-size: 0.95rem;
+}
+
+.status {
   color: var(--dim);
 }
 
-.stake-feedback p + p,
-.stake-feedback p + .finality {
-  margin-top: 0.5rem;
-}
-
-.stake-feedback [data-kind="good"],
-.stake-feedback [data-member-state][data-state="active"] {
+.status[data-kind="good"] {
   color: var(--ok);
 }
 
-.stake-feedback [data-alert] {
-  color: var(--no);
-}
-
-.stake-feedback [data-alert]:empty {
+.status:empty,
+.alert:empty {
   display: none;
 }
 
-.stake-feedback [data-member-state] {
-  margin-top: 0.8rem;
+.alert {
+  color: var(--no);
 }
 
 .finality {
-  max-width: 44rem;
+  max-width: 34rem;
   margin: 1rem 0 0;
-  padding: 1rem;
-  border: 1px solid var(--hair);
-  border-radius: var(--radius);
-  background: var(--panel);
-}
-
-.finality .label {
-  margin: 0 0 0.5rem;
-  color: var(--signal);
 }
 
 .finality-bar {
   height: 3px;
-  margin: 0.8rem 0;
   border-radius: 2px;
   background: var(--hair);
   overflow: hidden;
@@ -668,231 +554,347 @@
   display: block;
   width: 0;
   height: 100%;
-  background: var(--signal);
+  background: var(--ink);
   transition: width 600ms var(--ease);
 }
 
-.finality .fine {
-  margin: 0;
+.quiet {
+  margin: 1.5rem 0 0;
 }
 
-/* Hand-off: tabs with an underline, code on the plate with a copy button. */
-
-.handoff-section[data-ready="true"] .step-index {
-  color: var(--ok);
+/* Once a wallet is connected the terminal alternative has done its job. */
+[data-access="ready"] [data-stage="ready"] [data-terminal] {
+  display: none;
 }
 
-.handoff-tabs [role="tablist"] {
+.quiet p {
+  margin-bottom: 0.45rem;
+}
+
+.quiet .cmd {
+  margin-bottom: 0;
+}
+
+/* Start: two tabs, each a short run of commands. */
+
+.tabs [role="tablist"] {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 1.4rem;
-  margin: 0.4rem 0 1.2rem;
+  gap: 1.6rem;
+  margin: 0 0 1.1rem;
   border-bottom: 1px solid var(--hair);
 }
 
-.handoff-tabs [role="tab"] {
+.tabs [role="tab"] {
+  min-width: 3.5rem;
   min-height: var(--tap);
-  padding: 0.5rem 0;
+  margin-bottom: -1px;
+  padding: 0;
   border: 0;
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
   background: transparent;
   color: var(--dim);
-  font: inherit;
-  font-size: 0.92rem;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  text-align: left;
   cursor: pointer;
 }
 
-.handoff-tabs [role="tab"][aria-selected="true"] {
+.tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--ink);
   color: var(--ink);
-  border-bottom-color: var(--signal);
 }
 
-.handoff-tabs [role="tabpanel"] p {
-  max-width: 44rem;
-  margin: 0 0 1rem;
-  color: var(--dim);
+.tabs [role="tabpanel"][hidden] {
+  display: none;
 }
 
-.code-block {
-  position: relative;
-  max-width: 44rem;
-  margin: 0 0 1rem;
-}
-
-.code-block pre {
+.runs {
   margin: 0;
-  padding: 1rem 4.2rem 1rem 1rem;
-  overflow-x: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.runs li + li {
+  margin-top: 0.95rem;
+}
+
+.runs .cmd,
+[role="tabpanel"] > .cmd {
+  margin-bottom: 0.35rem;
+}
+
+.brief {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: start;
+  margin: 0 0 1.1rem;
+}
+
+.brief-text {
+  width: 100%;
+  max-height: 9.2rem;
+  margin: 0;
+  padding: 0.72rem 0.9rem;
+  overflow-y: auto;
   border: 1px solid var(--hair);
   border-radius: var(--radius);
   background: var(--plate);
   color: var(--ink);
-  font-size: 0.8rem;
-  line-height: 1.65;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair-strong) transparent;
 }
 
-.code-block [data-file-name] {
-  color: var(--signal);
+/* Leave and details: one section open at a time. */
+
+.more h2 {
+  margin: 0 0 1rem;
+  font-family: var(--display);
+  font-size: 1.45rem;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
-.code-block .copy-block {
-  position: absolute;
-  top: 0.55rem;
-  right: 0.55rem;
-  min-height: 1.9rem;
-  padding: 0.2rem 0.6rem;
-  border: 1px solid var(--hair-strong);
-  border-radius: 4px;
-  background: var(--plate);
-  color: var(--dim);
-  font: inherit;
-  font-size: 0.74rem;
-  cursor: pointer;
+.more h2:focus-visible {
+  outline: none;
 }
 
-.code-block .copy-block:hover {
-  color: var(--ink);
-  border-color: var(--ink);
+.more details {
+  border-top: 1px solid var(--hair);
 }
 
-/* Leave */
-
-.leave-steps {
-  max-width: 44rem;
-  margin: 0 0 1.2rem;
-  padding-left: 1.2rem;
-  color: var(--dim);
-}
-
-.leave-steps li + li {
-  margin-top: 0.3rem;
-}
-
-.leave-actions {
-  display: grid;
-  gap: 0.6rem;
-  max-width: 28rem;
-  margin: 0 0 1.2rem;
-}
-
-.leave-actions input {
-  min-height: var(--tap);
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--hair-strong);
-  border-radius: var(--radius);
-  background: var(--plate);
-  color: var(--ink);
-  font: 0.86rem var(--mono);
-}
-
-/* FAQ */
-
-.stake-faq details {
-  max-width: 44rem;
+.more details:last-child {
   border-bottom: 1px solid var(--hair);
 }
 
-.stake-faq details p {
-  margin: 0 0 1rem;
-  font-size: 0.92rem;
+.more summary {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  min-height: var(--tap);
+  list-style: none;
+  cursor: pointer;
 }
 
-.stake-boundary p {
-  max-width: 52rem;
+.more summary::-webkit-details-marker {
+  display: none;
 }
 
-/* Layout at phone width: the rail runs across the top of the flow. */
+.more summary::before {
+  flex: 0 0 auto;
+  width: 0.8rem;
+  color: var(--dim);
+  font-family: var(--mono);
+  content: "+";
+}
+
+.more details[open] summary::before {
+  content: "\2212";
+}
+
+.more details > p,
+.more details > ul,
+.more details > dl {
+  margin: 0 0 0.8rem;
+  color: var(--dim);
+  font-size: 0.93rem;
+}
+
+.more details > ul {
+  padding-left: 1.1rem;
+}
+
+.more details > .cmd {
+  margin-bottom: 0.8rem;
+}
+
+.ledger > div {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 0.4rem 0;
+}
+
+.ledger dt {
+  color: var(--ink);
+}
+
+.ledger dd {
+  margin: 0;
+}
+
+/* Narrow screens: one column, tighter rhythm, every step still inside the viewport. The stake
+   step shows what the moment needs: the preview statement arrives with the stake button, and the
+   terminal alternative leaves once a wallet is connected. */
 
 @media (max-width: 900px) {
-  .flow {
+  .panel-split {
     grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.9rem;
   }
 
-  .rail {
-    position: static;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 0.4rem;
-    margin: 0 0 1rem;
-    padding: 0;
+  .split-main,
+  .split-notes {
+    grid-column: 1;
+    grid-row: auto;
+    padding-right: 0;
   }
 
-  .rail li {
-    display: grid;
-    gap: 0.2rem;
-    padding: 0.5rem 0 0;
-    border-left: 0;
-    border-top: 2px solid var(--hair);
-    font-size: 10px;
-    letter-spacing: 0.06em;
+  .split-notes {
+    gap: 0.6rem;
   }
 
-  .rail li[data-state="current"] {
-    border-top-color: var(--signal);
+  .split-act {
+    margin-top: 0;
   }
 
-  .rail li[data-state="done"] {
-    border-top-color: var(--ok);
+  [data-access="ready"] [data-stage="idle"] [data-preview-statement],
+  [data-access="ready"] [data-stage="ready"] [data-privacy-note] {
+    display: none;
   }
-
-  .ledger div {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.2rem;
-  }
-
-  .tier-row {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas: "input name" "input bond" "input buys";
-    gap: 0.15rem 0.9rem;
-  }
-
-  .tier-row input { grid-area: input; }
-  .tier-name { grid-area: name; }
-  .tier-bond { grid-area: bond; }
-  .tier-buys { grid-area: buys; }
 }
 
 @media (max-width: 600px) {
-  .stake-main {
-    width: min(100% - 2rem, 66rem);
+  .access {
+    font-size: 14.5px;
+    line-height: 1.42;
   }
 
-  .stake-hero {
-    padding-top: 2.2rem;
+  .note,
+  .hint,
+  .caution,
+  .quiet p,
+  .runs p,
+  [role="tabpanel"] > p,
+  .field-message,
+  .status,
+  .alert,
+  .admitted,
+  .finality p,
+  .more details > p,
+  .more details > ul,
+  .more details > dl {
+    font-size: 0.9rem;
+    line-height: 1.42;
   }
 
-  .stake-hero h1 {
-    font-size: 1.6rem;
+  .access-head {
+    padding: 0.6rem 0 0.5rem;
   }
 
-  .button-row {
-    display: grid;
+  .access-head h1 {
+    font-size: 1.4rem;
   }
 
-  .button-row button {
-    width: 100%;
+  .access-net {
+    font-size: 0.72rem;
   }
 
-  .leaf-tag {
-    grid-template-columns: minmax(0, 1fr);
+  .stepper ol {
+    gap: 0.5rem;
   }
 
-  .leaf-tag .small {
-    width: fit-content;
+  .panel {
+    padding: 0.65rem 0 0.4rem;
   }
 
-  .code-block pre {
-    padding-right: 1rem;
-    padding-top: 2.6rem;
+  .panel-split {
+    row-gap: 0.7rem;
+  }
+
+  .lead {
+    margin-bottom: 0.55rem;
+  }
+
+  .cmd {
+    margin-bottom: 0.55rem;
+  }
+
+  .cmd pre {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.76rem;
+  }
+
+  .cmd .cont {
+    display: none;
+  }
+
+  .cmd button {
+    min-width: 3.4rem;
+    padding: 0 0.6rem;
+  }
+
+  .facts > div {
+    grid-template-columns: 4.7rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.55rem 0;
+  }
+
+  .facts dt {
+    font-size: 0.76rem;
+    line-height: 1.45;
+  }
+
+  .tier-pick {
+    margin: -0.7rem 0 -0.6rem;
+  }
+
+  .tier-pick:not([hidden]) + .hint {
+    display: none;
+  }
+
+  .more summary {
+    min-height: 2.75rem;
+  }
+
+  .panel-nav {
+    margin-top: 0.75rem;
+  }
+
+  .access .solid-action,
+  .access .line-action {
+    min-width: 5.5rem;
+  }
+
+  .quiet {
+    margin-top: 1rem;
+  }
+
+  .brief-text {
+    max-height: 12.5rem;
+  }
+
+  .more h2 {
+    margin-bottom: 0.6rem;
+    font-size: 1.25rem;
+  }
+
+  .more details > p,
+  .more details > ul,
+  .more details > dl,
+  .more details > .cmd {
+    margin-bottom: 0.6rem;
+  }
+
+  .ledger > div {
+    display: block;
+    padding: 0.2rem 0;
+  }
+
+  .ledger dt,
+  .ledger dd {
+    display: inline;
+  }
+
+  .ledger dt::after {
+    content: ":";
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stake-page * {
+  .access * {
     transition: none !important;
-  }
-
-  .shade-light {
-    animation: none;
   }
 }

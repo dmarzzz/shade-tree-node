@@ -1,12 +1,13 @@
-// M7 launch-gate line "stake from the browser", run for real against a Sepolia record:
-// builds the Get access page from network/<name>/deployment.json, serves it locally, drives it
-// in headless Chromium with a wallet backed by a funded key (the page sees a normal EIP-1193
-// provider; signing happens here, in Node), saves the identity the page created, waits for the
-// page's own finality countdown, then proves the seat works end to end with the Rust CLI:
-// `shadenet fetch` through the canopy using the downloaded identity file.
+// M7 launch-gate line "stake from the browser", run for real against a Sepolia record, the way a
+// member does it: `shadenet init` makes the identity on this machine, the Get access page takes
+// only the public identity commitment (through the link fragment that a release's `init` prints,
+// or the value this script reads from the identity file, never in the browser), a wallet backed by
+// a funded key stakes it in headless Chromium (the page sees a normal EIP-1193 provider; signing
+// happens here, in Node), the page's own finality countdown runs to "admitted", and the seat is
+// proven end to end with the Rust CLI: `shadenet fetch` through the canopy with that identity.
 //
-//   node scripts/rehearsal/browser-stake.mjs --network sepolia-staging --key-file funded.key \
-//        --shadenet /path/to/shadenet [--out DIR] [--tier 1] [--fetch-url https://api.ipify.org?format=json]
+//   node scripts/rehearsal/browser-stake.mjs --network sepolia --key-file funded.key \
+//        --shadenet /path/to/shadenet [--out DIR] [--tier 8] [--fetch-url https://api.ipify.org?format=json]
 //
 // Testnet only. The key file holds a Sepolia private key (hex, with or without 0x), owner-only.
 import { chromium } from "@playwright/test";
@@ -15,11 +16,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { identityCommitmentOf, leafFromIdentityCommitment } from "../../packages/node/lib/identity-core.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const args = parse(process.argv.slice(2));
-const network = args.network || "sepolia-staging";
-const record = JSON.parse(readFileSync(join(ROOT, "network", network, "deployment.json"), "utf8"));
+const network = args.network || "sepolia";
+const recordPath = join(ROOT, "network", network, "deployment.json");
+const record = JSON.parse(readFileSync(recordPath, "utf8"));
 const staked = record.admission.roots.staked;
 const rpcUrl = args["rpc-url"] || staked.rpcUrl;
 const tier = Number(args.tier || staked.defaultLimit || 1);
@@ -28,6 +31,7 @@ const shadenetBin = args.shadenet || "shadenet";
 const fetchUrl = args["fetch-url"] || "https://api.ipify.org?format=json";
 const port = Number(args.port || 4189);
 if (!args["key-file"]) die("--key-file is required (a funded Sepolia key; testnet only)");
+if (!staked.tiers.some((t) => Number(t.limit) === tier)) die(`tier ${tier} is not in the ${network} record`);
 mkdirSync(out, { recursive: true });
 
 const report = { network, contract: staked.contract, rpcUrl, tier, startedAt: new Date().toISOString(), steps: [] };
@@ -44,15 +48,30 @@ const built = spawnSync(process.execPath, [join(ROOT, "scripts/build-stake-site.
 if (built.status !== 0) die(`site build failed:\n${built.stdout}${built.stderr}`);
 step("build", { network, siteOut, output: built.stdout.trim() });
 
-// 2. Serve it.
+// 2. The identity, made by the CLI on this machine. The secret stays in the file; the page gets
+// the identity commitment. A release whose `init` prints the Get access link prints exactly this.
+const shadenetDir = join(out, "shadenet");
+const init = spawnSync(shadenetBin, ["--network", recordPath, "init", "--dir", shadenetDir, "--limit", String(tier), "--offline", "--json"], { encoding: "utf8" });
+if (init.status !== 0) die(`shadenet init failed (${init.status}):\n${init.stdout}${init.stderr}`);
+const identityPath = join(shadenetDir, "identity.json");
+const identity = JSON.parse(readFileSync(identityPath, "utf8"));
+if (!/^\d{70,80}$/.test(String(identity.leaf)) || !identity.identitySecret) die("shadenet init wrote no usable identity file");
+const printed = JSON.parse(init.stdout);
+const commitment = printed.identityCommitment ? String(printed.identityCommitment) : identityCommitmentOf(identity.identitySecret).toString();
+const leaf = leafFromIdentityCommitment(commitment, tier).toString();
+if (leaf !== String(identity.leaf)) die(`the identity file's leaf is not Poseidon2(identityCommitment, ${tier}); the file was made for another tier`);
+step("identity", { file: identityPath, identityCommitment: commitment, leaf, limit: identity.limit, commitmentPrintedByInit: Boolean(printed.identityCommitment) });
+
+// 3. Serve the page.
 const server = spawn(process.execPath, [join(ROOT, "scripts/serve-site.mjs")], {
   cwd: ROOT, env: { ...process.env, SITE_ROOT: join(siteOut, "docs", "post"), PORT: String(port) }, stdio: ["ignore", "pipe", "pipe"],
 });
 server.stderr.on("data", (d) => process.stderr.write(`[serve] ${d}`));
 await waitFor(async () => (await fetch(`http://127.0.0.1:${port}/stake/`)).ok, 15_000, "site server");
-step("serve", { url: `http://127.0.0.1:${port}/stake/` });
+const link = `http://127.0.0.1:${port}/stake/#c=${commitment}&limit=${tier}&leaf=${leaf}`;
+step("serve", { url: `http://127.0.0.1:${port}/stake/`, link });
 
-// 3. A real wallet: the page talks EIP-1193, Node signs with the funded key and forwards reads to the RPC.
+// 4. A real wallet: the page talks EIP-1193, Node signs with the funded key and forwards reads to the RPC.
 const provider = new JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true, cacheTimeout: -1 });
 const key = readFileSync(args["key-file"], "utf8").trim().replace(/^0x/, "");
 const wallet = new Wallet(`0x${key}`, provider);
@@ -79,7 +98,7 @@ async function walletRpc(method, params) {
 }
 
 const browser = await chromium.launch();
-const context = await browser.newContext({ acceptDownloads: true });
+const context = await browser.newContext();
 const page = await context.newPage();
 page.on("pageerror", (e) => console.error("[page error]", e.message));
 await page.exposeFunction("__shadenetWalletRpc", (method, params) => walletRpc(method, params ?? []));
@@ -95,53 +114,32 @@ await page.addInitScript(() => {
 
 let ok = false;
 try {
-  await page.goto(`http://127.0.0.1:${port}/stake/`, { waitUntil: "networkidle" });
-  step("open", { title: await page.title(), heading: (await page.locator("h1").first().textContent())?.trim() });
+  // The link opens step 2 with the commitment filled in and checked against its leaf.
+  await page.goto(link, { waitUntil: "networkidle" });
+  await page.locator('[data-panel="stake"]:not([hidden])').waitFor({ timeout: 30_000 });
+  const shown = (await page.locator("[data-commitment-shown]").textContent()).trim();
+  if (!shown.startsWith(commitment.slice(0, 10)) || !shown.endsWith(commitment.slice(-8))) throw new Error(`the page shows another commitment: ${shown}`);
+  step("open", { title: await page.title(), shown });
 
-  // Create an identity in the tab, download it, confirm the save.
-  if (tier !== Number(staked.defaultLimit || 1)) await page.locator(`[data-tier="${tier}"], input[name=tier][value="${tier}"]`).first().click();
-  await page.getByRole("button", { name: "create identity" }).click();
-  // The page shows the public commitment a sponsor would stake (for a ShadeNet set that is the
-  // identity commitment, not the leaf); the identity file holds the leaf and the secret.
-  const shown = (await page.locator("[data-leaf]").textContent({ timeout: 30_000 })).replace(/\D/g, "");
-  if (!/^\d{70,80}$/.test(shown)) throw new Error(`no commitment on the page: ${shown}`);
-  const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "download identity file" }).click();
-  const download = await downloadPromise;
-  const identityPath = join(out, "identity.json");
-  await download.saveAs(identityPath);
-  const identity = JSON.parse(readFileSync(identityPath, "utf8"));
-  if (!/^\d{70,80}$/.test(String(identity.leaf))) throw new Error("downloaded identity has no leaf");
-  await page.locator("[data-recovery-check]").check();
-  step("identity", { shownCommitment: shown, leaf: String(identity.leaf), limit: identity.limit, file: identityPath });
-
-  // Connect the wallet and stake at the shown bond.
-  await page.getByRole("button", { name: "connect wallet" }).first().click();
-  await page.locator("[data-status]").filter({ hasText: /Wallet connected/ }).waitFor({ timeout: 60_000 });
-  const stakeButton = page.getByRole("button", { name: /^stake [\d.]+ Sepolia ETH$/ });
-  await stakeButton.waitFor({ state: "visible" });
-  const label = (await stakeButton.textContent()).trim();
-  await waitFor(async () => stakeButton.isEnabled(), 30_000, "stake button");
-  await stakeButton.click();
+  // Connect the wallet, then stake at the shown bond. One button carries both actions.
+  const primary = page.locator("[data-primary]");
+  await primary.click();
+  const stakeLabel = new RegExp(`^Stake [\\d.]+ Sepolia ETH$`);
+  await primary.filter({ hasText: stakeLabel }).waitFor({ timeout: 60_000 });
+  const label = (await primary.textContent()).trim();
+  await primary.click();
   await page.locator("[data-status]").filter({ hasText: /Stake confirmed/ }).waitFor({ timeout: 10 * 60_000 });
   const receipt = await provider.getTransactionReceipt(sent[0].hash);
   step("stake", { button: label, tx: sent[0].hash, to: sent[0].to, value: sent[0].value, block: receipt?.blockNumber, status: receipt?.status });
 
-  // The page's own finality countdown.
-  await page.locator("[data-finality]").filter({ hasText: /Finalized/ }).waitFor({ timeout: 30 * 60_000 });
-  step("finality", { text: (await page.locator("[data-finality]").textContent()).trim() });
+  // The page's own finality countdown, then its admitted check against the contract.
+  await page.locator("[data-member-state]").filter({ hasText: /Admitted/ }).waitFor({ timeout: 30 * 60_000 });
+  step("admitted", { text: (await page.locator("[data-member-state]").textContent()).trim() });
+  await page.screenshot({ path: join(out, "stake-admitted.png") });
+  await page.locator('[data-panel="stake"] [data-next-start]').click();
+  step("start", { text: (await page.locator("[data-start-state]").textContent()).trim() });
 
-  // Read status through the wallet, as a person would.
-  const statusButton = page.getByRole("button", { name: /check status through my wallet/ });
-  if (await statusButton.isEnabled()) {
-    await statusButton.click();
-    await page.locator("[data-status]").filter({ hasText: /Status read/ }).waitFor({ timeout: 60_000 });
-    step("status-through-wallet", { text: (await page.locator("[data-status]").textContent()).trim() });
-  }
-  await page.screenshot({ path: join(out, "stake-finalized.png"), fullPage: true });
-
-  // Hand-off: the same identity file works in the CLI, through the canopy, once nodes refresh the root.
-  const recordPath = join(ROOT, "network", network, "deployment.json");
+  // Hand-off: the identity the CLI made works through the canopy once nodes refresh the root.
   const member = spawnSync(shadenetBin, ["--network", recordPath, "member-status", "--identity", identityPath, "--json"], { encoding: "utf8" });
   step("member-status", { exit: member.status, out: member.stdout.trim().slice(0, 600), err: member.stderr.trim().slice(0, 300) });
   let fetched = null;

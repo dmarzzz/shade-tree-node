@@ -13,12 +13,7 @@ const MISSING_ROUTE = "/__shade_tree_missing_page__";
 const routeOf = (entry) => (entry.file === "404.html" ? MISSING_ROUTE : entry.route);
 
 // Pages whose comparison is parked, with the reason. Remove an entry when its page matches.
-const PARKED = new Map([
-  // The Get access page is being rebuilt in a separate change (the stake redo, docs/post/stake/ and
-  // site-src/stake*.mjs). Today its stylesheet sets the nav in ui-monospace at weight 700, so the
-  // wordmark is wider and every link sits at a different x. Un-park this when the redo lands.
-  ["stake/index.html", "stake redo: /stake/ still sets the nav in ui-monospace"],
-]);
+const PARKED = new Map([]);
 
 async function measure(page, entry) {
   const response = await page.goto(routeOf(entry), { waitUntil: "load" });
