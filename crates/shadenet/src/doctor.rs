@@ -116,14 +116,24 @@ pub struct RpcVerdict {
     pub error: Option<String>,
 }
 
+/// Who reads the RPC lines. A client needs a complete member log and nothing else. An operator
+/// (`shadenet doctor --rpc`, deploys and preflights) also reads receipts from the endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RpcAudience {
+    Client,
+    Operator,
+}
+
 /// Probe every RPC in the record (or the override list) for the three things the member-set
 /// replay needs: a head block, the deploy receipt, and a complete log history. Then compare the
-/// roots the good endpoints produced.
+/// roots the good endpoints produced. A complete member log with a null deploy receipt is a
+/// warning for an operator and an `ok` line with a note for a client.
 pub fn check_rpcs(
     profile: &PublicProfile,
     deploy_tx: Option<&str>,
     rpc_override: Option<&[String]>,
     rln_identifier: u64,
+    audience: RpcAudience,
 ) -> (Vec<Check>, Vec<RpcVerdict>) {
     let urls: Vec<String> = match rpc_override {
         Some(list) if !list.is_empty() => list.to_vec(),
@@ -133,7 +143,7 @@ pub fn check_rpcs(
     let mut verdicts = Vec::new();
     for url in &urls {
         let verdict = probe_rpc(url, profile, deploy_tx, rln_identifier);
-        checks.push(rpc_check(&verdict));
+        checks.push(rpc_check(&verdict, audience));
         verdicts.push(verdict);
     }
     let complete: Vec<&RpcVerdict> = verdicts
@@ -274,7 +284,7 @@ fn probe_rpc(
     verdict
 }
 
-fn rpc_check(v: &RpcVerdict) -> Check {
+fn rpc_check(v: &RpcVerdict, audience: RpcAudience) -> Check {
     let name = format!("rpc {}", crate::member::rpc_label(&v.url));
     if !v.reachable {
         return Check::fail(
@@ -288,22 +298,25 @@ fn rpc_check(v: &RpcVerdict) -> Check {
     let ms = v.latency_ms.unwrap_or_default();
     match v.members.as_str() {
         "complete" => {
-            if v.receipt == "null" {
-                Check::warn(
+            let complete = format!(
+                "{head}{ms} ms, member log complete ({} live / {} slots)",
+                v.live.unwrap_or_default(),
+                v.slots.unwrap_or_default()
+            );
+            match (v.receipt.as_str(), audience) {
+                ("null", RpcAudience::Operator) => Check::warn(
                     name,
                     format!("{head}{ms} ms, member log complete, but the deploy receipt came back null"),
                     "a pruned backend behind this pool answers some reads with nothing and no error; member-set replay was complete this time, receipts were not",
                     "fine for the client (it verifies the replay against the contract counters); for deploys and preflights put a full-history endpoint first in the record",
-                )
-            } else {
-                Check::ok(
+                ),
+                // The client verifies the replay against the contract counters and never reads
+                // a receipt: nothing for it to fix, so no warning on a fresh install.
+                ("null", RpcAudience::Client) => Check::ok(
                     name,
-                    format!(
-                        "{head}{ms} ms, member log complete ({} live / {} slots)",
-                        v.live.unwrap_or_default(),
-                        v.slots.unwrap_or_default()
-                    ),
-                )
+                    format!("{complete}; deploy receipt null, which a client does not need (`shadenet doctor --rpc` has the detail)"),
+                ),
+                _ => Check::ok(name, complete),
             }
         }
         "partial" => Check::fail(
@@ -881,7 +894,8 @@ mod tests {
             ],
             200,
         );
-        let (checks, verdicts) = check_rpcs(&profile_for(&url), Some(TX), None, 1);
+        let (checks, verdicts) =
+            check_rpcs(&profile_for(&url), Some(TX), None, 1, RpcAudience::Client);
         assert_eq!(verdicts[0].members, "partial", "{verdicts:?}");
         assert_eq!(verdicts[0].receipt, "null");
         assert_eq!(checks[0].level, Level::Fail);
@@ -902,17 +916,17 @@ mod tests {
     #[test]
     fn rate_limited_endpoint_is_a_warning() {
         let url = fake_rpc(vec![], 429);
-        let (checks, verdicts) = check_rpcs(&profile_for(&url), Some(TX), None, 1);
+        let (checks, verdicts) =
+            check_rpcs(&profile_for(&url), Some(TX), None, 1, RpcAudience::Client);
         // eth_blockNumber itself 429s here, so the endpoint reads as unreachable with the reason.
         assert!(!verdicts[0].reachable);
         assert_eq!(checks[0].level, Level::Fail);
         assert!(checks[0].detail.contains("429"), "{}", checks[0].detail);
     }
 
-    #[test]
-    fn complete_history_with_null_receipt_is_ok_with_a_note() {
+    fn null_receipt_rpc() -> String {
         let word0 = format!("0x{:064x}", 0);
-        let url = fake_rpc(
+        fake_rpc(
             vec![
                 ("eth_blockNumber", json!("0x64")),
                 ("eth_getBlockByNumber", json!({"number":"0x64"})),
@@ -921,11 +935,43 @@ mod tests {
                 ("eth_getLogs", json!([])),
             ],
             200,
+        )
+    }
+
+    #[test]
+    fn complete_history_with_null_receipt_is_ok_with_a_note_for_a_client() {
+        // A fresh install against a pool with a pruned backend: nothing for the client to fix,
+        // so the line is `ok` and carries the note; the verdict still records the null receipt.
+        let url = null_receipt_rpc();
+        let (checks, verdicts) =
+            check_rpcs(&profile_for(&url), Some(TX), None, 1, RpcAudience::Client);
+        assert_eq!(verdicts[0].members, "complete");
+        assert_eq!(verdicts[0].receipt, "null");
+        assert_eq!(checks[0].level, Level::Ok);
+        assert!(
+            checks[0]
+                .detail
+                .contains("member log complete (0 live / 0 slots); deploy receipt null"),
+            "{}",
+            checks[0].detail
         );
-        let (checks, verdicts) = check_rpcs(&profile_for(&url), Some(TX), None, 1);
+        assert!(checks[0].detail.contains("doctor --rpc"));
+        assert!(checks[0].cause.is_none() && checks[0].fix.is_none());
+        assert_eq!(checks[1].level, Level::Ok);
+        assert!(checks.iter().all(|check| check.level == Level::Ok));
+    }
+
+    #[test]
+    fn complete_history_with_null_receipt_stays_a_warning_for_an_operator() {
+        // `shadenet doctor --rpc` rates endpoints for deploys and preflights, which read receipts.
+        let url = null_receipt_rpc();
+        let (checks, verdicts) =
+            check_rpcs(&profile_for(&url), Some(TX), None, 1, RpcAudience::Operator);
         assert_eq!(verdicts[0].members, "complete");
         assert_eq!(checks[0].level, Level::Warn);
+        assert!(checks[0].detail.contains("deploy receipt came back null"));
         assert!(checks[0].cause.as_deref().unwrap().contains("pruned"));
+        assert!(checks[0].fix.as_deref().unwrap().contains("full-history"));
         assert_eq!(checks[1].level, Level::Ok);
     }
 }
