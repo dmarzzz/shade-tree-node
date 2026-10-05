@@ -328,6 +328,52 @@ fn read_owner(lock: &Path) -> Option<u32> {
         .and_then(|raw| raw.trim().parse().ok())
 }
 
+/// Clear a lock judged stale so two contenders can never both clear it and both enter the critical
+/// section.
+///
+/// `remove_dir` + `create_dir` was not a compare-and-swap: two contenders that both judged the lock
+/// stale could each remove it — the second removing the fresh lock the first had just created — and
+/// both then create their own and hold it at once, so `allocate` handed both the same
+/// (epoch, messageId), a slash. A plain `rename`-and-restore does not fix it either: a contender
+/// descheduled between reading the dead owner and acting renames whatever sits at the path now
+/// (possibly a live holder's lock), and restoring it leaves a window in which the path is empty and
+/// a third contender enters alongside the live holder.
+///
+/// Recovery is instead serialized by an exclusive claim: `create_dir(<lock>.gc)` is atomic, so only
+/// one recoverer proceeds; the losers fall back to the wait loop and then compete for the freed path
+/// via the exclusive `create_dir(lock)`. Holding the claim, the recoverer re-reads the lock and
+/// removes it only while it is STILL owned by a dead/anonymous holder. A dead-owned lock that is
+/// still present proves no live holder exists (a holder must first see the path empty, which needs
+/// this very claim), and no other recoverer can remove it meanwhile, so the recoverer never
+/// destroys a live lock. A leftover `.gc` (a recoverer that died in the few syscalls it is held)
+/// only blocks a later recovery and fails closed with `Locked`; it never slashes.
+fn take_over_stale_lock(lock: &Path) -> Result<(), Error> {
+    let mut gc = lock.as_os_str().to_os_string();
+    gc.push(".gc");
+    let gc = PathBuf::from(gc);
+    match fs::create_dir(&gc) {
+        Ok(()) => {
+            // Re-read under the exclusive claim; only clear a lock still judged stale now.
+            if let Some(age) = lock_age(lock) {
+                if lock_is_stale(read_owner(lock), age, process_alive) {
+                    tracing::warn!(
+                        lock = %lock.display(),
+                        age_secs = age.as_secs(),
+                        "recovered a stale slot-state lock left by a dead process"
+                    );
+                    let _ = fs::remove_file(lock.join(OWNER_FILE));
+                    let _ = fs::remove_dir(lock);
+                }
+            }
+            let _ = fs::remove_dir(&gc);
+            Ok(())
+        }
+        // Another recoverer holds the claim; wait and then compete via create_dir.
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(unavailable(lock, "cannot claim stale-lock recovery", error)),
+    }
+}
+
 impl Lock {
     fn acquire(path: &Path) -> Result<Self, Error> {
         let mut name = path.as_os_str().to_os_string();
@@ -347,14 +393,9 @@ impl Lock {
                     if !recovered {
                         if let Some(age) = lock_age(&lock) {
                             if lock_is_stale(read_owner(&lock), age, process_alive) {
-                                tracing::warn!(
-                                    lock = %lock.display(),
-                                    age_secs = age.as_secs(),
-                                    "removing stale slot-state lock left by a dead process"
-                                );
-                                let _ = fs::remove_file(lock.join(OWNER_FILE));
-                                let _ = fs::remove_dir(&lock);
+                                // At most one takeover attempt per acquirer, whatever its outcome.
                                 recovered = true;
+                                take_over_stale_lock(&lock)?;
                                 continue;
                             }
                         }
@@ -522,5 +563,67 @@ mod tests {
         assert_eq!(allocate(&path, 9, 4).unwrap(), 1);
         assert!(!lock.exists());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn concurrent_recovery_of_a_stale_lock_never_hands_two_callers_the_same_slot() {
+        // #A: many threads all find the SAME stale lock (dead owner, aged past the threshold) and
+        // all attempt recovery at once. The old remove_dir + create_dir let two of them both
+        // clear the lock and both enter `allocate`, returning the same (epoch, messageId) — a
+        // slash. The atomic rename takeover admits one recoverer; everyone then serializes through
+        // the lock, so every returned slot is distinct.
+        use std::sync::{Arc, Barrier};
+
+        for attempt in 0..8 {
+            let root = std::env::temp_dir().join(format!(
+                "shadenet-slot-race-{}-{}-{attempt}",
+                std::process::id(),
+                TEMP_ID.fetch_add(1, Ordering::Relaxed)
+            ));
+            let path = root.join("cursor.json");
+            fs::create_dir_all(&root).unwrap();
+            // Seed a stale lock: a pid that cannot exist, aged past the owned-lock threshold.
+            let lock = root.join("cursor.json.lock");
+            fs::create_dir(&lock).unwrap();
+            fs::write(lock.join(OWNER_FILE), (i32::MAX as u32).to_string()).unwrap();
+            let old = std::time::SystemTime::now() - Duration::from_secs(120);
+            File::open(&lock).unwrap().set_modified(old).unwrap();
+
+            let threads = 8;
+            let barrier = Arc::new(Barrier::new(threads));
+            let handles: Vec<_> = (0..threads)
+                .map(|_| {
+                    let path = path.clone();
+                    let barrier = Arc::clone(&barrier);
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        allocate(&path, 42, 65_535)
+                    })
+                })
+                .collect();
+
+            let mut slots = Vec::new();
+            for handle in handles {
+                if let Ok(slot) = handle.join().unwrap() {
+                    slots.push(slot);
+                }
+            }
+            slots.sort_unstable();
+            let mut unique = slots.clone();
+            unique.dedup();
+            assert_eq!(
+                slots, unique,
+                "two callers were handed the same slot during stale-lock recovery: {slots:?}"
+            );
+            // Every thread allocated (the big limit never exhausts): slots are exactly 0..threads.
+            assert_eq!(
+                slots,
+                (0..threads as u64).collect::<Vec<_>>(),
+                "attempt {attempt}"
+            );
+            assert!(!lock.exists(), "the recovered lock is released");
+            let _ = fs::remove_dir_all(root);
+        }
     }
 }
