@@ -19,6 +19,9 @@ is a new session class next to `research-v1`.
 - A running node checks its record source every 15 minutes. When the set, the Elder Trees, the
   proof artifacts, the epoch or the status moved on, it logs a warning naming the change and
   `status` shows `recordDrift`; it keeps serving what it started with until restarted.
+- `shadenet doctor` judges the state-directory path with fs-mistrust, the library embedded Tor
+  uses, so a group-writable directory of the user's own self-named group (Ubuntu's `user:user`
+  with umask 002) no longer reads `fail` while Tor starts fine.
 - The Operators page and `docs/OPERATOR.md` stake and sign before the node runs, through the node
   image (no npm package needed), and the run line carries the compose file's hardening flags.
 
