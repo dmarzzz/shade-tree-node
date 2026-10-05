@@ -1,6 +1,6 @@
 [package]
 name = "shadenet"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
@@ -38,7 +38,7 @@ live = [
 session-tickets = []
 
 [dependencies]
-shadenet-proto = { path = "../shadenet-proto", version = "0.7.2" }
+shadenet-proto = { path = "../shadenet-proto", version = "0.7.3" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
@@ -55,7 +55,7 @@ k256 = { version = "0.14", features = ["ecdsa"] }
 sha3 = "0.12"
 num-bigint = "0.4"
 
-shadenet-rln = { path = "../shadenet-rln", version = "0.7.2", optional = true }
+shadenet-rln = { path = "../shadenet-rln", version = "0.7.3", optional = true }
 # Embedded Tor. `compression` stays off (one onion, one JSON line) and `static-sqlite` bundles
 # SQLite so the binary never links the host's libsqlite3.
 # The permission rules Arti applies to its state directories, so `doctor` judges a path the way
