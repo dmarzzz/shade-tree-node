@@ -62,7 +62,6 @@ export const BUNDLE_OPTIONS = {
 export const NAV_PAGES = [
   ["docs/post/agent/index.html", "agent", false],
   ["docs/post/operator/index.html", "operator", false],
-  ["docs/post/lab/index.html", "lab", true],
   ["docs/post/grove/index.html", "canopy", true],
   ["docs/post/404.html", null, false],
 ];

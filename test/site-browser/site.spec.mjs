@@ -28,7 +28,8 @@ test("homepage remains usable, quiet, and accessible", async ({ page }) => {
 
   await openHomepage(page);
 
-  await expect(page.getByRole("link", { name: "Lab", exact: true })).toBeHidden();
+  await expect(page.getByRole("link", { name: "Lab", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Network", exact: true })).toHaveAttribute("href", "./canopy/");
   await expect(page.locator(".forest-fallback")).toHaveCSS("opacity", "0");
   await expect(page.getByRole("heading", { name: "Cover for local agents." })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible();

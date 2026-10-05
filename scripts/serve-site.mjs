@@ -24,8 +24,6 @@ const CONTENT_TYPES = new Map([
 ]);
 
 const REWRITES = new Map([
-  ["/lab.css", "lab/lab.css"],
-  ["/lab.js", "lab/lab.js"],
   ["/api/v2/openapi.json", "openapi-v2.json"],
   // Local stand-ins for the aggregate APIs the Get access page reads (Vercel functions in production).
   ["/api/v1/data/grove/sepolia/head", "grove/network.fallback.json"],
