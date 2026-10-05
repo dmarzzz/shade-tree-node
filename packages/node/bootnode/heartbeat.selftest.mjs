@@ -217,7 +217,19 @@ async function main() {
   r = await tick(async () => ({ ok: true, ttl: 300 }));
   ok(logs.at(-1) === "announced (staked=false, ttl=300s)", "accepted without staked -> staked=false");
   r = await tick(async () => ({ ok: false, err: "not-staked" }));
-  ok(r.ok === false && r.err === "not-staked" && logs.at(-1) === "announce rejected: not-staked", "rejected -> `announce rejected: <err>`");
+  ok(r.ok === false && r.err === "not-staked" && logs.at(-1).startsWith("announce rejected: not-staked (") && logs.at(-1).includes("shadenet-node authorize"), "rejected -> `announce rejected: <err> (<fix>)`");
+  // The real wire shape: the Elder answers HTTP 400 { ok: false, err }, which the transport throws.
+  // It must land as a rejection with the reason, never as a transport failure.
+  r = await tick(async () => parseHttp(Buffer.from('HTTP/1.1 400 Bad Request\r\nContent-Length: 31\r\n\r\n{"ok":false,"err":"not-staked"}')));
+  ok(r.ok === false && r.err === "not-staked" && !r.failed && logs.at(-1).startsWith("announce rejected: not-staked"), "HTTP 400 {ok:false,err:not-staked} -> rejected with the reason, not `announce failed`");
+  {
+    const recs = [];
+    const jlog = { warn: (m, f) => recs.push({ m, f }), info: () => {}, debug: () => {} };
+    await makeBeat({ announce: async () => parseHttp(Buffer.from('HTTP/1.1 400 Bad Request\r\nContent-Length: 31\r\n\r\n{"ok":false,"err":"not-staked"}')), egress: async () => ({ healthy: true }), enabled: false, log: jlog })();
+    ok(recs.at(-1)?.m === "heartbeat rejected" && recs.at(-1)?.f?.err === "not-staked" && /authorize/.test(recs.at(-1)?.f?.fix || ""), "structured logger: `heartbeat rejected` carries err and fix fields");
+  }
+  r = await tick(async () => parseHttp(Buffer.from("HTTP/1.1 404 Not Found\r\nContent-Length: 5\r\n\r\nnope!")));
+  ok(r.failed === true && logs.at(-1).includes("bootnode HTTP 404"), "4xx without a JSON {ok:false} reply stays a failure");
   r = await tick(async () => ({ ok: "true", ttl: 1 }));
   ok(r.ok === false && logs.at(-1).startsWith("announce rejected:"), "ok:'true' (string, not boolean) is NOT treated as accepted");
   for (const [label, reply] of [["null", null], ["array", [1, 2]], ["string", "ok"], ["number", 200], ["undefined", undefined]]) {

@@ -52,7 +52,7 @@ import { loadCredentials } from "../lib/credentials.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { buildAnnounce, operatorAuthMessage, verifyOperatorSig } from "./announce.mjs";
-import { postOverTor } from "./fetch.mjs";
+import { postOverTor, isRefusal } from "./fetch.mjs";
 import { checkEgress, EGRESS_CHECK_TARGET, PROTO_RANGE } from "../gateway/gateway.mjs";
 import { REGION_BUCKETS, canonicalCaps } from "../lib/directory.mjs";
 import { loadArtifactSet } from "../lib/zk-artifacts.mjs";
@@ -396,10 +396,27 @@ export function heartbeatConfig(env = process.env) {
 //   { failed: true, err }            transport failure (unreachable bootnode, bad HTTP, bad JSON)
 // The bootnode reply is treated as UNTRUSTED input: anything that is not a plain object is a
 // rejection ("malformed response"), never a TypeError out of the tick.
+// What an operator does about the refusals they can fix themselves.
+const REJECTION_FIXES = {
+  "not-staked": "this Elder admits staked operators only: stake the operator bond (shade-tree register-gateway), then give the node SHADENET_OPERATOR + SHADENET_OPERATOR_SIG from `shadenet-node authorize`, or SHADENET_OPERATOR_KEY_FILE",
+  "bad-operator-sig": "SHADENET_OPERATOR_SIG does not sign this onion for SHADENET_OPERATOR; run `shadenet-node authorize --onion <this onion>` again",
+};
+export function rejectionFix(err) { return REJECTION_FIXES[String(err)] || null; }
+
 export function makeBeat({ announce, egress, enabled = egressCheckEnabled(), log = heartbeatLog, now = () => Date.now() } = {}) {
+  // An Elder that refuses answers HTTP 4xx with { ok: false, err }; the transport throws that,
+  // so turn it back into the reply it is. Logging it as a transport failure sent operators to
+  // look at Tor while the Elder was saying `not-staked`.
+  const announceOrRefusal = async () => {
+    try { return await announce(); }
+    catch (e) {
+      if (isRefusal(e) && e.reply && typeof e.reply === "object" && !Array.isArray(e.reply) && e.reply.ok === false) return { ...e.reply, status: e.status };
+      throw e;
+    }
+  };
   return async () => {
     try {
-      const r = await announceIfHealthy({ announce, egress, enabled, log });
+      const r = await announceIfHealthy({ announce: announceOrRefusal, egress, enabled, log });
       if (r && r.skipped) { M.attempts.inc({ outcome: "egress-unhealthy" }); return r; }
       if (!r || typeof r !== "object" || Array.isArray(r)) {
         M.attempts.inc({ outcome: "rejected" });
@@ -412,7 +429,8 @@ export function makeBeat({ announce, egress, enabled = egressCheckEnabled(), log
         writeLog(log, "info", "heartbeat accepted", { staked: Boolean(r.staked), ttlSec: Number(r.ttl) || 0 }, `announced (staked=${r.staked ?? false}, ttl=${r.ttl}s)`);
       } else {
         M.attempts.inc({ outcome: "rejected" });
-        writeLog(log, "warn", "heartbeat rejected", { reason: "elder-rejected" }, `announce rejected: ${r.err}`);
+        const fix = rejectionFix(r.err);
+        writeLog(log, "warn", "heartbeat rejected", { reason: "elder-rejected", err: String(r.err ?? ""), ...(fix ? { fix } : {}) }, `announce rejected: ${r.err}${fix ? ` (${fix})` : ""}`);
       }
       return r.ok === true ? r : { ok: false, err: r.err };
     } catch (e) {

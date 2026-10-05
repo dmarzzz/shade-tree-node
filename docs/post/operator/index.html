@@ -72,7 +72,7 @@
 
       <section class="guide-step" aria-labelledby="operator-needs">
         <h2 id="operator-needs">What it needs</h2>
-        <p>A Linux box with Docker, 1 vCPU, 2 GB of memory, 10 GB of disk and outbound internet. No inbound ports: the node is reached as an onion service, so a firewall that allows only SSH in is correct. The Sepolia canopy admits nodes whose operator holds a bond in the gateway registry; staking that bond is one command in the runbook and the only step that costs testnet ETH.</p>
+        <p>A Linux box with Docker, 1 vCPU, 2 GB of memory, 10 GB of disk and outbound internet. No inbound ports: the node is reached as an onion service, so a firewall that allows only SSH in is correct. The Sepolia canopy lists only nodes whose operator holds a bond in the gateway registry, so you also need a Sepolia address with a little testnet ETH: the bond is 0.001 ETH plus gas, it is yours, and it is the only step that costs anything.</p>
       </section>
 
       <section class="guide-step" aria-labelledby="operator-check">
@@ -84,18 +84,36 @@
         <p>This starts nothing. It reads the record, answers each RPC in it, verifies the Tor configuration, measures free disk, tries the two loopback ports, reaches every Elder Tree over a temporary Tor, and prints the exact environment the node would run with. Fix any FAIL line, then continue.</p>
       </section>
 
-      <section class="guide-step" aria-labelledby="operator-run">
-        <h2 id="operator-run">2. Run the node</h2>
-        <div class="command" aria-label="Run a Shade Tree node">
-          <code>docker run -d --name shadenet-node --restart unless-stopped -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1</code>
-          <button class="copy-command" type="button" data-copy="docker run -d --name shadenet-node --restart unless-stopped -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1" aria-label="Copy the node run command">copy</button>
+      <section class="guide-step" aria-labelledby="operator-stake">
+        <h2 id="operator-stake">2. Stake the operator and sign the node's name</h2>
+        <div class="command" aria-label="Mint the node's onion identity">
+          <code>docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json ghcr.io/dmarzzz/shadenet-node:0.7.1 identity</code>
+          <button class="copy-command" type="button" data-copy="docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json ghcr.io/dmarzzz/shadenet-node:0.7.1 identity" aria-label="Copy the identity command">copy</button>
         </div>
-        <p>Add <code>-e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x…</code> for the staked operator: the <code>identity</code> command prints the node's onion, <code>shadenet-node authorize</code> signs it where the key lives, and the key never reaches the box. The <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/OPERATOR.md#2-join-the-fleet-as-a-new-gateway-operator">runbook</a> has the three lines, and a compose file for people who prefer compose.</p>
+        <p>This mints the node's onion address and keeps it in the volume. Then, on the machine that holds your operator key, stake the bond once and sign the onion. The key never has to reach the node's box.</p>
+        <div class="command" aria-label="Stake the operator bond">
+          <code>read -s KEY && SHADE_TREE_REGISTER_KEY="$KEY" docker run --rm -e SHADE_TREE_REGISTER_KEY --entrypoint node ghcr.io/dmarzzz/shadenet-node:0.7.1 packages/node/bin/shade-tree.mjs register-gateway --gateway-registry 0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868 --rpc-url https://rpc.sepolia.ethpandaops.io; unset KEY</code>
+          <button class="copy-command" type="button" data-copy="read -s KEY && SHADE_TREE_REGISTER_KEY=&quot;$KEY&quot; docker run --rm -e SHADE_TREE_REGISTER_KEY --entrypoint node ghcr.io/dmarzzz/shadenet-node:0.7.1 packages/node/bin/shade-tree.mjs register-gateway --gateway-registry 0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868 --rpc-url https://rpc.sepolia.ethpandaops.io; unset KEY" aria-label="Copy the stake command">copy</button>
+        </div>
+        <div class="command" aria-label="Sign the node's onion with the operator key">
+          <code>docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.1 authorize --onion &lt;onion&gt; --key-file /k/operator.key</code>
+          <button class="copy-command" type="button" data-copy="docker run --rm -v &quot;$PWD&quot;:/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.1 authorize --onion &lt;onion&gt; --key-file /k/operator.key" aria-label="Copy the authorize command">copy</button>
+        </div>
+        <p>The key file holds one line of 64 hex characters, readable only by you. <code>authorize</code> prints <code>SHADENET_OPERATOR</code> and <code>SHADENET_OPERATOR_SIG</code>; both are safe to put on the node. Without them every Elder Tree refuses the node <code>not-staked</code>. One bond covers every node you run.</p>
+      </section>
+
+      <section class="guide-step" aria-labelledby="operator-run">
+        <h2 id="operator-run">3. Run the node</h2>
+        <div class="command" aria-label="Run a Shade Tree node">
+          <code>docker run -d --name shadenet-node --restart unless-stopped --security-opt no-new-privileges:true --cap-drop ALL --read-only --tmpfs /tmp --memory 1g --log-opt max-size=20m -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1</code>
+          <button class="copy-command" type="button" data-copy="docker run -d --name shadenet-node --restart unless-stopped --security-opt no-new-privileges:true --cap-drop ALL --read-only --tmpfs /tmp --memory 1g --log-opt max-size=20m -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1" aria-label="Copy the node run command">copy</button>
+        </div>
+        <p>Fill in the two values from step 2. The extra flags drop every privilege the node does not use and cap its memory and logs; the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/OPERATOR.md#2-join-the-fleet-as-a-new-gateway-operator">runbook</a> explains each one and has a compose file for people who prefer compose.</p>
       </section>
 
       <section class="guide-step" aria-labelledby="operator-first">
         <h2 id="operator-first">The first ten minutes</h2>
-        <p>The log tells the story in order. The node mints its onion identity and keeps it in the volume. Tor bootstraps, usually within two minutes, and the onion descriptor is published about thirty seconds later. The heartbeat announces to every Elder Tree in the record and logs <code>heartbeat accepted</code> once per Elder. Within five minutes the node is listed on the <a href="/canopy/">Canopy</a> page. The first tunnel is served after the node's next member-set refresh, about a minute after that.</p>
+        <p>The log tells the story in order. The node mints its onion identity and keeps it in the volume. Tor bootstraps, usually within two minutes, and the onion descriptor is published about thirty seconds later. The heartbeat announces to every Elder Tree in the record and logs <code>heartbeat accepted</code> once per Elder; a <code>heartbeat rejected</code> line names the Elder's reason and the fix. <code>docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status</code> shows how many Elder Trees list the node. Within fifteen minutes it is counted on the <a href="/canopy/">Network</a> page. The first tunnel is served after the node's next member-set refresh, about a minute after that.</p>
       </section>
 
       <section class="guide-step" aria-labelledby="operator-knobs">

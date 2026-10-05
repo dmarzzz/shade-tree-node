@@ -26,7 +26,7 @@ import { generateOnionIdentity } from "../bootnode/keygen.mjs";
 import { verifyOperatorSig } from "../bootnode/announce.mjs";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { resolveBuildCommit } from "../lib/build-info.mjs";
-import { torInfo, startTor, supervise, writeStatus } from "../lib/node-supervisor.mjs";
+import { torInfo, startTor, supervise, writeStatus, heartbeatListing, probeElders } from "../lib/node-supervisor.mjs";
 import { rpcUrlsOf, eldersOf } from "../lib/network-record.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -183,13 +183,7 @@ async function check({ probe = false, json = false } = {}) {
     log("probe: bootstrapping a temporary Tor to reach each Elder Tree (up to 3 minutes)…");
     const t = await startTor({ knobs, hsDir, tor, timeoutMs: 180000, log }).catch((e) => { fail(`probe: ${e.message}`); return null; });
     if (t) {
-      for (const e of eldersOf(record)) {
-        try {
-          const res = await fetchOverTor(e.onion, "/health", { torPort: TOR_SOCKS_PORT, timeoutMs: 30000, attempts: 2 });
-          const h = JSON.parse(res.body.toString());
-          ok(`Elder ${e.onion.slice(0, 16)}…: ${h.count} live node(s), commit ${String(h.commit || "").slice(0, 7)}`);
-        } catch (err) { warn(`Elder ${e.onion.slice(0, 16)}…: ${err.message}`); }
-      }
+      for (const f of await probeElders(eldersOf(record), (onion) => fetchOverTor(onion, "/health", { torPort: TOR_SOCKS_PORT, timeoutMs: 30000, attempts: 2 }))) findings.push(f);
       t.kill("SIGTERM");
     }
   }
@@ -215,7 +209,7 @@ async function run() {
   if (!tor.present) { log("tor is not on PATH"); process.exit(2); }
   const env = deriveNodeEnv({ knobs, record, explicit: process.env, hsDir });
   if (knobs.operator_key_file) env.SHADE_TREE_GW_OPERATOR_KEY = readOperatorKeyFile(String(knobs.operator_key_file));
-  const state = { stateDir: knobs.state, onion: id.onion, network: record.network, set: record.admission.roots.staked.contract, elders: eldersOf(record).map((e) => e.onion), commit: resolveBuildCommit(), recordPin: record.services?.node?.commit || null, metricsPort: Number(env.SHADE_TREE_METRICS_PORT || 0), startedAt: new Date().toISOString(), pids: {} };
+  const state = { stateDir: knobs.state, onion: id.onion, network: record.network, set: record.admission.roots.staked.contract, elders: eldersOf(record).map((e) => e.onion), commit: resolveBuildCommit(), recordPin: record.services?.node?.commit || null, metricsPort: Number(env.SHADE_TREE_METRICS_PORT || 0), heartbeatMetricsPort: Number(env.SHADE_TREE_HEARTBEAT_METRICS_PORT || 0), startedAt: new Date().toISOString(), pids: {} };
   log(`node ${id.onion} joining ${record.network} (set ${state.set}) with ${state.elders.length} Elder Tree(s); admit ${env.SHADE_TREE_ADMIT}; tickets ${env.SHADE_TREE_SESSION_TICKETS === "1" ? "on" : "off"}`);
   if (state.recordPin && state.commit !== "unknown" && !state.recordPin.startsWith(state.commit)) log(`warning: build ${state.commit.slice(0, 7)} differs from the record's pin ${state.recordPin.slice(0, 7)}`);
   const torChild = await startTor({ knobs, hsDir, tor, log });
@@ -224,7 +218,7 @@ async function run() {
   const gateway = supervise("gateway", "packages/node/gateway/gateway.mjs", { root: ROOT, env, state, log });
   await sleep(1500);
   const heartbeat = supervise("heartbeat", "packages/node/bootnode/heartbeat.mjs", { root: ROOT, env, state, log });
-  log("node and heartbeat started; `heartbeat accepted` in the log means an Elder lists this node");
+  log("node and heartbeat started; `heartbeat accepted` in the log means an Elder lists this node, `heartbeat rejected` says why one does not");
   let shuttingDown = false;
   const shutdown = async (sig) => {
     if (shuttingDown) return; shuttingDown = true;
@@ -270,7 +264,14 @@ async function status() {
   const metricsPort = Number(st.metricsPort || 0);
   if (metricsPort) { try { const r = await fetch(`http://127.0.0.1:${metricsPort}/readyz`, { signal: AbortSignal.timeout(3000) }); ready = r.ok; } catch { ready = false; } }
   const running = !st.stoppedAt && st.pids?.gateway && st.pids?.heartbeat && st.pids?.tor && ready !== false;
-  if (!flag("quiet")) console.log(JSON.stringify({ running: !!running, ready, ...st }, null, 2));
+  // Running is not the same as listed: say how many Elder Trees accepted the last announce.
+  let listed = null;
+  const hbPort = Number(st.heartbeatMetricsPort || 0);
+  if (running && hbPort) { try { const r = await fetch(`http://127.0.0.1:${hbPort}/metrics`, { signal: AbortSignal.timeout(3000) }); if (r.ok) listed = heartbeatListing(await r.text()); } catch {} }
+  if (!flag("quiet")) {
+    console.log(JSON.stringify({ running: !!running, ready, listed, ...st }, null, 2));
+    if (listed && listed.eldersAccepted === 0) log(`no Elder Tree lists this node yet (0 of ${listed.eldersTotal} accepted the last announce); \`docker logs\` shows each Elder's answer on the \`heartbeat rejected\` lines`);
+  }
   process.exit(running ? 0 : 1);
 }
 

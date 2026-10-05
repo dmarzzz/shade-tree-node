@@ -9,7 +9,7 @@
 // Exit 0 = parseHttp holds its contract on every crafted case; nonzero = a check failed.
 
 import { EventEmitter } from "node:events";
-import { parseHttp, postOverTor } from "./fetch.mjs";
+import { parseHttp, postOverTor, isRefusal } from "./fetch.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
@@ -108,6 +108,25 @@ async function main() {
     ok(false, "invalid destination port is rejected");
   } catch (error) {
     ok(/invalid onion destination port/.test(error.message), "invalid destination port is rejected");
+  }
+
+  console.log("\nrefusals are answers, not transport failures:");
+  {
+    const e400 = (() => { try { parseHttp(resp(400, "Bad Request", '{"ok":false,"err":"not-staked"}')); } catch (e) { return e; } })();
+    ok(e400?.status === 400 && e400?.reply?.err === "not-staked" && isRefusal(e400), "HTTP 400 carries status and the parsed reply, and is a refusal");
+    const e500 = (() => { try { parseHttp(resp(500, "Internal", "boom")); } catch (e) { return e; } })();
+    ok(e500?.status === 500 && e500?.reply === null && !isRefusal(e500), "HTTP 500 keeps status, no reply, not a refusal (retried)");
+    ok(!isRefusal({ status: 429 }) && !isRefusal({ status: 408 }) && !isRefusal(new Error("socks timeout")), "429, 408 and plain errors stay retryable");
+    let dials = 0;
+    const refusing = { createConnection: async () => {
+      dials++;
+      const s = new EventEmitter();
+      s.write = () => queueMicrotask(() => { s.emit("data", resp(400, "Bad Request", '{"ok":false,"err":"not-staked"}')); s.emit("end"); });
+      s.destroy = () => {};
+      return { socket: s };
+    } };
+    const err = await postOverTor(onion, "/announce", {}, { attempts: 4, timeoutMs: 1000, socksClient: refusing }).then(() => null, (e) => e);
+    ok(dials === 1 && err?.status === 400 && err?.reply?.err === "not-staked", "a 400 is not retried: one dial, the refusal comes back with its reply");
   }
 
   console.log(`\n${failures === 0 ? "PASS" : "FAIL"}: fetch parseHttp selftest (${failures} failure${failures === 1 ? "" : "s"})`);

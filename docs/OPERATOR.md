@@ -94,19 +94,38 @@ docker run --rm -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/sha
 
 The Sepolia canopy's Elders admit staked operators (`elder.admission = stake`): the operator
 address must hold a bond in the gateway registry and each onion must carry that operator's
-signature. The key never has to be on the node's box. Mint the identity, sign where the key lives,
-hand the node the two values:
+signature. Without both, every Elder answers `not-staked` and the log says
+`heartbeat rejected ... err: not-staked` with the fix. Do this before the first `docker run -d`.
+The key never has to be on the node's box: mint the identity there, stake and sign where the key
+lives (the same image does both), hand the node the two values:
 
 ```bash
+# on the node's box: mint the onion identity into the volume
 docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.7.1 identity
 #   -> { "onion": "<56 chars>.onion", ... }
-shadenet-node authorize --onion <onion> --key-file ~/operator.key      # on your laptop (npm i -g shade-tree-node, or the repo)
+
+# where the operator key lives (operator.key: one line, 64 hex, chmod 600)
+# once per operator: stake the bond (0.001 Sepolia ETH, `BOND()` on the registry), a no-op if already staked
+read -s KEY && SHADE_TREE_REGISTER_KEY="$KEY" docker run --rm -e SHADE_TREE_REGISTER_KEY \
+  --entrypoint node ghcr.io/dmarzzz/shadenet-node:0.7.1 packages/node/bin/shade-tree.mjs register-gateway \
+  --gateway-registry 0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868 --rpc-url https://rpc.sepolia.ethpandaops.io; unset KEY
+# per node: sign its onion
+docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.1 authorize --onion <onion> --key-file /k/operator.key
 #   -> { "SHADENET_OPERATOR": "0x…", "SHADENET_OPERATOR_SIG": "0x…" }
-docker run -d ... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… ghcr.io/dmarzzz/shadenet-node:0.7.1
+
+# back on the node's box
+docker run -d --name shadenet-node --restart unless-stopped \
+  --security-opt no-new-privileges:true --cap-drop ALL --read-only --tmpfs /tmp \
+  --memory 1g --log-opt max-size=20m \
+  -e SHADENET_RECORD=... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… \
+  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1
+docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status   # "listed": Elders that accepted
 ```
 
-Staking the operator bond is `register-gateway` under "Stake the operator" below; it is the one
-step that costs testnet ETH, and it is the operator's own.
+The hardening flags are the ones `examples/node/compose.yml` sets: no privilege escalation, no
+capabilities, a read-only root with `/tmp` in memory, a memory cap and bounded logs. The node needs
+none of what they take away. One bond backs every onion an operator signs; the key file is read
+inside the container only for `authorize` and `register-gateway`, which exit straight after.
 
 Serving two canopies from one node (the staging set beside production, or a private set beside
 the public one): `SHADENET_SETS=0x<contract>@<deployBlock>` adds a staked set to the record's; the
