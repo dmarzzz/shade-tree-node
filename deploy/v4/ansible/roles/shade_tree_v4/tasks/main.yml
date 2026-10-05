@@ -152,16 +152,19 @@
       - shade_tree_staked_root.minUnbondingSeconds | int == 3720
       - shade_tree_staked_root.unbondingSeconds | int >= 3720
       - shade_tree_staked_deploy_block | int > 0
-      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | length == 2)
-      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | unique | length == 2)
-      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | select('match', '^[a-z2-7]{56}\\.onion:8879$') | list | length == 2)
+      # Every other node in the generation is a tally peer: 2 for the original three-node fleet, up
+      # to 11 for twelve nodes. All unique, all onions on the tally port.
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | length >= 2)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | length <= 11)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | unique | length == shade_tree_fleet_tally_peers.split(',') | length)
+      - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_peers.split(',') | select('match', '^[a-z2-7]{56}\\.onion:8879$') | list | length == shade_tree_fleet_tally_peers.split(',') | length)
       - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_token | length >= 32)
       - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_token | length <= 128)
       - (not shade_tree_runs_node | bool) or (shade_tree_fleet_tally_token is match('^[-A-Za-z0-9._~]+$'))
     fail_msg: >-
       public-stake-v1 requires record-owned tiers that include tier 8 (bonds checked on chain), a fixed
       60-second Grove epoch, 60-second root freshness, 40 MiB per slot, unbonding of at least 3720 s, and
-      the authenticated two-peer fleet tally.
+      the authenticated fleet tally (every other node as a peer, 2 to 11).
   when: shade_tree_public_stake_profile | bool
   no_log: true
 
