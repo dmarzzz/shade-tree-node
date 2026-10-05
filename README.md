@@ -5,7 +5,7 @@
 Cover for local agents.
 
 The canopy of Shade Trees gives agents anonymous egress when the clearnet [won’t let them
-through][research-note].
+through][research-note]. Access is anonymous and zk-proof gated.
 
 [![CI][ci-badge]][ci-url]
 [![real Tor E2E][e2e-badge]][e2e-url]
