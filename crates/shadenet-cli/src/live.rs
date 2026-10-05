@@ -1192,24 +1192,8 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
     }
     let mut created = Vec::new();
     // Identity: never overwritten.
-    let leaf = if identity_path.exists() {
-        match std::fs::read_to_string(&identity_path)
-            .ok()
-            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-            .and_then(|v| v["leaf"].as_str().map(str::to_string))
-        {
-            Some(leaf) => leaf,
-            None => {
-                return usage(
-                    "init",
-                    format!(
-                        "{} exists but is not an identity file",
-                        identity_path.display()
-                    ),
-                )
-            }
-        }
-    } else {
+    let freshly_created = !identity_path.exists();
+    if freshly_created {
         let limit = match args
             .limit
             .map(Ok)
@@ -1218,18 +1202,55 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
             Ok(limit) => limit,
             Err(e) => return usage("init", e),
         };
-        match crate::enroll::create_identity(&identity_path, limit) {
-            Ok(leaf) => {
-                created.push(identity_path.display().to_string());
-                if args.passphrase {
-                    if let Err(e) = lock_identity(&identity_path) {
-                        return usage("init", e);
-                    }
-                }
-                leaf
-            }
-            Err(e) => return usage("init", e),
+        if let Err(e) = crate::enroll::create_identity(&identity_path, limit) {
+            return usage("init", e);
         }
+        created.push(identity_path.display().to_string());
+    }
+    // Derive the public identity commitment `Poseidon1(identitySecret)`, the leaf
+    // `Poseidon2(commitment, tier)` and the tier, so init can print what `registerIdentity`
+    // actually takes and a stake link that carries it. A plaintext identity (always the case
+    // for one freshly created here, before any passphrase lock below) loads without a
+    // passphrase; an already-encrypted file is read for its public leaf/tier only — the
+    // commitment needs an unlock, which `register-member --identity` performs at stake time.
+    let (identity_commitment, leaf, tier): (Option<String>, String, Option<u64>) =
+        match shadenet::identity::load(&identity_path, || {
+            Err(Error::Config("identity is passphrase-protected".into()))
+        }) {
+            Ok(material) => match shadenet::member::verify_identity(&material, args.limit) {
+                Ok(v) => (
+                    Some(v.identity_commitment.to_string()),
+                    v.leaf.to_string(),
+                    Some(v.limit),
+                ),
+                Err(e) => return usage("init", e),
+            },
+            Err(_) => match shadenet::identity::read_public(&identity_path) {
+                Ok(public) => (None, public.leaf, public.limit),
+                Err(_) => {
+                    return usage(
+                        "init",
+                        format!(
+                            "{} exists but is not an identity file",
+                            identity_path.display()
+                        ),
+                    )
+                }
+            },
+        };
+    // Lock a freshly-created identity only after the commitment has been derived above.
+    if freshly_created && args.passphrase {
+        if let Err(e) = lock_identity(&identity_path) {
+            return usage("init", e);
+        }
+    }
+    // The stake link fragment is never sent to a server; the page verifies Poseidon2(c, tier)
+    // == leaf. Present only when the commitment is known (not for an encrypted re-init).
+    let stake_link = match (&identity_commitment, tier) {
+        (Some(idc), Some(tier)) => Some(format!(
+            "https://shadenet.xyz/stake/#c={idc}&limit={tier}&leaf={leaf}"
+        )),
+        _ => None,
     };
     if !token_path.exists() {
         let token = match crate::enroll::fresh_token() {
@@ -1272,6 +1293,15 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
         "config": config_path.display().to_string(),
         "created": created,
     });
+    if let Some(idc) = &identity_commitment {
+        summary["identityCommitment"] = idc.clone().into();
+    }
+    if let Some(tier) = tier {
+        summary["tier"] = tier.into();
+    }
+    if let Some(link) = &stake_link {
+        summary["stakeLink"] = link.clone().into();
+    }
     if let Some(profile) = &profile {
         summary["staking"] = serde_json::json!({
             "contract": profile.contract,
@@ -1326,36 +1356,53 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
     for path in &created {
         println!("  created {path}");
     }
-    println!("  leaf {leaf}");
+    if let Some(idc) = &identity_commitment {
+        println!("  identity commitment {idc}");
+    }
+    match tier {
+        Some(tier) => println!("  leaf {leaf} (tier {tier})"),
+        None => println!("  leaf {leaf}"),
+    }
     println!();
     match state.as_str() {
         "ready" => println!("This identity is admitted. Start the proxy:"),
         _ => {
             if let Some(profile) = &profile {
-                let tier = profile
-                    .tiers
-                    .iter()
-                    .find(|t| t.limit == profile.default_limit)
+                let tier_info = tier
+                    .and_then(|committed| profile.tiers.iter().find(|t| t.limit == committed))
+                    .or_else(|| {
+                        profile
+                            .tiers
+                            .iter()
+                            .find(|t| t.limit == profile.default_limit)
+                    })
                     .or(profile.tiers.first());
-                if let Some(tier) = tier {
+                if let Some(tier_info) = tier_info {
                     // Human units (dogfood #239): the page says "0.01 ETH, tier 1"; so do we.
                     let unit = if network.deployment.session_tickets {
                         "session"
                     } else {
                         "tunnel"
                     };
+                    // The contract takes the identity commitment and derives the leaf itself;
+                    // registering a leaf value where a commitment is expected burns the bond
+                    // (task 66), so this says "register this identity commitment", never "leaf".
                     println!(
-                        "Next, stake this leaf: tier {} ({} {}{} per {}s epoch) for a bond of {} on {}:",
-                        tier.limit,
-                        tier.limit,
+                        "Next, register this identity commitment: tier {} ({} {}{} per {}s epoch) for a bond of {} on {}:",
+                        tier_info.limit,
+                        tier_info.limit,
                         unit,
-                        if tier.limit == 1 { "" } else { "s" },
+                        if tier_info.limit == 1 { "" } else { "s" },
                         profile.rate_policy.epoch_seconds,
-                        format_bond(&tier.bond_wei, profile.chain_id),
+                        format_bond(&tier_info.bond_wei, profile.chain_id),
                         chain_name(profile.chain_id, &network.name),
                     );
                 }
                 println!("  {bin} register-member --identity {} --key-file <owner-only file with a funded key>", identity_path.display());
+                if let Some(link) = &stake_link {
+                    println!("Or open the stake page in a browser (the link carries your identity commitment; the secret never leaves this machine):");
+                    println!("  {link}");
+                }
                 println!("Then wait for finality (about 13 minutes on Sepolia):");
                 println!("  {bin} status --wait");
             }
