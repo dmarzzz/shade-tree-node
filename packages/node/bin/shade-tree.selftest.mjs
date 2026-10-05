@@ -118,6 +118,7 @@ async function main() {
   const pairs = [
     ["port", "SHADE_TREE_BOOTNODE_PORT"],
     ["secret", "SHADE_TREE_SECRET"],
+    ["identity", "SHADE_TREE_IDENTITY"],
     ["bootnode", "SHADE_TREE_BOOTNODE_ONION"],
     ["admission", "SHADE_TREE_BOOTNODE_ADMISSION"],
     ["shim-port", "SHADE_TREE_SHIM_PORT"],

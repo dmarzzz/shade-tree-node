@@ -331,8 +331,8 @@ export const ROLE_SPECS = {
     },
   },
 
-  // CLIENT — packages/node/client/shade-tree-client.mjs + packages/node/client/selection.mjs. SHADE_TREE_SECRET is the ONE hard
-  // requirement (shade-tree-client throws without it). Discovery is a three-way choice, enforced by
+  // CLIENT — packages/node/client/shade-tree-client.mjs + packages/node/client/selection.mjs. The member credential
+  // (SHADE_TREE_SECRET or SHADE_TREE_IDENTITY) is the ONE hard requirement (shade-tree-client throws without it). Discovery is a three-way choice, enforced by
   // the conditional below:
   //   (a) pin       : SHADE_TREE_ONION
   //   (b) static    : SHADE_TREE_DIRECTORY      + SHADE_TREE_DIR_SIGNER
@@ -341,8 +341,11 @@ export const ROLE_SPECS = {
   // SDK install the bundled current-v4 Elder+signer pair when no source is explicit; any explicit
   // directory/bootnode source WITHOUT its own signer is still a misconfig, not a silent TOFU path.
   client: {
-    required: [["SHADE_TREE_SECRET", isField, P_FIELD]],
+    // The member credential is SHADE_TREE_SECRET or an identity file (SHADE_TREE_IDENTITY, the
+    // file `shadenet init` writes; #251). One of the two is required: see the conditional.
+    required: [],
     optional: [
+      ["SHADE_TREE_SECRET", isField, P_FIELD],
       ...OPERATOR_FIELDS,
       ["SHADE_TREE_ONION", isOnion, P_ONION],
       ["SHADE_TREE_BOOTNODE_ONION", isOnion, P_ONION],
@@ -367,6 +370,12 @@ export const ROLE_SPECS = {
       // conditional. SHADE_TREE_DIRECTORY_CACHE likewise.
     ],
     conditional(env, errors) {
+      // SHADE_TREE_IDENTITY is a filesystem path (no shape to check here; the client reads it).
+      if (!present(env, "SHADE_TREE_SECRET") && !present(env, "SHADE_TREE_IDENTITY")) {
+        errors.unshift({ var: "SHADE_TREE_SECRET", problem: "required but not set (or set SHADE_TREE_IDENTITY to an identity file)" });
+      } else if (present(env, "SHADE_TREE_SECRET") && present(env, "SHADE_TREE_IDENTITY")) {
+        errors.unshift({ var: "SHADE_TREE_IDENTITY", problem: "set together with SHADE_TREE_SECRET; unset one, or pass --identity or --secret to choose" });
+      }
       checkMetricsPortCollision(env, errors, "SHADE_TREE_SHIM_PORT", 8888, "Proxy backend");
       const hasPin = present(env, "SHADE_TREE_ONION");
       const hasDir = present(env, "SHADE_TREE_DIRECTORY");

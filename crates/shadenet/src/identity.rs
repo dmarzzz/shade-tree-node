@@ -30,8 +30,15 @@ use crate::Error;
 const MAX_FILE: u64 = 16 * 1024;
 /// scrypt cost for new files: 2^17 × 8 × 128 bytes = 128 MiB, about half a second.
 pub const DEFAULT_LOG_N: u8 = 17;
-/// Refuse files demanding more than 2^20 (1 GiB) so a hostile file cannot exhaust memory.
+/// scrypt bounds, the same as the JavaScript reader's (packages/node/lib/identity-file.mjs):
+/// what the writer emits (`DEFAULT_LOG_N`, r 8, p 1) plus a modest margin on logN/r, p capped
+/// small, and a joint memory bound r * 2^logN <= 8 * 2^20 (scrypt uses 128 * N * r bytes, so
+/// this caps it at 1 GiB). A hostile file past any of these is refused before any work starts
+/// (red-team task 61); both readers agree on it, pinned by a shared over-limit vector.
 const MAX_LOG_N: u8 = 20;
+const MAX_R: u32 = 8;
+const MAX_P: u32 = 4;
+const MAX_R_TIMES_N: u64 = 8 << 20;
 const ENCRYPTED_VERSION: u64 = 2;
 
 /// Loaded identity. The secret is zeroized on drop and never printed by `Debug`.
@@ -151,7 +158,12 @@ fn derive_key(
     r: u32,
     p: u32,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
-    if log_n > MAX_LOG_N || !(1..=32).contains(&r) || !(1..=16).contains(&p) {
+    if log_n == 0
+        || log_n > MAX_LOG_N
+        || !(1..=MAX_R).contains(&r)
+        || !(1..=MAX_P).contains(&p)
+        || u64::from(r) << log_n > MAX_R_TIMES_N
+    {
         return Err(Error::Config(
             "identity file asks for unsupported scrypt parameters".into(),
         ));
@@ -328,6 +340,7 @@ pub fn replace_file(path: &Path, body: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn material() -> IdentityMaterial {
         IdentityMaterial {
@@ -384,6 +397,67 @@ mod tests {
             .contains("unsupported scrypt"));
         assert!(serialize(&material(), Some("short"), 10).is_err());
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// `testdata/identity` holds identity files of both forms, written by this code (`shadenet
+    /// init`, `shadenet identity-lock` on a copy, and `serialize` at a low scrypt cost). The
+    /// JavaScript client reads the same files (packages/node/lib/identity-file.selftest.mjs):
+    /// one format, both clients (#251).
+    #[test]
+    fn the_shared_identity_files_load_in_both_forms() {
+        let dir = Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/identity"
+        ));
+        let vectors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("vectors.json")).unwrap())
+                .unwrap();
+        let text = |key: &str| vectors[key].as_str().unwrap().to_string();
+
+        let plain = load(&dir.join(text("plain")), || panic!("plaintext")).unwrap();
+        assert_eq!(plain.leaf, text("leaf"));
+        assert_eq!(plain.limit, vectors["limit"].as_u64());
+
+        // `locked` is the CLI's own output (scrypt logN 17, about 13 s in a debug build): its
+        // public half is checked here and JavaScript opens it. `lockedLowCost` is the same
+        // identity sealed by `serialize` at logN 10, opened by both.
+        let public = read_public(&dir.join(text("locked"))).unwrap();
+        assert!(public.encrypted);
+        assert_eq!(public.leaf, text("leaf"));
+        assert_eq!(public.limit, vectors["limit"].as_u64());
+        let locked = load(&dir.join(text("lockedLowCost")), || {
+            Ok(Zeroizing::new(text("passphrase")))
+        })
+        .unwrap();
+        assert_eq!(locked.secret.as_str(), plain.secret.as_str());
+        assert_eq!(locked.leaf, plain.leaf);
+
+        // A file asking for more scrypt work than the writer ever emits is refused before any
+        // work starts, by both readers alike.
+        let started = std::time::Instant::now();
+        let error = load(&dir.join(text("overLimit")), || {
+            Ok(Zeroizing::new(text("passphrase")))
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("unsupported scrypt parameters"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(1));
+
+        // The public values both clients must derive from the secret.
+        #[cfg(feature = "live")]
+        {
+            use shadenet_rln::identity::{
+                commitment_from_identity_secret, identity_commitment_from_identity_secret,
+            };
+            assert_eq!(
+                identity_commitment_from_identity_secret(&plain.secret).unwrap(),
+                text("identityCommitment")
+            );
+            assert_eq!(
+                commitment_from_identity_secret(&plain.secret, plain.limit.unwrap()).unwrap(),
+                text("leaf")
+            );
+        }
     }
 
     #[test]
