@@ -207,6 +207,38 @@ try {
   assert.equal(empty.windows.sixHour.suppressionReason, "unavailable");
   assert.equal("roundedBytes" in empty.windows.sixHour, false);
 
+  // A single onion cannot grow the retained raw deltas without bound: the per-onion cap drops its
+  // oldest and never rejects a valid report (fail-open), and the total cap bounds every onion.
+  {
+    const capSigner = elderSigner();
+    const capId = identity();
+    const capped = makeRelayAggregator({
+      signer: capSigner,
+      now: () => capClock,
+      isAnnounced: (onion) => onion === capId.onion,
+      maxContributionsPerOnion: 5,
+      maxContributions: 8,
+    });
+    let capClock = Date.parse("2026-08-25T12:30:00.000Z");
+    let previous = null;
+    let total = 0;
+    for (let i = 0; i < 40; i++) {
+      total += 1000;
+      const built = buildRelayReport({
+        counter: counter("0a".repeat(16), "2026-08-25T12:00:00.000Z", total, total),
+        previous,
+        onion: capId.onion,
+        onionSeedHex: capId.seed,
+        now: capClock,
+      });
+      assert.deepEqual(await capped.accept(built.report), { ok: true }, `report ${i} accepted (caps never reject a valid report)`);
+      previous = built.nextState;
+      capClock += 60_000;
+    }
+    assert.ok(capped.rawContributionCount() <= 5, `one onion is capped (${capped.rawContributionCount()} <= 5)`);
+    assert.equal(capped.rawNodeCount(), 1, "the node map still holds exactly the one onion");
+  }
+
   assert.equal(validRelayCounterState({ ...localState, counters: { ...localState.counters, destination: "forbidden" } }), false, "counter exact-key validation rejects metadata grafts");
   assert.equal(readFileSync(counterPath, "utf8").includes("destination\""), false, "node state contains no destination label");
   console.log("PASS: private relay telemetry accounting, validation, aggregation, suppression, and privacy");

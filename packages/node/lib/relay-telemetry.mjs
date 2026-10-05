@@ -29,6 +29,11 @@ const DEFAULT_MAX_BYTES_PER_SECOND = 2n * 1024n * 1024n * 1024n; // 16 Gibit/s c
 const DEFAULT_MAX_INTERVAL_MS = 24 * 60 * 60_000;
 const DEFAULT_FUTURE_SKEW_MS = 5 * 60_000;
 const DEFAULT_RETENTION_MS = 36 * 60 * 60_000;
+// Memory bounds on the retained raw deltas. A single onion that marches tiny forward intervals
+// could otherwise push one entry per request with no ceiling until retentionMs ages them out.
+// Honest reporting over the 24 h window is a few hundred entries, so these are generous.
+const DEFAULT_MAX_CONTRIBUTIONS_PER_ONION = 2_000;
+const DEFAULT_MAX_CONTRIBUTIONS = 100_000;
 const HOUR_MS = 60 * 60_000;
 
 function exactKeys(value, keys) {
@@ -379,6 +384,8 @@ export function makeRelayAggregator({
   bucketBytes = RELAY_ROUNDING_BUCKET_BYTES,
   maxBytesPerSecond = DEFAULT_MAX_BYTES_PER_SECOND,
   maxIntervalMs = DEFAULT_MAX_INTERVAL_MS,
+  maxContributionsPerOnion = DEFAULT_MAX_CONTRIBUTIONS_PER_ONION,
+  maxContributions = DEFAULT_MAX_CONTRIBUTIONS,
   futureSkewMs = DEFAULT_FUTURE_SKEW_MS,
   retentionMs = DEFAULT_RETENTION_MS,
 } = {}) {
@@ -491,8 +498,28 @@ export function makeRelayAggregator({
       destinationToAgent: currentB,
     });
     contributions.push({ onion: report.onion, start, end, agentToDestination: deltaA, destinationToAgent: deltaB });
+    enforceContributionCaps(report.onion);
     checkpoint();
     return { ok: true };
+  }
+
+  // Fail-open memory bounds. A single onion is capped first (drop its oldest extras), then the
+  // whole array (drop the globally oldest). Neither ever rejects a valid report; they only bound
+  // what an abuser can retain. Reached only once a cap is exceeded, and the ingestion route is
+  // itself rate limited, so the per-call scan cannot be driven into quadratic cost.
+  function enforceContributionCaps(onion) {
+    let perOnion = 0;
+    for (const entry of contributions) if (entry.onion === onion) perOnion++;
+    if (perOnion > maxContributionsPerOnion) {
+      let toDrop = perOnion - maxContributionsPerOnion;
+      contributions = contributions.filter((entry) => {
+        if (toDrop > 0 && entry.onion === onion) { toDrop--; return false; }
+        return true;
+      });
+    }
+    if (contributions.length > maxContributions) {
+      contributions.splice(0, contributions.length - maxContributions);
+    }
   }
 
   function aggregateWindow(windowEnd, hours) {
