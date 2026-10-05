@@ -678,7 +678,7 @@ pub fn register<R: Rpc>(
     )?;
     if !existing.is_zero() {
         return Err(
-            "member exists but is exiting; withdraw the old bond before registering this leaf again"
+            "member exists but is exiting; withdraw the old bond before registering this identity commitment again"
                 .into(),
         );
     }

@@ -586,7 +586,7 @@ pub fn check_identity_elsewhere(
                     active.public_profile().map(|p| p.contract).unwrap_or_default()
                 ),
                 format!(
-                    "either run against that network (`--network {}` or SHADENET_NETWORK=<path to its deployment.json>) or stake this leaf here: `shadenet register-member --identity <file> --key-file <funded key>`",
+                    "either run against that network (`--network {}` or SHADENET_NETWORK=<path to its deployment.json>) or register this identity commitment here: `shadenet register-member --identity <file> --key-file <funded key>`",
                     network.name
                 ),
             )),

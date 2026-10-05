@@ -129,7 +129,7 @@ pub enum Command {
     IdentityLock(IdentityFileArgs),
     /// Remove the identity file's passphrase
     IdentityUnlock(IdentityFileArgs),
-    /// Stake a member leaf on chain
+    /// Stake a member identity commitment on chain
     #[command(disable_help_flag = true)]
     RegisterMember(Passthrough),
     /// Show a staked leaf's on-chain state
