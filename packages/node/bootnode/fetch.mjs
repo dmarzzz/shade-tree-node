@@ -56,6 +56,9 @@ function once(host, method, path, body, { torHost, torPort, destinationPort, tim
       proxy: { host: torHost, port: torPort, type: 5 },
       command: "connect",
       destination: { host, port: destinationPort },
+      // The socks library gives up after 30 s by default, which fired before timeoutMs (the
+      // probe's documented 60 s) and cut a cold onion dial short.
+      timeout: timeoutMs,
     })
       .then(({ socket: s }) => {
         socket = s;
