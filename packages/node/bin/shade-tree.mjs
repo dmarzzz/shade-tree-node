@@ -435,6 +435,12 @@ async function main() {
     env.SHADE_TREE_ROTATION_SPREAD = "0";
     delete flags["no-rotation-spread"];
   }
+  // The member credential is one of two: an explicit --identity or --secret flag chooses, and
+  // the other variable, exported in the shell, must not win over it (#251).
+  if (COMMAND_ROLE[cmd] === "client") {
+    if (Object.hasOwn(flags, "identity")) delete env.SHADE_TREE_SECRET;
+    if (Object.hasOwn(flags, "secret")) delete env.SHADE_TREE_IDENTITY;
+  }
   for (const [flag, val] of Object.entries(flags)) {
     // Heartbeat owns a dedicated metrics variable because it runs beside the node. Keep the
     // common --metrics-port interface useful by routing it to that variable for this command.

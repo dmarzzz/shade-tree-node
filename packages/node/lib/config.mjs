@@ -373,6 +373,8 @@ export const ROLE_SPECS = {
       // SHADE_TREE_IDENTITY is a filesystem path (no shape to check here; the client reads it).
       if (!present(env, "SHADE_TREE_SECRET") && !present(env, "SHADE_TREE_IDENTITY")) {
         errors.unshift({ var: "SHADE_TREE_SECRET", problem: "required but not set (or set SHADE_TREE_IDENTITY to an identity file)" });
+      } else if (present(env, "SHADE_TREE_SECRET") && present(env, "SHADE_TREE_IDENTITY")) {
+        errors.unshift({ var: "SHADE_TREE_IDENTITY", problem: "set together with SHADE_TREE_SECRET; unset one, or pass --identity or --secret to choose" });
       }
       checkMetricsPortCollision(env, errors, "SHADE_TREE_SHIM_PORT", 8888, "Proxy backend");
       const hasPin = present(env, "SHADE_TREE_ONION");

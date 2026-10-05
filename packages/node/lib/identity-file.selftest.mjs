@@ -87,6 +87,22 @@ try {
     const greedy = JSON.parse(text);
     greedy.encrypted.logN = 30;
     assert.throws(() => openIdentity(greedy, { passphrase: PASSPHRASE }), /unsupported scrypt/);
+    // The shared over-limit vector (logN 20, r 32, p 16: 4 GiB and minutes of scrypt) is refused
+    // before any work starts, in both readers.
+    const started = Date.now();
+    assert.throws(() => readIdentityFile(join(DIR, vectors.overLimit), { passphrase: PASSPHRASE }), /unsupported scrypt/);
+    assert.ok(Date.now() - started < 1000, "refused before running scrypt");
+    for (const [field, value] of [["logN", 21], ["r", 9], ["p", 5]]) {
+      const past = JSON.parse(text);
+      past.encrypted[field] = value;
+      assert.throws(() => openIdentity(past, { passphrase: PASSPHRASE }), /unsupported scrypt/, `${field} ${value}`);
+    }
+    // The joint memory bound bites even when logN and r are each within their cap:
+    // r 8, logN 21 -> r * 2^logN = 16 * 2^20 > 8 * 2^20.
+    const jointOverLimit = JSON.parse(text);
+    jointOverLimit.encrypted.r = 8;
+    jointOverLimit.encrypted.logN = 21;
+    assert.throws(() => openIdentity(jointOverLimit, { passphrase: PASSPHRASE }), /unsupported scrypt/);
     const other = JSON.parse(text);
     other.encrypted.cipher = "aes-256-gcm";
     assert.throws(() => openIdentity(other, { passphrase: PASSPHRASE }), /unsupported encryption/);
@@ -111,7 +127,7 @@ try {
 
   await test("a FileIdentity never shows its secret", () => {
     const secret = plain.identitySecret.toString();
-    for (const shown of [String(plain), JSON.stringify(plain), inspect(plain, { depth: 5, showHidden: true }), JSON.stringify({ ...plain })]) {
+    for (const shown of [String(plain), JSON.stringify(plain), inspect(plain, { depth: 5, showHidden: true, getters: true }), `${inspect([plain], { showHidden: true, getters: true })}`, JSON.stringify({ ...plain })]) {
       assert.ok(!shown.includes(secret), shown);
     }
     assert.deepEqual(Object.keys(plain).sort(), ["leaf", "limit"]);
@@ -165,9 +181,12 @@ try {
   await test("the credential comes from an option before the environment, and a sealed file asks for its passphrase", () => {
     const passFile = join(scratch, "passphrase");
     writeFileSync(passFile, `${PASSPHRASE}\n`, { mode: 0o600 });
-    assert.equal(memberCredential({ secret: "0x01", identityFile: PLAIN }, {}), "0x01");
+    assert.equal(memberCredential({ secret: "0x01" }, { SHADE_TREE_IDENTITY: PLAIN }), "0x01");
     assert.equal(memberCredential({ identityFile: PLAIN }, { SHADE_TREE_SECRET: "0x02" }).leaf, vectors.leaf);
-    assert.equal(memberCredential({}, { SHADE_TREE_SECRET: "0x02", SHADE_TREE_IDENTITY: PLAIN }), "0x02");
+    // Two credentials at one level never pick one quietly.
+    assert.throws(() => memberCredential({ secret: "0x01", identityFile: PLAIN }, {}), /both given; pass one/);
+    assert.throws(() => memberCredential({ secret: "0x01", identity: plain }, {}), /both given; pass one/);
+    assert.throws(() => memberCredential({}, { SHADE_TREE_SECRET: "0x02", SHADE_TREE_IDENTITY: PLAIN }), /both set; unset one, or pass --identity or --secret/);
     assert.equal(memberCredential({}, { SHADE_TREE_IDENTITY: PLAIN }).leaf, vectors.leaf);
     assert.equal(memberCredential({ identity: readFileSync(PLAIN, "utf8") }, {}).leaf, vectors.leaf);
     assert.equal(memberCredential({ identity: plain }, {}), plain);
@@ -189,7 +208,11 @@ try {
     assert.equal(missing.ok, false);
     assert.equal(missing.errors[0].var, "SHADE_TREE_SECRET");
     assert.match(missing.errors[0].problem, /^required but not set \(or set SHADE_TREE_IDENTITY/);
-    const zero = validateConfig("client", { SHADE_TREE_SECRET: "0x0", SHADE_TREE_IDENTITY: PLAIN, SHADE_TREE_ONION: onion });
+    const both = validateConfig("client", { SHADE_TREE_SECRET: "0x01", SHADE_TREE_IDENTITY: PLAIN, SHADE_TREE_ONION: onion });
+    assert.equal(both.ok, false);
+    assert.equal(both.errors[0].var, "SHADE_TREE_IDENTITY");
+    assert.match(both.errors[0].problem, /set together with SHADE_TREE_SECRET/);
+    const zero = validateConfig("client", { SHADE_TREE_SECRET: "0x0", SHADE_TREE_ONION: onion });
     assert.equal(zero.errors[0].var, "SHADE_TREE_SECRET", "a malformed secret is still an error");
   });
 
@@ -206,6 +229,16 @@ try {
     const absent = spawnSync(process.execPath, [cli, "proxy", "--identity", join(scratch, "absent.json"), "--onion", onion], { env, encoding: "utf8", timeout: 60_000 });
     assert.equal(absent.status, 1);
     assert.match(`${absent.stdout}${absent.stderr}`, /absent\.json: file not found/);
+    // An exported SHADE_TREE_SECRET does not win over an explicit --identity: the flag chooses,
+    // so the proxy reaches the sealed file (and asks for its passphrase) instead of proving as
+    // the other member.
+    const chosen = spawnSync(process.execPath, [cli, "proxy", "--identity", LOCKED_LOW_COST, "--onion", onion], { env: { ...env, SHADE_TREE_SECRET: "0x01" }, encoding: "utf8", timeout: 60_000 });
+    assert.equal(chosen.status, 1);
+    assert.match(`${chosen.stdout}${chosen.stderr}`, /passphrase-protected; set SHADE_TREE_PASSPHRASE_FILE/);
+    // Both exported and no flag choosing: refused up front.
+    const ambiguous = spawnSync(process.execPath, [cli, "proxy", "--onion", onion], { env: { ...env, SHADE_TREE_SECRET: "0x01", SHADE_TREE_IDENTITY: PLAIN }, encoding: "utf8", timeout: 60_000 });
+    assert.notEqual(ambiguous.status, 0);
+    assert.match(`${ambiguous.stdout}${ambiguous.stderr}`, /SHADE_TREE_IDENTITY: set together with SHADE_TREE_SECRET/);
     // Neither credential: the launcher's config check says which two would do.
     const neither = spawnSync(process.execPath, [cli, "proxy", "--onion", onion], { env, encoding: "utf8", timeout: 60_000 });
     assert.notEqual(neither.status, 0);

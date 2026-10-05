@@ -70,8 +70,16 @@ export function serializeIdentityFile(file) {
 // identity tests read the same two files.
 
 const MAX_IDENTITY_FILE = 16 * 1024; // the Rust reader's cap
-const MAX_LOG_N = 20; // 1 GiB of scrypt memory; a file asking for more is refused, as in Rust
 const SEALED_VERSION = 2;
+// scrypt bounds, the same as the Rust reader's (crates/shadenet/src/identity.rs): what the writer
+// emits (logN 17, r 8, p 1) plus a modest margin on logN/r, p capped small, and a joint memory
+// bound r * 2^logN <= 8 * 2^20 (scrypt uses 128 * N * r bytes, so this caps it at 1 GiB). A
+// hostile file past any of these is refused before any work starts (red-team task 61);
+// testdata/identity/over-limit.json pins it, read by both implementations.
+const MAX_LOG_N = 20;
+const MAX_R = 8;
+const MAX_P = 4;
+const MAX_R_TIMES_N = 8 * 2 ** 20;
 
 const rotl = (v, n) => ((v << n) | (v >>> (32 - n))) >>> 0;
 
@@ -113,7 +121,8 @@ function openSealed(value, passphrase) {
     throw new Error("the identity file uses an unsupported encryption format");
   }
   const { logN, r, p } = sealed;
-  if (![logN, r, p].every(Number.isSafeInteger) || logN < 1 || logN > MAX_LOG_N || r < 1 || r > 32 || p < 1 || p > 16) {
+  if (![logN, r, p].every(Number.isSafeInteger) || logN < 1 || logN > MAX_LOG_N || r < 1 || r > MAX_R || p < 1 || p > MAX_P
+    || r * 2 ** logN > MAX_R_TIMES_N) {
     throw new Error("the identity file asks for unsupported scrypt parameters");
   }
   const salt = fromHex(sealed.salt), nonce = fromHex(sealed.nonce), ciphertext = fromHex(sealed.ciphertext);

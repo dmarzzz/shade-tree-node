@@ -587,8 +587,10 @@ export function socksAuthForTunnel(seed) {
 //   - an identity file, the one `shadenet init` writes and the Rust client reads: { identity } (its text,
 //     parsed object, or a FileIdentity), { identityFile } / SHADE_TREE_IDENTITY (a path). A passphrase-
 //     protected file needs { passphrase }, SHADE_TREE_PASSPHRASE_FILE or SHADE_TREE_PASSPHRASE.
-// An option wins over the environment, and a secret over an identity file at the same level.
-// Returns the app secret (string) or a FileIdentity; everything downstream takes either.
+// An option wins over the environment. Two credentials at one level (a secret and an identity
+// file both as options, or both environment variables with no option choosing) are refused: the
+// client must not quietly prove as the other member. Returns the app secret (string) or a
+// FileIdentity; everything downstream takes either.
 export function memberCredential(opts = {}, env = process.env) {
   const passphrase = () => {
     if (opts.passphrase != null) return String(opts.passphrase);
@@ -612,9 +614,16 @@ export function memberCredential(opts = {}, env = process.env) {
       try { return read(phrase); } catch (inner) { throw new Error(`ShadeTreeClient: ${inner.message}`); }
     }
   };
+  const optionIdentity = opts.identity != null || !!opts.identityFile;
+  if (opts.secret && optionIdentity) {
+    throw new Error("ShadeTreeClient: `secret` and `identity`/`identityFile` were both given; pass one");
+  }
   if (opts.secret) return opts.secret;
   if (opts.identity != null) return open((phrase) => openIdentity(opts.identity, { passphrase: phrase }));
   if (opts.identityFile) return open((phrase) => readIdentityFile(opts.identityFile, { passphrase: phrase }));
+  if (env.SHADE_TREE_SECRET && env.SHADE_TREE_IDENTITY) {
+    throw new Error("ShadeTreeClient: SHADE_TREE_SECRET and SHADE_TREE_IDENTITY are both set; unset one, or pass --identity or --secret to choose");
+  }
   if (env.SHADE_TREE_SECRET) return env.SHADE_TREE_SECRET;
   if (env.SHADE_TREE_IDENTITY) return open((phrase) => readIdentityFile(env.SHADE_TREE_IDENTITY, { passphrase: phrase }));
   throw new Error("ShadeTreeClient: `secret` (or SHADE_TREE_SECRET) is required, or an identity file (`identityFile` / SHADE_TREE_IDENTITY)");

@@ -45,4 +45,8 @@ export class FileIdentity {
   toString() {
     return `[identity ${this.leaf.slice(0, 12)}.. tier ${this.limit}]`;
   }
+  // util.inspect, with any options (showHidden, getters), shows the same line.
+  [Symbol.for("nodejs.util.inspect.custom")]() {
+    return this.toString();
+  }
 }

@@ -1,10 +1,11 @@
 {
-  "about": "Identity files as the Rust client writes them (shadenet 0.7.1): `plain` by `shadenet init --offline`, `locked` by `shadenet identity-lock` on a copy (scrypt logN 17), `lockedLowCost` by shadenet::identity::serialize at logN 10 so debug-build tests stay fast. A test identity: never stake this leaf. Read by crates/shadenet/src/identity.rs and packages/node/lib/identity-file.selftest.mjs.",
+  "about": "Identity files as the Rust client writes them (shadenet 0.7.1): `plain` by `shadenet init --offline`, `locked` by `shadenet identity-lock` on a copy (scrypt logN 17), `lockedLowCost` by shadenet::identity::serialize at logN 10 so debug-build tests stay fast; `overLimit` is `lockedLowCost` with scrypt logN 20, r 32, p 16, which both readers must refuse before running scrypt. A test identity: never stake this leaf. Read by crates/shadenet/src/identity.rs and packages/node/lib/identity-file.selftest.mjs.",
   "plain": "rust-init.json",
   "locked": "rust-init-locked.json",
   "lockedLowCost": "rust-sdk-locked.json",
   "passphrase": "correct horse battery staple",
   "leaf": "5422396744081522959706503441345376700063057855005220201447532952071108755372",
   "limit": 1,
-  "identityCommitment": "7906108046570446201899988459433411961492265525729901131144863051431466501434"
+  "identityCommitment": "7906108046570446201899988459433411961492265525729901131144863051431466501434",
+  "overLimit": "over-limit.json"
 }

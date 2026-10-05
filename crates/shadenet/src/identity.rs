@@ -30,8 +30,15 @@ use crate::Error;
 const MAX_FILE: u64 = 16 * 1024;
 /// scrypt cost for new files: 2^17 × 8 × 128 bytes = 128 MiB, about half a second.
 pub const DEFAULT_LOG_N: u8 = 17;
-/// Refuse files demanding more than 2^20 (1 GiB) so a hostile file cannot exhaust memory.
+/// scrypt bounds, the same as the JavaScript reader's (packages/node/lib/identity-file.mjs):
+/// what the writer emits (`DEFAULT_LOG_N`, r 8, p 1) plus a modest margin on logN/r, p capped
+/// small, and a joint memory bound r * 2^logN <= 8 * 2^20 (scrypt uses 128 * N * r bytes, so
+/// this caps it at 1 GiB). A hostile file past any of these is refused before any work starts
+/// (red-team task 61); both readers agree on it, pinned by a shared over-limit vector.
 const MAX_LOG_N: u8 = 20;
+const MAX_R: u32 = 8;
+const MAX_P: u32 = 4;
+const MAX_R_TIMES_N: u64 = 8 << 20;
 const ENCRYPTED_VERSION: u64 = 2;
 
 /// Loaded identity. The secret is zeroized on drop and never printed by `Debug`.
@@ -151,7 +158,12 @@ fn derive_key(
     r: u32,
     p: u32,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
-    if log_n > MAX_LOG_N || !(1..=32).contains(&r) || !(1..=16).contains(&p) {
+    if log_n == 0
+        || log_n > MAX_LOG_N
+        || !(1..=MAX_R).contains(&r)
+        || !(1..=MAX_P).contains(&p)
+        || u64::from(r) << log_n > MAX_R_TIMES_N
+    {
         return Err(Error::Config(
             "identity file asks for unsupported scrypt parameters".into(),
         ));
@@ -328,6 +340,7 @@ pub fn replace_file(path: &Path, body: &str) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn material() -> IdentityMaterial {
         IdentityMaterial {
@@ -418,6 +431,17 @@ mod tests {
         .unwrap();
         assert_eq!(locked.secret.as_str(), plain.secret.as_str());
         assert_eq!(locked.leaf, plain.leaf);
+
+        // A file asking for more scrypt work than the writer ever emits is refused before any
+        // work starts, by both readers alike.
+        let started = std::time::Instant::now();
+        let error = load(&dir.join(text("overLimit")), || {
+            Ok(Zeroizing::new(text("passphrase")))
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("unsupported scrypt parameters"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(1));
 
         // The public values both clients must derive from the secret.
         #[cfg(feature = "live")]
