@@ -366,7 +366,7 @@ pub fn check_state_dirs(
         dirs.push(("cache dir", cache));
     }
     for (name, dir) in dirs {
-        match first_group_writable(dir) {
+        match refused_by_arti(dir) {
             Some((offender, mode)) => checks.push(Check::fail(
                 name,
                 format!("{} is mode {mode:o}", offender.display()),
@@ -390,6 +390,28 @@ pub fn check_state_dirs(
         checks.push(check);
     }
     checks
+}
+
+/// The first directory on `dir`'s path that embedded Tor would refuse, with its mode. With the
+/// `live` feature this asks fs-mistrust, the library Arti itself uses, so a group-writable
+/// directory owned by the user's own self-named group (Ubuntu's default `user:user` with umask
+/// 002) passes here exactly when it passes there. Without it, any group- or world-writable
+/// directory outside the trusted prefixes counts, which can only over-warn.
+fn refused_by_arti(dir: &Path) -> Option<(PathBuf, u32)> {
+    let offender = first_group_writable(dir)?;
+    #[cfg(all(unix, feature = "live"))]
+    {
+        let existing = dir.ancestors().find(|p| p.exists())?;
+        if fs_mistrust::Mistrust::new()
+            .verifier()
+            .require_directory()
+            .check(existing)
+            .is_ok()
+        {
+            return None;
+        }
+    }
+    Some(offender)
 }
 
 #[cfg(unix)]
@@ -761,7 +783,8 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap();
-            std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o775)).unwrap();
+            // World-writable: refused whatever the group (a self-named group may own `loose` on Linux).
+            std::fs::set_permissions(&loose, std::fs::Permissions::from_mode(0o777)).unwrap();
             std::fs::set_permissions(loose.join("state"), std::fs::Permissions::from_mode(0o755))
                 .unwrap();
             std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o700)).unwrap();

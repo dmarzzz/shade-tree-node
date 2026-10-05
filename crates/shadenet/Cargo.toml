@@ -18,6 +18,7 @@ live = [
     "dep:shadenet-rln",
     "shadenet-rln/embedded-artifacts",
     "dep:arti-client",
+    "dep:fs-mistrust",
     "dep:tor-rtcompat",
     "dep:tokio",
     "dep:futures",
@@ -57,6 +58,9 @@ num-bigint = "0.4"
 shadenet-rln = { path = "../shadenet-rln", version = "0.7.1", optional = true }
 # Embedded Tor. `compression` stays off (one onion, one JSON line) and `static-sqlite` bundles
 # SQLite so the binary never links the host's libsqlite3.
+# The permission rules Arti applies to its state directories, so `doctor` judges a path the way
+# embedded Tor will (already in the tree through arti-client).
+fs-mistrust = { version = "0.15", default-features = false, optional = true }
 arti-client = { version = "0.46", default-features = false, features = ["tokio", "rustls", "onion-service-client", "static-sqlite", "hs-pow-full"], optional = true }
 tor-rtcompat = { version = "0.46", default-features = false, features = ["tokio", "rustls"], optional = true }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time"], optional = true }
