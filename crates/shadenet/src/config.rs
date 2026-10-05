@@ -266,6 +266,7 @@ impl Default for ConfigBuilder {
                         staked: None,
                         session_tickets: false,
                         node_commit: None,
+                        node_version: None,
                     },
                 },
                 Some(error.to_string()),

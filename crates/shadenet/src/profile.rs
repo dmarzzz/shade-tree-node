@@ -72,6 +72,11 @@ pub struct Deployment {
     pub session_tickets: bool,
     /// `services.node.commit` from the record: the commit the canopy's nodes run (for `doctor`).
     pub node_commit: Option<String>,
+    /// `services.node.version` from the record: the release version the canopy's nodes run. A
+    /// tagged release names an earlier fleet commit but the SAME version, so `doctor` compares
+    /// this (not the commit) to decide whether the binary matches the record. Older records that
+    /// predate the field carry `None`, and `doctor` falls back to the commit comparison.
+    pub node_version: Option<String>,
 }
 
 /// The zero-configuration public path of a network: staked admission, one signed rate policy and
@@ -328,6 +333,10 @@ pub fn parse_deployment(name: &str, raw: &str) -> Result<Deployment, String> {
         session_tickets,
         node_commit: deployment
             .pointer("/services/node/commit")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        node_version: deployment
+            .pointer("/services/node/version")
             .and_then(serde_json::Value::as_str)
             .map(str::to_string),
     })
