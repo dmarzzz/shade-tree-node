@@ -175,8 +175,8 @@ check("Grove inline Data API link has visible hover and keyboard focus", /\.netw
 check("Grove removes globe overlays without blocking pinch zoom", !/touch-action\s*:|\.scene-key|\.elder-label|\.network-caption|\.network-foot|\.snapshot-state/.test(groveCss) && /\.provenance-panel dt\s*\{[\s\S]*?font-size:\s*0\.74rem/.test(groveCss) && /\.provenance-panel dd\s*\{[\s\S]*?font-size:\s*0\.76rem/.test(groveCss));
 
 check("full research article is preserved at /research", /id="references"/.test(research) && /id="further-reading"/.test(research));
-check("landing and research canonical URLs are distinct", /rel="canonical" href="https:\/\/shade-tree-node\.vercel\.app\/"/.test(landing) && /rel="canonical" href="https:\/\/shade-tree-node\.vercel\.app\/research\/"/.test(research));
-check("Grove has its own canonical URL", /rel="canonical" href="https:\/\/shade-tree-node\.vercel\.app\/canopy\/"/.test(grovePage));
+check("landing and research canonical URLs are distinct", /rel="canonical" href="https:\/\/shadenet\.xyz\/"/.test(landing) && /rel="canonical" href="https:\/\/shadenet\.xyz\/research\/"/.test(research));
+check("Grove has its own canonical URL", /rel="canonical" href="https:\/\/shadenet\.xyz\/canopy\/"/.test(grovePage));
 
 const researchImages = [...research.matchAll(/<img[^>]+src="([^"]+)"/g)].map((match) => match[1]);
 check("research-note image paths remain intact", researchImages.length === 6 && researchImages.every((src) => src.startsWith("../fig/")));
@@ -291,7 +291,7 @@ check("Grove API controls caching and byte validators without CORS", /Vercel-CDN
 check("Grove v2 validates exact relay and optional onchain keys, freshness, cohort suppression, and signed bytes", /GROVE_V2_SNAPSHOT_URL = "https:\/\/api\.github\.com\/repos\/dmarzzz\/shade-tree-node\/contents\/grove-v2\.json\?ref=network-state"/.test(groveV2ApiContract) && /exactKeys\(value, hasOnchain/.test(groveV2ApiContract) && /observedAt >= now - maxAgeMs/.test(groveV2ApiContract) && /minimumCohort\) && value\.minimumCohort >= 5/.test(groveV2ApiContract) && /validPublicOnchain/.test(groveV2ApiContract) && /finalizedBlockTime/.test(groveOnchainApiContract) && /verifyBytes/.test(groveV2ApiContract) && /Vercel-CDN-Cache-Control/.test(groveV2Api) && /matchesIfNoneMatch/.test(groveV2Api));
 check("scheduled publisher preserves v1 and emits the separately signed v2 head", /--out "\$RUNNER_TEMP\/grove\.json"/.test(uptimeWorkflow) && /--relay 1/.test(uptimeWorkflow) && /--out "\$RUNNER_TEMP\/grove-v2\.json"/.test(uptimeWorkflow) && /path:"grove\.json"/.test(uptimeWorkflow) && /path:"grove-v2\.json"/.test(uptimeWorkflow));
 check("scheduled publisher carries the network-state deployment exclusion", /vercel_config='\{"git":\{"deploymentEnabled":\{"network-state":false\}\}\}'/.test(uptimeWorkflow) && /path:"docs\/post\/vercel\.json"/.test(uptimeWorkflow));
-check("scheduled publisher verifies the production Grove page and both public heads", /verify-public:[\s\S]*needs:\s*publish[\s\S]*GROVE_ORIGIN:\s*https:\/\/shade-tree-node\.vercel\.app[\s\S]*\/grove\/[\s\S]*\/api\/v1\/data\/grove\/sepolia\/head[\s\S]*\/api\/v2\/data\/grove\/sepolia\/head[\s\S]*shade-tree-public-grove-v1[\s\S]*shade-tree-public-grove-v2/.test(uptimeWorkflow));
+check("scheduled publisher verifies the production Grove page and both public heads", /verify-public:[\s\S]*needs:\s*publish[\s\S]*GROVE_ORIGIN:\s*https:\/\/shadenet\.xyz[\s\S]*\/grove\/[\s\S]*\/api\/v1\/data\/grove\/sepolia\/head[\s\S]*\/api\/v2\/data\/grove\/sepolia\/head[\s\S]*shade-tree-public-grove-v1[\s\S]*shade-tree-public-grove-v2/.test(uptimeWorkflow));
 check("Grove v2 OpenAPI excludes per-node telemetry and defines unavailable as omission", groveV2OpenApi.paths?.["/api/v2/data/grove/sepolia/head"] && groveV2OpenApi.components?.schemas?.Relay?.additionalProperties === false && /No node identities or per-node records/.test(groveV2OpenApi.components.schemas.Relay.description) && !JSON.stringify(groveV2OpenApi).includes("nodeId"));
 
 check("bundled snapshot uses the public aggregate schema", fallbackSnapshot.schema === "shade-tree-public-grove-v1" && fallbackSnapshot.source?.directoryVerified === true && fallbackSnapshot.source?.definition === "announced-within-ttl");
@@ -308,7 +308,7 @@ for (const script of ["site.js", "glyphgrove.js", "dapple.js", "grove.js", "grov
   check(`${script} parses as JavaScript`, result.status === 0);
 }
 
-check("robots advertises the sitemap", /Sitemap: https:\/\/shade-tree-node\.vercel\.app\/sitemap\.xml/.test(read("robots.txt")));
+check("robots advertises the sitemap", /Sitemap: https:\/\/shadenet\.xyz\/sitemap\.xml/.test(read("robots.txt")));
 const indexablePages = [
   ["home", landing, "/", "WebSite"],
   ["agent guide", agentPage, "/agent/", "BreadcrumbList"],
@@ -318,7 +318,7 @@ const indexablePages = [
   ["research", research, "/research/", "Article"],
 ];
 for (const [name, page, path, schemaType] of indexablePages) {
-  const canonical = new URL(path, "https://shade-tree-node.vercel.app").href;
+  const canonical = new URL(path, "https://shadenet.xyz").href;
   check(`${name} has one descriptive title, description, canonical URL, and H1`, (page.match(/<title>[^<]+<\/title>/g) || []).length === 1 && (page.match(/<meta name="description" content="[^"]+"/g) || []).length === 1 && page.includes(`<link rel="canonical" href="${canonical}"`) && (page.match(/<h1\b/g) || []).length === 1);
   check(`${name} social metadata matches its canonical page`, page.includes(`<meta property="og:url" content="${canonical}"`) && /<meta property="og:site_name" content="ShadeNet"/.test(page) && /<meta property="og:image:width" content="1200"/.test(page) && /<meta property="og:image:height" content="630"/.test(page) && /<meta property="og:image:alt" content="[^"]+"/.test(page));
   check(`${name} structured data parses and includes ${schemaType}`, structuredData(page).some((item) => item["@type"] === schemaType));
@@ -327,7 +327,7 @@ check("research structured data records its author and current modification date
 check("the error route stays out of search results", /<meta name="robots" content="noindex, follow">/.test(notFoundPage));
 check("branded 404 gives visitors useful recovery routes", /<h1>This path leaves the canopy\.<\/h1>/.test(notFoundPage) && /href="\/">Return home<\/a>/.test(notFoundPage) && /href="\/agent\/">Set up an agent<\/a>/.test(notFoundPage));
 const sitemapLocations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
-check("sitemap contains only the six indexable public pages", sitemapLocations.length === indexablePages.length && indexablePages.every(([, , path]) => sitemapLocations.includes(new URL(path, "https://shade-tree-node.vercel.app").href)) && !sitemap.includes("/lab/") && !sitemap.includes("404"));
+check("sitemap contains only the six indexable public pages", sitemapLocations.length === indexablePages.length && indexablePages.every(([, , path]) => sitemapLocations.includes(new URL(path, "https://shadenet.xyz").href)) && !sitemap.includes("/lab/") && !sitemap.includes("404"));
 
 check("staking surface is local-first, responsive, and visibly separates private from public state", /Stake without giving us an identity/.test(stakePage) && /data-leaf-tag/.test(stakePage) && /data-sponsor-step/.test(stakePage) && /@media \(max-width: 900px\)/.test(stakeCss) && /@media \(prefers-reduced-motion: reduce\)/.test(stakeCss) && stakeScript.length > 5_000 && stakeScript.length < 150_000);
 

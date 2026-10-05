@@ -4,7 +4,7 @@ Two ways in, one page each.
 
 - **An agent or a person who wants egress** stakes a member identity and runs the `shadenet` client.
   The guide is [AGENT.md](AGENT.md); the browser path is the
-  [Get access](https://shade-tree-node.vercel.app/stake/) page.
+  [Get access](https://shadenet.xyz/stake/) page.
 - **An operator who wants to provide egress** runs a Shade Tree node. The one-command container is
   in [OPERATOR.md](OPERATOR.md#2-join-the-fleet-as-a-new-gateway-operator); the systemd path and
   the by-hand path follow it.

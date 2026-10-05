@@ -231,9 +231,9 @@ ShadeNet is open source under the [MIT license](LICENSE).
 [release-url]: https://github.com/dmarzzz/shade-tree-node/releases/latest
 [license-badge]: https://img.shields.io/badge/license-MIT-59624f.svg
 [license-url]: LICENSE
-[stake]: https://shade-tree-node.vercel.app/stake/
-[site]: https://shade-tree-node.vercel.app
-[canopy]: https://shade-tree-node.vercel.app/canopy/
-[research-note]: https://shade-tree-node.vercel.app/research/
+[stake]: https://shadenet.xyz/stake/
+[site]: https://shadenet.xyz
+[canopy]: https://shadenet.xyz/canopy/
+[research-note]: https://shadenet.xyz/research/
 [tor-exit-list]: https://support.torproject.org/abuse/ban-tor/
 [tor-captchas]: https://support.torproject.org/tor-browser/encountering-issues/captchas/

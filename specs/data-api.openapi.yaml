@@ -12,7 +12,7 @@ info:
     This specification intentionally excludes proposed publisher endpoints and
     all unimplemented traffic, health, implementation, and per-node metrics.
 servers:
-  - url: https://shade-tree-node.vercel.app
+  - url: https://shadenet.xyz
 paths:
   /api/v2/data/grove/sepolia/head:
     get:

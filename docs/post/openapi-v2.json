@@ -5,7 +5,7 @@
     "version": "2.0.0",
     "description": "Signed Grove head with delayed, rounded relay telemetry and an optional delayed, finalized v4 onchain ledger. Missing, suppressed, or unavailable observations are never encoded as zero."
   },
-  "servers": [{ "url": "https://shade-tree-node.vercel.app" }],
+  "servers": [{ "url": "https://shadenet.xyz" }],
   "tags": [
     { "name": "Relay telemetry", "description": "Payload bytes counted once on reads from either side of an established tunnel; excludes proof envelopes, acknowledgements, Tor/TCP/IP/TLS overhead, failed connects, probes, and retransmissions below the socket layer." },
     { "name": "Onchain activity", "description": "Optional v4-only commitment, attributable settlement, and finalized contract-enforcement aggregates. The section is omitted when no current verified live target exists." }

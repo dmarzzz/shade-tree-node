@@ -7,7 +7,7 @@ on:
       origin:
         description: Deployment origin to test
         required: false
-        default: https://shade-tree-node.vercel.app
+        default: https://shadenet.xyz
 
 permissions:
   contents: read

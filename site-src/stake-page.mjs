@@ -156,20 +156,20 @@ export function renderStakePage() {
   <meta property="og:title" content="Get Access · ShadeNet">
   <meta property="og:description" content="Create the member secret locally, save its recovery file, and send only the public commitment to ${CHAIN_NAME}.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://shade-tree-node.vercel.app/stake/">
+  <meta property="og:url" content="https://shadenet.xyz/stake/">
   <meta property="og:site_name" content="ShadeNet">
-  <meta property="og:image" content="https://shade-tree-node.vercel.app/fig/shade-tree-og.png">
+  <meta property="og:image" content="https://shadenet.xyz/fig/shade-tree-og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="A low-poly grove crossed by a private data path">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="canonical" href="https://shade-tree-node.vercel.app/stake/">
+  <link rel="canonical" href="https://shadenet.xyz/stake/">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../site.css">
   <link rel="stylesheet" href="./stake.css">
   <script type="module" src="./stake.js"></script>
   <script type="application/ld+json">
-    {"@context":"https://schema.org","@type":"WebApplication","name":"ShadeNet Get Access","url":"https://shade-tree-node.vercel.app/stake/","applicationCategory":"FinanceApplication","operatingSystem":"Web browser"}
+    {"@context":"https://schema.org","@type":"WebApplication","name":"ShadeNet Get Access","url":"https://shadenet.xyz/stake/","applicationCategory":"FinanceApplication","operatingSystem":"Web browser"}
   </script>
   <title>Get Access · ShadeNet</title>
 </head>
