@@ -40,6 +40,35 @@ export function startTor({ knobs, hsDir, tor, timeoutMs = 180000, torLevel = pro
   });
 }
 
+// How many Elder Trees list this node, read from the heartbeat's own Prometheus text. A node can be
+// up and ready while no Elder lists it (refused `not-staked`, or no Elder reachable); `status` has
+// to say so instead of `running: true` alone.
+export function heartbeatListing(metricsText) {
+  const read = (name) => {
+    const m = String(metricsText || "").match(new RegExp(`^${name}(?:\\{[^}]*\\})?\\s+([0-9.eE+-]+)\\s*$`, "m"));
+    return m ? Number(m[1]) : null;
+  };
+  const accepted = read("shade_tree_heartbeat_elders_accepted");
+  const total = read("shade_tree_heartbeat_elders_total");
+  if (accepted === null || total === null) return null;
+  const last = read("shade_tree_heartbeat_last_success_timestamp_seconds");
+  return { eldersAccepted: accepted, eldersTotal: total, lastAcceptedAt: last ? new Date(last * 1000).toISOString() : null };
+}
+
+// One line per Elder for `check --probe`: fetch /health over Tor (fetch returns parsed JSON).
+export async function probeElders(elders, fetchHealth) {
+  const out = [];
+  for (const e of elders) {
+    const tag = `Elder ${e.onion.slice(0, 16)}…`;
+    try {
+      const h = await fetchHealth(e.onion);
+      if (!h || typeof h !== "object" || h.ok !== true) out.push({ level: "warn", what: `${tag}: unexpected /health reply` });
+      else out.push({ level: "ok", what: `${tag}: ${h.count} live node(s), admission ${h.admission || "?"}, commit ${String(h.commit || "").slice(0, 7)}` });
+    } catch (err) { out.push({ level: "warn", what: `${tag}: ${err.message}` }); }
+  }
+  return out;
+}
+
 export function writeStatus(state) {
   try { writeFileSync(join(state.stateDir, "status.json"), JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2) + "\n"); } catch {}
 }

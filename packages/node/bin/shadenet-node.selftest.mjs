@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifyOperatorSig } from "../bootnode/announce.mjs";
+import { heartbeatListing, probeElders } from "../lib/node-supervisor.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../../..");
@@ -86,6 +87,15 @@ try {
   { assert.equal((await cli(["status", "--quiet"])).code, 1); const r = await cli(["status"]); assert.equal(JSON.parse(r.out).running, false);
     mkdirSync(state, { recursive: true }); writeFileSync(join(state, "status.json"), JSON.stringify({ stateDir: state, onion: "x.onion", pids: {}, stoppedAt: "2026-10-01T00:00:00Z" }));
     assert.equal((await cli(["status", "--quiet"])).code, 1, "a stopped node is not running"); }
+  // status reads the Elder listing from the heartbeat's metrics; probe lines come from parsed /health
+  { const l = heartbeatListing("# HELP x\nshade_tree_heartbeat_elders_accepted 0\nshade_tree_heartbeat_elders_total 2\nshade_tree_heartbeat_last_success_timestamp_seconds 0\n");
+    assert.deepEqual(l, { eldersAccepted: 0, eldersTotal: 2, lastAcceptedAt: null });
+    assert.equal(heartbeatListing("shade_tree_heartbeat_elders_accepted 2\nshade_tree_heartbeat_elders_total 2\nshade_tree_heartbeat_last_success_timestamp_seconds 1791191700.779\n").lastAcceptedAt, "2026-10-05T09:15:00.779Z");
+    assert.equal(heartbeatListing("nothing here"), null);
+    const lines = await probeElders([{ onion: "a".repeat(56) + ".onion" }, { onion: "b".repeat(56) + ".onion" }],
+      async (onion) => { if (onion.startsWith("b")) throw new Error("timeout"); return { ok: true, count: 4, admission: "stake", commit: "190d6433bd7a" }; });
+    assert.equal(lines[0].level, "ok"); assert.match(lines[0].what, /4 live node\(s\), admission stake, commit 190d643/);
+    assert.equal(lines[1].level, "warn"); assert.match(lines[1].what, /timeout/); }
   // retire with nothing to retire says so
   { const r = await cli(["retire"]); assert.equal(r.code, 1); assert.match(r.err, /nothing to retire/); }
   // unknown command

@@ -7,6 +7,18 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 Signed and hashed v4 wire strings are unchanged (`test/wire-freeze.selftest.mjs`); `research-v2`
 is a new session class next to `research-v1`.
 
+### Node operators: the first hour (orbital-one join, 2026-10-05)
+
+- An Elder's refusal is logged as one: `heartbeat rejected` with the Elder's `err` and, for
+  `not-staked` and `bad-operator-sig`, a `fix` field. It used to read `heartbeat transport failed`
+  with `reason: transport-error`, and the reason was dropped. A 4xx reply other than 408 and 429 is
+  no longer retried four times by the Tor HTTP helper; the error carries `status` and `reply`.
+- `shadenet-node check --probe` reaches each Elder again (it failed on every Elder with
+  `Cannot read properties of undefined`) and prints its node count, admission and commit.
+- `shadenet-node status` adds `listed`: how many Elder Trees accepted the last announce, and when.
+- The Operators page and `docs/OPERATOR.md` stake and sign before the node runs, through the node
+  image (no npm package needed), and the run line carries the compose file's hardening flags.
+
 ### The proxy is a scheduler (ADR 0013, #229)
 
 - Budget queue: with the epoch budget spent, `shadenet proxy`, `mcp` and `fetch` hold a request

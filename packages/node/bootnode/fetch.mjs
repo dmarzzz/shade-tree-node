@@ -40,6 +40,9 @@ export async function requestOverTor(onion, { method = "GET", path = "/", body =
     try {
       return await once(host, method, path, body, { torHost, torPort, destinationPort, timeoutMs, maxBytes, authorization, socksClient });
     } catch (e) {
+      // The bootnode answered and said no (4xx other than 408/429): asking again in a second
+      // gets the same answer. Hand the refusal back as is, status and reply attached.
+      if (isRefusal(e)) throw e;
       lastErr = e;
       await sleep(Math.min(1000 * (i + 1), 4000)); // back off through onion cold-start
     }
@@ -89,8 +92,20 @@ export function parseHttp(buf) {
   const head = buf.subarray(0, sep).toString("utf8");
   const status = Number(head.split("\r\n")[0].split(" ")[1]);
   const body = buf.subarray(sep + 4).toString("utf8");
-  if (status !== 200) throw new Error(`bootnode HTTP ${status}: ${body.slice(0, 200)}`);
+  if (status !== 200) {
+    const err = new Error(`bootnode HTTP ${status}: ${body.slice(0, 200)}`);
+    err.status = status;
+    try { err.reply = JSON.parse(body); } catch { err.reply = null; }
+    throw err;
+  }
   return JSON.parse(body);
+}
+
+// A refusal is an answer, not a transport failure: the bootnode spoke HTTP and declined with a
+// 4xx. 408 and 429 ask the caller to come back, so they stay retryable.
+export function isRefusal(e) {
+  const s = Number(e?.status);
+  return s >= 400 && s < 500 && s !== 408 && s !== 429;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
