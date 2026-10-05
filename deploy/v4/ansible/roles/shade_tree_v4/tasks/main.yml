@@ -819,7 +819,7 @@
         at="$(date -d "$entered" +%s)"
         test "$at" -le "$since" || since="$at"
       done
-      exec node {{ (shade_tree_install_dir ~ '/scripts/onion-ready.mjs') | quote }} \
+      exec {{ (shade_tree_remote_node.stdout | trim) | quote }} {{ (shade_tree_install_dir ~ '/scripts/onion-ready.mjs') | quote }} \
         --tor-port {{ shade_tree_tor_socks_port | int }} \
         --timeout {{ shade_tree_ready_timeout_seconds | int }} \
         --since "$since" \
