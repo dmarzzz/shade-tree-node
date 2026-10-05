@@ -541,7 +541,18 @@ async fn tunnel(
             return Err(Error::Transport("tunnel setup queue is full".into()));
         }
     };
-    let tunnel = match shared.client.connect(&target).await {
+    // The time already spent in the queue above counts: the whole hold honours `--max-wait`,
+    // and `X-ShadeNet-Queued` is the total.
+    let connect = match shared.client.config().queue_max_wait {
+        Some(max_wait) => {
+            shared
+                .client
+                .connect_after_wait(&target, max_wait, queued_for)
+                .await
+        }
+        None => shared.client.connect(&target).await,
+    };
+    let tunnel = match connect {
         Ok(tunnel) => tunnel,
         Err(error) => {
             let _ = stream.write_all(error_response(&error).as_bytes()).await;
@@ -550,7 +561,7 @@ async fn tunnel(
     };
     drop(setup_permit);
     let gateway = tunnel.gateway.clone();
-    let waited = tunnel.waited.max(queued_for);
+    let waited = tunnel.waited;
     let mut remote = tunnel.into_stream();
     let relay = async {
         if !early.is_empty() {
