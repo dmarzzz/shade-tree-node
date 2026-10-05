@@ -1,6 +1,6 @@
 {
   "name": "shade-tree-node",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "Run a local proxy for an agent, or a node that provides proof-gated onion egress.",
   "engines": {
     "node": ">=20"

@@ -1,6 +1,6 @@
 [package]
 name = "shadenet-cli"
-version = "0.7.3"
+version = "0.7.4"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
@@ -37,12 +37,12 @@ live = ["dep:shadenet-rln", "shadenet-rln/embedded-artifacts", "shadenet/live", 
 session-tickets = ["shadenet/session-tickets"]
 
 [dependencies]
-shadenet-proto = { path = "../shadenet-proto", version = "0.7.3" }
+shadenet-proto = { path = "../shadenet-proto", version = "0.7.4" }
 # OPTIONAL, feature-gated (`live`): the RLN Groth16 prover + native depth-20 Poseidon tree
 # (T-RUST-2b/2c). Excluded from default-members and only compiled under `--features live`,
 # so the default build stays fast (no ark-circom / wasmer).
-shadenet-rln = { path = "../shadenet-rln", version = "0.7.3", optional = true }
-shadenet = { path = "../shadenet", version = "0.7.3", default-features = false }
+shadenet-rln = { path = "../shadenet-rln", version = "0.7.4", optional = true }
+shadenet = { path = "../shadenet", version = "0.7.4", default-features = false }
 # T-RUST-2 deterministic client: parse UNTRUSTED directory/announce/receipt JSON into
 # local DTOs, then hand the mapped shadenet-proto structs to the trust-critical checks.
 # serde/serde_json live ONLY here — shadenet-proto's canonical byte path stays serde-free.

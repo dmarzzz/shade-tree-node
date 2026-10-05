@@ -6,6 +6,10 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 Nothing yet.
 
+## 0.7.4 — forward-compatible capability verification
+
+Clients verify a signed directory over the bytes as signed and tolerate capability fields they do not recognize, instead of rejecting the directory. A future `caps.*` field no longer bricks an installed client the way `caps.sets` did to v0.7.0; interpretation still ignores unknown fields. Symmetric in the Rust client and the JS node, with a previous-release conformance vector. No new signed capability field ships until this release is the floor.
+
 ## 0.7.3 — first-run polish
 
 The one-tier launch set plus: init shortens the leaf it prints so it cannot be pasted where the identity commitment belongs, and doctor reports a pruned backup RPC as a note for clients instead of a failure.
