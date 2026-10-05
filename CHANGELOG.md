@@ -4,6 +4,10 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.7.2 — one tier, more bandwidth
+
 Signed and hashed v4 wire strings are unchanged (`test/wire-freeze.selftest.mjs`); `research-v2`
 is a new session class next to `research-v1`.
 
