@@ -72,7 +72,7 @@ as **addresses** so a real pre-deployed RLN/Groth16 verifier can be wired in.
 | `GatewayRegistry` | `bond, unbonding, minUnbonding, owner` | gateway-operator stake the bootnode reads for `stake`-mode admission; `owner` is the slashing/governance authority (`0` ⇒ deployer). |
 | `StakedReputationSet` | `bond, unbonding, minUnbonding, withdrawVerifier, hasher, extraLimits[], extraBonds[]` | member admission set (register at a tier / ZK-exit / time-locked withdraw / tiered slash) with the on-chain root (`currentRoot`, slot 3). `bond` is the DEFAULT tier (limit 8); `extraLimits/extraBonds` are the other admitted tiers (T-FEAT-8b, `SHADE_TREE_TIER_LIMITS` / `SHADE_TREE_TIER_BONDS_WEI`). Skipped when `SHADE_TREE_DEPLOY_STAKED=0`; `GatewayRegistry` skipped when `SHADE_TREE_DEPLOY_REGISTRY=0` (its address then comes from `SHADE_TREE_GATEWAY_REGISTRY` for the record). |
 | `RateCommitmentHasher` | — | the real tiered Poseidon rate-commitment hasher (`commitmentOf(secret, limit)`), deployed when `SHADE_TREE_COMMITMENT_HASHER` is unset. Links the external `PoseidonT2` / `PoseidonT3` libraries (deployed alongside, or reused via `--libraries`, see §5). |
-| `WithdrawGroth16Verifier` + `WithdrawVerifier` | — | the REAL Groth16 exit-auth verifier (T-DEV-1), deployed when `SHADE_TREE_WITHDRAW_VERIFIER` is unset and `SHADE_TREE_DEPLOY_REAL_VERIFIER=1`. VK = the untrusted dev phase-2 (testnet-only until T-HARD-1). |
+| `WithdrawGroth16Verifier` + `WithdrawVerifier` | — | the REAL Groth16 exit-auth verifier (T-DEV-1), deployed when `SHADE_TREE_WITHDRAW_VERIFIER` is unset and `SHADE_TREE_DEPLOY_REAL_VERIFIER=1`. VK = the adopted PSE trusted setup (testnet-only, T-HARD-1). |
 | `MockWithdrawVerifier` | — | **testnet-only** fallback, deployed **only** when `SHADE_TREE_WITHDRAW_VERIFIER` is unset and `SHADE_TREE_DEPLOY_REAL_VERIFIER` is not `1`. NOT zero-knowledge (the secret is revealed in calldata); the script prints a `WARNING` when it deploys it. |
 
 `minUnbonding` is the `F + E + C` lower bound (freshness window + epoch + slash-confirmation
@@ -289,9 +289,11 @@ This is the on-chain half of the deploy; the fleet half is the OpenTofu + Ansibl
 Keep the contract address in the agent-devops inventory (group vars) as the single source of
 truth for the fleet; `contracts/deployed.local.json` stays the deployer-box local cache.
 
-**Flipping the fleet to a new member set (rln-v3 → rln-v4-tiers).** The live gateways slash
-against `SHADE_TREE_SLASH_CONTRACT` (rln-v3 `0xdAE242AE…20FC` at the time of writing) and gate on
-`group/members.json`; the rln-v4 set `0xFe48De8b…9d25` is live and recorded but the units were
+**Flipping the fleet to a new member set (historical: rln-v3 → rln-v4-tiers).** The live set
+today is the ShadeNet set `0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC`; the sets named here are
+retired pre-v4 history, kept as a worked example of the flip. At the time, gateways slashed
+against `SHADE_TREE_SLASH_CONTRACT` (rln-v3 `0xdAE242AE…20FC`) and gated on
+`group/members.json`; the rln-v4 set `0xFe48De8b…9d25` was recorded but the units were
 deliberately NOT flipped in the same change (that is a live-fleet config change: agent-devops
 group vars `SHADE_TREE_SLASH_CONTRACT` (+ `SHADE_TREE_GROUP_CONTRACT` for on-chain root mode) → re-render
 → restart, per `docs/history/DEPLOYMENT.md`; never a hand-ssh edit). Until then a member staked on
@@ -313,7 +315,7 @@ it; the gateway unions both roots).
 |---|---|---|
 | `SHADE_TREE_PAY_LIMITS` | `8,32` | tiers this set admits (comma-separated userMessageLimits; ascending, distinct, `1..65535`, must include `8`). No prices: pricing lives on the 402 rail. |
 | `SHADE_TREE_PAY_OPERATOR` | `0` (⇒ deployer) | the registrar / insert authority (`insert`, `insertBatch`, `setOperator`). Rotate later with the two-step `setOperator` / `acceptOperator`. |
-| `SHADE_TREE_COMMITMENT_HASHER` | `0` (⇒ deploy `RateCommitmentHasher`) | the TIERED hasher; on Sepolia reuse the live rln-v4 one `0x29e9D6ae8d46A9D86D6A92a43307850e0FA06586`. |
+| `SHADE_TREE_COMMITMENT_HASHER` | `0` (⇒ deploy `RateCommitmentHasher`) | the TIERED hasher; on Sepolia the historical rln-v4 hasher was `0x29e9D6ae8d46A9D86D6A92a43307850e0FA06586`. |
 | `SHADE_TREE_RPC_URL` / `SHADE_TREE_DEPLOY_OUT` | as §2 | output JSON default `contracts/paid-access.local.json` (gitignored). |
 
 Simulate, then broadcast (how Sepolia was deployed, 2026-08-17):

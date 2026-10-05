@@ -11,10 +11,10 @@ need neither Node.js nor a system Tor daemon. (`shade-tree` is the same binary
 under its old name, kept for one release.)
 
 > [!WARNING]
-> Research preview on Sepolia. The proof keys come from PSE's RLN trusted setup
-> (docs/ceremony/PSE-VERIFICATION.md); the bonds are testnet ETH and the staking
-> wallet is linked to the public member leaf. Do not use
-> it for real funds or sensitive work.
+> ShadeNet is a research preview on Sepolia. The code is unaudited, the proof keys
+> come from a trusted setup, and it should not be considered secure against a
+> motivated actor: do not use it for real funds or sensitive traffic. See the full
+> [research preview statement](../SECURITY.md#status).
 
 ## Quickstart
 

@@ -2,32 +2,27 @@
 
 ## Status
 
-This is a research preview on Sepolia. A live canopy (two Elder Trees and three
-Shade Tree nodes) admits invited members and permissionless Sepolia stakers; its
-record is [`network/sepolia/deployment.json`](network/sepolia/deployment.json).
-Everything in it is testnet material:
+ShadeNet is a research preview on Sepolia. The code is unaudited, the proof keys come from a trusted setup, and it should not be considered secure against a motivated actor: do not use it for real funds or sensitive traffic.
 
-- The code is **unaudited** by a third party. An internal contract review found
-  issues that needed a fresh deployment
-  ([issue #113](https://github.com/dmarzzz/shade-tree-node/issues/113), all fixed
-  and regression-tested); the ShadeNet launch set `StakedReputationSet`
-  (`0xDEB2…4bBC`, 2026-09-30) carries those fixes; the earlier set `0xEB67…4275`
-  is retired.
-- The ZK artifacts (`circuits/rln/`) are PSE's finalized RLN trusted-setup
-  output, adopted after an independent re-verification
-  (`docs/ceremony/PSE-VERIFICATION.md`); an outside verifier's signed statement
-  is still pending. The
-  project's own community ceremony has not been run and stays as the fallback
-  ([issue #6](https://github.com/dmarzzz/shade-tree-node/issues/6),
-  `docs/CEREMONY.md`).
-- The private-IP SSRF flaw in the default egress policy was fixed in
-  [issue #73](https://github.com/dmarzzz/shade-tree-node/issues/73); nodes resolve
-  and reject non-public destinations before dialing the checked numeric address.
+The proof keys are the output of the RLN trusted setup ceremony that Privacy & Scaling Explorations (PSE) ran in 2023. ShadeNet did not run the ceremony. This project adopted its output and re-verified it from public inputs, and no outside verifier has confirmed that check yet. The keys are sound if at least one contributor to each was honest (60 contributed to the membership key, 62 to the withdrawal key). If all of them colluded, proofs could be forged.
 
-Do not put real funds on the contracts or depend on this code for sensitive use
-until the production ceremony is complete and the system has been independently
-reviewed. Key rotations are recorded in
-[`docs/KEY-ROTATIONS.md`](docs/KEY-ROTATIONS.md).
+Reasons it should not be considered secure against a motivated actor:
+
+- One operator runs every Shade Tree node and both Elder Trees, so one party sees the destination and timing of every tunnel.
+- Every Shade Tree node is hosted at one provider.
+- The member set is small, so each member hides among few others.
+- The Elder Trees' signers choose the node list a client sees, and can omit nodes or add their own.
+- Rate limits are enforced per node. Replay protection across nodes is best effort and fails open.
+- A wallet that stakes is linked to its member commitment on chain, publicly and permanently.
+- The node that serves a tunnel sees the destination hostname, the timing and the byte counts.
+- Tor does not stop an observer who watches both ends of a tunnel from correlating timing.
+
+The live canopy is recorded in
+[`network/sepolia/deployment.json`](network/sepolia/deployment.json), and key
+rotations in [`docs/KEY-ROTATIONS.md`](docs/KEY-ROTATIONS.md). The private-IP
+SSRF flaw in the default egress policy was fixed in
+[issue #73](https://github.com/dmarzzz/shade-tree-node/issues/73); nodes resolve
+and reject non-public destinations before dialing the checked numeric address.
 
 The full trust model, per-party threat model, and trust boundaries are in
 [`docs/AUDIT.md`](docs/AUDIT.md). Read it before reporting: several sharp edges

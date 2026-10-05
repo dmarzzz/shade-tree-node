@@ -11,9 +11,10 @@ Ground rules for this document:
 - Every enforced property below cites the function that enforces it. Where a property is designed
   but the enforcement path is not fully wired in the shipped code, it is marked **claimed,
   unverified** rather than asserted.
-- This is a reference implementation, **unaudited**, with **testnet-only ZK artifacts** from an
-  untrusted phase-2 ceremony (`circuits/rln/ARTIFACTS.md`, `SECURITY.md`). Nothing here is a
-  production security guarantee. Read `docs/AUDIT.md` first; this page is its threat-model companion.
+- This is a reference implementation, **unaudited**, with proof keys from an adopted,
+  re-verified **RLN trusted setup** (PSE's 2023 ceremony; `circuits/rln/ARTIFACTS.md`,
+  `SECURITY.md`). Nothing here is a production security guarantee. Read `docs/AUDIT.md` first;
+  this page is its threat-model companion.
 
 ---
 
@@ -461,19 +462,21 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
   channel), but it is **opt-in and fail-open**: a fleet without it lets a malicious gateway fan a
   captured envelope to peers (each accepts it once), and a member spreading requests across `N`
   gateways gets up to `N`× its intended budget.
-- **Exit-auth verifier — real in the Sepolia rln-v4-tiers set (2026-08-17).** The set
-  (`0xFe48De8b…9d25`), explicitly reused by the live v4 research canopy since 2026-09-03, wires the real Groth16 `WithdrawVerifier` (`contracts/WithdrawVerifier.sol`,
-  taking the member's recorded tier); only its VK is still the untrusted dev phase-2 (T-HARD-1),
-  and the superseded rln-v3 set (`0xdAE242AE…20FC`, the experiment's earlier slash target) keeps the
-  mock.
+- **Exit-auth verifier, real in the live ShadeNet set.** The live set
+  (`0xDEB2…4bBC`) wires the real Groth16 `WithdrawVerifier` (`contracts/WithdrawVerifier.sol`,
+  taking the member's recorded tier); its VK comes from the adopted PSE trusted setup (T-HARD-1).
+  The earlier rln-v4-tiers set (`0xFe48De8b…9d25`, 2026-08-17) and the rln-v3 set
+  (`0xdAE242AE…20FC`, which kept the mock) are retired pre-v4 history.
 - **RLN leaf-removal parity (T-DEV-2) — closed.** `reconstructRoot` now follows the contract's
   zero-in-place convention (`packages/node/lib/root-provider.mjs`, three-way JS/Solidity/Rust proof); listed so
   the history of the caveat is not lost.
-- **Trusted-setup provenance (T-HARD-1, P0).** The ZK artifacts came from an **untrusted testnet
-  phase-2 ceremony** (`circuits/rln/ARTIFACTS.md`). Their hashes are now pinned and CI-verified
-  (`testdata/zk-artifacts.lock.json`, `test/zk-artifacts.selftest.mjs`), which fixes *which* untrusted
-  artifacts run, not their provenance: no real anonymity or funds until the human-gated ceremony
-  (`docs/CEREMONY.md`) or pinned audited artifacts land. This is the single biggest caveat.
+- **Trusted-setup provenance (T-HARD-1, P0).** The proof keys are the output of the RLN trusted
+  setup ceremony that Privacy & Scaling Explorations (PSE) ran in 2023, adopted and re-verified
+  by this project, not run by it (`circuits/rln/ARTIFACTS.md`). Their hashes are pinned and
+  CI-verified (`testdata/zk-artifacts.lock.json`, `test/zk-artifacts.selftest.mjs`). The keys are
+  sound if at least one contributor to each was honest; if all colluded, proofs could be forged,
+  and no outside verifier has confirmed the re-verification yet. See the [research preview
+  statement](../SECURITY.md#status). This is the single biggest caveat.
 - **Cold-start directory staleness (T-FEAT-21).** The rollback floor (§4.9) only bounds staleness
   *within* a session; the absolute max-age bound is **off by default**, so a brand-new client can
   accept a validly-signed but months-old directory from a replaying bootnode. Set

@@ -4,8 +4,9 @@ The ShadeNet JavaScript SDK, for browsers and Node. It creates and checks member
 stakes, sponsors, exits and withdraws, verifies a canopy, reads a local daemon's status, and in
 Node opens proof-gated tunnels.
 
-Status: research preview on Sepolia. The proof artifacts come from an untrusted development
-setup until the trusted-setup ceremony.
+Status: research preview on Sepolia. The proof keys come from the RLN trusted setup ceremony
+that Privacy & Scaling Explorations (PSE) ran in 2023, adopted and re-verified by this project,
+not run by it. See the [research preview statement](../../SECURITY.md#status) for what that means.
 
 The Rust SDK (`shadenet` crate) has the same operations and error codes. The protocol spec and
 `testdata/vectors.json` are normative for both ([ADR-0010](../../docs/adr/0010-two-sdks-one-spec.md)).

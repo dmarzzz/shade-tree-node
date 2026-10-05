@@ -376,20 +376,28 @@ img {
 .preview-flag {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   margin: 0 0 1.5rem;
-  padding: 0.55rem 0.95rem;
+  padding: 0.5rem 0.9rem;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   color: var(--lichen);
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.72rem;
+  font-size: 0.64rem;
   font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   line-height: 1.2;
   min-height: 2.5rem;
+  white-space: nowrap;
   transition: color 180ms ease, border-color 180ms ease;
+}
+
+@media (max-width: 600px) {
+  .preview-flag {
+    flex-wrap: wrap;
+    white-space: normal;
+    border-radius: 14px;
+  }
 }
 
 .preview-flag-dot {

@@ -27,9 +27,9 @@ Public copy calls the bootnode the **Elder Tree** and its signed directory the
 
 The Sepolia source now points at the disposable Protocol v4 research Grove
 recorded in [`network/sepolia/deployment.json`](../network/sepolia/deployment.json):
-one dedicated Elder Tree and three dedicated Shade Tree nodes. The fleet is
-invited-only and uses explicitly untrusted testnet proof artifacts; it is not a
-production security claim. The hosted observer's earlier read-only pre-v4
+two dedicated Elder Trees and three dedicated Shade Tree nodes. The fleet admits
+invited and staked Sepolia members and uses proof keys from an adopted,
+re-verified RLN trusted setup; it is not a production security claim. The hosted observer's earlier read-only pre-v4
 compatibility switch is disabled. Client discovery, routing, announcements, and
 node admission remain v4-only.
 

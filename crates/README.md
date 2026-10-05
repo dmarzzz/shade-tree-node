@@ -3,8 +3,11 @@
 The Rust workspace holds the `shadenet` SDK, the `shadenet` command-line
 binary built on it, and the trust-critical protocol code behind both.
 
-> Research preview. The bundled RLN artifacts are suitable for testing, not a
-> production trusted setup. See [`../circuits/rln/ARTIFACTS.md`](../circuits/rln/ARTIFACTS.md).
+> Research preview. The proof keys come from the RLN trusted setup ceremony that
+> Privacy & Scaling Explorations (PSE) ran in 2023, adopted and re-verified by this
+> project, not run by it. See the [research preview statement](../SECURITY.md#status)
+> for what that means and [`../circuits/rln/ARTIFACTS.md`](../circuits/rln/ARTIFACTS.md)
+> for the artifacts.
 
 The protocol spec, [`../docs/WIRE-SPEC.md`](../docs/WIRE-SPEC.md) and the golden
 vectors in [`../testdata/vectors.json`](../testdata/vectors.json) are the

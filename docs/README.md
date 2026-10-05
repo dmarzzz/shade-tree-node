@@ -12,8 +12,9 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 
 > **Network status:** a research preview on Sepolia. [`network/sepolia/deployment.json`](../network/sepolia/deployment.json)
 > records the live v4 research canopy. It admits invited members and anyone who stakes Sepolia
-> testnet ETH, and its proof artifacts are untrusted testnet material until the trusted-setup
-> ceremony. Invited credentials remain private; the staking profile is public.
+> testnet ETH, and its proof keys come from an adopted, re-verified RLN trusted setup. Invited
+> credentials remain private; the staking profile is public. See the [research preview
+> statement](../SECURITY.md#status).
 
 ## Use
 
