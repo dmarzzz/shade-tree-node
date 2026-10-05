@@ -1,6 +1,6 @@
 # Incident response
 
-Operational playbook for the seven failure modes that matter. Each entry: symptoms, immediate
+Operational playbook for the eight failure modes that matter. Each entry: symptoms, immediate
 containment, root-cause investigation, recovery, prevention. Read `docs/AUDIT.md` first for the
 trust model these procedures rely on. Where a step is still manual it says so and points at the
 `docs/history/SHIP-PLAN.md` task (the "Honest gaps" list at the end is the current one).
@@ -361,6 +361,48 @@ still logged without draining bonds) and fix the spent-set before re-enabling on
 **Prevention.** Keep `SHADE_TREE_SLOTS` and `SHADE_TREE_EPOCH_SECONDS` identical across client and gateway so a
 member's own rate accounting matches what the gateway enforces. Run the slasher in dry-run
 (`SHADE_TREE_SLASH_KEY` unset) while validating a new deployment so a spent-set bug logs instead of slashes.
+
+---
+
+## 8. Provider abuse complaint / egress destination block
+
+**Symptoms.** The hosting provider (DigitalOcean for the research fleet) sends an abuse ticket about
+traffic originating from a node's IP: a scan, a fraud or spam report, or a takedown request naming a
+destination. The nodes are clearnet exits on one account; from the provider's side a droplet IP
+originates HTTPS (`:443`) connections to whatever destination an admitted member requested.
+
+**What the node has and does not have.** The gateway logs connection targets, timing and byte counts.
+It does **not** have plaintext (TLS is end to end, client to destination), so there is no payload to
+produce. The node also does not know which member made a given request (that is the point of the
+proof). Do not promise the provider data the node cannot hold.
+
+**Immediate containment.** Two separate levers; pick by what the ticket names.
+
+- **Block a destination fleet-wide.** The egress policy is an allow/deny list per gateway:
+  `SHADE_TREE_EGRESS_ALLOW` (default `*:443`, default-deny beyond it) and `SHADE_TREE_EGRESS_DENY`
+  (empty by default). **Deny wins over allow** (`makeEgressPolicy` / `validTarget` in
+  `packages/node/gateway/gateway.mjs`, `docs/CONFIG.md`). Add the reported `host:port` pattern
+  (`host:*`, or `*.suffix:*` for subdomains) to `SHADE_TREE_EGRESS_DENY` on **every** gateway through
+  the agent-devops Ansible role (config-as-code; do not hand-edit a live droplet), then restart the
+  gateways. A tunnel to the denied host is then refused at the gate before any dial. This is a gateway
+  env change plus a fleet roll, not an instant toggle; budget for the roll time.
+- **Take one node's IP out of service.** There is no deregister endpoint by design (see #3). Stop that
+  node's heartbeat and it ages out of the canopy at `SHADE_TREE_BOOTNODE_TTL` (default 900s). Clients
+  also mark it down after 2 failures and route around it. To stop it originating traffic immediately
+  rather than at TTL, stop the gateway process on the droplet as well.
+
+**Root-cause investigation.** Pull the offending node's logs for the reported window (connection
+targets and timing; destinations are bounded in the log, never payload). Confirm the destination and
+whether one member drove it; if a member is abusing, #7 (over-spend) and #3 (slash via
+`GatewayRegistry` is operator-governed) apply.
+
+**Recovery.** Reply to the ticket within the operator's 24-hour window (§0) with the action taken and
+its effective time. Keep the deny-list entry until the report is resolved; remove it deliberately, not
+by the next fleet roll.
+
+**Prevention.** Keep `SHADE_TREE_EGRESS_ALLOW` at `*:443` (anything beyond `:443` lets the node read
+plaintext). Record the provider abuse contact and the per-node teardown method before launch
+(`docs/OPERATOR.md`). Stake-gated admission means an abusing member has a bond behind it.
 
 ---
 
