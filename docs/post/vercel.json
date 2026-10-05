@@ -148,6 +148,36 @@
       "source": "/lab/:path*",
       "destination": "/",
       "permanent": false
+    },
+    {
+      "source": "/agent",
+      "destination": "/#get-started",
+      "permanent": false
+    },
+    {
+      "source": "/agent/",
+      "destination": "/#get-started",
+      "permanent": false
+    },
+    {
+      "source": "/agent/:path*",
+      "destination": "/#get-started",
+      "permanent": false
+    },
+    {
+      "source": "/operator",
+      "destination": "/#get-started",
+      "permanent": false
+    },
+    {
+      "source": "/operator/",
+      "destination": "/#get-started",
+      "permanent": false
+    },
+    {
+      "source": "/operator/:path*",
+      "destination": "/#get-started",
+      "permanent": false
     }
   ]
 }

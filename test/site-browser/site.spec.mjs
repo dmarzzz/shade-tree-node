@@ -69,8 +69,6 @@ test("signature sections match their approved visual baselines", async ({ page }
 test("primary static routes and the branded 404 resolve", async ({ page }) => {
   for (const [path, heading] of [
     ["/research/", /Access-gated onion egress for local AI/i],
-    ["/agent/", /agent/i],
-    ["/operator/", /operator|node/i],
     ["/stake/", /Get access/i],
     ["/canopy/", /ShadeNet/i],
   ]) {
