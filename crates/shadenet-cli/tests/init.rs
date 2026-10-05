@@ -97,6 +97,19 @@ fn init_human_output_names_the_commitment_and_link_not_the_leaf_to_stake() {
             && text.contains("&leaf="),
         "init prints a stake link:\n{text}"
     );
+    // The leaf is shortened, so it cannot be pasted whole where the commitment belongs.
+    let leaf_line = text
+        .lines()
+        .find(|l| l.trim_start().starts_with("leaf "))
+        .expect("a leaf line");
+    assert!(
+        leaf_line.contains("..")
+            && leaf_line.contains("not for staking")
+            && !leaf_line
+                .split_whitespace()
+                .any(|w| w.len() > 20 && w.chars().all(|c| c.is_ascii_digit())),
+        "init must not print the full leaf next to the commitment:\n{text}"
+    );
     // The burn-a-bond phrasing is gone (task 66).
     assert!(
         !text.contains("stake this leaf"),

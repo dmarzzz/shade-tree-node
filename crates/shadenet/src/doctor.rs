@@ -150,6 +150,7 @@ pub fn check_rpcs(
         .iter()
         .filter(|v| v.members == "complete")
         .collect();
+    soften_covered_rpc_failures(&mut checks, &verdicts, audience);
     if urls.is_empty() {
         checks.push(Check::fail(
             "rpc",
@@ -282,6 +283,29 @@ fn probe_rpc(
         }
     }
     verdict
+}
+
+/// A client takes the first endpoint that returns a complete member log, so a broken fallback
+/// is nothing a fresh install can or needs to fix: a warning, not a `fail`. Operators keep the
+/// `fail`, since deploys and preflights read every endpoint.
+fn soften_covered_rpc_failures(
+    checks: &mut [Check],
+    verdicts: &[RpcVerdict],
+    audience: RpcAudience,
+) {
+    if audience != RpcAudience::Client {
+        return;
+    }
+    let Some(good) = verdicts.iter().find(|v| v.members == "complete") else {
+        return;
+    };
+    let good = crate::member::rpc_label(&good.url);
+    for check in checks.iter_mut().filter(|c| c.level == Level::Fail) {
+        check.level = Level::Warn;
+        check.fix = Some(format!(
+            "nothing to do on this machine: the client used {good}, which returned the full member set; report this endpoint so the record can drop it"
+        ));
+    }
 }
 
 fn rpc_check(v: &RpcVerdict, audience: RpcAudience) -> Check {
@@ -785,6 +809,48 @@ pub fn judge_elder_for_set(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn verdict(url: &str, members: &str) -> RpcVerdict {
+        RpcVerdict {
+            url: url.into(),
+            reachable: true,
+            latency_ms: Some(100),
+            head: Some(1),
+            receipt: "ok".into(),
+            members: members.into(),
+            live: Some(1),
+            slots: Some(1),
+            root: Some("1".into()),
+            error: (members != "complete").then(|| "pruned history unavailable".into()),
+        }
+    }
+
+    #[test]
+    fn a_broken_fallback_rpc_is_a_warning_for_a_client_when_another_is_complete() {
+        let verdicts = [
+            verdict("https://good.example", "complete"),
+            verdict("https://pruned.example", "error"),
+        ];
+        let checks = |audience| {
+            let mut c: Vec<Check> = verdicts.iter().map(|v| rpc_check(v, audience)).collect();
+            soften_covered_rpc_failures(&mut c, &verdicts, audience);
+            c
+        };
+        let client = checks(RpcAudience::Client);
+        assert_eq!(client[1].level, Level::Warn, "{client:?}");
+        assert!(client[1]
+            .fix
+            .as_deref()
+            .unwrap()
+            .contains("nothing to do on this machine"));
+        // Operators still see the fail: deploys read every endpoint.
+        assert_eq!(checks(RpcAudience::Operator)[1].level, Level::Fail);
+        // With no complete endpoint, the client's fail stays.
+        let only_bad = [verdict("https://pruned.example", "error")];
+        let mut c = vec![rpc_check(&only_bad[0], RpcAudience::Client)];
+        soften_covered_rpc_failures(&mut c, &only_bad, RpcAudience::Client);
+        assert_eq!(c[0].level, Level::Fail);
+    }
 
     #[test]
     fn umask_is_readable_and_checks_022() {

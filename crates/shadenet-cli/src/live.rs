@@ -1356,12 +1356,18 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
     for path in &created {
         println!("  created {path}");
     }
+    // The stake page takes the identity commitment. Staking the leaf instead locks a bond
+    // nobody can withdraw, and the page cannot tell the two apart, so when the commitment is
+    // known the leaf is shortened the way `status` shows it: impossible to paste whole.
+    let tier_note = tier.map(|t| format!(" (tier {t})")).unwrap_or_default();
     if let Some(idc) = &identity_commitment {
         println!("  identity commitment {idc}");
-    }
-    match tier {
-        Some(tier) => println!("  leaf {leaf} (tier {tier})"),
-        None => println!("  leaf {leaf}"),
+        println!(
+            "  leaf {}..{tier_note}, derived from it; not for staking",
+            &leaf[..leaf.len().min(12)]
+        );
+    } else {
+        println!("  leaf {leaf}{tier_note}");
     }
     println!();
     match state.as_str() {
