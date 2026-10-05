@@ -1271,7 +1271,7 @@ impl Client {
     pub async fn connect(&self, target: &str) -> Result<Tunnel, Error> {
         match self.config.queue_max_wait {
             Some(max_wait) => self.connect_queued(target, max_wait).await,
-            None => self.connect_once(target).await,
+            None => self.connect_once(target, &mut None).await,
         }
     }
 
@@ -1365,11 +1365,25 @@ impl Client {
     /// boundary; it is refused only when the time it has been held would exceed `max_wait`
     /// (#253: the onion dial of the first book used to count against it).
     pub async fn connect_queued(&self, target: &str, max_wait: Duration) -> Result<Tunnel, Error> {
-        let mut waited = Duration::ZERO;
+        self.connect_after_wait(target, max_wait, Duration::ZERO)
+            .await
+    }
+
+    /// [`Client::connect_queued`] for a request a caller has already held for `already` of its
+    /// `max_wait` with [`Client::wait_for_budget`] (the proxy waits before taking a setup
+    /// permit): the whole hold honours `max_wait`, and the tunnel's `waited` is the total.
+    pub async fn connect_after_wait(
+        &self,
+        target: &str,
+        max_wait: Duration,
+        already: Duration,
+    ) -> Result<Tunnel, Error> {
+        let mut waited = already;
         let mut spent_epoch = None;
         loop {
             waited += self.hold_for_budget(max_wait, waited, spent_epoch).await?;
-            match self.connect_once(target).await {
+            let mut attempt_epoch = None;
+            match self.connect_once(target, &mut attempt_epoch).await {
                 Ok(mut tunnel) => {
                     tunnel.waited = waited;
                     if tunnel.waited >= Duration::from_secs(1) {
@@ -1378,9 +1392,11 @@ impl Client {
                     return Ok(tunnel);
                 }
                 Err(Error::BudgetExhausted { .. }) => {
-                    // The estimate let it through and the attempt found this epoch's budget
-                    // spent: hold it for the next epoch. The proof limit is untouched.
-                    let epoch = self.current_epoch();
+                    // The estimate let it through and the attempt found the budget of the epoch
+                    // it proved for spent: hold it until that epoch is over. The proof limit is
+                    // untouched. (The attempt's own epoch, not the clock's: a refusal that lands
+                    // after the boundary must not cost a whole extra epoch.)
+                    let epoch = attempt_epoch.unwrap_or_else(|| self.current_epoch());
                     tracing::info!(%target, epoch, "no slot or ticket left for this request; back in the queue");
                     spent_epoch = Some(epoch);
                 }
@@ -1394,8 +1410,14 @@ impl Client {
     /// candidate (a session book binds the proof to one node), is retried once on another node
     /// when the budget allows and [`Config::retry_other_node`] is on. The proof is never
     /// replayed: the retry spends a new ticket or slot, which is why it stops at one.
-    async fn connect_once(&self, target: &str) -> Result<Tunnel, Error> {
-        let mut result = self.connect_inner(target, None).await;
+    ///
+    /// `attempt_epoch` receives the epoch the last attempt proved for, when it got that far.
+    async fn connect_once(
+        &self,
+        target: &str,
+        attempt_epoch: &mut Option<u64>,
+    ) -> Result<Tunnel, Error> {
+        let mut result = self.connect_inner(target, None, attempt_epoch).await;
         let avoid = match &result {
             Err(Error::NodeRefused {
                 gateway, reason, ..
@@ -1414,7 +1436,9 @@ impl Client {
         };
         if let Some(avoid) = avoid {
             if self.config.retry_other_node && self.budget_snapshot().available_now() > 0 {
-                result = self.connect_inner(target, Some(&avoid)).await;
+                result = self
+                    .connect_inner(target, Some(&avoid), attempt_epoch)
+                    .await;
             }
         }
         match &result {
@@ -1426,7 +1450,12 @@ impl Client {
         result
     }
 
-    async fn connect_inner(&self, target: &str, avoid: Option<&str>) -> Result<Tunnel, Error> {
+    async fn connect_inner(
+        &self,
+        target: &str,
+        avoid: Option<&str>,
+        attempt_epoch: &mut Option<u64>,
+    ) -> Result<Tunnel, Error> {
         let port = target_port(target)?;
         let identity = self
             .identity
@@ -1453,7 +1482,6 @@ impl Client {
                 return Ok(tunnel);
             }
         }
-        let (members, _set) = self.admitted_members(&identity.leaf, demo.as_ref()).await?;
         let limit = self.tier();
         if !(1..=crate::profile::MAX_LIMIT).contains(&limit) {
             return Err(Error::Config(format!(
@@ -1509,11 +1537,16 @@ impl Client {
                 }
                 None => None,
             };
-            // The epoch is read here, after the wait behind another request's book: that wait
-            // spans an onion dial and can cross an epoch boundary, and a proof slot taken for
-            // the epoch the request arrived in would be refused as spent, or as a rollback of
-            // the slot cursor, while the current epoch still has its slot (#253).
+            // The epoch and the member set are read here, after the wait behind another
+            // request's book: that wait spans an onion dial and can cross an epoch boundary. A
+            // proof slot taken for the epoch the request arrived in would be refused as spent,
+            // or as a rollback of the slot cursor, while the current epoch still has its slot;
+            // a member set from before the wait can be older than the nodes' root freshness
+            // once a registration finalizes meanwhile (#253). The set is cached for
+            // `member_refresh`, so a fresh one costs nothing.
             let epoch = self.current_epoch();
+            *attempt_epoch = Some(epoch);
+            let (members, _set) = self.admitted_members(&identity.leaf, demo.as_ref()).await?;
             tracing::debug!(%target, epoch, limit, %artifact, candidates = candidates.len(), session = session.is_some(), "building RLN envelope");
             let request = transport::ConnectRequest {
                 gateways: candidates,
@@ -2571,6 +2604,8 @@ mod tests {
             error.contains("record broken") && error.contains("deployBlock"),
             "{error}"
         );
+    }
+
     // ---- #253: the budget queue, a book that is opening, and the epoch's proof slot ----
 
     use std::sync::atomic::AtomicUsize;
@@ -2586,6 +2621,8 @@ mod tests {
         dial: Duration,
         books: Arc<AtomicUsize>,
         spends: Arc<AtomicUsize>,
+        /// Session initializations still to refuse `payload-limit` before accepting.
+        refuse: Arc<AtomicUsize>,
     }
 
     impl transport::Dialer for BookNode {
@@ -2596,6 +2633,7 @@ mod tests {
                 }
                 let (client, mut node) = tokio::io::duplex(64 * 1024);
                 let (books, spends) = (Arc::clone(&self.books), Arc::clone(&self.spends));
+                let refuse = Arc::clone(&self.refuse);
                 tokio::spawn(async move {
                     let mut line = Vec::new();
                     let mut byte = [0_u8; 1];
@@ -2606,6 +2644,15 @@ mod tests {
                         return;
                     };
                     let reply = match envelope.get("session") {
+                        Some(_)
+                            if refuse
+                                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+                                    n.checked_sub(1)
+                                })
+                                .is_ok() =>
+                        {
+                            serde_json::json!({ "ok": false, "err": shadenet_proto::REASON_PAYLOAD_LIMIT })
+                        }
                         Some(session) => {
                             books.fetch_add(1, Ordering::SeqCst);
                             let class = &shadenet_proto::session::RESEARCH_V1;
@@ -2641,6 +2688,7 @@ mod tests {
                 dial: self.dial,
                 books: Arc::clone(&self.books),
                 spends: Arc::clone(&self.spends),
+                refuse: Arc::clone(&self.refuse),
             })
         }
 
@@ -2658,6 +2706,7 @@ mod tests {
         proofs: Arc<StdMutex<Vec<u64>>>,
         books: Arc<AtomicUsize>,
         spends: Arc<AtomicUsize>,
+        refuse: Arc<AtomicUsize>,
     }
 
     impl Rig {
@@ -2708,10 +2757,12 @@ mod tests {
                     share_y: "5".into(),
                 })
             });
+            let refuse = Arc::new(AtomicUsize::new(0));
             let dialer = BookNode {
                 dial,
                 books: Arc::clone(&books),
                 spends: Arc::clone(&spends),
+                refuse: Arc::clone(&refuse),
             };
             let mut client = Client::with_transport(
                 config,
@@ -2726,7 +2777,17 @@ mod tests {
                 proofs,
                 books,
                 spends,
+                refuse,
             }
+        }
+
+        fn members(&self, leaves: &[&str]) {
+            let members: Vec<&str> = leaves.to_vec();
+            std::fs::write(
+                self.dir.join("members.json"),
+                serde_json::json!({ "members": members }).to_string(),
+            )
+            .unwrap();
         }
 
         fn connect(&self) -> tokio::task::JoinHandle<Result<Tunnel, Error>> {
@@ -2913,6 +2974,113 @@ mod tests {
         let error = request.await.unwrap().err().expect("spent");
         assert_eq!(error.code(), "budget_exhausted", "{error}");
         assert!(rig.proofs().is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_member_set_is_read_after_the_wait_behind_the_book() {
+        // A registration finalizes while the request waits behind another request's book. The
+        // set it proves against must be the one current after the wait: a set from before it
+        // is older than the nodes' root freshness and would be refused `wrong-group-root`,
+        // which at tier 1 burns the epoch's only slot. No queue here: one attempt.
+        let (now, clock) = hand_clock();
+        let rig = Rig::new("members", None, Duration::ZERO, clock);
+        rig.members(&["1"]);
+        let gate = rig.client.session_init_gate.lock().await;
+        let request = rig.connect();
+        settle().await;
+        assert!(
+            !request.is_finished(),
+            "parked behind the book, not refused on a stale set"
+        );
+        rig.members(&["1", "123"]);
+        now.store((EPOCH + 1) * 60 + 5, Ordering::SeqCst);
+        drop(gate);
+        let tunnel = request
+            .await
+            .unwrap()
+            .expect("the finalized set is read after the wait");
+        assert_eq!(tunnel.epoch, EPOCH + 1);
+        assert_eq!(rig.proofs(), vec![EPOCH + 1]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_refusal_that_lands_after_the_boundary_holds_the_request_for_its_own_epoch() {
+        // The node refuses the proof's payload allowance (`payload-limit`) and the answer comes
+        // back after the boundary. The request proved for EPOCH, so it is held until EPOCH is
+        // over, which it already is: the next attempt opens at once in the new epoch. Holding it
+        // for the clock's epoch would cost a whole extra epoch.
+        let start = tokio::time::Instant::now();
+        let rig = Rig::new(
+            "payload",
+            Some(Duration::from_secs(120)),
+            Duration::from_secs(20),
+            move || EPOCH * 60 + 50 + start.elapsed().as_secs(),
+        );
+        rig.refuse.store(1, Ordering::SeqCst);
+        let tunnel = rig
+            .client
+            .connect(TARGET)
+            .await
+            .expect("served in the next epoch");
+        // Proved for EPOCH at +0 s, refused at +20 s (EPOCH + 1 since +10 s), proved again at
+        // once for EPOCH + 1 and served at +60 s: nothing was held for budget.
+        assert_eq!(rig.proofs(), vec![EPOCH, EPOCH + 1]);
+        assert_eq!(tunnel.epoch, EPOCH + 1);
+        assert!(
+            tunnel.waited < Duration::from_secs(1),
+            "{:?}",
+            tunnel.waited
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(70),
+            "{:?}",
+            start.elapsed()
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_proxys_earlier_wait_counts_toward_the_max_and_the_total() {
+        // The proxy holds a request with `wait_for_budget` before it takes a setup permit and
+        // connects. That time is part of the one `--max-wait`, and the tunnel reports the sum.
+        let (now, clock) = hand_clock();
+        let rig = Rig::new(
+            "already",
+            Some(Duration::from_millis(1500)),
+            Duration::ZERO,
+            clock,
+        );
+        slot::allocate(&rig.cursor, EPOCH, 1).unwrap();
+        // 1.0 s already waited and a boundary 1 s away: the hold would exceed 1.5 s.
+        let error = rig
+            .client
+            .connect_after_wait(TARGET, Duration::from_millis(1500), Duration::from_secs(1))
+            .await
+            .err()
+            .expect("refused by the queue");
+        assert!(
+            matches!(&error, Error::BudgetExhausted { detail, .. } if detail.contains("queued ahead")),
+            "{error}"
+        );
+        // 0.3 s already waited: held to the boundary, and the total includes both.
+        let client = Arc::clone(&rig.client);
+        let request = tokio::spawn(async move {
+            client
+                .connect_after_wait(
+                    TARGET,
+                    Duration::from_millis(1500),
+                    Duration::from_millis(300),
+                )
+                .await
+        });
+        until(|| rig.client.queue_depth() == 1 || request.is_finished()).await;
+        now.store((EPOCH + 1) * 60, Ordering::SeqCst);
+        let tunnel = request.await.unwrap().expect("served");
+        assert!(
+            tunnel.waited >= Duration::from_millis(1400),
+            "{:?}",
+            tunnel.waited
+        );
+        assert_eq!(tunnel.epoch, EPOCH + 1);
     }
 
     #[tokio::test(start_paused = true)]
