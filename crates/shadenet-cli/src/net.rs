@@ -262,13 +262,15 @@ impl NetArgs {
             self.max_anon || env("MAX_ANON")?.as_deref().and_then(parse_bool) == Some(true);
         builder = builder.leaf_source(leaf_source.clone()).max_anon(max_anon);
 
-        // Members: explicit file or contract, then environment (never over a demo advert), then
-        // the config file, then the network's staking contract.
-        let members = if let Some(path) = self.members.clone().or_else(|| ctx.file.members.clone())
-        {
+        // Members: explicit file or contract (a flag beats the config file's `members`), then
+        // environment (never over a demo advert), then the config file, then the network's
+        // staking contract.
+        let members = if let Some(path) = self.members.clone() {
             Members::File(path)
         } else if let Some(contract) = &self.contract {
             Members::Contract(contract.clone())
+        } else if let Some(path) = ctx.file.members.clone() {
+            Members::File(path)
         } else if leaf_source.as_deref() == Some("demo") {
             Members::Auto
         } else if let Some(paid) =
@@ -438,6 +440,96 @@ mod tests {
         assert!(config.cache_dir.is_none());
         assert!(!config.rotation_spread);
         assert!(!config.uses_public_profile());
+    }
+
+    /// Unset the network variables a developer shell may carry, so the answer is the flags'.
+    /// Other tests only read these, so clearing them cannot make another test fail.
+    fn clear_network_env() {
+        for name in [
+            "GROUP_CONTRACT",
+            "PAID_ACCESS_CONTRACT",
+            "LEAF_SOURCE",
+            "EPOCH_SECONDS",
+            "RPC_URL",
+            "FROM_BLOCK",
+            "NETWORK",
+        ] {
+            for prefix in shadenet::env::PREFIXES {
+                std::env::remove_var(format!("{prefix}{name}"));
+            }
+        }
+    }
+
+    #[test]
+    fn an_onion_and_a_record_path_are_enough_for_the_member_source() {
+        // #250 and #249: `--onion --network <path>` names the record's staking set, and adding
+        // the record's own `--contract` and an `--rpc-url` does not drop to the legacy defaults.
+        clear_network_env();
+        let mut record: serde_json::Value =
+            serde_json::from_str(shadenet::profile::SEPOLIA_DEPLOYMENT).unwrap();
+        record["network"] = "sepolia-staging".into();
+        record["admission"]["roots"]["staked"]["contract"] =
+            "0x3333333333333333333333333333333333333333".into();
+        let dir = std::env::temp_dir().join(format!("shadenet-net-args-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("deployment.json");
+        std::fs::write(&path, record.to_string()).unwrap();
+        let ctx = Context {
+            network: Some(path.display().to_string()),
+            file: ConfigFile::default(),
+        };
+
+        let args = NetArgs {
+            onion: Some("a".repeat(56)),
+            ..NetArgs::default()
+        };
+        let config = args.to_config(&ctx, false).unwrap();
+        assert!(!config.uses_public_profile());
+        assert_eq!(config.network.name, "sepolia-staging");
+        let staking = config.record_staking_profile().unwrap().unwrap();
+        assert_eq!(
+            staking.contract,
+            "0x3333333333333333333333333333333333333333"
+        );
+        assert_eq!(config.effective_epoch_seconds(), 60);
+
+        let args = NetArgs {
+            onion: Some("a".repeat(56)),
+            contract: Some("0x3333333333333333333333333333333333333333".into()),
+            rpc_url: Some("https://rpc.example".into()),
+            ..NetArgs::default()
+        };
+        let config = args.to_config(&ctx, false).unwrap();
+        assert!(config.record_staking_profile().unwrap().is_some());
+        assert_eq!(config.effective_epoch_seconds(), 60);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_explicit_contract_flag_beats_the_config_files_members() {
+        clear_network_env();
+        let ctx = Context {
+            network: None,
+            file: ConfigFile {
+                members: Some("from-config.json".into()),
+                ..ConfigFile::default()
+            },
+        };
+        let args = NetArgs {
+            contract: Some("0x1111111111111111111111111111111111111111".into()),
+            ..NetArgs::default()
+        };
+        let config = args.to_config(&ctx, false).unwrap();
+        assert_eq!(
+            config.members,
+            shadenet::Members::Contract("0x1111111111111111111111111111111111111111".into())
+        );
+        // With no flag the config file's members still apply.
+        let config = NetArgs::default().to_config(&ctx, false).unwrap();
+        assert_eq!(
+            config.members,
+            shadenet::Members::File("from-config.json".into())
+        );
     }
 
     #[test]
