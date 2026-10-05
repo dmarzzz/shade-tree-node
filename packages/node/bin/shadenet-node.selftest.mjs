@@ -9,6 +9,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { verifyOperatorSig } from "../bootnode/announce.mjs";
 import { heartbeatListing, probeElders } from "../lib/node-supervisor.mjs";
+import { recordDrift } from "../lib/network-record.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "../../..");
@@ -96,6 +97,15 @@ try {
       async (onion) => { if (onion.startsWith("b")) throw new Error("timeout"); return { ok: true, count: 4, admission: "stake", commit: "190d6433bd7a" }; });
     assert.equal(lines[0].level, "ok"); assert.match(lines[0].what, /4 live node\(s\), admission stake, commit 190d643/);
     assert.equal(lines[1].level, "warn"); assert.match(lines[1].what, /timeout/); }
+  // record drift: what a running node cannot follow without a restart
+  { const base = JSON.parse(readFileSync(recordPath, "utf8"));
+    assert.deepEqual(recordDrift(base, JSON.parse(JSON.stringify(base))), [], "same record, no drift");
+    const moved = JSON.parse(JSON.stringify(base)); moved.admission.roots.staked.contract = "0x" + "ab".repeat(20);
+    assert.match(recordDrift(base, moved).join(), /^set 0x[0-9a-f]+ -> 0xabab/);
+    const elders = JSON.parse(JSON.stringify(base)); elders.elders = [...(base.elders || [base.elder]), { onion: "c".repeat(56) + ".onion", canopySigner: "d".repeat(64) }];
+    assert.match(recordDrift(base, elders).join(), /Elder Trees \d+ -> \d+/);
+    const retired = { ...base, status: "retired" }; assert.match(recordDrift(base, retired).join(), /status .* -> retired/);
+    const note = JSON.parse(JSON.stringify(base)); note.note = "edited prose"; assert.deepEqual(recordDrift(base, note), [], "prose edits are not drift"); }
   // retire with nothing to retire says so
   { const r = await cli(["retire"]); assert.equal(r.code, 1); assert.match(r.err, /nothing to retire/); }
   // unknown command

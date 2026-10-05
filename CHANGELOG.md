@@ -16,6 +16,9 @@ is a new session class next to `research-v1`.
 - `shadenet-node check --probe` reaches each Elder again (it failed on every Elder with
   `Cannot read properties of undefined`) and prints its node count, admission and commit.
 - `shadenet-node status` adds `listed`: how many Elder Trees accepted the last announce, and when.
+- A running node checks its record source every 15 minutes. When the set, the Elder Trees, the
+  proof artifacts, the epoch or the status moved on, it logs a warning naming the change and
+  `status` shows `recordDrift`; it keeps serving what it started with until restarted.
 - The Operators page and `docs/OPERATOR.md` stake and sign before the node runs, through the node
   image (no npm package needed), and the run line carries the compose file's hardening flags.
 

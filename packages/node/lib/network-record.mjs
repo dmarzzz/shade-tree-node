@@ -414,6 +414,23 @@ export function eldersOf(rec) {
   return rec?.elder ? [{ onion: rec.elder.onion, canopySigner: rec.elder.canopySigner }] : [];
 }
 
+// What changed between the record a node started with and the one its source serves now, in the
+// fields a running node cannot pick up without a restart: the admission set, the Elder Trees and
+// their signers, the accepted proof artifacts, the epoch and the status. [] when nothing did.
+export function recordDrift(started, current) {
+  const changes = [];
+  const set = (r) => String(r?.admission?.roots?.staked?.contract || "").toLowerCase();
+  if (set(started) !== set(current)) changes.push(`set ${set(started) || "none"} -> ${set(current) || "none"}`);
+  const elders = (r) => eldersOf(r).map((e) => `${e.onion}/${e.canopySigner}`).sort().join(",");
+  if (elders(started) !== elders(current)) changes.push(`Elder Trees ${eldersOf(started).length} -> ${eldersOf(current).length} (onions or signers changed)`);
+  const arts = (r) => (r?.artifacts?.accepted || []).map((a) => a.id).sort().join(",");
+  if (arts(started) !== arts(current)) changes.push(`proof artifacts ${arts(started) || "none"} -> ${arts(current) || "none"}`);
+  const epoch = (r) => Number(r?.ratePolicy?.epochSeconds || 0);
+  if (epoch(started) !== epoch(current)) changes.push(`epoch ${epoch(started)} s -> ${epoch(current)} s`);
+  if ((started?.status || "") !== (current?.status || "")) changes.push(`status ${started?.status || "?"} -> ${current?.status || "?"}`);
+  return changes;
+}
+
 // ---- loading -----------------------------------------------------------------------------
 export function networkDir(name, root = NETWORK_ROOT) {
   if (!isNetworkName(name)) throw new Error(`SHADE_TREE_NETWORK: bad network name "${name}" (expected [a-z0-9-])`);

@@ -27,7 +27,7 @@ import { verifyOperatorSig } from "../bootnode/announce.mjs";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { resolveBuildCommit } from "../lib/build-info.mjs";
 import { torInfo, startTor, supervise, writeStatus, heartbeatListing, probeElders } from "../lib/node-supervisor.mjs";
-import { rpcUrlsOf, eldersOf } from "../lib/network-record.mjs";
+import { rpcUrlsOf, eldersOf, recordDrift } from "../lib/network-record.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../..");
@@ -35,6 +35,7 @@ const argv = process.argv.slice(2);
 const cmd = argv.find((a) => !a.startsWith("--")) || "run";
 const flag = (name) => argv.includes(`--${name}`);
 const log = (...a) => console.error(`[shadenet-node] ${a.join(" ")}`);
+const RECORD_RECHECK_MS = 15 * 60 * 1000;
 
 function usage() {
   console.log(`shadenet-node: run a Shade Tree node from a deployment record
@@ -53,7 +54,7 @@ Knobs (SHADENET_* env, or keys in <state>/node.toml):`);
 }
 
 // ---- record ------------------------------------------------------------------------------
-async function fetchRecord(src, stateDir) {
+async function fetchRecord(src, stateDir, { save = true } = {}) {
   let text;
   if (/^https:\/\//.test(src)) {
     const res = await fetch(src, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20000) });
@@ -68,8 +69,10 @@ async function fetchRecord(src, stateDir) {
   try { record = JSON.parse(text); } catch (e) { throw new Error(`record: not JSON (${e.message})`); }
   const j = checkJoinableRecord(record);
   if (!j.ok) throw new Error(`record is not joinable:\n  ${j.errors.join("\n  ")}`);
-  mkdirSync(stateDir, { recursive: true });
-  writeFileSync(join(stateDir, "record.json"), JSON.stringify(record, null, 2) + "\n");
+  if (save) {
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, "record.json"), JSON.stringify(record, null, 2) + "\n");
+  }
   return record;
 }
 
@@ -219,9 +222,27 @@ async function run() {
   await sleep(1500);
   const heartbeat = supervise("heartbeat", "packages/node/bootnode/heartbeat.mjs", { root: ROOT, env, state, log });
   log("node and heartbeat started; `heartbeat accepted` in the log means an Elder lists this node, `heartbeat rejected` says why one does not");
+  // The record is read once, here. When its source moves on (a new set, new Elders, a retired
+  // network) this node keeps serving the old one and clients quietly route around it, so look
+  // again every 15 minutes and say so, loudly, until someone restarts the node.
+  let lastDrift = "";
+  const driftTimer = setInterval(async () => {
+    let current;
+    // record.json in the state dir stays the record this node runs; only a restart replaces it.
+    try { current = await fetchRecord(knobs.record, knobs.state, { save: false }); }
+    catch (e) { if (!/not joinable/.test(e.message)) return; current = { ...record, status: "not joinable (retired?)" }; }
+    const changes = recordDrift(record, current);
+    const key = changes.join("; ");
+    state.recordDrift = changes.length ? { changes, seenAt: new Date().toISOString() } : undefined;
+    writeStatus(state);
+    if (changes.length && key !== lastDrift) log(`warning: the record at ${knobs.record} changed since this node started (${key}); this node still serves the old one. Restart it to follow the record (docker restart shadenet-node), or pin a record you control`);
+    lastDrift = key;
+  }, RECORD_RECHECK_MS);
+  driftTimer.unref?.();
   let shuttingDown = false;
   const shutdown = async (sig) => {
     if (shuttingDown) return; shuttingDown = true;
+    clearInterval(driftTimer);
     log(`${sig}: stopping heartbeat, node, tor`);
     heartbeat.stop(); await sleep(500); gateway.stop();
     await sleep(Number(env.SHADE_TREE_SHUTDOWN_TIMEOUT_MS || 5000));
