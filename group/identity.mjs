@@ -23,8 +23,8 @@
 // `shade-tree identity > id.json` is safe. stderr carries the human summary: the public leaf and the
 // output path. The app secret and identitySecret are NEVER printed to stderr/logs.
 //
-// The leaf depends on the member's tier limit (`--limit` / SHADE_TREE_LIMIT; bundled current
-// network defaultLimit = 1, direct-script development fallback K = SHADE_TREE_SLOTS = 8)
+// The leaf depends on the member's tier limit (`--limit` / SHADE_TREE_LIMIT; default: the bundled
+// network record's defaultLimit, direct-script development fallback K = SHADE_TREE_SLOTS = 8)
 // like every rateCommitment in the system: derive with the limit the leaf was enrolled with, or the
 // leaf will not be in the tree. A non-default limit is written into the file (`limit`) so the Rust
 // client proves with it (T-FEAT-8).

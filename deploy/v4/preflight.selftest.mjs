@@ -199,6 +199,8 @@ ok((await validatePublicStakeOnchain(publicStake, { rpcCall: wrongCodeRpc, bytec
 // above checks every recorded bond against bondFor() on the deployed set.
 const noTier8 = copy(publicStake); noTier8.admission.roots.staked.tiers = noTier8.admission.roots.staked.tiers.filter((tier) => tier.limit !== 8);
 ok(fields(validateDeploymentRecord(noTier8, { repoRoot: ROOT })).includes("admission.roots.staked.tiers"), "public profile must list the always-admitted tier 8");
+const oneTier = copy(publicStake); oneTier.admission.roots.staked.tiers = [{ limit: 8, bondWei: "10000000000000000" }]; oneTier.admission.roots.staked.defaultLimit = 8;
+ok(validateDeploymentRecord(oneTier, { repoRoot: ROOT }).ok, "a one-tier public profile (tier 8 alone, its own default) passes");
 const badDefault = copy(publicStake); badDefault.admission.roots.staked.defaultLimit = 2;
 ok(fields(validateDeploymentRecord(badDefault, { repoRoot: ROOT })).includes("admission.roots.staked.defaultLimit"), "public profile default tier must be an admitted tier");
 const shortExit = copy(publicStake); shortExit.admission.roots.staked.unbondingSeconds = 300;

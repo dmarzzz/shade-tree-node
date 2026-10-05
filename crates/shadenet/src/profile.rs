@@ -635,6 +635,29 @@ mod tests {
     }
 
     #[test]
+    fn a_single_tier_table_is_a_valid_public_profile() {
+        // The contract always admits tier 8; a record may list it alone (no other tier to pick).
+        let mut one_tier = public_fixture();
+        let staked = &mut one_tier["admission"]["roots"]["staked"];
+        staked["tiers"] = json!([{ "limit": 8, "bondWei": "10000000000000000" }]);
+        staked["defaultLimit"] = json!(8);
+        let profile = profile_of(&one_tier).unwrap();
+        assert_eq!(profile.default_limit, 8);
+        assert_eq!(profile.tiers.len(), 1);
+        assert_eq!(profile.tiers[0].bond_wei, "10000000000000000");
+
+        // The record compiled into this build is internally consistent, whatever its table is.
+        let bundled = Network::bundled(DEFAULT_NETWORK)
+            .unwrap()
+            .public_profile()
+            .unwrap();
+        assert!(bundled
+            .tiers
+            .iter()
+            .any(|tier| tier.limit == bundled.default_limit));
+    }
+
+    #[test]
     fn public_profile_rejects_inconsistent_records() {
         let mut absent = public_fixture();
         absent.as_object_mut().unwrap().remove("ratePolicy");

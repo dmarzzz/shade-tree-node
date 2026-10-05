@@ -45,8 +45,8 @@ The identity file is secret bearer material and is created owner-only (mode
 alone on stdout so it can be sent to a Grove operator.
 Pass --members only for a local/demo version-2 membership set. Existing identity
 files are never overwritten; choose a new path or remove the old credential first.
-The tier defaults to the bundled staked root's defaultLimit (1 for the public
-Grove); --limit or SHADE_TREE_LIMIT overrides it."#;
+The tier defaults to the network record's staked defaultLimit; --limit or
+SHADE_TREE_LIMIT overrides it."#;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct EnrollOptions {
@@ -694,9 +694,13 @@ mod tests {
 
     #[test]
     fn enroll_and_register_defaults_commit_to_the_same_public_limit() {
-        let mut deployment: Value = serde_json::from_str(crate::DEFAULT_DEPLOYMENT).unwrap();
-        deployment["admission"]["roots"]["staked"]["defaultLimit"] = json!(1);
-        let parsed = crate::parse_bundled_deployment(&deployment.to_string()).unwrap();
+        // The bundled record decides the tier: whatever its defaultLimit is, enroll and
+        // register must agree on it.
+        let deployment: Value = serde_json::from_str(crate::DEFAULT_DEPLOYMENT).unwrap();
+        let record_limit = deployment["admission"]["roots"]["staked"]["defaultLimit"]
+            .as_u64()
+            .unwrap();
+        let parsed = crate::parse_bundled_deployment(crate::DEFAULT_DEPLOYMENT).unwrap();
         let (_, _, registration_limit, _) =
             crate::register::registration_defaults_from(parsed).unwrap();
 
@@ -711,12 +715,12 @@ mod tests {
             shadenet_rln::identity::derive_identity(&secret, registration_limit)
                 .unwrap()
                 .leaf;
-        assert_eq!(options.limit, 1);
-        assert_eq!(registration_limit, 1);
+        assert_eq!(options.limit, record_limit);
+        assert_eq!(registration_limit, record_limit);
         assert_eq!(enrolled_leaf, registered_tier_leaf);
         let identity: Value =
             serde_json::from_str(&fs::read_to_string(&options.out).unwrap()).unwrap();
-        assert_eq!(identity["limit"], 1);
+        assert_eq!(identity["limit"], record_limit);
         fs::remove_dir_all(dir).unwrap();
     }
 

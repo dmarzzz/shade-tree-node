@@ -200,7 +200,15 @@ function main() {
       rmSync(clientRoot, { recursive: true, force: true });
     }
     ok(defaults.SHADE_TREE_EPOCH_SECONDS === "60" && defaults.SHADE_TREE_ROOT_FRESHNESS_SECONDS === "60" && defaults.SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES === "41943040", "rate policy becomes exact runtime defaults");
-    ok(defaults.SHADE_TREE_LEAF_SOURCE === "staked" && defaults.SHADE_TREE_LIMIT === "1" && defaults.SHADE_TREE_TIERS === "1,8", "public profile defaults clients to the staked tier-1 leaf");
+    ok(defaults.SHADE_TREE_LEAF_SOURCE === "staked" && defaults.SHADE_TREE_LIMIT === "1" && defaults.SHADE_TREE_TIERS === "1,8", "public profile defaults clients to the record's default-tier staked leaf");
+    // One tier (the production table since 2026-10-05): tier 8 alone, and its own default.
+    const oneTier = structuredClone(publicProfile);
+    oneTier.admission.roots.staked.tiers = [{ limit: 8, bondWei: "10000000000000000" }];
+    oneTier.admission.roots.staked.defaultLimit = 8;
+    const oneTierDefaults = envDefaultsFromRecords({ dir: "/x", deployment: oneTier, contracts: null, bootnode: null });
+    ok(validateDeploymentRecord(oneTier).ok && oneTierDefaults.SHADE_TREE_LIMIT === "8" && oneTierDefaults.SHADE_TREE_TIERS === "8", "a one-tier public profile validates and sets both the client tier and the node tier list to 8");
+    const strayDefault = structuredClone(oneTier); strayDefault.admission.roots.staked.defaultLimit = 1;
+    ok(errFields(validateDeploymentRecord(strayDefault)).includes("admission.roots.staked.defaultLimit"), "a default tier the set does not admit is refused");
     const wrongDefault = structuredClone(publicProfile); wrongDefault.admission.defaultPath = "invited";
     ok(errFields(validateDeploymentRecord(wrongDefault)).includes("admission.defaultPath"), "public profile cannot silently default clients to invited admission");
     const zeroDeployBlock = structuredClone(publicProfile); zeroDeployBlock.admission.roots.staked.deployBlock = 0;

@@ -22,9 +22,14 @@ async function code(fn) {
 }
 
 console.log("=== network record ===");
+// Every expected address, tier and bond below is read from the record, never typed here.
+const STAKED = JSON.parse(readFileSync(join(ROOT, "network/sepolia/deployment.json"), "utf8")).admission.roots.staked;
+const DEFAULT = STAKED.defaultLimit;
+const BOND = Object.fromEntries(STAKED.tiers.map((t) => [t.limit, BigInt(t.bondWei)]));
 const net1 = sdk.resolveNetwork("sepolia");
-ok(net1.staked.contract === "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC", "staked contract from deployment.json");
-ok(net1.staked.tiers.map((t) => t.limit).join(",") === "1,8" && net1.staked.tiers[0].bondWei === 10000000000000000n, "tiers and bonds from the record");
+ok(/^0x[0-9a-fA-F]{40}$/.test(STAKED.contract) && net1.staked.contract === STAKED.contract, "staked contract from deployment.json");
+ok(net1.staked.tiers.length > 0 && net1.staked.tiers.map((t) => t.limit).join(",") === STAKED.tiers.map((t) => t.limit).join(",")
+  && net1.staked.tiers.every((t) => t.bondWei === BOND[t.limit]) && net1.staked.defaultLimit === DEFAULT && BOND[DEFAULT] > 0n, "tiers, bonds and the default tier from the record");
 ok(net1.elder.canopySigner.length === 64, "canopy signer pinned from the record");
 ok(await code(() => sdk.resolveNetwork("nope")) === "InvalidInput", "unknown network -> InvalidInput");
 ok(net1.elders.length === 2 && net1.elders[0].onion === net1.elder.onion && net1.elders[1].onion.startsWith("k54vz4zu"), "every Elder Tree from elders[] (primary first)");
@@ -74,8 +79,8 @@ console.log("=== several Elder Trees ===");
 
 console.log("=== identity ===");
 const id = await sdk.createIdentity();
-ok(id.limit === 1 && /^[1-9][0-9]*$/.test(id.leaf), "createIdentity uses the default tier");
-ok(sdk.rateCommitment(id.identitySecret, 1).toString() === id.leaf, "leaf = Poseidon2(Poseidon1(secret), limit)");
+ok(id.limit === DEFAULT && /^[1-9][0-9]*$/.test(id.leaf), "createIdentity uses the record's default tier");
+ok(sdk.rateCommitment(id.identitySecret, DEFAULT).toString() === id.leaf, "leaf = Poseidon2(Poseidon1(secret), limit)");
 const back = sdk.importIdentity(sdk.serializeIdentity(id));
 ok(back.leaf === id.leaf && back.identitySecret === id.identitySecret, "serialize -> import round trip");
 ok(await code(() => sdk.importIdentity(sdk.serializeIdentity({ ...id, leaf: "5" }))) === "InvalidInput", "tampered leaf rejected");
@@ -137,7 +142,7 @@ function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 
         const tx = params[0];
         const fn = iface.parseTransaction({ data: tx.data });
         const enc = (v) => iface.encodeFunctionResult(fn.name, [v]);
-        if (fn.name === "bondFor") return enc(bond ?? { 1: 10000000000000000n, 8: 80000000000000000n }[Number(fn.args[0])] ?? 0n);
+        if (fn.name === "bondFor") return enc(bond ?? BOND[Number(fn.args[0])] ?? 0n);
         if (fn.name === "isActive") return enc(active);
         if (fn.name === "limitOf") return enc(limit);
         if (fn.name === "withdrawableAt") return enc(withdrawableAt);
@@ -158,15 +163,15 @@ const idc = sdk.identityCommitmentOf(id.identitySecret).toString();
   const s = sdk.createStaking({ provider: w });
   const r = await s.stake({ commitment: idc, from: FROM });
   const tx = iface.parseTransaction({ data: w.sent[0].data });
-  ok(tx.name === "registerIdentity" && tx.args[0].toString() === idc && tx.args[1] === 1n, "stake sends registerIdentity(identityCommitment, 1)");
-  ok(BigInt(w.sent[0].value) === 10000000000000000n && w.sent[0].to === net1.staked.contract, "stake sends the record's bond to the record's contract");
+  ok(tx.name === "registerIdentity" && tx.args[0].toString() === idc && tx.args[1] === BigInt(DEFAULT), "stake sends registerIdentity(identityCommitment, default tier)");
+  ok(BigInt(w.sent[0].value) === BOND[DEFAULT] && w.sent[0].to === net1.staked.contract, "stake sends the record's bond to the record's contract");
   ok((await r.wait()).status === "0x1", "wait() returns the receipt");
 }
 {
   const w = mockWallet();
   await sdk.createStaking({ provider: w }).sponsor({ commitment: idc, limit: 8, from: FROM });
   const tx = iface.parseTransaction({ data: w.sent[0].data });
-  ok(tx.name === "registerIdentity" && tx.args[1] === 8n && BigInt(w.sent[0].value) === 80000000000000000n, "sponsor at tier 8 sends registerIdentity(identityCommitment, 8) with the tier-8 bond");
+  ok(tx.name === "registerIdentity" && tx.args[1] === 8n && BigInt(w.sent[0].value) === BOND[8], "sponsor at tier 8 sends registerIdentity(identityCommitment, 8) with the record's tier-8 bond");
 }
 ok(await code(() => sdk.createStaking({ provider: mockWallet({ bond: 1n }) }).stake({ commitment: idc, from: FROM })) === "Rpc", "bond disagreeing with the record -> refuse (Rpc)");
 ok((await sdk.createStaking({ provider: mockWallet({ active: true }) }).stake({ commitment: id.leaf, from: FROM })).alreadyActive === true, "already active -> nothing sent");
@@ -179,11 +184,11 @@ ok(await code(() => sdk.createStaking({ provider: mockWallet({ chain: 1n }) }).s
   const shadenetNet = sdk.resolveNetwork(record);
   const w = mockWallet();
   const s = sdk.createStaking({ network: shadenetNet, provider: w });
-  const idc = s.registrationValue(id, 1);
+  const idc = s.registrationValue(id, DEFAULT);
   ok(idc === sdk.identityCommitmentOf(id.identitySecret).toString() && idc !== id.leaf, "registrationValue on a ShadeNet set is the identity commitment");
   await s.stake({ commitment: idc, from: FROM });
   const tx = iface.parseTransaction({ data: w.sent[0].data });
-  ok(tx.name === "registerIdentity" && tx.args[0].toString() === idc && tx.args[1] === 1n, "stake on a ShadeNet set sends registerIdentity(idc, 1)");
+  ok(tx.name === "registerIdentity" && tx.args[0].toString() === idc && tx.args[1] === BigInt(DEFAULT), "stake on a ShadeNet set sends registerIdentity(idc, default tier)");
   ok((await sdk.createStaking({ network: shadenetNet, provider: mockWallet({ active: true }) }).stake({ commitment: idc, from: FROM })).alreadyActive === true, "already-active check uses the derived leaf");
 }
 {
