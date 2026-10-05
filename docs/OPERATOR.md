@@ -140,8 +140,14 @@ much traffic lands here), `SHADENET_REGION`, `SHADENET_METRICS` (loopback port o
 keys work in `/state/node.toml`. Any `SHADE_TREE_*` variable set explicitly still wins, so the
 advanced surface is unchanged.
 
+The node reads the record once, at start, and serves it until it restarts. Every 15 minutes it
+fetches the record again; when the admission set, the Elder Trees, the proof artifacts, the epoch
+or the status changed, it logs `warning: the record at … changed since this node started` and
+`status` shows `recordDrift`. Restart the container to follow the record, or point
+`SHADENET_RECORD` at a copy you control if you do not want to follow `main`.
+
 Day two: `docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status` (onion, pins,
-readiness), `docker exec shadenet-node curl -s 127.0.0.1:9101/metrics`, `docker stop shadenet-node`
+readiness, Elder listing), `docker exec shadenet-node curl -s 127.0.0.1:9101/metrics`, `docker stop shadenet-node`
 to retire (the node leaves every Elder's directory within the 15-minute TTL; the identity stays in
 the volume, `docker volume rm shadenet-node` forgets it). Compose recipe: `examples/node/compose.yml`.
 
