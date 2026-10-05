@@ -223,6 +223,9 @@ GRAFANA_ADMIN_PASSWORD=... docker compose --profile monitoring up -d
 # Grafana http://127.0.0.1:3000 (admin), Prometheus http://127.0.0.1:9090
 ```
 
+`GRAFANA_ADMIN_PASSWORD` is required: compose refuses to start without it, so Grafana
+never comes up on a shared default password.
+
 Host networking is required: the node's metrics listeners refuse any non-loopback `Host` header,
 so a bridged container could not scrape them. Edit `prometheus.yml` if your metrics ports differ.
 
