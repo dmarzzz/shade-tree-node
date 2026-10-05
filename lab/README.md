@@ -23,6 +23,8 @@ SHADE_TREE_SLOT_STATE_DIR=/private/durable-state
 node lab/runner.mjs
 ```
 
-The Vercel function `docs/post/api/lab-run.mjs` is the only caller in the
-hosted design. It keeps the bearer token server-side and relays the runner's
-event stream to the same-origin Lab page.
+The website's Lab page and the Vercel function that called `POST /v1/run`
+(`docs/post/api/lab-run.mjs`) were removed in October 2026, so nothing in this
+repository calls that route now. The Lab host stays in the fleet for the
+operator end-to-end check after each roll and the five-minute uptime probe
+(`monitoring/UPTIME.md`).

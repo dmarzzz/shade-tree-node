@@ -1,13 +1,12 @@
 // One primary navigation for every secondary page. scripts/build-stake-site.mjs writes it into each
 // page's nav-links block; test/stake-site.selftest.mjs fails if a page drifts.
 // `file` is the same target as a relative path, for pages that must also open as direct-file
-// previews (the Lab and the canopy page).
+// previews (the canopy page).
 export const NAV_ITEMS = Object.freeze([
   { id: "agent", href: "/agent/", file: "../agent/index.html", label: "Agents" },
   { id: "operator", href: "/operator/", file: "../operator/index.html", label: "Operators" },
   { id: "stake", href: "/stake/", file: "../stake/index.html", label: "Get access" },
-  { id: "lab", href: "/lab/", file: "../lab/index.html", label: "Lab" },
-  { id: "canopy", href: "/canopy/", file: "../grove/index.html", label: "Canopy" },
+  { id: "canopy", href: "/canopy/", file: "../grove/index.html", label: "Network" },
   { id: "research", href: "/research/", file: "../research/index.html", label: "Research" },
   { id: "source", href: "https://github.com/dmarzzz/shade-tree-node", file: "https://github.com/dmarzzz/shade-tree-node", label: "Source" },
 ]);

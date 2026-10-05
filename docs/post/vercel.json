@@ -13,9 +13,6 @@
     "api/grove-v2.mjs": {
       "maxDuration": 5
     },
-    "api/lab-run.mjs": {
-      "maxDuration": 120
-    },
     "api/stake-head.mjs": {
       "maxDuration": 5
     }
@@ -36,14 +33,6 @@
     {
       "source": "/canopy/:path*",
       "destination": "/grove/:path*"
-    },
-    {
-      "source": "/lab.css",
-      "destination": "/lab/lab.css"
-    },
-    {
-      "source": "/lab.js",
-      "destination": "/lab/lab.js"
     },
     {
       "source": "/api/v1/data/grove/sepolia/head",
@@ -133,6 +122,21 @@
     {
       "source": "/pricing",
       "destination": "/stake/",
+      "permanent": false
+    },
+    {
+      "source": "/lab",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/lab/",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/lab/:path*",
+      "destination": "/",
       "permanent": false
     }
   ]

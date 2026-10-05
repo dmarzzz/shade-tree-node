@@ -50,7 +50,7 @@ await checkPage("/agent/", /<main\b/);
 await checkPage("/operator/", /<main\b/);
 await checkPage("/stake/", /data-member-steps/);
 
-assert.match(home.html, /class="nav-lab"/, "the Lab route should remain explicitly hidden");
+assert.doesNotMatch(home.html, /href="[^"]*\/lab\//, "the removed Lab page must not be linked");
 assert.doesNotMatch(home.html, /The best shade asks for proof, not a name\.<\/p>/, "removed footer copy must stay removed");
 
 for (const asset of ["/site.css", "/site.js", "/grove.js", "/stake/stake.css", "/stake/stake.js", "/fig/shade-tree-readme.svg"]) {
@@ -89,6 +89,11 @@ if (origin.protocol === "https:") {
   assert.equal(home.response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(home.response.headers.get("referrer-policy"), "no-referrer");
   console.log("  ok   production security headers");
+
+  const lab = await fetchWithRetry("/lab/");
+  assert.equal(lab.status, 200, "/lab/ should redirect to a page that loads");
+  assert.equal(new URL(lab.url).pathname, "/", "/lab/ should redirect to the landing page");
+  console.log("  ok   /lab/ redirects to the landing page");
 }
 
 console.log("PASS: production site smoke test");
