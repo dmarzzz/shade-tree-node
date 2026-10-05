@@ -5836,7 +5836,7 @@ dependencies = [
 
 [[package]]
 name = "shadenet"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "arti-client",
  "base64 0.23.1",
@@ -5872,7 +5872,7 @@ dependencies = [
 
 [[package]]
 name = "shadenet-cli"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -5896,7 +5896,7 @@ dependencies = [
 
 [[package]]
 name = "shadenet-proto"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "data-encoding",
  "ed25519-dalek 3.0.0",
@@ -5910,7 +5910,7 @@ dependencies = [
 
 [[package]]
 name = "shadenet-rln"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "ark-bn254",
  "ark-circom",
