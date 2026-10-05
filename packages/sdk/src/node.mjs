@@ -15,6 +15,10 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 
 export * from "./index.mjs";
+// Identity files from disk, including the passphrase-protected form `shadenet init --passphrase`
+// writes (the isomorphic importIdentity reads the plaintext form only). Both return an identity
+// createClient({ identity }) takes.
+export { openIdentity, readIdentityFile } from "../../node/lib/identity-file.mjs";
 
 // In Node, exit and withdraw proofs default to the committed withdraw circuit: circuits/ sits at
 // the repo root in a checkout (src/ is three levels down) and at the package root when published
@@ -94,7 +98,8 @@ export async function proxyFetch(url, { proxy = DEFAULT_DAEMON, token, method = 
 }
 
 // In-process client over a Tor SOCKS port (the JS client). Options are ShadeTreeClient's:
-// { secret, limit, network, torHost, torPort, leafSource, ... }. Errors come back as ShadeNetError.
+// { secret | identity | identityFile, limit, network, torHost, torPort, leafSource, ... }; an
+// identity file is the one `shadenet init` writes. Errors come back as ShadeNetError.
 export function createClient(options = {}) {
   let inner;
   try {

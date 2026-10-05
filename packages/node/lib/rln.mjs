@@ -55,6 +55,7 @@ const [{ Identity }, { Group: RLNGroup }] = await Promise.all([
 ]);
 import { poseidon2 } from "poseidon-lite";
 import { identityCommitmentOf as coreIdentityCommitment, rateCommitment as coreRateCommitment } from "./identity-core.mjs";
+import { FileIdentity } from "./file-identity.mjs";
 
 // ---- paths + artifacts ------------------------------------------------------
 
@@ -220,13 +221,19 @@ export function signalFieldSafe(s, maxLen) {
 
 // A deterministic rlnjs (Semaphore v3) identity, seeded from the app's field-element
 // secret so the same secret always yields the same identity / identitySecret / leaf.
+// A member may instead hold an identity FILE ({ identitySecret, leaf, limit }, what the Rust
+// `shadenet init` and `shade-tree identity` write): that is a FileIdentity
+// (packages/node/lib/file-identity.mjs) and passes through unchanged, so every caller that takes
+// "the secret" (proveForSlot, the leaf-source loader, the slot pool) takes either form (#251).
 export function identityFor(secret) {
+  if (secret instanceof FileIdentity) return secret;
   return new Identity(toField(secret).toString());
 }
 
 // identitySecret = Poseidon2(nullifier, trapdoor) — the Semaphore v3 identity secret and
-// the value a slash reveals. This is NOT the app's seed `secret`.
+// the value a slash reveals. This is NOT the app's seed `secret`. A FileIdentity already holds it.
 export function identitySecretOf(identity) {
+  if (identity instanceof FileIdentity) return identity.identitySecret;
   return poseidon2([identity.getNullifier(), identity.getTrapdoor()]);
 }
 

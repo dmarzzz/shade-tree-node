@@ -133,6 +133,13 @@ const COMMAND_ROLE = {
   "register-member": "member-enroll",
 };
 
+// Flags whose meaning depends on the command's role. `--identity` is the node's onion identity
+// for node commands (FLAG_ENV above) and, for the proxy, the member's identity file: the one
+// `shadenet init` writes and the Rust client takes as `--identity` (#251).
+const CLIENT_FLAG_ENV = {
+  identity: "SHADE_TREE_IDENTITY",
+};
+
 function parse(argv) {
   const flags = {}, positionals = [];
   for (let i = 0; i < argv.length; i++) {
@@ -176,7 +183,9 @@ function proxyHelp(command = "proxy") {
   console.log("usage: shade-tree proxy [--bootnode ONION --dir-signer HEX] [--limit N] [--tor-port N]");
   console.log("   or: shade-tree proxy --onion NODE_ONION [--limit N] [--tor-port N]\n");
   console.log("Load the member secret without putting it in shell history or process arguments:");
-  console.log("  read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET\n");
+  console.log("  read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET");
+  console.log("or use the identity file `shadenet init` wrote (the tier comes from the file):");
+  console.log("  shade-tree proxy --identity ~/.config/shadenet/identity.json\n");
   console.log("The bundled Sepolia profile uses public staked tier 1; invited/alternate profiles also set");
   console.log("SHADE_TREE_MEMBERS_FILE and their exact tier. Start Tor first, then route one child with:");
   console.log("  shade-tree run -- your-agent\n");
@@ -431,7 +440,7 @@ async function main() {
     // common --metrics-port interface useful by routing it to that variable for this command.
     const envKey = cmd === "heartbeat" && flag === "metrics-port"
       ? "SHADE_TREE_HEARTBEAT_METRICS_PORT"
-      : FLAG_ENV[flag];
+      : (COMMAND_ROLE[cmd] === "client" && CLIENT_FLAG_ENV[flag]) || FLAG_ENV[flag];
     if (envKey) env[envKey] = val;
     else { passthrough.push(`--${flag}`); if (val !== "true") passthrough.push(val); }
   }

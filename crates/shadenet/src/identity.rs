@@ -386,6 +386,56 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
     }
 
+    /// `testdata/identity` holds identity files of both forms, written by this code (`shadenet
+    /// init`, `shadenet identity-lock` on a copy, and `serialize` at a low scrypt cost). The
+    /// JavaScript client reads the same files (packages/node/lib/identity-file.selftest.mjs):
+    /// one format, both clients (#251).
+    #[test]
+    fn the_shared_identity_files_load_in_both_forms() {
+        let dir = Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/identity"
+        ));
+        let vectors: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("vectors.json")).unwrap())
+                .unwrap();
+        let text = |key: &str| vectors[key].as_str().unwrap().to_string();
+
+        let plain = load(&dir.join(text("plain")), || panic!("plaintext")).unwrap();
+        assert_eq!(plain.leaf, text("leaf"));
+        assert_eq!(plain.limit, vectors["limit"].as_u64());
+
+        // `locked` is the CLI's own output (scrypt logN 17, about 13 s in a debug build): its
+        // public half is checked here and JavaScript opens it. `lockedLowCost` is the same
+        // identity sealed by `serialize` at logN 10, opened by both.
+        let public = read_public(&dir.join(text("locked"))).unwrap();
+        assert!(public.encrypted);
+        assert_eq!(public.leaf, text("leaf"));
+        assert_eq!(public.limit, vectors["limit"].as_u64());
+        let locked = load(&dir.join(text("lockedLowCost")), || {
+            Ok(Zeroizing::new(text("passphrase")))
+        })
+        .unwrap();
+        assert_eq!(locked.secret.as_str(), plain.secret.as_str());
+        assert_eq!(locked.leaf, plain.leaf);
+
+        // The public values both clients must derive from the secret.
+        #[cfg(feature = "live")]
+        {
+            use shadenet_rln::identity::{
+                commitment_from_identity_secret, identity_commitment_from_identity_secret,
+            };
+            assert_eq!(
+                identity_commitment_from_identity_secret(&plain.secret).unwrap(),
+                text("identityCommitment")
+            );
+            assert_eq!(
+                commitment_from_identity_secret(&plain.secret, plain.limit.unwrap()).unwrap(),
+                text("leaf")
+            );
+        }
+    }
+
     #[test]
     fn debug_never_prints_the_secret() {
         assert!(!format!("{:?}", material()).contains("1234567890"));

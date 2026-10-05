@@ -156,8 +156,8 @@ export function makeProxyServer(client, { reg = metrics, logger = log, now = () 
 }
 
 async function startClientProxy() {
-  if (!process.env.SHADE_TREE_SECRET) {
-    log.error("set SHADE_TREE_SECRET (from `shade-tree enroll`) before starting the Proxy");
+  if (!process.env.SHADE_TREE_SECRET && !process.env.SHADE_TREE_IDENTITY) {
+    log.error("set SHADE_TREE_SECRET (from `shade-tree enroll`) or SHADE_TREE_IDENTITY (the identity file from `shadenet init`) before starting the Proxy");
     process.exit(1);
   }
 
@@ -166,7 +166,14 @@ async function startClientProxy() {
 
   // One client (one slot pool) for the whole proxy; it reads the SHADE_TREE_* client environment
   // (SHADE_TREE_SECRET, SHADE_TREE_ONION | SHADE_TREE_DIRECTORY+SHADE_TREE_DIR_SIGNER, SHADE_TREE_TOR_HOST/PORT).
-  const client = new ShadeTreeClient();
+  let client;
+  try {
+    client = new ShadeTreeClient();
+  } catch (e) {
+    // A bad identity file or passphrase: say so in one line, with no stack.
+    log.error(e.message);
+    process.exit(1);
+  }
   const server = makeProxyServer(client);
 
   const metricsPort = safeMetricsPort(process.env.SHADE_TREE_METRICS_PORT, [["Proxy backend", LISTEN_PORT]]);

@@ -17,6 +17,7 @@
 // The client proxy (packages/node/client/shim.mjs) is a thin HTTP-CONNECT front-end over this same class.
 
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +31,7 @@ import * as semaphoreConfig from "../lib/semaphore.mjs";
 // Namespace import (not named): selftests that mock packages/node/lib/rln.mjs need not provide these two; they
 // are only touched by makeLeafSourceLoader when a contract is configured.
 import * as rln from "../lib/rln.mjs";
+import { openIdentity, readIdentityFile } from "../lib/identity-file.mjs";
 import { verifyReceipt } from "../lib/receipt.mjs";
 import { configuredContracts, loadGroupFromContract } from "../lib/root-provider.mjs";
 import { admitPathOfSource, parseLeafSource, envFlag, ADMIT_ORDER } from "../lib/admission.mjs";
@@ -580,10 +582,52 @@ export function socksAuthForTunnel(seed) {
   return { userId: tag("uid"), password: tag("pwd") };
 }
 
+// The member credential, in one of two forms (#251):
+//   - the app secret: { secret } / SHADE_TREE_SECRET (from `shade-tree enroll`); the identity is derived from it;
+//   - an identity file, the one `shadenet init` writes and the Rust client reads: { identity } (its text,
+//     parsed object, or a FileIdentity), { identityFile } / SHADE_TREE_IDENTITY (a path). A passphrase-
+//     protected file needs { passphrase }, SHADE_TREE_PASSPHRASE_FILE or SHADE_TREE_PASSPHRASE.
+// An option wins over the environment, and a secret over an identity file at the same level.
+// Returns the app secret (string) or a FileIdentity; everything downstream takes either.
+export function memberCredential(opts = {}, env = process.env) {
+  const passphrase = () => {
+    if (opts.passphrase != null) return String(opts.passphrase);
+    if (env.SHADE_TREE_PASSPHRASE_FILE) {
+      let text;
+      try { text = readFileSync(env.SHADE_TREE_PASSPHRASE_FILE, "utf8"); } catch (e) {
+        throw new Error(`ShadeTreeClient: read passphrase file ${env.SHADE_TREE_PASSPHRASE_FILE}: ${e.code || e.message}`);
+      }
+      return text.replace(/[\r\n]+$/, "");
+    }
+    return env.SHADE_TREE_PASSPHRASE || undefined;
+  };
+  // The passphrase is read only when the file turns out to be sealed.
+  const open = (read) => {
+    try {
+      return read(undefined);
+    } catch (e) {
+      if (!/passphrase-protected/.test(e.message)) throw new Error(`ShadeTreeClient: ${e.message}`);
+      const phrase = passphrase();
+      if (!phrase) throw new Error(`ShadeTreeClient: ${e.message}`);
+      try { return read(phrase); } catch (inner) { throw new Error(`ShadeTreeClient: ${inner.message}`); }
+    }
+  };
+  if (opts.secret) return opts.secret;
+  if (opts.identity != null) return open((phrase) => openIdentity(opts.identity, { passphrase: phrase }));
+  if (opts.identityFile) return open((phrase) => readIdentityFile(opts.identityFile, { passphrase: phrase }));
+  if (env.SHADE_TREE_SECRET) return env.SHADE_TREE_SECRET;
+  if (env.SHADE_TREE_IDENTITY) return open((phrase) => readIdentityFile(env.SHADE_TREE_IDENTITY, { passphrase: phrase }));
+  throw new Error("ShadeTreeClient: `secret` (or SHADE_TREE_SECRET) is required, or an identity file (`identityFile` / SHADE_TREE_IDENTITY)");
+}
+
 export class ShadeTreeClient {
   constructor(opts = {}) {
-    this.secret = opts.secret || process.env.SHADE_TREE_SECRET;
-    if (!this.secret) throw new Error("ShadeTreeClient: `secret` (or SHADE_TREE_SECRET) is required");
+    this.secret = memberCredential(opts);
+    // An identity file fixes the tier: its leaf commits to its `limit`.
+    const fileLimit = typeof this.secret === "object" ? this.secret.limit : null;
+    if (fileLimit != null && opts.limit != null && Number(opts.limit) !== fileLimit) {
+      throw new Error(`ShadeTreeClient: the identity file is tier ${fileLimit}; limit ${opts.limit} would be a different leaf`);
+    }
     this.torHost = opts.torHost || process.env.SHADE_TREE_TOR_HOST || "127.0.0.1";
     this.torPort = Number(opts.torPort || process.env.SHADE_TREE_TOR_PORT || 9250);
     this.dialAttempts = Number(opts.dialAttempts || 4);
@@ -659,7 +703,7 @@ export class ShadeTreeClient {
     this._prove = opts.prove || proveForSlot;
     // This member's tier limit (T-FEAT-8): { limit } or SHADE_TREE_LIMIT; default K_SLOTS (SHADE_TREE_SLOTS, 8).
     // Must equal the limit the member's leaf was enrolled with (`shade-tree enroll --limit`).
-    this.limit = Number(normLimit(opts.limit ?? process.env.SHADE_TREE_LIMIT ?? K_SLOTS));
+    this.limit = Number(normLimit(fileLimit ?? opts.limit ?? process.env.SHADE_TREE_LIMIT ?? K_SLOTS));
     // Which tree holds this member's leaf (T-FEAT-7): members.json, a staked set, or the paid
     // set — discovered lazily on first use (makeLeafSourceLoader); { loadGroupFn } overrides.
     // T-FEAT-9: { leafSource } / SHADE_TREE_LEAF_SOURCE pins the set (auto = whichever holds the leaf);

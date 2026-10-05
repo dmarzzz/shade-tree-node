@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AbiCoder, Interface } from "ethers";
 import * as sdk from "@shadenet/sdk";
-import { proxyConnect } from "@shadenet/sdk/node";
+import { proxyConnect, createClient, readIdentityFile } from "@shadenet/sdk/node";
 import { identityFor, identitySecretOf, rateCommitmentOf } from "../../node/lib/rln.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -84,6 +84,23 @@ const legacy = identityFor("111");
 const legacyFile = { identitySecret: identitySecretOf(legacy).toString(), leaf: rateCommitmentOf(legacy, 8).toString() };
 ok(sdk.importIdentity(JSON.stringify(legacyFile), { network: net1 }).limit === 8, "pre-tier identity file (no limit) is checked against the offered tiers");
 ok(sdk.identityFileName(id).startsWith("shadenet-identity-"), "download file name");
+// The identity file the Rust `shadenet init` writes (testdata/identity, #251): the same file in
+// the SDK, in the JS client and in the Rust client.
+{
+  const dir = join(ROOT, "testdata", "identity");
+  const vectors = JSON.parse(readFileSync(join(dir, "vectors.json"), "utf8"));
+  const rust = sdk.importIdentity(readFileSync(join(dir, vectors.plain), "utf8"));
+  ok(rust.leaf === vectors.leaf && rust.limit === vectors.limit, "importIdentity reads the file `shadenet init` writes");
+  ok(sdk.identityCommitmentOf(rust.identitySecret).toString() === vectors.identityCommitment, "its identity commitment is the one the Rust client stakes");
+  let sealed = null;
+  try { sdk.importIdentity(readFileSync(join(dir, vectors.lockedLowCost), "utf8")); } catch (e) { sealed = e; }
+  ok(sealed?.code === "InvalidInput", "the isomorphic import refuses the passphrase-protected form");
+  const opened = readIdentityFile(join(dir, vectors.lockedLowCost), { passphrase: vectors.passphrase });
+  ok(opened.leaf === vectors.leaf && opened.identitySecret === BigInt(rust.identitySecret), "the Node entry opens it with the passphrase");
+  const client = createClient({ identity: opened, onion: "x", prove: async () => ({}), loadGroupFn: async () => ({ group: null }), slotStatePath: join(dir, "..", "..", ".unused-slot-state.json") });
+  ok(client.inner.limit === vectors.limit && String(client.inner.secret).includes(vectors.leaf.slice(0, 12)), "createClient({ identity }) proves as that member at the file's tier");
+  ok(await code(() => createClient({ identityFile: join(dir, "absent.json"), onion: "x" })) !== null, "a missing identity file is an error, not a silent default");
+}
 
 console.log("=== errors ===");
 ok(sdk.ERROR_CODES.length === 11, "11 error codes");

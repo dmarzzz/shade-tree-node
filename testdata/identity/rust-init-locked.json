@@ -1,0 +1,15 @@
+{
+  "encrypted": {
+    "cipher": "xchacha20poly1305",
+    "ciphertext": "e1a958084f4d817509a924492ec99fd32b5477e3471c923b5c2f1cdb649d144ad0459de45e7228fe96635482e15d56bdbe8d21d90573bf4a5a5d1354288d80c9cef9eab1d2dc518b330b94dbb0f2ef299333a3d881e602e4dc0ec0e8",
+    "kdf": "scrypt",
+    "logN": 17,
+    "nonce": "87e8a1c0e661288b56cbdfd1e8cec291a92153bcc8dedaef",
+    "p": 1,
+    "r": 8,
+    "salt": "a0a9bed2dc6f67452b04602ac26aae92"
+  },
+  "leaf": "5422396744081522959706503441345376700063057855005220201447532952071108755372",
+  "limit": 1,
+  "version": 2
+}
