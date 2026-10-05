@@ -33,7 +33,6 @@ client's bundled profile and the docs tables.
 | `defaultLimit` | tier limit | must be one of `tiers[].limit`; what the site and CLI stake by default |
 | `unbondingSeconds` | seconds | ≥ 3720 (root freshness 60 + epoch 60 + slash confirmation 3600) |
 | `slash.rewardDivisor` | integer | 2..1000; the slasher gets `floor(bond / d)`, the rest is burned (10 = 90% burn) |
-| `sponsorSeats.count`, `sponsorSeats.bondWeiEach` | seats, wei | what M8 funds for agent preview seats (below) |
 | `sessionTickets` | boolean | session tickets (#103, ADR 0011): `true` writes `sessionTickets: true` into the record, so the node role starts every node with `SHADE_TREE_SESSION_TICKETS=1`, the heartbeat advertises the signed `session` capability and both SDKs default to it |
 | `status` | `"placeholder"` \| `"final"` | **production refuses to deploy until this is `"final"`** |
 | `decisionRef` | text | who set these numbers and when |
@@ -141,7 +140,7 @@ writes the record's RPC failover list (`rpcUrls`, ADR 0012) from `SHADE_TREE_RPC
 publicnode, the pair staging runs on).
 
 **1. Fund the deployer** with enough for gas (about 0.005 ETH at 1 gwei) plus the launch cohort
-and sponsor seats (step 5). Check: `cast balance --ether 0x62c448057273fceE5785dd5b57e40d0ff19554b1 --rpc-url https://ethereum-sepolia-rpc.publicnode.com`.
+(step 5). Check: `cast balance --ether 0x62c448057273fceE5785dd5b57e40d0ff19554b1 --rpc-url https://ethereum-sepolia-rpc.publicnode.com`.
 
 **2. Deploy, verify, smoke:**
 
@@ -189,12 +188,13 @@ curl -s <elder>/health | jq .build.commit          # must equal the tag's commit
 
 Nodes accept only the new verification key after this roll.
 
-**5. Seed the launch cohort and sponsor seats**, so the anonymity set is not empty on day one.
+**5. Seed the launch cohort**, so the anonymity set is not empty on day one.
 Amounts come from `economics.json`:
 
 - launch cohort: `N members × bondWei of defaultLimit` (N = the cohort you invite, e.g. 20)
-- agent preview seats: `sponsorSeats.count × sponsorSeats.bondWeiEach`
 
+There is no funded sponsor-seat pool (the `sponsorSeats` field was dropped on 2026-10-05, decision:
+no ETH giveaways). Anyone may still stake someone else's commitment from the Get access page.
 Stake each with `shadenet register-member <identity-commitment> --limit <tier>` from the funding
 key, or from the Get access page's sponsor mode. Check the count on the canopy page
 (`/canopy`) and with `shadenet status`.

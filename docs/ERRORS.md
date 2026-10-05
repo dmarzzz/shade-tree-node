@@ -21,7 +21,7 @@ runs the same diagnosis for the whole setup, canopy side included (see below).
 | `not_admitted` | 403 | 2 | Your leaf is not in the set the canopy's nodes accept | Never staked here, or staked in another network's set (an identity from the staging page on the production record) | `shadenet doctor` names the record that has it; else `shadenet register-member --identity identity.json --key-file <funded key>`, or hand the commitment to a sponsor |
 | `not_finalized` | 403 | 2 | Registered, but the block is not final yet; nodes read the finalized set | Sepolia finality (about 13 minutes) plus one node root refresh (60 s) | `shadenet status --wait` returns when final |
 | `port_not_allowed` | 403 | 2 | No node egresses to that port. Nodes serve HTTPS on 443 | An http:// URL or a non-443 port | Use https on port 443 |
-| `budget_exhausted` | 429 | 4 | The budget queue could not hold the request within its maximum wait (two epochs by default, ADR 0013), or one tunnel hit its payload cap. A request that fits is held, not refused, and opens with `X-ShadeNet-Queued` | A burst of fetches to new hosts, or a model API routed through the proxy | Wait `Retry-After` / `X-ShadeNet-ETA` seconds (queue-aware), reuse open connections, run `shadenet plan` before the next batch, or stake a higher tier |
+| `budget_exhausted` | 429 | 4 | The budget queue could not hold the request within its maximum wait (two epochs by default, ADR 0013), or one tunnel hit its payload cap. A request that fits is held, not refused, and opens with `X-ShadeNet-Queued` | A burst of fetches to new hosts, or a model API routed through the proxy | Wait `Retry-After` / `X-ShadeNet-ETA` seconds (queue-aware), reuse open connections, or run `shadenet plan` before the next batch |
 | `no_eligible_node` | 503 | 2 | No node fits your admission path, the network's rate policy or a capability you asked for | The nodes advertise (signed `caps.sets`) that they read a different admission set than this record, so every proof would be `wrong-group-root`; an artifact, rate-policy or admission mismatch; a `--region`/`--proto` filter | `shadenet doctor` (the `admission set` line names the set the nodes read); run against that record or stake there; drop the filters |
 | `canopy` | 503 | 2 | The signed canopy could not be fetched or verified and there is no last-known-good copy | Tor cannot reach any Elder Tree from here (first run on a blocked network) | `shadenet doctor` (the `tor` and `elder` lines); retry |
 | `rpc` | 503 | 2 | Reading the member set over JSON-RPC failed | A public RPC pool returned an empty `eth_getLogs` page, a null receipt or 429 from a pruned or busy backend; the client fails closed instead of building a wrong tree | `shadenet doctor --rpc` rates every endpoint; put a full-history one first with `SHADENET_RPC_URL=<url>,<fallback>` |
@@ -79,7 +79,7 @@ to see the `X-ShadeNet-Error` header and the JSON body.
 
 One tunnel spends one RLN slot. A tier-`K` member has `K` slots per epoch. The
 public Sepolia record currently sets a 60-second epoch, 40 MiB per slot, and
-tiers 1 and 8; `shadenet init` and `shadenet status` print the live values from
+one tier, limit 8; `shadenet init` and `shadenet status` print the live values from
 the record, which change when the network's economics do. With session tickets
 on (the public record), one slot opens a book of six tunnels at one node, so an
 epoch can open `6K` tunnels and tickets left in a live book cost nothing.

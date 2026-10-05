@@ -9,15 +9,21 @@
 //       (register -> exit -> 24 h -> withdraw -> slash) with time warped; writes nothing under network/
 //   node scripts/deploy-contracts.mjs --network sepolia-staging --broadcast [--verify]
 //       deploy for real; writes network/<net>/deployment.json and network/<net>/contracts-deploy.json
+//   node scripts/deploy-contracts.mjs --network sepolia-staging --from-broadcast <run-latest.json> [--verify]
+//       the creations are already on chain (a broadcast that stopped before the record was written):
+//       send nothing, take addresses and hashes from forge's broadcast file, then read back, write
+//       the record and verify exactly as --broadcast does
 //
 // Options:
 //   --network <name>         network/<name>/economics.json is the input            (required)
 //   --rpc-url <url>          Sepolia RPC (also the fork source)   (SHADE_TREE_RPC_URL, else public)
 //   --gateway-registry <0x>  GatewayRegistry to record (reused, never redeployed)
 //                            (default: network/sepolia/deployment.json elder.gatewayRegistry)
-//   --fork | --broadcast     rehearse on a fork, or send real transactions (exactly one)
-//   --verify                 after --broadcast: source-verify on Sourcify, and on Etherscan when
-//                            ETHERSCAN_API_KEY is set
+//   --fork | --broadcast | --from-broadcast <file>
+//                            rehearse on a fork, send real transactions, or record transactions
+//                            already sent (exactly one)
+//   --verify                 after --broadcast or --from-broadcast: source-verify on Sourcify, and
+//                            on Etherscan when ETHERSCAN_API_KEY is set
 //
 // The deployer key comes from SHADE_TREE_DEPLOYER_KEY (hex) or, with --key-from-sops <file>, from
 // the sops-encrypted vault_shadenet_deployer_key (agent-devops secrets/shadenet/deployer.sops.yml;
@@ -27,8 +33,9 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Wallet, getAddress } from "ethers";
 import { validateDeploymentRecord as validateClientRecord } from "../packages/node/lib/network-record.mjs";
 import { validateDeploymentRecord as preflightRecord, validatePublicStakeOnchain } from "../deploy/v4/preflight.mjs";
 
@@ -44,7 +51,7 @@ const ANVIL_KEY_0 = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf
 const fail = (message) => { console.error(`deploy-contracts: ${message}`); process.exit(1); };
 
 export function parseArgs(argv) {
-  const opts = { network: null, rpcUrls: rpcList(process.env.SHADE_TREE_RPC_URL || PUBLIC_RPCS.join(",")), gatewayRegistry: null, fork: false, broadcast: false, verify: false, keyFromSops: null };
+  const opts = { network: null, rpcUrls: rpcList(process.env.SHADE_TREE_RPC_URL || PUBLIC_RPCS.join(",")), gatewayRegistry: null, fork: false, broadcast: false, fromBroadcast: null, verify: false, keyFromSops: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const value = () => { const v = argv[++i]; if (v == null || v.startsWith("--")) throw new Error(`${arg} needs a value`); return v; };
@@ -54,12 +61,13 @@ export function parseArgs(argv) {
     else if (arg === "--key-from-sops") opts.keyFromSops = value();
     else if (arg === "--fork") opts.fork = true;
     else if (arg === "--broadcast") opts.broadcast = true;
+    else if (arg === "--from-broadcast") opts.fromBroadcast = value();
     else if (arg === "--verify") opts.verify = true;
     else throw new Error(`unknown argument ${arg}`);
   }
   if (!opts.network || !/^[a-z0-9-]+$/.test(opts.network)) throw new Error("--network <name> is required");
-  if (opts.fork === opts.broadcast) throw new Error("pass exactly one of --fork or --broadcast");
-  if (opts.verify && !opts.broadcast) throw new Error("--verify only applies to --broadcast");
+  if ([opts.fork, opts.broadcast, opts.fromBroadcast !== null].filter(Boolean).length !== 1) throw new Error("pass exactly one of --fork, --broadcast or --from-broadcast <file>");
+  if (opts.verify && opts.fork) throw new Error("--verify only applies to --broadcast and --from-broadcast");
   return opts;
 }
 
@@ -92,7 +100,7 @@ export function validateEconomics(econ, network) {
 // The production network (network/sepolia) broadcasts only after both human gates: final
 // economics (H2) and a completed trusted-setup ceremony whose keys the lock records (H3).
 export function productionGate(opts, econ, lock) {
-  if (opts.network !== "sepolia" || !opts.broadcast) return null;
+  if (opts.network !== "sepolia" || !(opts.broadcast || opts.fromBroadcast)) return null;
   if (econ.status !== "final") return "the production network deploys only from final economics (H2); status is still placeholder";
   if (lock?.ceremony?.status !== "complete" || lock?.trust === "UNTRUSTED-TESTNET") {
     return "the production network deploys only with ceremony keys (H3); testdata/zk-artifacts.lock.json still records the dev setup";
@@ -118,6 +126,34 @@ export function deployEnv(econ, { gatewayRegistry, deployOut, rpcUrl }) {
     SHADE_TREE_DEPLOY_OUT: deployOut,
     SHADE_TREE_RPC_URL: rpcUrl,
   };
+}
+
+// The 2026-09-30 production deploy stopped after three of four contract creations: the deployer
+// held 0.007 ETH and the gas price doubled mid-run, so the set had to be finished by hand. A
+// broadcast now starts only when the deployer can pay for all four creations at several times
+// the current gas price.
+export const DEPLOY_GAS = 5_000_000n; // the four CREATE gas limits forge sets sum to 4,853,545 (fork run, 2026-10-05)
+export const GAS_PRICE_HEADROOM = 4n;
+const ethString = (wei) => { const s = BigInt(wei).toString().padStart(19, "0"); return `${s.slice(0, -18)}.${s.slice(-18, -12)}`; };
+export function gasGate({ balanceWei, gasPriceWei }) {
+  const need = DEPLOY_GAS * BigInt(gasPriceWei) * GAS_PRICE_HEADROOM;
+  if (BigInt(balanceWei) >= need) return null;
+  return `the deployer holds ${ethString(balanceWei)} ETH; four contract creations need up to ${ethString(need)} ETH (${DEPLOY_GAS} gas at ${GAS_PRICE_HEADROOM}x the current gas price of ${BigInt(gasPriceWei)} wei). Fund it or wait for gas to fall: a deploy that stops part-way has to be finished by hand`;
+}
+
+// What DeployRegistry.s.sol writes to SHADE_TREE_DEPLOY_OUT, rebuilt from forge's broadcast file:
+// the way back when the creations are mined but the run stopped before the record was written.
+const CREATED = ["RateCommitmentHasher", "WithdrawGroth16Verifier", "WithdrawVerifier", "StakedReputationSet"];
+export function deployedFromBroadcast(run) {
+  if (Number(run?.chain) !== SEPOLIA) throw new Error("the broadcast file is not a Sepolia run");
+  const creates = (run.transactions || []).filter((tx) => tx.transactionType === "CREATE");
+  if (creates.map((tx) => tx.contractName).join(",") !== CREATED.join(",")) throw new Error(`the broadcast file must hold exactly the creations ${CREATED.join(", ")}`);
+  for (const tx of creates) {
+    const receipt = (run.receipts || []).find((r) => r.transactionHash === tx.hash);
+    if (!receipt || BigInt(receipt.status ?? 0) !== 1n) throw new Error(`${tx.contractName} ${tx.hash} has no successful receipt in the broadcast file`);
+  }
+  const at = (name) => getAddress(creates.find((tx) => tx.contractName === name).contractAddress);
+  return { stakedReputationSet: at("StakedReputationSet"), hasher: at("RateCommitmentHasher"), verifier: at("WithdrawVerifier") };
 }
 
 // ---- chain helpers --------------------------------------------------------------------------
@@ -188,27 +224,45 @@ async function main() {
       const code = await rpc(url, "eth_getCode", [address, "latest"]);
       if (!code || code === "0x") fail(`pinned library ${name} is not deployed at ${address}`);
     }
-    const key = deployerKey(opts);
-    if (fork) await rpc(url, "anvil_setBalance", [new (await import("ethers")).Wallet(key).address, "0x21e19e0c9bab2400000"]);
+    const key = opts.fromBroadcast ? null : deployerKey(opts);
+    const deployer = key ? new Wallet(key).address : null;
+    if (fork) await rpc(url, "anvil_setBalance", [deployer, "0x21e19e0c9bab2400000"]);
+    else if (key) {
+      const [balanceWei, gasPriceWei] = [BigInt(await rpc(url, "eth_getBalance", [deployer, "latest"])), BigInt(await rpc(url, "eth_gasPrice"))];
+      const short = gasGate({ balanceWei, gasPriceWei });
+      if (short) fail(short);
+      console.log(`  deployer ${deployer} holds ${ethString(balanceWei)} ETH; gas price ${gasPriceWei} wei`);
+    }
 
-    console.log(`deploy-contracts: ${opts.network} (${econ.status} economics) on ${fork ? "an anvil fork of Sepolia" : "Sepolia"}`);
+    console.log(`deploy-contracts: ${opts.network} (${econ.status} economics) on ${fork ? "an anvil fork of Sepolia" : "Sepolia"}${opts.fromBroadcast ? `, recording ${opts.fromBroadcast} (nothing is sent)` : ""}`);
     for (const tier of econ.tiers) console.log(`  tier ${tier.limit}: ${tier.bondWei} wei`);
     console.log(`  unbonding ${econ.unbondingSeconds}s, slash bounty 1/${econ.slash.rewardDivisor}, registry ${gatewayRegistry}`);
 
-    mkdirSync(join(ROOT, "cache"), { recursive: true });
-    const deployOut = join(ROOT, "cache", `deploy-${opts.network}-${Date.now()}.local.json`);
-    const libs = Object.entries(manifest.libraryAddresses).flatMap(([name, address]) => ["--libraries", `contracts/${name}.sol:${name}:${address}`]);
-    const forge = spawnSync("forge", ["script", "contracts/script/DeployRegistry.s.sol:DeployRegistry", "--rpc-url", url, "--broadcast", "--slow", ...libs], {
-      cwd: ROOT, encoding: "utf8", timeout: 900_000,
-      env: { ...process.env, ...deployEnv(econ, { gatewayRegistry, deployOut, rpcUrl: opts.rpcUrls[0] }), SHADE_TREE_DEPLOYER_KEY: key },
-    });
-    if (forge.status !== 0) fail(`forge script failed:\n${(forge.stdout || "").split("\n").slice(-25).join("\n")}\n${forge.stderr || ""}`);
-    const deployed = JSON.parse(readFileSync(deployOut, "utf8"));
-    rmSync(deployOut, { force: true });
+    const broadcastFile = opts.fromBroadcast || join(ROOT, "broadcast/DeployRegistry.s.sol", String(SEPOLIA), "run-latest.json");
+    let deployed;
+    if (opts.fromBroadcast) {
+      try { deployed = deployedFromBroadcast(JSON.parse(readFileSync(broadcastFile, "utf8"))); } catch (error) { fail(`${broadcastFile}: ${error.message}`); }
+    } else {
+      mkdirSync(join(ROOT, "cache"), { recursive: true });
+      const deployOut = join(ROOT, "cache", `deploy-${opts.network}-${Date.now()}.local.json`);
+      const libs = Object.entries(manifest.libraryAddresses).flatMap(([name, address]) => ["--libraries", `contracts/${name}.sol:${name}:${address}`]);
+      const forge = spawnSync("forge", ["script", "contracts/script/DeployRegistry.s.sol:DeployRegistry", "--rpc-url", url, "--broadcast", "--slow", ...libs], {
+        cwd: ROOT, encoding: "utf8", timeout: 900_000,
+        env: { ...process.env, ...deployEnv(econ, { gatewayRegistry, deployOut, rpcUrl: opts.rpcUrls[0] }), SHADE_TREE_DEPLOYER_KEY: key },
+      });
+      if (forge.status !== 0) fail(`forge script failed:\n${(forge.stdout || "").split("\n").slice(-25).join("\n")}\n${forge.stderr || ""}`);
+      deployed = JSON.parse(readFileSync(deployOut, "utf8"));
+      rmSync(deployOut, { force: true });
+    }
 
-    const run = JSON.parse(readFileSync(join(ROOT, "broadcast/DeployRegistry.s.sol", String(SEPOLIA), "run-latest.json"), "utf8"));
+    const run = JSON.parse(readFileSync(broadcastFile, "utf8"));
     const setTx = run.transactions.find((tx) => tx.contractName === "StakedReputationSet" && tx.transactionType === "CREATE");
-    const receipt = await rpc(url, "eth_getTransactionReceipt", [setTx.hash]);
+    // A pooled public RPC can answer a fresh receipt with null; ask again, then fall back to the
+    // receipt forge itself waited for, so a deployed set never ends without its record.
+    let receipt = null;
+    for (let attempt = 0; attempt < 4 && !receipt; attempt++) receipt = await rpc(url, "eth_getTransactionReceipt", [setTx.hash]).catch(() => null);
+    receipt ??= (run.receipts || []).find((r) => r.transactionHash === setTx.hash);
+    if (!receipt) fail(`no receipt for the set's creation ${setTx.hash}; the contracts are deployed, rebuild the record from broadcast/ before anything else`);
 
     const staked = {
       profile: "public-stake-v1",
@@ -235,13 +289,25 @@ async function main() {
 
     const shape = [...validateClientRecord(record).errors, ...preflightRecord(record, { requireLive: false }).errors];
     if (shape.length) fail(`record is invalid: ${JSON.stringify(shape)}`);
-    const onchain = await validatePublicStakeOnchain(record, { rpcUrl: url, bytecodeManifest: manifest });
-    if (!onchain.ok) fail(`read-back failed: ${JSON.stringify(onchain.errors)}`);
+    // A pooled public RPC can serve state from before the creations for a few seconds (the
+    // 2026-10-05 production deploy read "no deployed bytecode" one block after the set was mined).
+    let onchain;
+    for (let attempt = 0; ; attempt++) {
+      onchain = await validatePublicStakeOnchain(record, { rpcUrl: url, bytecodeManifest: manifest });
+      if (onchain.ok || fork || attempt >= 5) break;
+      await new Promise((resolve) => setTimeout(resolve, 6000));
+    }
+    if (!onchain.ok) {
+      // run-latest.json is replaced by the next forge run (a --fork rehearsal included); name the stamped copy.
+      const stampedPath = join(dirname(broadcastFile), `run-${run.timestamp}.json`);
+      const stamped = !opts.fromBroadcast && existsSync(stampedPath) ? stampedPath : broadcastFile;
+      fail(`read-back failed: ${JSON.stringify(onchain.errors)}${fork ? "" : `\n  The creations are on chain and no record was written. Do not deploy again: rerun with --from-broadcast ${relative(ROOT, stamped)} in place of --broadcast.`}`);
+    }
     console.log(`  read back OK: ${staked.contract} (block ${staked.deployBlock}), bytecode matches the pinned manifest`);
 
     const audit = {
       network: opts.network,
-      deployedAt: new Date().toISOString(),
+      deployedAt: new Date(opts.fromBroadcast && Number.isFinite(run.timestamp) ? run.timestamp : Date.now()).toISOString(),
       commit,
       economicsSha256: sha256File(econPath),
       economicsStatus: econ.status,
@@ -250,6 +316,7 @@ async function main() {
       ceremonyStatus: lock.ceremony?.status ?? null,
       deployer: run.transactions[0]?.transaction?.from ?? null,
       transactions: run.transactions.filter((tx) => tx.transactionType === "CREATE").map((tx) => ({ contract: tx.contractName, address: tx.contractAddress, hash: tx.hash })),
+      ...(opts.fromBroadcast ? { note: "recorded with --from-broadcast: the creations were already on chain (the --broadcast run stopped before the record was written) and this run sent nothing" } : {}),
     };
 
     if (fork) {

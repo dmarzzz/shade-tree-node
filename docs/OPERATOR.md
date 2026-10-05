@@ -1080,8 +1080,8 @@ should not need to touch them unless you run an unusually large or slow fleet.
 - **Combined payload ceiling** — both opaque TLS directions spend from one
   `(externalNullifier, nullifier)` budget. At `SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES` bytes (40 MiB by
   default), the final chunk is truncated to the exact boundary and both sockets close with
-  `reason="payload-limit"`. A same-node retry gets only the slot's remainder. Higher tiers receive
-  one allowance per private slot; asynchronous cross-node replays can still race the fleet tally.
+  `reason="payload-limit"`. A same-node retry gets only the slot's remainder. Each private slot
+  carries its own allowance; asynchronous cross-node replays can still race the fleet tally.
 - **Connection caps** — `SHADE_TREE_MAX_CONNS` (1024) concurrent sockets total, refused at accept
   before any read (`too-many-connections`); `SHADE_TREE_MAX_CONNS_PER_NULLIFIER` (8) concurrent
   tunnels per nullifier (`nullifier-conn-limit`), so one proof replayed inside the honest-retry

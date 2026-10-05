@@ -13,7 +13,9 @@
 //   node scripts/smoke-staking.mjs --rpc-url <url> --contract <set> --resume [--state <file>]
 //
 // The funding key comes from --key or SHADE_TREE_SMOKE_KEY. The smoke identities are throwaway
-// testnet secrets; the state file (default cache/smoke-<contract>.local.json) is gitignored.
+// testnet secrets; the state file (default cache/smoke-<contract>.local.json) is gitignored. It is
+// written before the first transaction and after every step, and a run on a real chain never
+// overwrites an existing one.
 
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -87,47 +89,63 @@ async function main() {
   const provider = new JsonRpcProvider(opts.rpcUrl, undefined, { cacheTimeout: -1 });
   const wallet = new NonceManager(new Wallet(opts.key, provider));
   const set = new Contract(opts.contract, ABI, wallet);
+  // A public RPC is a pool: a read right after a receipt can come from a node that has not seen the
+  // block yet. On a real chain wait two confirmations, and re-read a few times before a check fails.
+  const mined = async (sent) => (await sent).wait(opts.warp ? 1 : 2);
+  const read = async (fn, settled) => {
+    for (let attempt = 0; ; attempt++) {
+      const value = await fn();
+      if (settled(value) || opts.warp || attempt >= 9) return value;
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  };
   const save = (state) => { mkdirSync(dirname(opts.state), { recursive: true }); writeFileSync(opts.state, JSON.stringify(state, null, 2) + "\n", { mode: 0o600 }); };
 
   let state;
   if (opts.resume) {
     if (!existsSync(opts.state)) throw new Error(`no smoke state at ${opts.state}`);
     state = JSON.parse(readFileSync(opts.state, "utf8"));
+    if (!state.done?.includes("exit")) throw new Error(`smoke state at ${opts.state} stops before the exit (done: ${(state.done || []).join(", ") || "nothing"}); it holds the identity secrets, finish that run by hand`);
   } else {
+    // The state file holds the only copy of the identity secrets. Never replace one on a real chain.
+    if (!opts.warp && existsSync(opts.state)) throw new Error(`smoke state already exists at ${opts.state}; rerun with --resume, or pass another --state`);
     const limit = Number((await set.allowedLimits())[0]);
     const bond = await set.bondFor(limit);
     state = { contract: opts.contract, limit, bond: bond.toString(), a: newIdentity(), b: newIdentity(), recipient: Wallet.createRandom().address, done: [] };
     console.log(`smoke: ${opts.contract} tier ${limit}, bond ${bond} wei`);
+    save(state); // before the first transaction, and after every step: a bond is only recoverable with its secret
 
     for (const who of ["a", "b"]) {
       const member = state[who];
       const rootBefore = await set.currentRoot();
       member.leaf = (await set.registerIdentity.staticCall(member.idc, limit, { value: bond })).toString();
-      await (await set.registerIdentity(member.idc, limit, { value: bond })).wait();
+      await mined(set.registerIdentity(member.idc, limit, { value: bond }));
       check(member.leaf === poseidon2([BigInt(member.idc), BigInt(limit)]).toString(), `${who}: the set derived leaf Poseidon2(idc, ${limit})`);
-      check(await set.isActive(member.leaf), `${who}: registered and active`);
-      check((await set.currentRoot()) !== rootBefore, `${who}: the on-chain root moved`);
+      check(await read(() => set.isActive(member.leaf), (active) => active), `${who}: registered and active`);
+      check((await read(() => set.currentRoot(), (root) => root !== rootBefore)) !== rootBefore, `${who}: the on-chain root moved`);
     }
     state.done.push("register");
+    save(state);
 
     const exitCtx = await set.exitContext(state.a.leaf);
-    await (await set.initiateExit(state.a.leaf, await authProof(state.a, exitCtx))).wait();
-    check(!(await set.isActive(state.a.leaf)), "a: exit authorized by a real Groth16 proof bound to chain, set and index");
-    state.withdrawableAt = (await set.withdrawableAt(state.a.leaf)).toString();
+    await mined(set.initiateExit(state.a.leaf, await authProof(state.a, exitCtx)));
+    check(!(await read(() => set.isActive(state.a.leaf), (active) => !active)), "a: exit authorized by a real Groth16 proof bound to chain, set and index");
+    state.withdrawableAt = (await read(() => set.withdrawableAt(state.a.leaf), (at) => at > 0n)).toString();
     state.done.push("exit");
+    save(state);
 
     // The burn goes to address(0), which can also collect block rewards (anvil's coinbase), so the
     // split is read from the SlashPayout event and the sink balance is only bounded below.
     const burnBefore = await provider.getBalance(ZeroAddress);
     const receiver = Wallet.createRandom().address;
-    const slashReceipt = await (await set.slash(state.b.leaf, state.b.secret, limit, receiver)).wait();
+    const slashReceipt = await mined(set.slash(state.b.leaf, state.b.secret, limit, receiver));
     const divisor = await set.SLASH_REWARD_DIVISOR();
     const reward = bond / divisor;
     const payout = slashReceipt.logs.map((log) => { try { return set.interface.parseLog(log); } catch { return null; } }).find((log) => log?.name === "SlashPayout");
-    check((await provider.getBalance(receiver)) === reward, `b: slash paid the bounty bond/${divisor} to the caller's receiver`);
+    check((await read(() => provider.getBalance(receiver), (balance) => balance === reward)) === reward, `b: slash paid the bounty bond/${divisor} to the caller's receiver`);
     check(payout?.args.burned === bond - reward && payout?.args.reward === reward, "b: SlashPayout reports the rest of the bond burned");
-    check((await provider.getBalance(ZeroAddress)) - burnBefore >= bond - reward, "b: the burn reached address(0)");
-    check(!(await set.isActive(state.b.leaf)), "b: slashed leaf left the set");
+    check((await read(() => provider.getBalance(ZeroAddress), (balance) => balance - burnBefore >= bond - reward)) - burnBefore >= bond - reward, "b: the burn reached address(0)");
+    check(!(await read(() => set.isActive(state.b.leaf), (active) => !active)), "b: slashed leaf left the set");
     state.done.push("slash");
     save(state);
   }
@@ -142,8 +160,8 @@ async function main() {
     return;
   }
   const withdrawCtx = await set.withdrawContext(state.a.leaf, state.recipient);
-  await (await set.withdraw(state.a.leaf, state.recipient, await authProof(state.a, withdrawCtx))).wait();
-  check((await provider.getBalance(state.recipient)) === BigInt(state.bond), "a: withdraw paid the whole bond to a fresh recipient after unbonding");
+  await mined(set.withdraw(state.a.leaf, state.recipient, await authProof(state.a, withdrawCtx)));
+  check((await read(() => provider.getBalance(state.recipient), (balance) => balance === BigInt(state.bond))) === BigInt(state.bond), "a: withdraw paid the whole bond to a fresh recipient after unbonding");
   state.done.push("withdraw");
   save(state);
   console.log("smoke: register -> exit -> withdraw -> slash all passed");

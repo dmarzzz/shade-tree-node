@@ -1,8 +1,8 @@
 {
   "network": "sepolia",
-  "deployedAt": "2026-09-30T23:04:42.666Z",
-  "commit": "18f92f9aeb03af21c97a072d3b87f042bf3a6005",
-  "economicsSha256": "229b90dc3ef8e898510de41aa5a6ecaeb741c2c07982eebe52d3d0369c3746df",
+  "deployedAt": "2026-10-05T08:54:13.326Z",
+  "commit": "c1faf3fff3b778841bd07478139fcf7477486fd6",
+  "economicsSha256": "82066bc332701d4f0dd8498b3e870273d0a0b20459aaf18ec53b503c06c87d59",
   "economicsStatus": "final",
   "artifactsLockSha256": "84899821f6d807974169799963af19b5bd92c5d572e0b16303cc0ae26db8d8fb",
   "artifactsTrust": "CEREMONY",
@@ -11,24 +11,24 @@
   "transactions": [
     {
       "contract": "RateCommitmentHasher",
-      "address": "0x7fcb0e768ea138129fec90c10e95fb6a5534980c",
-      "hash": "0xfb1cee371ad0707741382874db3c025523e163ce60da7fdad90c0fe2c3b8320d"
+      "address": "0x15022fcd45bcbfe5f35c83447b2ed2ca79500940",
+      "hash": "0xb03bd4d8cb11d1834fb9a0c9a7827333c54458fd823e884ad21f6cb544925c87"
     },
     {
       "contract": "WithdrawGroth16Verifier",
-      "address": "0x5bb469863f23d871062558892acc234407577e0d",
-      "hash": "0x733ba40635c320e7346d3910ceabff53d88286dbaed04ad3bf46e4077543d30f"
+      "address": "0xcaed2a03187a80148e3d96350d897b0bf597c3ec",
+      "hash": "0xb30a957f7ec07488fafaccd7a0c446bac7edede4f25f0908b60ccd9ff8745249"
     },
     {
       "contract": "WithdrawVerifier",
-      "address": "0x76d88a50803565496a5acc0c5fc85ef43e4f66ff",
-      "hash": "0x1ea30d51bc4aa2e2696463a09a5a7ba207b05aefbf21615569dc3fef9dbdff2f"
+      "address": "0xedc9c2a48e582ff8d9e9cb1fe8359cc8471186f6",
+      "hash": "0x50e4b8b49719c9c7a6d0573302238a4839d241558a57599d211b97a1c8dd68b2"
     },
     {
       "contract": "StakedReputationSet",
-      "address": "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC",
-      "hash": "0x56c572442f96714b71c393fc4e35b07bd36ef11928c580f0f5835e26f008f21f"
+      "address": "0x789967f0bdd7f3a96fb60f6d315e93f103b5680b",
+      "hash": "0x821cf83121fb14a640290ad7592dac284066d0b4dd66abd876abba5ab339da6b"
     }
   ],
-  "note": "deploy-contracts.mjs --broadcast ran out of deployer gas after the first three CREATEs (gas price spike); the set was deployed by forge create with identical constructor arguments and the record rebuilt by the same code path."
+  "note": "recorded with --from-broadcast: the creations were already on chain (the --broadcast run stopped before the record was written) and this run sent nothing"
 }

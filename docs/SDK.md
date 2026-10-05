@@ -92,7 +92,7 @@ responses, and tunnels acquired by that call are closed.
 Dynamic discovery uses `bootnode` / `SHADE_TREE_BOOTNODE_ONION`; it requires the
 matching pinned signer and takes precedence over a static directory. With no
 explicit source, the SDK installs the current v4 Sepolia Elder+signer, staked
-contract/RPC/deployment block, tier-1 default, and 60-second/40 MiB rate policy
+contract/RPC/deployment block, the record's default tier (limit 8), and 60-second/40 MiB rate policy
 from the bundled deployment record.
 
 Slot allocation is persistent and atomic across Proxy and SDK processes using

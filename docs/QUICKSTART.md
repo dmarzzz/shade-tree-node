@@ -14,7 +14,7 @@ node or canopy on a host.
 > the earlier incompatible pre-v4 deployment; they are not runnable defaults for this Proxy or
 > payments. The directory's separate `deployment.json` records the disposable v4 research canopy,
 > supplies its Elder and canopy-signer discovery default and the public Sepolia staking path. The
-> bundled client defaults are tier 1 (bond from the record, see docs/ECONOMICS.md), a fixed 60-second epoch, and a 40 MiB
+> bundled client defaults are tier 8 (bond from the record, see docs/ECONOMICS.md), a fixed 60-second epoch, and a 40 MiB
 > combined tunnel ceiling. Invited credentials remain private; alternate canopies require explicit
 > membership and discovery inputs.
 
@@ -33,7 +33,7 @@ Agent developers who do not need the repository can use the shorter
 
 ## Path A: connect to an operator's v4 canopy
 
-The bundled public Sepolia path needs a locally generated member secret plus the tier-1 bond from
+The bundled public Sepolia path needs a locally generated member secret plus the bond from
 the record ([ECONOMICS.md](ECONOMICS.md)) and gas in a separate registration wallet. An alternate canopy must supply its exact tier, membership
 input, Elder Tree onion, and matching canopy signer. You need a Tor SOCKS port:
 `bash scripts/start-tor-client.sh` starts one on 9260 (or use `--tor-port 9050` with a system Tor).

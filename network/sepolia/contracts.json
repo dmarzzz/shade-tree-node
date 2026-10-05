@@ -212,6 +212,29 @@
         ],
         "unbondingSeconds": 86400
       }
+    },
+    "public-stake-v1-0xDEB2": {
+      "status": "previous production set (tiers 1 and 8; the table is fixed at deployment). Replaced as the record's default on 2026-10-05 by the one-tier set 0x789967F0bDD7f3a96fb60F6D315e93F103b5680b (tier 8 only, bond 0.01 ETH). NOT retired: it took its first member in block 11847864 (tier 1) and the fleet keeps admitting it beside the new set (shade_tree_extra_sets / SHADENET_SETS, advertised in caps.sets) while its members move over: exit, 24 h unbonding, withdraw, then a new tier-8 identity on the new set",
+      "contracts": {
+        "stakedReputationSet": "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC",
+        "hasher": "0x7fcb0e768ea138129fec90c10e95fb6a5534980c",
+        "withdrawVerifier": "0x76d88a50803565496a5acc0c5fc85ef43e4f66ff"
+      },
+      "deployTx": "0x56c572442f96714b71c393fc4e35b07bd36ef11928c580f0f5835e26f008f21f",
+      "deployBlock": 11817836,
+      "params": {
+        "tiers": [
+          {
+            "limit": 1,
+            "bondWei": "10000000000000000"
+          },
+          {
+            "limit": 8,
+            "bondWei": "80000000000000000"
+          }
+        ],
+        "unbondingSeconds": 86400
+      }
     }
   }
 }

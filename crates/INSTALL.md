@@ -126,7 +126,7 @@ For the bundled public Sepolia canopy, create an owner-only identity and let the
 client validate the secret/leaf/tier tuple before it contacts an RPC:
 
 ```sh
-shade-tree enroll --limit 1 --out identity.json
+shade-tree enroll --limit 8 --out identity.json
 chmod 600 funded-sepolia.key
 shade-tree register-member --identity identity.json --key-file funded-sepolia.key
 shade-tree member-status --identity identity.json --json

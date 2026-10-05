@@ -2,14 +2,12 @@
   "schemaVersion": 1,
   "network": "sepolia",
   "status": "final",
-  "decisionRef": "H2 2026-09-30, set by the launch agent on Dan's 'take your best shot'; rationale and every input in docs/ECONOMICS.md. Change a number here, rerun scripts/deploy-contracts.selftest.mjs and the --fork rehearsal; the page, both SDKs and the docs read the deployment record this file produces.",
-  "defaultLimit": 1,
+  "decisionRef": "Dan, 2026-10-05: one tier with a more generous limit (8 proof slots per 60 s epoch, bond 0.01 Sepolia ETH), no sponsor seat pool; replaces the two-tier table of 2026-09-30. Rationale and every input in docs/ECONOMICS.md. Change a number here, rerun scripts/deploy-contracts.selftest.mjs and the --fork rehearsal; the page, both SDKs and the docs read the deployment record this file produces.",
+  "defaultLimit": 8,
   "tiers": [
-    { "limit": 1, "bondWei": "10000000000000000" },
-    { "limit": 8, "bondWei": "80000000000000000" }
+    { "limit": 8, "bondWei": "10000000000000000" }
   ],
   "unbondingSeconds": 86400,
   "slash": { "rewardDivisor": 10 },
-  "sponsorSeats": { "count": 24, "bondWeiEach": "10000000000000000" },
   "sessionTickets": true
 }

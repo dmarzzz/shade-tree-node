@@ -2,17 +2,13 @@
 export default {
   "network": "sepolia",
   "chainId": 11155111,
-  "contract": "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC",
+  "contract": "0x789967F0bDD7f3a96fb60F6D315e93F103b5680b",
   "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
-  "deployBlock": 11817836,
+  "deployBlock": 11847802,
   "tiers": [
     {
-      "limit": 1,
-      "bondWei": "10000000000000000"
-    },
-    {
       "limit": 8,
-      "bondWei": "80000000000000000"
+      "bondWei": "10000000000000000"
     }
   ]
 };

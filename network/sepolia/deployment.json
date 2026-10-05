@@ -19,20 +19,23 @@
   "security": {
     "proofArtifacts": "trusted-ceremony",
     "scope": "disposable-research",
-    "decisionRef": "ShadeNet launch (M8) 2026-09-30: contracts deployed from network/sepolia/economics.json (H2 final) with the PSE RLN ceremony verifier (H3, docs/ceremony/PSE-VERIFICATION.md); the dual-VK window closed here, only the ceremony artifact rln-ae43614cd02ebe95 is accepted"
+    "decisionRef": "ShadeNet launch (M8) 2026-09-30: contracts deployed from network/sepolia/economics.json (H2 final) with the PSE RLN ceremony verifier (H3, docs/ceremony/PSE-VERIFICATION.md); the dual-VK window closed here, only the ceremony artifact rln-ae43614cd02ebe95 is accepted. The staking set was redeployed on 2026-10-05 with one tier (same contracts, verifier and keys)"
   },
   "services": {
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "190d6433bd7a513c40de4f7088dca088560dcbbd"
+      "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
+      "version": "0.7.2"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "190d6433bd7a513c40de4f7088dca088560dcbbd"
+      "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
+      "version": "0.7.2"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "190d6433bd7a513c40de4f7088dca088560dcbbd"
+      "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
+      "version": "0.7.2"
     }
   },
   "elder": {
@@ -69,25 +72,21 @@
         "profile": "public-stake-v1",
         "registerInput": "identityCommitment",
         "chainId": 11155111,
-        "contract": "0xDEB294E6e9ad6A3FcBDeFfD1F67aC9678AC94bBC",
-        "deployTx": "0x56c572442f96714b71c393fc4e35b07bd36ef11928c580f0f5835e26f008f21f",
+        "contract": "0x789967F0bDD7f3a96fb60F6D315e93F103b5680b",
+        "deployTx": "0x821cf83121fb14a640290ad7592dac284066d0b4dd66abd876abba5ab339da6b",
         "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
         "rpcUrls": [
           "https://rpc.sepolia.ethpandaops.io",
           "https://ethereum-sepolia-rpc.publicnode.com"
         ],
-        "deployBlock": 11817836,
-        "hasher": "0x7fcb0e768ea138129fec90c10e95fb6a5534980c",
-        "withdrawVerifier": "0x76d88a50803565496a5acc0c5fc85ef43e4f66ff",
-        "defaultLimit": 1,
+        "deployBlock": 11847802,
+        "hasher": "0x15022Fcd45bcBFe5F35c83447b2ED2CA79500940",
+        "withdrawVerifier": "0xEDC9C2A48e582ff8D9e9cb1fe8359cc8471186F6",
+        "defaultLimit": 8,
         "tiers": [
           {
-            "limit": 1,
-            "bondWei": "10000000000000000"
-          },
-          {
             "limit": 8,
-            "bondWei": "80000000000000000"
+            "bondWei": "10000000000000000"
           }
         ],
         "unbondingSeconds": 86400,
@@ -112,6 +111,6 @@
     "legacy": null
   },
   "created": "2026-09-02",
-  "note": "ShadeNet research preview on Sepolia: zero-config clients use the permissionless staking path (tier 1 = 0.01 ETH, tier 8 = 0.08 ETH, one 60-second slot, 40 MiB combined tunnel payload, session tickets on; see docs/ECONOMICS.md); invited admission remains available when selected explicitly. Two Elder Trees and the Shade Tree nodes are managed from agent-devops and pinned to services.*.commit. Proof artifacts are the PSE RLN trusted-setup output; the staking contract is Sepolia testnet material and its ETH has no value. Canopy: 2 Elder Trees at 190d6433bd7a, recorded by scripts/record-canopy.mjs.",
+  "note": "ShadeNet research preview on Sepolia: zero-config clients use the permissionless staking path (one tier: 8 proof slots per 60-second epoch for a 0.01 ETH bond, 40 MiB combined tunnel payload per slot, session tickets on; see docs/ECONOMICS.md); invited admission remains available when selected explicitly. Two Elder Trees and the Shade Tree nodes are managed from agent-devops and pinned to services.*.commit. Proof artifacts are the PSE RLN trusted-setup output; the staking contract is Sepolia testnet material and its ETH has no value. Canopy: 2 Elder Trees at 190d6433bd7a, recorded by scripts/record-canopy.mjs.",
   "sessionTickets": true
 }

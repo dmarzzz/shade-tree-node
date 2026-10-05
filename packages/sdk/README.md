@@ -30,11 +30,11 @@ Every address, tier, bond and signer comes from a deployment record
 import { resolveNetwork, tierFor } from "@shadenet/sdk";
 
 const net = resolveNetwork("sepolia");     // or resolveNetwork(recordObject)
-net.staked.contract;                       // "0xDEB2…4bBC"
-net.staked.tiers;                          // [{ limit: 1, bondWei: 100000000000000000n }, …]
-net.staked.defaultLimit;                   // 1
+net.staked.contract;                       // "0x7899…680b"
+net.staked.tiers;                          // [{ limit: 8, bondWei: 10000000000000000n }]
+net.staked.defaultLimit;                   // 8
 net.elder.canopySigner;                    // pinned Ed25519 key (hex)
-tierFor(net, 1).bondWei;                   // 100000000000000000n
+tierFor(net, 8).bondWei;                   // 10000000000000000n
 ```
 
 ## Identities
@@ -45,7 +45,7 @@ public; the secret is a bearer credential.
 ```js
 import { createIdentity, importIdentity, serializeIdentity, downloadIdentity } from "@shadenet/sdk";
 
-const id = await createIdentity({ limit: 1 });  // WebCrypto randomness; a tier the network offers
+const id = await createIdentity({ limit: 8 });  // WebCrypto randomness; a tier the network offers
 serializeIdentity(id);                          // the identity file bytes the Rust CLI reads
 importIdentity(fileText);                       // checks the leaf matches the secret and tier
 downloadIdentity(id);                           // browser: save the file; nothing is persisted

@@ -50,10 +50,10 @@ attestations and source builds.
 ## 2. Get admitted
 
 A member is admitted by staking its public leaf. For the bundled public Sepolia
-canopy the record admits tier 1 (one CONNECT tunnel per fixed 60-second
-epoch, 40 MiB per slot; a six-tunnel book at one node when the record turns
-session tickets on) and tier 8 (eight slots). The bonds in force come from the record;
-`shadenet init` prints them. The launch numbers and their reasoning are in
+canopy the record admits one tier, limit 8: eight proof slots per fixed 60-second
+epoch, 40 MiB per slot, each slot a six-tunnel book at one node when the record
+turns session tickets on. The bond in force comes from the record;
+`shadenet init` prints it. The launch numbers and their reasoning are in
 [ECONOMICS.md](ECONOMICS.md).
 
 ```sh
