@@ -175,10 +175,28 @@ function main() {
     const publicVerify = doc.jobs?.["verify-public"];
     const publicRun = (publicVerify?.steps || []).map((s) => s.run || "").join("\n");
     ok(publicVerify?.needs === "publish" && publicVerify?.permissions?.contents === "read", "public data-plane check runs after publish with read-only permissions");
-    ok(/shade-tree-node\.vercel\.app/.test(publicRun) && /\/grove\//.test(publicRun), "public data-plane check reaches the production Grove page");
+    // The origin lives in the step's env (GROVE_ORIGIN), the paths in its script.
+    const publicOrigin = (publicVerify?.steps || []).map((s) => s.env?.GROVE_ORIGIN || "").join("\n");
+    ok(/shade-tree-node\.vercel\.app/.test(publicOrigin + publicRun) && /\/grove\//.test(publicRun), "public data-plane check reaches the production Grove page");
     ok(/api\/v1\/data\/grove\/sepolia\/head/.test(publicRun) && /api\/v2\/data\/grove\/sepolia\/head/.test(publicRun), "public data-plane check reaches both signed heads");
     ok(/shade-tree-public-grove-v1/.test(publicRun) && /shade-tree-public-grove-v2/.test(publicRun), "public data-plane check validates both schema names");
     ok(/for attempt in \$\(seq 1 12\)/.test(publicRun) && /sleep 5/.test(publicRun), "public data-plane check allows bounded propagation time");
+
+    // Freshness guard: a green probe that stopped publishing must show up in the run.
+    ok(/::warning title=public Grove NOT published::/.test(groveStep?.run || "") && !/::notice[^\n]*SHADE_TREE_NETWORK must be sepolia/.test(groveStep?.run || ""), "a publisher skipped for a non-sepolia selector is a ::warning::, not a notice");
+    const freshness = doc.jobs?.freshness;
+    const freshSteps = freshness?.steps || [];
+    const freshRun = freshSteps.map((s) => s.run || "").join("\n");
+    ok(Array.isArray(freshness?.needs) && freshness.needs.includes("probe") && freshness.needs.includes("publish") && freshness?.if === "always()", "freshness check runs on every run, also when publish was skipped");
+    ok(freshness?.permissions?.contents === "read" && freshness?.["timeout-minutes"] <= 5, "freshness check is read-only and short");
+    ok(freshSteps[0]?.id === "cfg" && /secrets\.SHADE_TREE_GROVE_SIGNING_KEY != ''/.test(freshSteps[0]?.env?.HAS_GROVE_KEY || "") && freshSteps.slice(1).every((s) => /steps\.cfg\.outputs\.publisher == 'true'/.test(s.if || "")), "freshness check no-ops in a repository without the signing key and receives only a boolean");
+    const freshCheckout = freshSteps.find((s) => /actions\/checkout@/.test(s.uses || ""));
+    ok(/actions\/checkout@[0-9a-f]{40}$/.test(freshCheckout?.uses || "") && freshCheckout?.with?.["persist-credentials"] === false && freshSteps.filter((s) => s.uses).length === 1, "freshness check uses only the SHA-pinned checkout without credentials");
+    ok(/refs\/heads\/network-state/.test(freshRun) && /scripts\/grove-freshness\.mjs/.test(freshRun) && /--probe-result "\$PROBE_RESULT"/.test(freshRun), "freshness check reads the published branch and runs scripts/grove-freshness.mjs");
+    const freshEnv = freshSteps.find((s) => /grove-freshness\.mjs/.test(s.run || ""))?.env || {};
+    ok(/needs\.probe\.result/.test(freshEnv.PROBE_RESULT || "") && Number(freshEnv.GROVE_STALE_WARN_MINUTES) >= 30 && Number(freshEnv.GROVE_STALE_WARN_MINUTES) <= 60 && Number(freshEnv.GROVE_STALE_FAIL_MINUTES) > Number(freshEnv.GROVE_STALE_WARN_MINUTES), "freshness thresholds: warn within the v2 API's 60-minute limit, fail later");
+    ok(!/npm (ci|install)/.test(freshRun) && freshSteps.every((s) => Object.values(s.env || {}).every((v) => !/secrets\.SHADE_TREE_GROVE_SIGNING_KEY\s*\}\}/.test(String(v)))), "freshness check installs nothing and never receives the signing key");
+    ok(doc.jobs?.probe?.needs === undefined && doc.jobs?.publish?.needs === "probe" && doc.jobs?.["verify-public"]?.needs === "publish", "probe, publish and verify-public do not depend on the freshness check");
   } else {
     // structural fallback
     ok(/^on:\n\s+schedule:\n\s+- cron: "\*\/(5|1[0-9]|[2-5][0-9]) \* \* \* \*"/m.test(wf), "on.schedule cron */N with N>=5 (structural)");
@@ -188,6 +206,8 @@ function main() {
     ok(/persist-credentials: false/.test(wf) && !/actions\/(?:checkout|setup-node)@v\d/.test(wf), "collector drops credentials and actions are SHA-pinned (structural)");
     ok(/parents:\[\]/.test(wf) && /path:\"grove\.json\"/.test(wf), "publisher emits a one-file parentless commit (structural)");
     ok(/verify-public:[\s\S]*needs: publish[\s\S]*shade-tree-node\.vercel\.app[\s\S]*api\/v1\/data\/grove[\s\S]*api\/v2\/data\/grove/.test(wf), "publisher is followed by a production data-plane check (structural)");
+    ok(/::warning title=public Grove NOT published::/.test(wf) && !/::notice[^\n]*SHADE_TREE_NETWORK must be sepolia/.test(wf), "non-sepolia publisher skip is a ::warning:: (structural)");
+    ok(/\n  freshness:\n[\s\S]*needs: \[probe, publish\][\s\S]*if: always\(\)[\s\S]*contents: read[\s\S]*refs\/heads\/network-state[\s\S]*scripts\/grove-freshness\.mjs/.test(wf), "freshness check runs on every run and reads the published branch (structural)");
   }
 
   console.log(failures ? `\n${failures} FAILED` : "\nall uptime-scheduler checks passed");

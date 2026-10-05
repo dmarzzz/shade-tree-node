@@ -20,6 +20,13 @@ name: uptime-probe
 # signed aggregate snapshots for the public Grove. No directory rows are written to that branch.
 # A final read-only job verifies the production page and both public signed heads.
 #
+# FRESHNESS GUARD: the probe can be green while nothing is published (wrong SHADE_TREE_NETWORK,
+# repeated UNKNOWN runs, a publisher that never starts). The `freshness` job runs on every run
+# of a repository that holds the signing key, reads the published snapshots back from the
+# network-state branch (scripts/grove-freshness.mjs) and annotates the run with a warning once
+# the newest one is three cadences old, and fails once it is eight cadences old. It is a
+# separate job: the `probe` job's result still means only "Elder reachable, directory verified".
+#
 # NO-OP GUARD: if none of the variables/secrets is set, the job writes a ::notice:: and exits
 # green without installing anything, so an unconfigured fork/repo never red-flags. Only a real
 # CRITICAL probe (bootnode unreachable / signer mismatch) fails the run.
@@ -179,7 +186,10 @@ jobs:
             exit 0
           fi
           if [ "${SHADE_TREE_NETWORK:-}" != "sepolia" ]; then
-            echo "::notice title=public Grove skipped::SHADE_TREE_NETWORK must be sepolia for the versioned Sepolia Data API; the uptime probe completed without replacing the last valid snapshot."
+            # A warning, not a notice: the signing key is configured, so this repository is the
+            # publisher, and every run that lands here leaves the public page one cadence staler.
+            echo "::warning title=public Grove NOT published::SHADE_TREE_NETWORK must be sepolia for the versioned Sepolia Data API; the uptime probe completed without replacing the last valid snapshot. Set the repository variable SHADE_TREE_NETWORK to sepolia to resume publishing."
+            echo "Public Grove NOT published: SHADE_TREE_NETWORK is not sepolia." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           node scripts/grove-snapshot.mjs \
@@ -276,3 +286,53 @@ jobs:
           done
           echo "::error title=public Grove data plane unhealthy::The publisher succeeded, but the production Grove page or a signed Data API head did not become healthy within 60 seconds."
           exit 1
+
+  freshness:
+    name: public snapshot freshness
+    needs: [probe, publish]
+    # always(): the case this job exists for is a run where `publish` was skipped.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - name: check publisher configuration (no-op without the signing key)
+        id: cfg
+        env:
+          # Only the boolean reaches this job; the key itself stays scoped to the build step.
+          HAS_GROVE_KEY: ${{ secrets.SHADE_TREE_GROVE_SIGNING_KEY != '' }}
+        run: |
+          if [ "$HAS_GROVE_KEY" = "true" ]; then
+            echo "publisher=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publisher=false" >> "$GITHUB_OUTPUT"
+            echo "SHADE_TREE_GROVE_SIGNING_KEY is not configured; this repository does not publish the public Grove, so there is no snapshot age to check."
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: steps.cfg.outputs.publisher == 'true'
+        with:
+          persist-credentials: false
+
+      - name: check the age of the published snapshot
+        if: steps.cfg.outputs.publisher == 'true'
+        env:
+          PROBE_RESULT: ${{ needs.probe.result }}
+          SHADE_TREE_NETWORK: ${{ vars.SHADE_TREE_NETWORK || secrets.SHADE_TREE_NETWORK }}
+          # Three and eight 15-minute cadences. The v2 Data API rejects a snapshot older than 60
+          # minutes, so the warning comes first. GROVE_STALE_FAIL_MINUTES=0 keeps it warning-only.
+          GROVE_STALE_WARN_MINUTES: 45
+          GROVE_STALE_FAIL_MINUTES: 120
+        run: |
+          : > "$RUNNER_TEMP/grove.published.json"
+          : > "$RUNNER_TEMP/grove-v2.published.json"
+          if git fetch --quiet --no-tags origin refs/heads/network-state:refs/remotes/origin/network-state 2>/dev/null; then
+            git show refs/remotes/origin/network-state:grove.json > "$RUNNER_TEMP/grove.published.json" 2>/dev/null || true
+            git show refs/remotes/origin/network-state:grove-v2.json > "$RUNNER_TEMP/grove-v2.published.json" 2>/dev/null || true
+          fi
+          node scripts/grove-freshness.mjs \
+            --v1 "$RUNNER_TEMP/grove.published.json" \
+            --v2 "$RUNNER_TEMP/grove-v2.published.json" \
+            --probe-result "$PROBE_RESULT" \
+            --network-selector "$SHADE_TREE_NETWORK"
