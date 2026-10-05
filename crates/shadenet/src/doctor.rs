@@ -505,22 +505,45 @@ fn umask_check() -> Option<Check> {
 
 // ----------------------------------------------------------------- version
 
-/// The binary against the record: both are reported; a commit mismatch is only a warning
-/// because a release window legitimately spans several commits.
+/// The binary against the record. A release is cut at a tag, and the record that ships inside
+/// that tagged binary names the fleet commit the canopy runs — always an EARLIER commit than the
+/// tag — so comparing commits made every release binary warn against its own record. When the
+/// record carries `services.node.version` we compare that against the binary's version instead:
+/// a fresh install of the release the record expects is clean, and only a genuinely different
+/// release (a real wire or artifact drift) warns. Records that predate the version field fall
+/// back to the commit comparison, which still catches an off-release build.
 pub fn check_version(
     binary_version: &str,
     binary_commit: Option<&str>,
     network: &Network,
 ) -> Check {
     let record_commit = network.deployment.node_commit.as_deref();
+    let record_version = network.deployment.node_version.as_deref();
+    let record_pin = match (record_version, record_commit) {
+        (Some(v), Some(c)) => format!("version {v} (commit {})", &c[..c.len().min(7)]),
+        (Some(v), None) => format!("version {v}"),
+        (None, Some(c)) => format!("commit {}", &c[..c.len().min(7)]),
+        (None, None) => "unknown".to_string(),
+    };
     let detail = format!(
-        "shadenet {binary_version} (commit {}); record {} pins node commit {}",
+        "shadenet {binary_version} (commit {}); record {} pins node {record_pin}",
         binary_commit.unwrap_or("unknown"),
         network.name,
-        record_commit
-            .map(|c| &c[..c.len().min(7)])
-            .unwrap_or("unknown")
     );
+    // The version comparison is the precise one: it holds across the release window the commit
+    // comparison could not. Only when the record has no version do we fall back to the commit.
+    if let Some(rec_version) = record_version {
+        return if rec_version == binary_version {
+            Check::ok("version", detail)
+        } else {
+            Check::warn(
+                "version",
+                detail,
+                "this binary is a different release than the one the record's nodes run; across a wire or artifact change nodes refuse with `bad-version` or `bad-artifact`",
+                "install the release the record pins: `curl … install.sh | SHADENET_VERSION=<tag> sh`, or `brew upgrade shadenet`",
+            )
+        };
+    }
     match (binary_commit, record_commit) {
         (Some(bin), Some(rec)) if bin != "unknown" && !rec.starts_with(bin) && !bin.starts_with(&rec[..rec.len().min(bin.len())]) => Check::warn(
             "version",
@@ -809,8 +832,10 @@ mod tests {
 
     #[test]
     fn version_mismatch_is_a_warning_with_an_install_line() {
+        // Legacy records (no services.node.version): fall back to the commit comparison.
         let mut net = Network::bundled("sepolia").unwrap();
         net.deployment.node_commit = Some("abcdef1234567890".into());
+        net.deployment.node_version = None;
         let same = check_version("0.7.0", Some("abcdef123456"), &net);
         assert_eq!(same.level, Level::Ok);
         let other = check_version("0.7.0", Some("000000000000"), &net);
@@ -818,6 +843,42 @@ mod tests {
         assert!(other.fix.unwrap().contains("install.sh"));
         let unknown = check_version("0.7.0", None, &net);
         assert_eq!(unknown.level, Level::Ok);
+    }
+
+    #[test]
+    fn same_release_is_clean_even_when_the_record_names_an_earlier_fleet_commit() {
+        // A tagged release ships a record that pins an EARLIER fleet commit but the SAME version.
+        // The fresh install must not warn: version wins over the commit.
+        let mut net = Network::bundled("sepolia").unwrap();
+        net.deployment.node_version = Some("0.7.2".into());
+        // Record's fleet commit is deliberately different from the build commit (the real case).
+        net.deployment.node_commit = Some("1111111111111111111111111111111111111111".into());
+        let fresh = check_version(
+            "0.7.2",
+            Some("2222222222222222222222222222222222222222"),
+            &net,
+        );
+        assert_eq!(fresh.level, Level::Ok, "{fresh:?}");
+        assert!(fresh.detail.contains("version 0.7.2"));
+
+        // A genuinely older record (different version) still warns, even if the commit matched.
+        net.deployment.node_version = Some("0.7.1".into());
+        let older = check_version(
+            "0.7.2",
+            Some("2222222222222222222222222222222222222222"),
+            &net,
+        );
+        assert_eq!(older.level, Level::Warn, "{older:?}");
+        assert!(older.fix.unwrap().contains("install.sh"));
+
+        // A newer record than the binary also warns.
+        net.deployment.node_version = Some("0.8.0".into());
+        let newer = check_version(
+            "0.7.2",
+            Some("2222222222222222222222222222222222222222"),
+            &net,
+        );
+        assert_eq!(newer.level, Level::Warn, "{newer:?}");
     }
 
     #[test]

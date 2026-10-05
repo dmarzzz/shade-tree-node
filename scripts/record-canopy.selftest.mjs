@@ -45,6 +45,8 @@ try {
   ok(eldersOf(rec).map((e) => e.onion).join() === `${A},${B}`, "both Elders, primary first");
   ok(rec.elder.onion === A && rec.elder.gatewayRegistry === rec.elders[1].gatewayRegistry, "elder = elders[0], registry kept");
   ok(Object.values(rec.services).every((s) => s.commit === COMMIT), "every service pinned to the commit");
+  const pkgVersion = JSON.parse(readFileSync(join(HERE, "..", "package.json"), "utf8")).version;
+  ok(Object.values(rec.services).every((s) => s.version === pkgVersion), "every service stamped with the release version (doctor compares versions, not commits)");
   ok(!/No canopy is recorded yet/.test(rec.note), "the pending note is replaced");
   ok(rec.admission.roots.staked.contract === JSON.parse(before).admission.roots.staked.contract, "the contracts half is untouched");
 

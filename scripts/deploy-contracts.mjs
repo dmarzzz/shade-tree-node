@@ -280,8 +280,10 @@ export function buildRecord(network, netDir, liveRecord, staked, gatewayRegistry
     ratePolicy: liveRecord.ratePolicy,
     security: { ...liveRecord.security, decisionRef: `${network}: ShadeNet staging rehearsal contracts (M1)` },
     // The canopy for this network pins its own service commits when ops brings it up (M4);
-    // until then the record names the commit whose contracts were deployed.
-    services: Object.fromEntries(["elder", "node", "heartbeat"].map((name) => [name, { repository: liveRecord.services.elder.repository, commit }])),
+    // until then the record names the commit whose contracts were deployed. `version` is the
+    // release the fleet runs (package.json, lockstep with the crates); `shadenet doctor`
+    // compares versions, not commits, so a tagged release is clean against its own record.
+    services: Object.fromEntries(["elder", "node", "heartbeat"].map((name) => [name, { repository: liveRecord.services.elder.repository, commit, version: JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version }])),
     elder: { onion: null, canopySigner: null, admission: "stake", gatewayRegistry },
     admission: {
       defaultPath: "staked",

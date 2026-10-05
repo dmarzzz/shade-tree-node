@@ -61,7 +61,15 @@ function readRecord(name, root) {
   return JSON.parse(readFileSync(join(root, name, "deployment.json"), "utf8"));
 }
 
-export function withCanopy(record, { commit, elders, status }) {
+/// The release version the fleet runs, read from the repo's package.json (kept in lockstep with
+/// the Rust crate versions by scripts/release-check.mjs). The record stamps this next to each
+/// service commit so `shadenet doctor` compares releases, not commits (a tagged release names an
+/// earlier fleet commit but the same version).
+export function releaseVersion(root = REPO_ROOT) {
+  return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+}
+
+export function withCanopy(record, { commit, version, elders, status }) {
   if (!elders.length) throw new Error("no Elder Trees to record");
   const onions = new Set();
   for (const elder of elders) {
@@ -74,7 +82,7 @@ export function withCanopy(record, { commit, elders, status }) {
     ...record,
     schemaVersion: 2,
     status,
-    services: Object.fromEntries(Object.entries(record.services).map(([name, service]) => [name, { ...service, commit }])),
+    services: Object.fromEntries(Object.entries(record.services).map(([name, service]) => [name, { ...service, commit, ...(version ? { version } : {}) }])),
     elder: full[0],
     elders: full,
     note: String(record.note || "")
@@ -95,7 +103,7 @@ export function main(argv = process.argv.slice(2), { root = NETWORK_ROOT, log = 
   const elders = opts.eldersFrom
     ? (readRecord(opts.eldersFrom, root).elders || []).map(({ onion, canopySigner }) => ({ onion, canopySigner }))
     : opts.elders;
-  const next = withCanopy(record, { commit: opts.commit, elders, status: opts.status });
+  const next = withCanopy(record, { commit: opts.commit, version: releaseVersion(), elders, status: opts.status });
   const text = `${JSON.stringify(next, null, 2)}\n`;
   if (opts.dryRun) { log(text); return next; }
   const path = join(root, opts.network, "deployment.json");
