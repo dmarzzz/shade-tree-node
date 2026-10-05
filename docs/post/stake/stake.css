@@ -2,12 +2,6 @@
    sans for sentences, mono for commands, values and labels. Hairlines, one amber signal per
    screen: the primary action. Nothing here styles the shared nav; it renders as on every page. */
 
-/* Pages that scroll reserve a scrollbar; this one does not scroll. Reserving the same gutter
-   keeps the shared nav at the same x on every page. */
-html {
-  scrollbar-gutter: stable;
-}
-
 .stake-page {
   --ink: #e3e9dd;
   --dim: rgba(227, 233, 221, 0.76);
