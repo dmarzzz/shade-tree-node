@@ -94,7 +94,12 @@ ok(sdk.identityFileName(id).startsWith("shadenet-identity-"), "download file nam
 {
   const dir = join(ROOT, "testdata", "identity");
   const vectors = JSON.parse(readFileSync(join(dir, "vectors.json"), "utf8"));
-  const rust = sdk.importIdentity(readFileSync(join(dir, vectors.plain), "utf8"));
+  // The parity vectors are a frozen tier-1 identity (shadenet 0.7.1); the live record is one-tier
+  // (tier 8 only), so admit tier 1 here to run the cross-client leaf/commitment parity check. Live
+  // tier admission is covered by createIdentity/stake above (DEFAULT = 8).
+  const tier1Record = JSON.parse(JSON.stringify(net1.record));
+  tier1Record.admission.roots.staked.tiers = [{ limit: 1, bondWei: "10000000000000000" }, ...tier1Record.admission.roots.staked.tiers];
+  const rust = sdk.importIdentity(readFileSync(join(dir, vectors.plain), "utf8"), { network: sdk.resolveNetwork(tier1Record) });
   ok(rust.leaf === vectors.leaf && rust.limit === vectors.limit, "importIdentity reads the file `shadenet init` writes");
   ok(sdk.identityCommitmentOf(rust.identitySecret).toString() === vectors.identityCommitment, "its identity commitment is the one the Rust client stakes");
   let sealed = null;
