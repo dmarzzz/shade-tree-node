@@ -1,6 +1,6 @@
 # ShadeNet
 
-> ShadeNet gives AI agents anonymous, unlinkable web egress. A local `shadenet` proxy proves in zero knowledge (an RLN membership proof) that the agent's member has staked for access, and a Shade Tree node reached as a Tor onion service opens the HTTPS connection to the destination. The destination sees the node's IP; the node cannot tell which member is asking. Research preview on Sepolia: the proof keys come from PSE's RLN trusted setup, the bonds are testnet ETH, not for real funds. ShadeNet is one word and is not affiliated with Shade Network or Shade Protocol.
+> ShadeNet gives AI agents anonymous, unlinkable web egress. A local `shadenet` proxy proves in zero knowledge (a rate-limited RLN membership proof) that the agent's member has staked for access, and a Shade Tree node reached as a Tor onion service opens the HTTPS connection to the destination. The destination sees the node's IP; the node cannot tell which member is asking. Agents use it as a local HTTPS proxy, through `shadenet run`, or as an MCP server (`shadenet mcp`). Research preview on Sepolia: the proof keys come from PSE's RLN trusted setup, the bonds are testnet ETH, not for real funds. ShadeNet is one word and is not affiliated with Shade Network or Shade Protocol.
 
 Setup for an agent, end to end (the `shadenet` binary embeds Tor; no Node.js or system Tor needed):
 

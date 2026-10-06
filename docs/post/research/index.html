@@ -22,6 +22,7 @@
     {
       "@context": "https://schema.org",
       "@type": "Article",
+      "keywords": "AI agent privacy, anonymous egress, Tor onion services, zero-knowledge membership proofs, RLN, rate-limited anonymous access",
       "headline": "Access-gated onion egress for local AI",
       "description": "Research on anonymous, proof-gated HTTPS egress for local AI agents using Tor onion services and rate-limited zero-knowledge membership proofs.",
       "image": "https://shadenet.xyz/fig/shade-tree-og.png",
@@ -730,7 +731,7 @@ Akamai, or DataDome, and the rest block almost none. The search-engine
 arm is messier, its 24 engines spread from fully open to Google’s 83
 percent.</p>
 <figure>
-<img src="../fig/shade-tree-blocking.png" alt="tor exit blocking distribution" />
+<img src="../fig/shade-tree-blocking.png" alt="Chart: share of Tor exit traffic each web destination and search engine blocks; most sites block nearly all or nearly none" />
 <figcaption aria-hidden="true">tor exit blocking
 distribution</figcaption>
 </figure>
@@ -757,7 +758,7 @@ by status code, search-engine blocks are roughly two-thirds reputation
 and one-third rate limit, against about 98 percent reputation for web
 destinations.</p>
 <figure>
-<img src="../fig/shade-tree-blockkind.png" alt="block by kind" />
+<img src="../fig/shade-tree-blockkind.png" alt="Chart: every block of Tor traffic classified by kind, reputation (403, captcha, JS challenge) versus rate limit (429)" />
 <figcaption aria-hidden="true">block by kind</figcaption>
 </figure>
 <p><em>every block, classified by kind and split by arm: reputation
@@ -826,7 +827,7 @@ very blocklist we are trying to escape.</li>
 <p>Tor offers another, lesser known kind of node for almost this exact
 reason: the onion service.</p>
 <figure>
-<img src="../fig/shade-tree-exit-vs-onion.png" alt="exit node vs onion service" />
+<img src="../fig/shade-tree-exit-vs-onion.png" alt="Network flow diagram: a Tor exit relay versus a Tor onion service reaching the same clearnet destination" />
 <figcaption aria-hidden="true">exit node vs onion service</figcaption>
 </figure>
 <p><em>network flow diagram of a Tor exit relay versus a Tor onion
@@ -915,7 +916,7 @@ as HTTP CONNECT: a short preamble before TLS begins, so TLS stays end to
 end, and the preamble is never visible on the network because it rides
 inside the Tor encryption.</p>
 <figure>
-<img src="../fig/shade-tree-protocol.png" alt="the gateway handshake" />
+<img src="../fig/shade-tree-protocol.png" alt="Sequence diagram: the gateway handshake between the agent client, the gateway and the destination" />
 <figcaption aria-hidden="true">the gateway handshake</figcaption>
 </figure>
 <p><em>sequence diagram of the gateway handshake between the client,
@@ -1001,7 +1002,7 @@ takes a median of 32.5 milliseconds on the gateway regardless of set
 size, a serialized ceiling of roughly 27 to 31 checks per second per
 core, and each proof is about 0.9 kilobytes on the wire.</p>
 <figure>
-<img src="../fig/shade-tree-latency.png" alt="latency of the gated path" />
+<img src="../fig/shade-tree-latency.png" alt="Chart: latency of the proof-gated onion path in a 1000-request load test, warm versus cold circuits" />
 <figcaption aria-hidden="true">latency of the gated path</figcaption>
 </figure>
 <p><em>latency of the 1000-request load test to google, warm (reused
