@@ -58,7 +58,8 @@ export default [
     },
   },
   {
-    files: ["site-src/**/*.{js,mjs}", "test/site-browser/**/*.{js,mjs}"],
+    // scripts/render-og.mjs runs callbacks in the page (addInitScript), like the browser tests.
+    files: ["site-src/**/*.{js,mjs}", "test/site-browser/**/*.{js,mjs}", "scripts/render-og.mjs"],
     languageOptions: {
       globals: {
         ...globals.node,
