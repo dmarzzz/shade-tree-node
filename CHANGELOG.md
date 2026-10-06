@@ -6,6 +6,15 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Dependencies
 
+- toml 0.8 → 1.1 for `config.toml` (Dependabot #263). toml 1.x gates `from_str` behind its `serde`
+  feature, so the dependency now enables `["parse", "serde"]`; Dependabot's version alone did not
+  compile.
+  - A new corpus test pins every config people have, field by field: what `shadenet init` writes,
+    what agent-devops renders for Hermes, and every key at once with inline comments, a literal
+    string, a multi-line array with a trailing comma, and CRLF line endings.
+  - It also checks that an unknown key (named in the error), a wrong type, a duplicate key and
+    broken syntax stay errors.
+  - It passes unchanged on 0.8 and 1.1.
 - snarkjs 0.7.5 → 0.7.6 in `packages/sdk`, which proves exit/withdraw actions in the browser
   (`proveAction`; Dependabot #257). The repo's hoisted snarkjs, used by the nodes and the JS client
   for RLN proofs, stays 0.7.5.
