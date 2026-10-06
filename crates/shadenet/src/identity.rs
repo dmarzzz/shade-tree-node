@@ -218,11 +218,11 @@ pub fn load(
     }
     let passphrase = passphrase()?;
     let key = derive_key(&passphrase, &salt, sealed.log_n, sealed.r, sealed.p)?;
-    let cipher = XChaCha20Poly1305::new(key.as_ref().into());
+    let cipher = XChaCha20Poly1305::new((&*key).into());
     let plain = Zeroizing::new(
         cipher
             .decrypt(
-                XNonce::from_slice(&nonce),
+                &XNonce::try_from(nonce.as_slice()).map_err(|_| bad())?,
                 Payload {
                     msg: &ciphertext,
                     aad: &aad(&raw.leaf, raw.limit, sealed),
@@ -277,10 +277,10 @@ pub fn serialize(
                 ciphertext: String::new(),
             };
             let key = derive_key(passphrase, &salt, log_n, 8, 1)?;
-            let cipher = XChaCha20Poly1305::new(key.as_ref().into());
+            let cipher = XChaCha20Poly1305::new((&*key).into());
             let ciphertext = cipher
                 .encrypt(
-                    XNonce::from_slice(&nonce),
+                    &XNonce::from(nonce),
                     Payload {
                         msg: material.secret.as_bytes(),
                         aad: &aad(&material.leaf, material.limit, &sealed),
@@ -431,6 +431,10 @@ mod tests {
         let sealed_after_bump = read_public(&dir.join(text("lockedScrypt012"))).unwrap();
         assert!(sealed_after_bump.encrypted);
         assert_eq!(sealed_after_bump.leaf, text("leaf"));
+        // Sealed after the chacha20poly1305 0.10 -> 0.11 bump (Dependabot #262), likewise.
+        let sealed_after_cipher_bump = read_public(&dir.join(text("lockedChacha011"))).unwrap();
+        assert!(sealed_after_cipher_bump.encrypted);
+        assert_eq!(sealed_after_cipher_bump.leaf, text("leaf"));
         let locked = load(&dir.join(text("lockedLowCost")), || {
             Ok(Zeroizing::new(text("passphrase")))
         })
