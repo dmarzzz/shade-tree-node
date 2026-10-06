@@ -49,6 +49,12 @@ export function validateVersions(root, tag) {
   if (packageJson.version !== tagVersion) {
     fail(`tag ${tag} does not match package.json version ${JSON.stringify(packageJson.version)}`);
   }
+  // A lockfile that lags package.json is rewritten by `npm install` on every host, and the
+  // deploy role's git checkout (force=no) then refuses the next roll ("Local modifications").
+  const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+  for (const [where, version] of [["package-lock.json version", lock.version], ['package-lock.json packages[""].version', lock.packages?.[""]?.version]]) {
+    if (version !== tagVersion) fail(`tag ${tag} does not match ${where} ${JSON.stringify(version)}; run npm install --package-lock-only`);
+  }
 
   const crateVersions = [];
   for (const manifest of cargoManifests(join(root, "crates"))) {

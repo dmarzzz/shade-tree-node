@@ -738,10 +738,25 @@
            {'path': '/var/lib/tor/shade-tree-bootnode/hs_ed25519_secret_key', 'onion': shade_tree_deployment.elder.onion}
          ] if shade_tree_runs_elder else []) }}
 
+# bootstrap.sh installs Node privately (/opt/node-v<version>) and the units run it by absolute path;
+# a fresh host has no `node` on PATH. Use the binary the services run.
+- name: Locate the Node binary the services run
+  ansible.builtin.shell: |
+    set -o pipefail
+    for unit in shade-tree-gateway shade-tree-heartbeat shade-tree-bootnode; do
+      n="$(systemctl show -p ExecStart --value "$unit" 2>/dev/null | grep -oE '/opt/node-v[0-9.]+/bin/node' | head -n 1 || true)"
+      if [ -n "$n" ] && [ -x "$n" ]; then echo "$n"; exit 0; fi
+    done
+    command -v node
+  args:
+    executable: /bin/bash
+  register: shade_tree_remote_node
+  changed_when: false
+
 - name: Derive deployed and Tor-active onion identities
   ansible.builtin.command:
     argv:
-      - node
+      - "{{ shade_tree_remote_node.stdout | trim }}"
       - "{{ shade_tree_install_dir }}/scripts/onion-identity.mjs"
       - derive
       - "{{ item.path }}"
@@ -763,7 +778,7 @@
 - name: Read only the deployed Canopy signer public key
   ansible.builtin.command:
     argv:
-      - node
+      - "{{ shade_tree_remote_node.stdout | trim }}"
       - -e
       - "console.log(JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).pub)"
       - "{{ shade_tree_install_dir }}/deploy-state/bootnode-signer.key"
@@ -804,7 +819,7 @@
         at="$(date -d "$entered" +%s)"
         test "$at" -le "$since" || since="$at"
       done
-      exec node {{ (shade_tree_install_dir ~ '/scripts/onion-ready.mjs') | quote }} \
+      exec {{ (shade_tree_remote_node.stdout | trim) | quote }} {{ (shade_tree_install_dir ~ '/scripts/onion-ready.mjs') | quote }} \
         --tor-port {{ shade_tree_tor_socks_port | int }} \
         --timeout {{ shade_tree_ready_timeout_seconds | int }} \
         --since "$since" \
