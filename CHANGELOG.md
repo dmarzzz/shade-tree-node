@@ -6,6 +6,15 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Dependencies
 
+- snarkjs 0.7.5 → 0.7.6 in `packages/sdk`, which proves exit/withdraw actions in the browser
+  (`proveAction`; Dependabot #257). The repo's hoisted snarkjs, used by the nodes and the JS client
+  for RLN proofs, stays 0.7.5.
+  - Checked across versions:
+    - a fresh SDK exit proof (0.7.6) verifies under the hoisted 0.7.5; this is now a permanent
+      check in `sdk.selftest`;
+    - the on-chain `WithdrawGroth16Verifier` accepts it on Anvil and refuses it with a tampered
+      address;
+    - the pre-bump `testdata/withdraw-proof.json` fixture still verifies.
 - @noble/curves 1.2.0 → 2.4.0, the browser backend's ed25519 (Dependabot #259). The import is
   `@noble/curves/ed25519.js`; sign/verify (RFC 8032, `zip215: false`) are unchanged.
   - ethers, @semaphore-protocol/proof and @zk-kit/lean-imt keep their own nested 1.x.
