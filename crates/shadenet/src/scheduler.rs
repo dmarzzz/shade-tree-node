@@ -118,14 +118,9 @@ pub fn plan(budget: &Budget, requests: u64, queue_depth: u64) -> Plan {
     } else if fits_now {
         format!("fits now: {available} tunnel(s) available this epoch, {requests} asked")
     } else {
-        let tier_note = if one_epoch_tier > budget.tier {
-            format!("; tier {one_epoch_tier} would do it in one epoch")
-        } else {
-            String::new()
-        };
-        format!(
-            "needs {waits} more epoch(s): about {completes_in}s until the last tunnel can open{tier_note}"
-        )
+        // No "tier N would do it" note: the public record offers one tier. `one_epoch_tier`
+        // stays in the plan for callers that know their record's tiers.
+        format!("needs {waits} more epoch(s): about {completes_in}s until the last tunnel can open")
     };
     Plan {
         requests,
@@ -189,7 +184,7 @@ mod tests {
         assert_eq!((p.waits, p.epochs_needed), (9, 10));
         assert_eq!(p.completes_in_seconds, 20 + 8 * 60);
         assert_eq!(p.one_epoch_tier, 10);
-        assert!(p.advice.contains("tier 10 would do it in one epoch"));
+        assert!(!p.advice.contains("tier"), "{}", p.advice);
     }
 
     #[test]
