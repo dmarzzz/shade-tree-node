@@ -552,7 +552,8 @@
        link clear the fade. */
     @media (max-width: 600px) {
       .site-nav {
-        gap: 0.75rem;
+        flex-wrap: wrap;
+        gap: 0.6rem 0.75rem;
         padding-top: 1.15rem;
       }
 
@@ -567,27 +568,14 @@
         transform-origin: left center;
       }
 
+      /* All links fit on screen: the row wraps instead of scrolling, so Source is never off the edge. */
       .nav-links {
         min-width: 0;
-        gap: 0.75rem;
+        flex-basis: 100%;
+        flex-wrap: wrap;
+        gap: 0.5rem 0.9rem;
         justify-content: flex-start;
-        margin: -0.375rem 0;
-        padding: 0.375rem 0 0.375rem 0.375rem;
-        overflow-x: auto;
-        overscroll-behavior-x: contain;
-        scrollbar-width: none;
         font-size: 0.72rem;
-        -webkit-mask-image: linear-gradient(90deg, transparent, #000 0.375rem, #000 calc(100% - 1.5rem), transparent);
-        mask-image: linear-gradient(90deg, transparent, #000 0.375rem, #000 calc(100% - 1.5rem), transparent);
-      }
-
-      .nav-links::-webkit-scrollbar { display: none; }
-
-      .nav-links::after {
-        flex: none;
-        width: 0.75rem;
-        height: 1px;
-        content: "";
       }
     }
   </style>

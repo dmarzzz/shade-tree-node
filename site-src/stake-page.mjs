@@ -165,9 +165,9 @@ export function renderStakePage({ clientRelease = CLIENT_RELEASE } = {}) {
     {"@context":"https://schema.org","@type":"WebApplication","name":"ShadeNet Get Access","url":"https://shadenet.xyz/stake/","applicationCategory":"SecurityApplication","operatingSystem":"Web browser"}
   </script>
   <script type="application/ld+json">
-    {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"ShadeNet","item":"https://shadenet.xyz/"},{"@type":"ListItem","position":2,"name":"Get access"}]}
+    {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"ShadeNet","item":"https://shadenet.xyz/"},{"@type":"ListItem","position":2,"name":"Get Access"}]}
   </script>
-  <title>Get access to ShadeNet on ${CHAIN_NAME} · ShadeNet</title>
+  <title>Get Access: anonymous Tor egress for AI agents · ShadeNet</title>
 </head>
 <body class="stake-page">
   <a class="skip-link" href="#access">Skip to the steps</a>
@@ -175,7 +175,7 @@ ${siteNav("stake", { indent: "  " })}
 
   <main id="access" class="access">
     <header class="access-head">
-      <h1>Get access</h1>
+      <h1>Get Access</h1>
       <p class="access-net">Research preview on ${CHAIN_NAME}</p>
     </header>
 
