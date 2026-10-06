@@ -77,7 +77,7 @@
         "rpcUrl": "https://rpc.sepolia.ethpandaops.io",
         "rpcUrls": [
           "https://rpc.sepolia.ethpandaops.io",
-          "https://ethereum-sepolia-rpc.publicnode.com"
+          "https://sepolia.gateway.tenderly.co"
         ],
         "deployBlock": 11847802,
         "hasher": "0x15022Fcd45bcBFe5F35c83447b2ED2CA79500940",
