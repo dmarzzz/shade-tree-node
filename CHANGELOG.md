@@ -6,6 +6,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Dependencies
 
+- @noble/hashes 1.3.2 → 2.4.0, the browser crypto backend's sha256 and sha3-256
+  (`packages/node/lib/crypto-browser.mjs`; Dependabot #260, merged as #330). v2 exports explicit `.js`
+  subpaths, so the imports are `@noble/hashes/sha3.js` and `@noble/hashes/sha2.js`.
+  - New `test/crypto-backends.selftest.mjs` (32 checks) pins the browser and Node (OpenSSL)
+    backends to each other: FIPS known answers, the RFC 8032 ed25519 vector, cross-verification,
+    and refusal of a corrupted or non-canonical-S signature.
+  - The stake page bundle is byte-identical.
+- chacha20poly1305 0.10 → 0.11, the XChaCha20-Poly1305 seal on passphrase-protected
+  `identity.json` (Dependabot #262, merged as #329). It moves to `hybrid-array` (the key from the
+  32-byte array, `XNonce::try_from` / `from`).
+  - Checked in both directions: every pre-bump fixture opens, and a file locked by the new build
+    opens with the v0.7.4 CLI and the JS reader.
+  - New fixture `rust-init-locked-chacha011.json` (`vectors.json` `lockedChacha011`).
 - scrypt 0.11 → 0.12, which derives the key for passphrase-protected `identity.json` (Dependabot
   #266). `Params::new` no longer takes the output length; the 32-byte key buffer sets it, so the
   key is identical.
