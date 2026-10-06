@@ -298,7 +298,7 @@ test("a link's fragment fills the commitment and opens the stake step", async ({
   await page.getByRole("button", { name: "copy link" }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toMatch(new RegExp(`/stake/#c=${IDC}&limit=${DEFAULT.limit}&leaf=${leafAt(DEFAULT.limit)}$`));
-  await panel(page, "stake").getByRole("link", { name: "Back" }).click();
+  await panel(page, "stake").getByRole("link", { name: "Back", exact: true }).click();
   await expect(field(page)).toHaveValue(IDC);
   await expect(message(page)).toHaveText(`From your link. Checked against its leaf: a tier ${DEFAULT.limit} identity.`);
 
@@ -380,7 +380,7 @@ test("Get access stakes the pinned transaction for the pasted commitment and fol
 
   // After a reload the stake is still shown; reconnecting reads the real state and sends nothing.
   await page.reload({ waitUntil: "networkidle" });
-  await panel(page, "start").getByRole("link", { name: "Back" }).click();
+  await panel(page, "start").getByRole("link", { name: "Back", exact: true }).click();
   await expect(page.locator("[data-status]")).toHaveText(/Connect the wallet again to follow finality here/);
   await expect(page.locator("[data-receipt-link]")).toBeVisible();
 });

@@ -911,7 +911,7 @@ html[data-access="ready"] .cmd pre:not([data-more]) {
   .facts > div {
     grid-template-columns: 4.7rem minmax(0, 1fr);
     gap: 0.75rem;
-    padding: 0.55rem 0;
+    padding: 0.48rem 0;
   }
 
   .facts dt {
@@ -932,7 +932,8 @@ html[data-access="ready"] .cmd pre:not([data-more]) {
   }
 
   .panel-nav {
-    margin-top: 0.75rem;
+    margin-top: 0.45rem;
+    row-gap: 0.4rem;
   }
 
   .access .solid-action,
