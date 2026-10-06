@@ -315,11 +315,24 @@ fn state_exit(state: &str) -> ExitCode {
     }
 }
 
+/// What one unit of the per-epoch budget opens: a session of several tunnels with session
+/// tickets, otherwise one tunnel. Human output names the budget this way instead of "tier N".
+fn budget_unit(network: &shadenet::Network) -> &'static str {
+    if network.deployment.session_tickets {
+        "sessions"
+    } else {
+        "tunnels"
+    }
+}
+
+/// Nodes named on the human `status` line; the rest are counted (`--json` lists all of them).
+const NODE_LINE_MAX: usize = 6;
+
 fn print_status(status: &shadenet::Status) {
     println!("state: {}", status.state);
     println!("network: {} (shadenet {})", status.network, status.version);
     if let Some(leaf) = &status.leaf {
-        println!("leaf: {leaf} (tier {})", status.tier.unwrap_or_default());
+        println!("leaf: {leaf}");
     }
     match (status.admitted, status.finalized) {
         (Some(true), _) => println!(
@@ -336,10 +349,25 @@ fn print_status(status: &shadenet::Status) {
         (None, _) => {}
     }
     match (status.slots_used, status.slots_left) {
-        (Some(used), Some(left)) => println!(
-            "epoch: {} ({}s window, resets in {}s); tunnels used {used}, left {left}",
-            status.epoch, status.epoch_seconds, status.epoch_resets_in_seconds
-        ),
+        (Some(used), Some(left)) => {
+            // The per-epoch budget counts proofs. With session tickets each proof opens a session
+            // of several tunnels, so the queue line's "tunnels per epoch" is a multiple of this.
+            let limit = status.tier.unwrap_or_default();
+            let per_proof = status
+                .queue
+                .capacity_per_epoch
+                .checked_div(limit)
+                .unwrap_or(0);
+            let unit = if per_proof > 1 {
+                format!("sessions ({per_proof} tunnels each)")
+            } else {
+                "tunnels".to_string()
+            };
+            println!(
+                "epoch: {} ({}s window, resets in {}s); {unit} used {used} of {limit}, left {left}",
+                status.epoch, status.epoch_seconds, status.epoch_resets_in_seconds
+            )
+        }
         _ => println!(
             "epoch: {} ({}s window, resets in {}s)",
             status.epoch, status.epoch_seconds, status.epoch_resets_in_seconds
@@ -384,7 +412,7 @@ fn print_status(status: &shadenet::Status) {
         let line: Vec<String> = status
             .nodes
             .iter()
-            .take(6)
+            .take(NODE_LINE_MAX)
             .map(|node| {
                 format!(
                     "{}{} {}{}",
@@ -398,7 +426,13 @@ fn print_status(status: &shadenet::Status) {
                 )
             })
             .collect();
-        println!("nodes: {}", line.join(", "));
+        // `--json` carries every node; the human line names the first few and counts the rest.
+        let more = status.nodes.len().saturating_sub(NODE_LINE_MAX);
+        if more > 0 {
+            println!("nodes: {}, +{more} more", line.join(", "));
+        } else {
+            println!("nodes: {}", line.join(", "));
+        }
     }
     if let Some(error) = &status.last_error {
         println!(
@@ -454,7 +488,7 @@ fn plan(args: crate::PlanArgs, ctx: &Context) -> ExitCode {
         );
     } else {
         println!(
-            "plan: {} fetch(es){} at tier {} ({}s epochs{})",
+            "plan: {} fetch(es){} with {} {} per {}s epoch{}",
             plan.requests,
             if hosts.is_empty() {
                 String::new()
@@ -462,6 +496,11 @@ fn plan(args: crate::PlanArgs, ctx: &Context) -> ExitCode {
                 format!(" to {} host(s)", hosts.len())
             },
             plan.tier,
+            if plan.session_tickets {
+                "sessions"
+            } else {
+                "tunnels"
+            },
             plan.epoch_seconds,
             if plan.session_tickets {
                 format!(
@@ -1359,15 +1398,14 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
     // The stake page takes the identity commitment. Staking the leaf instead locks a bond
     // nobody can withdraw, and the page cannot tell the two apart, so when the commitment is
     // known the leaf is shortened the way `status` shows it: impossible to paste whole.
-    let tier_note = tier.map(|t| format!(" (tier {t})")).unwrap_or_default();
     if let Some(idc) = &identity_commitment {
         println!("  identity commitment {idc}");
         println!(
-            "  leaf {}..{tier_note}, derived from it; not for staking",
+            "  leaf {}.., derived from it; not for staking",
             &leaf[..leaf.len().min(12)]
         );
     } else {
-        println!("  leaf {leaf}{tier_note}");
+        println!("  leaf {leaf}");
     }
     println!();
     match state.as_str() {
@@ -1394,8 +1432,7 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
                     // registering a leaf value where a commitment is expected burns the bond
                     // (task 66), so this says "register this identity commitment", never "leaf".
                     println!(
-                        "Next, register this identity commitment: tier {} ({} {}{} per {}s epoch) for a bond of {} on {}:",
-                        tier_info.limit,
+                        "Next, register this identity commitment ({} {}{} per {}s epoch) for a bond of {} on {}:",
                         tier_info.limit,
                         unit,
                         if tier_info.limit == 1 { "" } else { "s" },
@@ -1590,11 +1627,19 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
                     Ok(p) => Check::ok(
                         "staking profile",
                         format!(
-                            "contract {} on chain {}, {} tier(s), default tier {}, {} RPC endpoint(s)",
+                            "contract {} on chain {}, {}, {} RPC endpoint(s)",
                             p.contract,
                             p.chain_id,
-                            p.tiers.len(),
-                            p.default_limit,
+                            if p.tiers.len() == 1 {
+                                format!("{} {} per epoch", p.default_limit, budget_unit(network))
+                            } else {
+                                format!(
+                                    "{} tiers, default {} {} per epoch",
+                                    p.tiers.len(),
+                                    p.default_limit,
+                                    budget_unit(network)
+                                )
+                            },
                             p.rpc_urls.len()
                         ),
                     ),
@@ -1636,10 +1681,11 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
                             (Some(l), true) => Check::ok(
                                 "identity",
                                 format!(
-                                    "{} (leaf {}.., tier {}, {})",
+                                    "{} (leaf {}.., {} {} per epoch, {})",
                                     path.display(),
                                     &l[..l.len().min(12)],
                                     value["limit"],
+                                    network.as_ref().map(budget_unit).unwrap_or("sessions"),
                                     if encrypted {
                                         "passphrase-protected"
                                     } else {
@@ -1896,11 +1942,11 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
                             checks.push(Check::ok(
                                 "admission",
                                 format!(
-                                    "ready in {} (tier {}, {} of {} slots left this epoch)",
+                                    "ready in {} ({} of {} {} left this epoch)",
                                     status.admission_set.clone().unwrap_or_default(),
-                                    status.tier.unwrap_or_default(),
                                     status.slots_left.unwrap_or_default(),
-                                    status.tier.unwrap_or_default()
+                                    status.tier.unwrap_or_default(),
+                                    network.as_ref().map(budget_unit).unwrap_or("sessions")
                                 ),
                             ));
                         }

@@ -4,7 +4,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
-Nothing yet.
+### CLI output names the budget, not a tier
+
+- The public record has one tier, so `init`, `doctor`, `status` and `plan` no longer print
+  "tier 8", "(tier 8)" or "1 tier(s), default tier 8". They state the budget instead:
+  "8 sessions per 60s epoch" (with session tickets) or "N tunnels per epoch".
+  - `doctor` names the tier count only for a record that lists several.
+  - `--json` keeps `tier` and `limit`; the `--limit` flag is unchanged.
+- `status`: the epoch line said `tunnels used 0, left 8` next to `48 tunnel(s) per epoch`. It now
+  says `sessions (6 tunnels each) used 0 of 8, left 8`, so the two numbers agree.
+- `status`: the node line silently stopped at six nodes. It now adds `, +N more`; `--json` lists
+  every node.
+- `plan` advice no longer suggests "tier N would do it in one epoch"; the plan's
+  `one_epoch_tier` field is unchanged.
 
 ## 0.7.4 — forward-compatible capability verification
 
