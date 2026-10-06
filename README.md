@@ -1,4 +1,4 @@
-![A low-poly grove crossed by an amber network path](assets/shade-tree-readme-banner.webp)
+![ShadeNet: Cover for local agents. A low-poly grove crossed by an amber network path, from the shadenet.xyz landing page](assets/shade-tree-readme-banner.webp)
 
 > **Research preview launched: Sepolia testnet, unaudited, trusted setup.** [What that means](#research-preview)
 
