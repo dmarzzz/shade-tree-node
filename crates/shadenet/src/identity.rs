@@ -168,7 +168,8 @@ fn derive_key(
             "identity file asks for unsupported scrypt parameters".into(),
         ));
     }
-    let params = scrypt::Params::new(log_n, r, p, 32)
+    // scrypt 0.12 takes the output length from the buffer (32 bytes below), not from Params.
+    let params = scrypt::Params::new(log_n, r, p)
         .map_err(|e| Error::Config(format!("scrypt parameters: {e}")))?;
     let mut key = Zeroizing::new([0u8; 32]);
     scrypt::scrypt(passphrase.as_bytes(), salt, &params, key.as_mut())
@@ -425,6 +426,11 @@ mod tests {
         assert!(public.encrypted);
         assert_eq!(public.leaf, text("leaf"));
         assert_eq!(public.limit, vectors["limit"].as_u64());
+        // Sealed after the scrypt 0.11 -> 0.12 bump (Dependabot #266); JavaScript opens it and
+        // the v0.7.4 (scrypt 0.11) CLI unlocked it to the same secret.
+        let sealed_after_bump = read_public(&dir.join(text("lockedScrypt012"))).unwrap();
+        assert!(sealed_after_bump.encrypted);
+        assert_eq!(sealed_after_bump.leaf, text("leaf"));
         let locked = load(&dir.join(text("lockedLowCost")), || {
             Ok(Zeroizing::new(text("passphrase")))
         })
