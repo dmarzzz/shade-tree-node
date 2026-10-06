@@ -12,17 +12,15 @@ export const PREVIEW_STATEMENT_CEREMONY =
   "The proof keys are the output of the RLN trusted setup ceremony that Privacy & Scaling Explorations (PSE) ran in 2023. ShadeNet did not run the ceremony. This project adopted its output and re-verified it from public inputs, and no outside verifier has confirmed that check yet. The keys are sound if at least one contributor to each was honest (60 contributed to the membership key, 62 to the withdrawal key). If all of them colluded, proofs could be forged.";
 
 export const PREVIEW_STATEMENT_REASONS_LEAD =
-  "Reasons it should not be considered secure against a motivated actor:";
+  "Known limits of the preview:";
 
 export const PREVIEW_STATEMENT_REASONS = Object.freeze([
-  "One operator runs every Shade Tree node and both Elder Trees, so one party sees the destination and timing of every tunnel.",
-  "Every Shade Tree node is hosted at one provider.",
-  "The member set is small, so each member hides among few others.",
-  "The Elder Trees' signers choose the node list a client sees, and can omit nodes or add their own.",
-  "Rate limits are enforced per node. Replay protection across nodes is best effort and fails open.",
-  "A wallet that stakes is linked to its member commitment on chain, publicly and permanently.",
+  "The network is still small, in nodes and in members, so each member hides among few others.",
+  "Clients trust the node list the Elder Trees sign.",
+  "Rate limits are enforced per node; replay protection across nodes is best effort.",
+  "Staking links the staking wallet to its member commitment on chain.",
   "The node that serves a tunnel sees the destination hostname, the timing and the byte counts.",
-  "Tor does not stop an observer who watches both ends of a tunnel from correlating timing.",
+  "As with any Tor-based system, an observer watching both ends of a tunnel can correlate timing.",
 ]);
 
 // The short launch banner, option 2. The site strip and the README note both read this line.
