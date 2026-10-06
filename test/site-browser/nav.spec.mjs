@@ -150,7 +150,8 @@ for (const entry of NAV_PAGES) {
     // around it and can be brought into view.
     expect(measured.page.overflowsSideways).toBe(false);
     expect(new Set(measured.links.map((link) => link.box.y)).size, "links share one row").toBe(1);
-    expect(measured.wordmark.box.y).toBe(measured.links[0].box.y);
+    // On a phone the row wraps: the wordmark sits on its own line above the links.
+    if (!phone) expect(measured.wordmark.box.y).toBe(measured.links[0].box.y);
     for (const [index, link] of measured.links.entries()) {
       expect(link.box.height, `${link.label} target height`).toBeGreaterThanOrEqual(44);
       if (index > 0) {
@@ -158,7 +159,7 @@ for (const entry of NAV_PAGES) {
         expect(link.box.x - (previous.x + previous.width), `gap before ${link.label}`).toBeGreaterThanOrEqual(11.99);
       }
     }
-    expect(measured.links[0].box.x - (measured.wordmark.box.x + measured.wordmark.box.width), "gap after the wordmark").toBeGreaterThanOrEqual(11.99);
+    if (!phone) expect(measured.links[0].box.x - (measured.wordmark.box.x + measured.wordmark.box.width), "gap after the wordmark").toBeGreaterThanOrEqual(11.99);
     expect(measured.scrolledToEnd.lastLinkInsideStrip).toBe(true);
     if (!phone) {
       expect(measured.strip.scrollable, "the desktop nav shows every link at once").toBe(false);

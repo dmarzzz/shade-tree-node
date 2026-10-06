@@ -123,7 +123,7 @@ test("each step shows alone, fits the viewport, and is accessible", async ({ pag
   await mockWallet(page);
   await open(page);
 
-  await expect(page.getByRole("heading", { level: 1, name: "Get access" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Get Access" })).toBeVisible();
   // First screen: the chooser shows both paths; the steps stay hidden until you start.
   for (const name of ["setup", "stake", "start", "details"]) await expect(panel(page, name)).toBeHidden();
   await expect(page.getByRole("heading", { level: 3, name: "For agents" })).toBeVisible();
@@ -495,7 +495,7 @@ test.describe("without JavaScript", () => {
 
   test("the page is a readable document: every step in order, the commands, no dead controls", async ({ page }) => {
     await page.goto("/stake/", { waitUntil: "load" });
-    await expect(page.getByRole("heading", { level: 1, name: "Get access" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Get Access" })).toBeVisible();
     const tops = [];
     for (const name of ["setup", "stake", "start", "details"]) {
       await expect(panel(page, name)).toBeVisible();
