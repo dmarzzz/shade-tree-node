@@ -6,6 +6,11 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Dependencies
 
+- docker/setup-qemu-action v3 → v4.4.0 in `node-image` (Dependabot #256).
+  - Without a push, `node-image` now also builds the arm64 image through QEMU (neither loaded nor
+    pushed), so a QEMU or base-image break shows up on a dispatch instead of during a release.
+  - Checked with a dispatch on the branch (run 37545890531, `push=false`): the amd64 build and
+    smoke test passed, and the arm64 build through QEMU v4 passed.
 - toml 0.8 → 1.1 for `config.toml` (Dependabot #263). toml 1.x gates `from_str` behind its `serde`
   feature, so the dependency now enables `["parse", "serde"]`; Dependabot's version alone did not
   compile.
