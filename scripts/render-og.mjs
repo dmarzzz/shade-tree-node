@@ -5,7 +5,8 @@
 // Override the origin with SITE_BASE_URL. Task 42 in ~/shadenet-launch/PRE-POST-TASKS.md.
 //
 // `--readme-banner` renders the README banner instead (assets/shade-tree-readme-banner.webp,
-// 1731x909) from the same live hero, encoded with `cwebp` (brew install webp):
+// 1731x909): the same live hero, composed like a poster (see BANNER_CSS), encoded with `cwebp`
+// (brew install webp):
 //   SITE_BASE_URL=https://shadenet.xyz node scripts/render-og.mjs --readme-banner
 
 import { chromium } from "@playwright/test";
@@ -28,10 +29,28 @@ const browser = await chromium.launch({
 });
 const context = await browser.newContext({
   viewport: { width, height },
-  deviceScaleFactor: 1,
+  // The banner renders at 2x and is downscaled on encode, so the scaled grove stays sharp.
+  deviceScaleFactor: banner ? 2 : 1,
   colorScheme: "dark",
   reducedMotion: "reduce",
 });
+// The README banner is a composition, not a page screenshot: wordmark top-left, headline left,
+// grove right, nothing else (the nav links, preview strip and calls to action are hidden), with the
+// hero filling the frame. Injected at document start so the grove lays out at the final size.
+const BANNER_CSS = `
+  .nav-links, .preview-flag, .hero-actions { display: none !important; }
+  .home-hero { min-height: 100vh !important; height: 100vh !important; }
+  .home-hero .site-nav { width: auto !important; padding: 2.2rem 62px 0 !important; border-bottom: 0 !important; }
+  .home-hero .wordmark { zoom: 1.7; }
+  .home-copy { left: 62px !important; top: 50% !important; transform: translateY(-46%) !important; zoom: 1.14; }
+  .grove-stage canvas { transform: scale(1.12); transform-origin: 72% 52%; }
+`;
+if (banner) {
+  await context.addInitScript((css) => {
+    const add = () => { const style = document.createElement("style"); style.textContent = css; document.head.append(style); };
+    if (document.head) add(); else document.addEventListener("DOMContentLoaded", add, { once: true });
+  }, BANNER_CSS);
+}
 const page = await context.newPage();
 await page.goto(base + "/", { waitUntil: "load" });
 // Let the grove light up so the image shows the live hero, not the fallback.
@@ -42,7 +61,7 @@ if (banner) {
   const tmp = mkdtempSync(join(tmpdir(), "readme-banner-"));
   const png = join(tmp, "banner.png");
   await page.screenshot({ path: png, clip });
-  execFileSync("cwebp", ["-quiet", "-q", "82", "-m", "6", png, "-o", out]);
+  execFileSync("cwebp", ["-quiet", "-q", "82", "-m", "6", "-resize", String(width), String(height), png, "-o", out]);
   rmSync(tmp, { recursive: true, force: true });
 } else {
   await page.screenshot({ path: out, clip });
