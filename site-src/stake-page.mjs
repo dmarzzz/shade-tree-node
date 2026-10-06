@@ -330,7 +330,7 @@ ${siteNav("stake", { indent: "  " })}
             </details>
             <details name="access-details">
               <summary>The bond</summary>
-              <p>The bond is refundable collateral. Tier ${Number(baseTier.limit)} buys ${slot.unit(Number(baseTier.limit))}, ${slot.each}. Sending two different requests from the same slot in one ${epochNoun} reveals the secret and lets anyone slash the bond. ${slashLine}</p>
+              <p>The bond is refundable collateral. ${oneTier ? "It" : `Tier ${Number(baseTier.limit)}`} buys ${slot.unit(Number(baseTier.limit))}, ${slot.each}. Sending two different requests from the same slot in one ${epochNoun} reveals the secret and lets anyone slash the bond. ${slashLine}</p>
               <p>Exit and withdraw need <code>identity.json</code>. Nobody can recover it for you: lose it and the bond stays locked for good.</p>
               <p>The contract is ${contractLink ? `<a href="${contractLink}" rel="noreferrer">${shortAddress(CONTRACT)}</a>` : shortAddress(CONTRACT)} on ${CHAIN_NAME}. It, the bond and the unbonding time can change at the next deployment. <a href="${REPO}/blob/main/docs/PUBLIC-STAKING.md" rel="noreferrer">Protocol parameters</a></p>
             </details>

@@ -130,8 +130,10 @@ export function stakeLink({ commitment, limit = null, leaf = null }, base = "/st
 
 // Pure status model for a commitment read from the contract: what the page tells the member.
 export function describeMember({ state, limit, withdrawableAt, finalized, now }) {
-  if (state === "active" && finalized === false) return { state: "pending", message: `Staked at tier ${limit}. Nodes admit it once its block is final.` };
-  if (state === "active") return { state: "active", message: `Admitted at tier ${limit}. The stake is final and nodes accept this identity.` };
+  // With one tier the tier is not news, so the status line does not name it.
+  const at = TIERS.length > 1 ? ` at tier ${limit}` : "";
+  if (state === "active" && finalized === false) return { state: "pending", message: `Staked${at}. Nodes admit it once its block is final.` };
+  if (state === "active") return { state: "active", message: `Admitted${at}. The stake is final and nodes accept this identity.` };
   if (state === "exiting" || state === "withdrawable") {
     const at = withdrawableAt ? Date.parse(withdrawableAt) / 1000 : 0;
     if (state === "exiting" && at > now) return { state: "exiting", message: `This identity is leaving the set. Its bond can be withdrawn in about ${formatDuration(Math.max(60, Math.ceil((at - now) / 60) * 60))}, with shadenet withdraw-member.` };
@@ -295,7 +297,7 @@ function mount() {
       el.input.removeAttribute("aria-invalid");
       el.inputMessage.dataset.kind = "good";
       el.inputMessage.textContent = state.leaf
-        ? `${origin}Checked against its leaf: a tier ${state.limit} identity.`
+        ? `${origin}Checked against its leaf${TIERS.length > 1 ? `: a tier ${state.limit} identity` : ""}.`
         : `${origin}${parsed.commitment.length} digits, ending ${parsed.commitment.slice(-6)}.`;
     } catch (error) {
       state.commitment = null;

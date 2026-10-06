@@ -2,7 +2,7 @@
 
 The public Protocol v4 profile is deliberately narrow:
 
-- stake exactly the record's bond at tier `8`, the only tier the set admits
+- stake exactly the record's bond, one bond for everyone (limit `8`)
   (**0.01 Sepolia ETH** from the one-tier deploy of 2026-10-05, see [ECONOMICS.md](ECONOMICS.md));
 - receive **eight proof slots per fixed 60-second epoch**; with session tickets on (as in the
   live record) each slot is a book of six single-use tunnel tickets at one node, otherwise a
@@ -36,7 +36,7 @@ external nullifier and a new protocol version.
 | parameter | public value |
 |---|---:|
 | network | Sepolia (`11155111`) |
-| tier-8 bond | from the record: `0.01 ETH` (the only tier, deploy of 2026-10-05) |
+| bond | from the record: `0.01 ETH` (one bond for every member, deploy of 2026-10-05) |
 | allowed limits | `[8]` |
 | default member limit | `8` |
 | epoch | fixed `60 seconds` |
@@ -47,8 +47,8 @@ external nullifier and a new protocol version.
 | contract minimum safety window | `3,720 seconds` (`F + E + C`) |
 | deployed unbonding | `86,400 seconds` (24 hours) |
 
-The set admits one tier (limit 8); the contract fixes the tier table at deployment and always
-admits tier 8, so a one-tier set is tier 8 alone (see [ECONOMICS.md](ECONOMICS.md)).
+Every member stakes the same bond for the same limit, 8. The contract fixes its limit table at
+deployment and always admits limit 8, so a set with one limit has limit 8 alone (see [ECONOMICS.md](ECONOMICS.md)).
 The 40 MiB payload is the 4 MiB text-oriented search-and-fetch estimate from
 [ADR 0009](adr/0009-epoch-bandwidth-envelope.md), multiplied by the chosen `10×` safety factor.
 Both relay directions spend one shared allowance. The boundary chunk is truncated and both sockets
