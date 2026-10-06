@@ -205,24 +205,40 @@ ${siteNav("stake", { indent: "  " })}
 
     <div class="panels">
       <section class="panel" id="setup" data-panel="setup" aria-labelledby="setup-title">
-        <h2 class="sr-only" id="setup-title" tabindex="-1">Step 1: set up with the CLI</h2>
-        <div class="panel-split">
-          <div class="split-main">
-            <p class="lead">Run these on the machine where your agent runs.</p>
-            <p class="cmd-label">Install the client</p>
-            ${command("Install the ShadeNet client", installLine(clientRelease))}
-            <p class="cmd-label">Create the identity</p>
-            ${command("Create the identity", "shadenet init")}
-            <label class="cmd-label needs-script" for="commitment">Paste the identity commitment</label>
-            <textarea class="needs-script" id="commitment" data-commitment rows="2" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="commitment-hint commitment-message"></textarea>
-            <p class="field-message needs-script" id="commitment-message" data-commitment-message role="status" aria-live="polite"></p>
+        <h2 class="sr-only" id="setup-title" tabindex="-1">Step 1: set up</h2>
+        <div class="tabs" data-tabs>
+          <div role="tablist" aria-label="Who sets up">
+            <button type="button" role="tab" id="setup-tab-human" aria-controls="setup-panel-human" aria-selected="true">For humans</button>
+            <button type="button" role="tab" id="setup-tab-agent" aria-controls="setup-panel-agent" aria-selected="false">For agents</button>
           </div>
-          <div class="split-notes">
-            ${setupNotes(initPrintsCommitment, clientRelease)}
+          <div role="tabpanel" id="setup-panel-human" aria-labelledby="setup-tab-human">
+            <h3 class="tab-title">For humans</h3>
+            <div class="panel-split">
+              <div class="split-main">
+                <p class="lead">Run these on the machine where your agent runs.</p>
+                <p class="cmd-label">Install the client</p>
+                ${command("Install the ShadeNet client", installLine(clientRelease))}
+                <p class="cmd-label">Create the identity</p>
+                ${command("Create the identity", "shadenet init")}
+                <label class="cmd-label needs-script" for="commitment">Paste the identity commitment</label>
+                <textarea class="needs-script" id="commitment" data-commitment rows="2" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="commitment-hint commitment-message"></textarea>
+                <p class="field-message needs-script" id="commitment-message" data-commitment-message role="status" aria-live="polite"></p>
+              </div>
+              <div class="split-notes">
+                ${setupNotes(initPrintsCommitment, clientRelease)}
+              </div>
+            </div>
+          </div>
+          <div role="tabpanel" id="setup-panel-agent" aria-labelledby="setup-tab-agent">
+            <h3 class="tab-title">For agents</h3>
+            <p class="lead">Hand your agent this brief. It installs the client, stakes the bond, and starts the proxy.</p>
+            <button class="line-action needs-script" type="button" data-copy-brief>copy agent brief</button>
+            <p class="brief-text" data-brief>${agentBriefHtml()}</p>
           </div>
         </div>
         <div class="panel-nav">
           <a class="solid-action" href="#stake" data-go="stake">Next</a>
+          <a class="line-action" href="#choose" data-go="choose">Back to start</a>
           ${detailsLink}
         </div>
       </section>
@@ -272,6 +288,7 @@ ${siteNav("stake", { indent: "  " })}
         <div class="panel-nav">
           <a class="line-action" href="#setup" data-go="setup">Back</a>
           <a class="line-action" href="#start" data-go="start" data-next-start>Next</a>
+          <a class="line-action" href="#choose" data-go="choose">Back to start</a>
           ${detailsLink}
         </div>
       </section>
@@ -313,6 +330,7 @@ ${siteNav("stake", { indent: "  " })}
         </div>
         <div class="panel-nav">
           <a class="line-action" href="#stake" data-go="stake">Back</a>
+          <a class="line-action" href="#choose" data-go="choose">Back to start</a>
           ${detailsLink}
         </div>
       </section>

@@ -144,17 +144,27 @@ check("the research preview statement is one constant, shown once, before the st
   && html.includes(`data-preview-statement>${PREVIEW_STATEMENT}</p>`) && count(pageSource, /research preview on Sepolia\. The code is unaudited/g) === 1
   && html.indexOf("data-preview-statement") < html.indexOf("data-primary")
   && /research preview/.test(PREVIEW_STATEMENT) && /trusted setup/.test(PREVIEW_STATEMENT) && /motivated actor/.test(PREVIEW_STATEMENT));
-check("staking for someone else is the same step, and the terminal path is one quiet command", !/sponsor/i.test(html.replace(agentBriefHtml(), ""))
+// The agent brief is shown in two places now (the chooser and step 1's For-agents tab), so its
+// own "sponsor" wording and register line are stripped from every occurrence before the chrome is
+// checked, and the register line is counted across both briefs plus the one terminal command.
+check("staking for someone else is the same step, and the terminal path is one quiet command", !/sponsor/i.test(html.split(agentBriefHtml()).join(""))
   && /To stake for someone else, paste theirs\./.test(html)
-  && /shadenet register-member --identity ~\/\.config\/shadenet\/identity\.json --key-file funded\.key/.test(html) && count(html, /register-member --identity/g) === 2);
+  && /shadenet register-member --identity ~\/\.config\/shadenet\/identity\.json --key-file funded\.key/.test(html) && count(html, /register-member --identity/g) === 3);
 check(TIERS.length === 1 ? "one tier in the record: the page offers no tier choice" : "several tiers in the record: one compact choice, every tier in it",
   count(html, /data-tier /g) === (TIERS.length === 1 ? 0 : TIERS.length)
   && TIERS.every((tier) => TIERS.length === 1 || html.includes(`value="${tier.limit}" data-tier data-bond-text="${formatEth(tier.bondWei)} Sepolia ETH"`)));
 check("page template hard-codes no bond, contract, rate or unbonding value", !/0\.1 |0\.8 |0\.01 |0\.001 |0x[0-9a-fA-F]{40}|40 MiB|60-second|24 hours|86400|41943040/.test(pageSource));
-check("step 3 has a Human and an Agent tab with commands the released client has", count(html, /role="tab"/g) === 2 && count(html, /role="tabpanel"/g) === 2 && /role="tablist"/.test(html)
+check("step 3 has a Human and an Agent tab with commands the released client has", /id="start-tab-human"[^>]*aria-controls="start-panel-human"/.test(html) && /id="start-tab-agent"[^>]*aria-controls="start-panel-agent"/.test(html)
   && /<code>shadenet status --wait<\/code>/.test(html) && /<code>shadenet proxy<\/code>/.test(html)
   && /<code>shadenet run --no-proxy api\.openai\.com -- your-agent<\/code>/.test(html) && /<code>shadenet mcp<\/code><\/pre>/.test(html)
   && /claude mcp add shadenet -- shadenet mcp/.test(html) && !/shadenet plan|shadenet_plan|shadenet_search/.test(html));
+// The agent vs human split stays visible at every step: step 1 carries it as a For-humans (CLI) /
+// For-agents (copy brief) tab pair, and every step can return to the chooser.
+check("step 1 keeps the agent and human split, and every step can go back to start", /id="setup-tab-human"[^>]*aria-controls="setup-panel-human"/.test(html) && /id="setup-tab-agent"[^>]*aria-controls="setup-panel-agent"/.test(html)
+  && /id="setup-panel-agent"[\s\S]*?data-copy-brief[\s\S]*?data-brief>/.test(html)
+  && /id="setup-panel-human"[\s\S]*?data-commitment/.test(html)
+  && count(html, /data-go="choose"/g) === 3 && count(html, />Back to start</g) === 3
+  && count(html, /role="tab"/g) === 4 && count(html, /role="tabpanel"/g) === 4);
 const brief = landing.match(/<code id="agent-setup-task"[^>]*>([\s\S]*?)<\/code>/)?.[1].trim();
 check("the agent brief is the landing page's, word for word", Boolean(brief) && agentBriefHtml() === brief && html.includes(`data-brief hidden>${brief}</p>`)
   && html.includes(`<p class="path-lead">${brief.split(/(?<=\.)\s/)[0]}</p>`));

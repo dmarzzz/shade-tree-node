@@ -222,9 +222,8 @@ function mount() {
     nextStart: $("[data-next-start]"),
     startState: $("[data-start-state]"),
     copyBlocks: $$("[data-copy-block]"),
-    brief: $("[data-brief]"),
-    copyBrief: $("[data-copy-brief]"),
-    tabs: $("[data-tabs]"),
+    briefCopies: $$("[data-copy-brief]"),
+    tabGroups: $$("[data-tabs]"),
     scrollers: $$(".cmd pre"),
     details: $$("details[name]"),
   };
@@ -680,10 +679,9 @@ function mount() {
     }
   }
 
-  function mountTabs() {
-    if (!el.tabs) return;
-    const tabs = [...el.tabs.querySelectorAll('[role="tab"]')];
-    const panels = [...el.tabs.querySelectorAll('[role="tabpanel"]')];
+  function mountTabs(group) {
+    const tabs = [...group.querySelectorAll('[role="tab"]')];
+    const panels = [...group.querySelectorAll('[role="tabpanel"]')];
     const select = (index, focus = false) => {
       tabs.forEach((tab, i) => {
         tab.setAttribute("aria-selected", String(i === index));
@@ -755,14 +753,18 @@ function mount() {
     const code = button.parentElement.querySelector("code");
     copyFrom(button, code, code.textContent);
   });
-  el.copyBrief?.addEventListener("click", () => copyFrom(el.copyBrief, el.brief, el.brief.textContent.trim()));
+  // Each "copy agent brief" button copies the brief beside it (the chooser's and step 1's).
+  for (const button of el.briefCopies) {
+    const brief = button.parentElement.querySelector("[data-brief]") || document.querySelector("[data-brief]");
+    if (brief) button.addEventListener("click", () => copyFrom(button, brief, brief.textContent.trim()));
+  }
   for (const pre of el.scrollers) pre.addEventListener("scroll", markScrollers, { passive: true });
   window.addEventListener("resize", markScrollers);
   // One details section open at a time, also where the name attribute is not supported.
   for (const item of el.details) item.addEventListener("toggle", () => {
     if (item.open) for (const other of el.details) if (other !== item) other.open = false;
   });
-  mountTabs();
+  for (const group of el.tabGroups) mountTabs(group);
   window.ethereum?.on?.("accountsChanged", (accounts) => {
     state.account = accounts?.[0] ? getAddress(accounts[0]) : null;
     if (!state.account && !["sent", "confirmed", "final"].includes(state.stage)) state.stage = "idle";
