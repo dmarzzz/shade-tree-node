@@ -4,6 +4,18 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Dependencies
+
+- scrypt 0.11 → 0.12, which derives the key for passphrase-protected `identity.json` (Dependabot
+  #266). `Params::new` no longer takes the output length; the 32-byte key buffer sets it, so the
+  key is identical.
+  - Checked in both directions:
+    - the existing Rust- and SDK-locked fixtures open under the new code;
+    - a file locked by the new build opens with the v0.7.4 (scrypt 0.11) CLI and with the JS
+      reader, to the same secret.
+  - New fixture `testdata/identity/rust-init-locked-scrypt012.json` (`vectors.json`
+    `lockedScrypt012`), read by both test suites.
+
 ### Record RPCs: publicnode out, tenderly in (task 19)
 
 - The Sepolia record's second member-set RPC was publicnode, which intermittently answers the
