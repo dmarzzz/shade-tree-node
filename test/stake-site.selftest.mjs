@@ -113,13 +113,13 @@ check("finality countdown counts remaining slots", finalityEstimate(110, 100).se
 check("the set-size sentence is honest at zero and small sizes, and names the tier only when there is more than one", /0 staked members today/.test(describeSetSize(0)) && /among 3, so timing can still/.test(describeSetSize(3))
   && /among 3, so timing and tier can still/.test(describeSetSize(3, 2)) && /^1 staked member today/.test(describeSetSize(1)) && describeSetSize(-1) === null);
 
-// The page is generated from the record: three steps and one extra screen, nothing typed by hand.
-const panels = [...html.matchAll(/<section class="panel" id="([a-z]+)" data-panel="\1"/g)].map((m) => m[1]);
-check("the page is three steps and one extra screen, in order", panels.join(",") === "setup,stake,start,details"
+// The page is generated from the record: a first-screen chooser, three steps and a details screen.
+const panels = [...html.matchAll(/<section class="panel[^"]*" id="([a-z]+)" data-panel="\1"/g)].map((m) => m[1]);
+check("the page is the chooser, three steps and the details screen, in order", panels.join(",") === "choose,setup,stake,start,details"
   && count(html, /data-step-link="/g) === 3
   && /<nav class="stepper" aria-label="Steps" data-stepper>\s*<ol>/.test(html)
   && /data-step-link="setup" aria-current="step"/.test(html) && count(html, /aria-current="step"/g) === 1
-  && count(html, /<h2 [^>]*tabindex="-1"/g) === 4);
+  && count(html, /<h2 [^>]*tabindex="-1"/g) === 5);
 check("only the first step is marked current, and no panel is hidden in the markup, so the page reads in order without scripting", count(html, /data-current/g) === 1
   && !/<section[^>]*hidden/.test(html) && /@media \(scripting: enabled\)\s*{\s*\.panel:not\(\[data-current\]\)/.test(css) && /@media \(scripting: none\)/.test(css));
 check("the page never creates, reads, downloads or stores an identity", !/type="file"|download|create identity|import an identity|identitySecret|recovery/i.test(html)
@@ -156,7 +156,8 @@ check("step 3 has a Human and an Agent tab with commands the released client has
   && /<code>shadenet run --no-proxy api\.openai\.com -- your-agent<\/code>/.test(html) && /<code>shadenet mcp<\/code><\/pre>/.test(html)
   && /claude mcp add shadenet -- shadenet mcp/.test(html) && !/shadenet plan|shadenet_plan|shadenet_search/.test(html));
 const brief = landing.match(/<code id="agent-setup-task"[^>]*>([\s\S]*?)<\/code>/)?.[1].trim();
-check("the agent brief is the landing page's, word for word", Boolean(brief) && agentBriefHtml() === brief && html.includes(`data-brief tabindex="0">${brief}</p>`));
+check("the agent brief is the landing page's, word for word", Boolean(brief) && agentBriefHtml() === brief && html.includes(`data-brief hidden>${brief}</p>`)
+  && html.includes(`<p class="path-lead">${brief.split(/(?<=\.)\s/)[0]}</p>`));
 check("leaving is a CLI matter on the extra screen: exit, wait, withdraw to a fresh address", /shadenet exit-member --identity ~\/\.config\/shadenet\/identity\.json --key-file gas\.key/.test(html)
   && /shadenet withdraw-member --identity ~\/\.config\/shadenet\/identity\.json --recipient 0xFRESH --key-file gas\.key/.test(html)
   && html.includes(`The bond unlocks ${formatDuration(staked.unbondingSeconds)} later.`)

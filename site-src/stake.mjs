@@ -27,7 +27,7 @@ const SLOT_SECONDS = 12;
 // Gas a register call needs, with room; only used to tell the visitor whether the wallet can pay.
 const REGISTER_GAS = 200_000n;
 const STEPS = ["setup", "stake", "start"];
-const PANELS = [...STEPS, "details"];
+const PANELS = ["choose", ...STEPS, "details"];
 // Step, public commitment and the stake transaction survive a reload. Nothing here is secret.
 export const STORAGE_KEY = "shadenet.access.v1";
 // A field element drawn at random has 76 or 77 digits; one under 60 digits is a cut-off paste.
@@ -232,7 +232,7 @@ function mount() {
   const buysText = new Map(el.tierInputs.map((input) => [input.value, input.dataset.buysText]));
   const saved = loadSaved();
   const state = {
-    panel: PANELS.includes(saved.panel) ? saved.panel : "setup",
+    panel: PANELS.includes(saved.panel) ? saved.panel : "choose",
     lastStep: "setup",
     commitment: null, limit: null, leaf: null,
     // The last value that arrived with its leaf (a link or a full paste), so the check and the
