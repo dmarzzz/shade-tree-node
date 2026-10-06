@@ -45,6 +45,8 @@ function run(...args) {
 }
 
 write("package.json", '{"name":"fixture","version":"1.2.3"}\n');
+const LOCK = (v) => JSON.stringify({ name: "fixture", version: v, lockfileVersion: 3, packages: { "": { name: "fixture", version: v } } }) + "\n";
+write("package-lock.json", LOCK("1.2.3"));
 write("Cargo.toml", '[workspace]\nmembers = ["one", "nested/two"]\n');
 write("crates/one/Cargo.toml", '[package]\nname = "one"\nversion = "1.2.3"\n');
 write(
@@ -88,6 +90,12 @@ write(
 const wrongTag = run("--tag", "v1.2.4", "--main-ref", "main");
 assert.notEqual(wrongTag.status, 0);
 assert.match(wrongTag.stderr, /does not match package\.json version/);
+
+write("package-lock.json", LOCK("1.2.2"));
+const staleLock = run("--tag", "v1.2.3", "--main-ref", "main");
+assert.notEqual(staleLock.status, 0);
+assert.match(staleLock.stderr, /does not match package-lock\.json version "1\.2\.2"/);
+write("package-lock.json", LOCK("1.2.3"));
 
 write("crates/nested/two/Cargo.toml", '[package]\nname = "two"\nversion = "1.2.2"\n');
 const wrongCrate = run("--tag", "v1.2.3", "--main-ref", "main");
