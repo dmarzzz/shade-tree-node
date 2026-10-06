@@ -105,7 +105,7 @@ check("a link whose leaf does not belong to its commitment, or whose tier is not
 
 check("member status covers pending, active, exiting, withdrawable and unregistered (SDK states)", describeMember({ state: "active", limit: 1, finalized: false, now: 0 }).state === "pending"
   && describeMember({ state: "active", limit: 1, finalized: true, now: 0 }).state === "active"
-  && /^Admitted at tier 1/.test(describeMember({ state: "active", limit: 1, finalized: true, now: 0 }).message)
+  && (TIERS.length > 1 ? /^Admitted at tier 1\./ : /^Admitted\. The stake is final/).test(describeMember({ state: "active", limit: 1, finalized: true, now: 0 }).message)
   && describeMember({ state: "exiting", limit: 1, withdrawableAt: "1970-01-01T02:00:00Z", now: 0 }).state === "exiting"
   && describeMember({ state: "withdrawable", limit: 1, withdrawableAt: "1970-01-01T00:00:10Z", now: 20 }).state === "withdrawable"
   && describeMember({ state: "none", limit: 0, withdrawableAt: null, now: 0 }).state === "unregistered");

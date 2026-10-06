@@ -15,6 +15,9 @@ const RECORD = JSON.parse(readFileSync(new URL(`../../network/${SITE_NETWORK}/de
 const STAKED = RECORD.admission.roots.staked;
 const TIERS = STAKED.tiers;
 const DEFAULT = TIERS.find((t) => t.limit === STAKED.defaultLimit) || TIERS[0];
+// With one tier the page does not name it in status lines.
+const atTier = TIERS.length > 1 ? ` at tier ${DEFAULT.limit}` : "";
+const tierNote = TIERS.length > 1 ? `: a tier ${DEFAULT.limit} identity` : "";
 const BONDS = Object.fromEntries(TIERS.map((t) => [t.limit, t.bondWei]));
 const eth = (wei) => { const v = BigInt(wei); const whole = v / 10n ** 18n; const frac = (v % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, ""); return frac ? `${whole}.${frac}` : `${whole}`; };
 const stakeName = (tier) => new RegExp(`^Stake ${eth(tier.bondWei).replace(".", "\\.")} Sepolia ETH$`);
@@ -275,7 +278,7 @@ test("the pasted value is checked and each mistake is named", async ({ page }) =
   // The lines the CLI prints, pasted whole: the number is taken out and checked against its leaf.
   await field(page).fill(`  identity commitment ${IDC}\n  leaf ${leafAt(DEFAULT.limit)}`);
   await expect(field(page)).toHaveValue(IDC);
-  await expect(message(page)).toHaveText(`Checked against its leaf: a tier ${DEFAULT.limit} identity.`);
+  await expect(message(page)).toHaveText(`Checked against its leaf${tierNote}.`);
   await field(page).press("Enter");
   await expect(panel(page, "stake")).toBeVisible();
   await expect(page.locator("[data-commitment-shown]")).toHaveText(`${IDC.slice(0, 10)}…${IDC.slice(-8)}`);
@@ -300,7 +303,7 @@ test("a link's fragment fills the commitment and opens the stake step", async ({
   expect(copied).toMatch(new RegExp(`/stake/#c=${IDC}&limit=${DEFAULT.limit}&leaf=${leafAt(DEFAULT.limit)}$`));
   await panel(page, "stake").getByRole("link", { name: "Back", exact: true }).click();
   await expect(field(page)).toHaveValue(IDC);
-  await expect(message(page)).toHaveText(`From your link. Checked against its leaf: a tier ${DEFAULT.limit} identity.`);
+  await expect(message(page)).toHaveText(`From your link. Checked against its leaf${tierNote}.`);
 
   // The bare form works too, and a link that cannot be right stays on step 1 and says why.
   await page.goto("about:blank");
@@ -370,7 +373,7 @@ test("Get access stakes the pinned transaction for the pasted commitment and fol
 
   // The chain finalizes the block and the contract shows the member: admitted.
   await page.evaluate((limit) => { window.__answer = { eth_getBlockByNumber: { number: "0x101" } }; window.__member = { active: true, limit, finalized: true }; }, DEFAULT.limit);
-  await expect(page.locator("[data-member-state]")).toHaveText(`Admitted at tier ${DEFAULT.limit}. The stake is final and nodes accept this identity.`, { timeout: 20_000 });
+  await expect(page.locator("[data-member-state]")).toHaveText(`Admitted${atTier}. The stake is final and nodes accept this identity.`, { timeout: 20_000 });
   await expect(page.locator("[data-finality-panel]")).toBeHidden();
   await expectFits(page, "step 2, admitted");
   await expectAccessible(page);
@@ -390,7 +393,7 @@ test("a commitment that is already staked goes straight to its state and nothing
   await open(page);
   await toStake(page);
   await primary(page).click();
-  await expect(page.locator("[data-member-state]")).toHaveText(/^Admitted at tier/);
+  await expect(page.locator("[data-member-state]")).toHaveText(/^Admitted[ .]/);
   await expect(primary(page)).toBeHidden();
   expect(await page.evaluate(() => window.__walletCalls.some((call) => call.method === "eth_sendTransaction"))).toBe(false);
 });

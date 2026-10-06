@@ -14,7 +14,7 @@ node or canopy on a host.
 > the earlier incompatible pre-v4 deployment; they are not runnable defaults for this Proxy or
 > payments. The directory's separate `deployment.json` records the disposable v4 research canopy,
 > supplies its Elder and canopy-signer discovery default and the public Sepolia staking path. The
-> bundled client defaults are tier 8 (bond from the record, see docs/ECONOMICS.md), a fixed 60-second epoch, and a 40 MiB
+> bundled client defaults are limit 8 (one bond for every member, from the record, see docs/ECONOMICS.md), a fixed 60-second epoch, and a 40 MiB
 > combined tunnel ceiling. Invited credentials remain private; alternate canopies require explicit
 > membership and discovery inputs.
 

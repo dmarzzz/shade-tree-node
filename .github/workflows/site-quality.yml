@@ -18,7 +18,16 @@ on:
   # the `changes` job skips the browser run when a PR touches no site input,
   # and a skipped job satisfies the required check (HYG-10).
   pull_request:
+  # `update_snapshots: true` regenerates the visual baselines in this exact environment (the
+  # Linux runner CI compares against) and uploads test/site-browser/__screenshots__ as the
+  # artifact site-baselines-<run id>. It never commits. scripts/site-baselines.sh dispatches it on a
+  # branch and downloads the result for review (docs/RELEASING.md "Visual baselines").
   workflow_dispatch:
+    inputs:
+      update_snapshots:
+        description: "Regenerate Playwright visual baselines on the CI runner and upload them as an artifact"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,9 +79,24 @@ jobs:
         run: npm run test:site
 
       - name: Run browser, accessibility, and visual checks
+        if: ${{ !inputs.update_snapshots }}
         run: npm run test:site:browser
 
+      - name: Regenerate visual baselines (dispatch with update_snapshots)
+        if: ${{ inputs.update_snapshots }}
+        run: npx playwright test --config=playwright.config.mjs --update-snapshots
+
+      - name: Upload regenerated baselines
+        if: ${{ inputs.update_snapshots }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: site-baselines-${{ github.run_id }}
+          path: test/site-browser/__screenshots__/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run Lighthouse budgets
+        if: ${{ !inputs.update_snapshots }}
         run: npm run site:lighthouse
 
       - name: Upload browser and Lighthouse evidence

@@ -18,7 +18,7 @@
 //   node packages/node/lib/directory-compat.selftest.mjs
 
 import {
-  canonicalCaps, canonicalCapsForBytes, canonicalUnknownCaps, canonicalCapsBytes,
+  canonicalCaps, canonicalCapsForBytes, canonicalUnknownCaps,
   canonicalDirectoryBytes, hasCaps, setsOf, signCaps, signDirectory, verifyDirectory,
   ed25519PubFromSeed, ed25519Verify, pubkeyToOnion,
   MAX_CAPS_UNKNOWN_KEYS, MAX_CAPS_UNKNOWN_BYTES,
@@ -119,8 +119,8 @@ console.log("=== bounds: unknown passthrough cannot balloon or recurse ===");
   const huge = { blob: "x".repeat(MAX_CAPS_UNKNOWN_BYTES + 10) };
   ok(canonicalUnknownCaps(huge) === null, `> ${MAX_CAPS_UNKNOWN_BYTES}B of unknowns -> dropped`);
 
-  let deep = 0; let node = {};
-  let cur = node; for (let i = 0; i < 12; i++) { cur.n = {}; cur = cur.n; deep++; }
+  const node = {};
+  let cur = node; for (let i = 0; i < 12; i++) { cur.n = {}; cur = cur.n; }
   ok(canonicalUnknownCaps({ deep: node }) === null, "a too-deeply-nested unknown value -> dropped");
 
   const notFinite = { bad: Number.POSITIVE_INFINITY };

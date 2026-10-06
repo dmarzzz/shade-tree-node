@@ -49,6 +49,26 @@ Windows binaries are not Authenticode-signed; the attestation is the verificatio
 macOS binaries are signed and notarized when the credentials below are configured, and
 are otherwise verified the same way.
 
+## Visual baselines
+
+`site-quality` compares the landing and stake pages with screenshots in
+`test/site-browser/__screenshots__/`. When a change is meant to alter how a section looks (new
+copy, a new layout), regenerate the baselines on the CI runner, not on a laptop: fonts and GPU
+rasterization differ, and a Mac render fails on Linux. The `-macos` files are separate
+local-only baselines.
+
+```sh
+git push -u origin <branch>
+scripts/site-baselines.sh <branch>
+```
+
+The script dispatches `site-quality` with `update_snapshots: true` on the branch, waits, and
+copies the artifact `site-baselines-<run id>` into the working tree.
+- Open every changed image and keep only the sections your change explains.
+- Commit them, push, and let the normal `site-quality` run on the PR compare against them.
+- Without the script: `gh workflow run site-quality.yml --ref <branch> -f update_snapshots=true`,
+  then `gh run download <run id> -n site-baselines-<run id>`.
+
 ## Credentials and one-time setup
 
 | What | Where | Needed for |
