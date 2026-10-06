@@ -32,6 +32,8 @@ const LOCKED = join(DIR, vectors.locked);
 const LOCKED_LOW_COST = join(DIR, vectors.lockedLowCost);
 // Sealed by the Rust client after the scrypt 0.11 -> 0.12 bump (Dependabot #266).
 const LOCKED_SCRYPT012 = join(DIR, vectors.lockedScrypt012);
+// Sealed after the chacha20poly1305 0.10 -> 0.11 bump (Dependabot #262).
+const LOCKED_CHACHA011 = join(DIR, vectors.lockedChacha011);
 const PASSPHRASE = vectors.passphrase;
 
 let passed = 0;
@@ -67,7 +69,7 @@ try {
   });
 
   await test("the passphrase-protected files open with the passphrase to the same identity", () => {
-    for (const path of [LOCKED, LOCKED_LOW_COST, LOCKED_SCRYPT012]) {
+    for (const path of [LOCKED, LOCKED_LOW_COST, LOCKED_SCRYPT012, LOCKED_CHACHA011]) {
       const raw = JSON.parse(readFileSync(path, "utf8"));
       assert.ok(isEncryptedIdentityFile(raw));
       assert.equal(raw.identitySecret, undefined, "the sealed form carries no plaintext secret");
