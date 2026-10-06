@@ -192,7 +192,12 @@ Knobs, on `proxy`, `mcp` and `fetch`: `--max-wait <secs>`
 two epochs) and `--no-queue` for the old refuse-at-once contract. `shadenet
 proxy` also keeps a circuit to the two best nodes warm (`--warm N`, `--no-warm`,
 `SHADENET_WARM_NODES`), so the first fetch after a quiet spell skips the onion
-rendezvous, and `status` lists each node with its measured latency. After a
+rendezvous, and `status` lists each node with its measured latency. A first
+request still pays for proving and opening a session book (8 s or more); with
+`--preopen` (`SHADENET_PREOPEN=1`, `preopen_books = true`) the proxy opens a
+book ahead: one at start, then again while requests came in within the last 10
+minutes. Each book is one proof of the epoch's budget, and it keeps at least one
+proof for a request. After a
 node reports it could not reach a destination (`upstream:*`), the client tries
 once on another node before giving up. ADR 0013 has the design.
 

@@ -4,6 +4,21 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### `shadenet proxy --preopen`: a session book ready before the first request
+
+- A cold first request spent most of its time proving and opening a session book: 8 s or more
+  through a nearby node from a running proxy, and 68 s through Singapore from New York (task 71).
+- `--preopen` (`SHADENET_PREOPEN=1`, `preopen_books = true` in `config.toml`) opens a book ahead
+  of requests: one at start, then again after a book idles out or runs dry, but only while
+  requests came in within the last 10 minutes. An idle proxy stops spending proofs.
+- Each book costs one proof of the epoch's budget. A pre-open needs at least two proofs left, so
+  one stays for a request, and it never opens a second book while one still has tickets.
+- No wire change: a session initialization already carries no target (its signal binds the node,
+  class, nonce and book digest). The node accepts it as today.
+- Measured on the live canopy (2026-10-06, via gcc-shade-1): the book was pre-opened at start; the
+  first request then spent ticket 0 directly and returned in 9.9 s.
+- Off by default.
+
 ### CLI output names the budget, not a tier
 
 - The public record has one tier, so `init`, `doctor`, `status` and `plan` no longer print

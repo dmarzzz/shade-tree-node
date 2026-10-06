@@ -284,6 +284,12 @@ pub struct ProxyArgs {
     /// Do not warm circuits
     #[arg(long)]
     pub no_warm: bool,
+    /// Keep a session-ticket book open ahead of requests, so a first request starts at a ticket
+    /// instead of a proof and a book initialization: one at start, then again while requests came
+    /// in within the last 10 minutes. Each book costs one proof of the epoch's budget
+    /// [env: SHADENET_PREOPEN]
+    #[arg(long)]
+    pub preopen: bool,
     #[command(flatten)]
     pub queue: QueueArgs,
     /// Serve one CONNECT, then exit

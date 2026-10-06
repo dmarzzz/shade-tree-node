@@ -686,6 +686,13 @@ fn proxy(args: ProxyArgs, ctx: &Context) -> ExitCode {
         eprintln!("{} proxy listening on http://{bound}", invoked_name());
         client.spawn_canopy_refresh();
         client.spawn_warmer(warm, Duration::from_secs(60));
+        if args.preopen
+            || shadenet::env::flag("PREOPEN").unwrap_or(false)
+            || ctx.file.preopen_books.unwrap_or(false)
+        {
+            // Task 71: a first request otherwise pays for proving and initializing a book.
+            client.spawn_preopener(Duration::from_secs(600));
+        }
         let preflight = Arc::clone(&client);
         tokio::spawn(async move {
             let status = preflight.status().await;
