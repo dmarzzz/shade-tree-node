@@ -25,9 +25,6 @@
   <script type="application/ld+json">
     {"@context":"https://schema.org","@type":"WebSite","name":"ShadeNet","url":"https://shadenet.xyz/"}
   </script>
-  <script type="application/ld+json">
-    {"@context":"https://schema.org","@type":"SoftwareApplication","name":"ShadeNet","url":"https://shadenet.xyz/","applicationCategory":"DeveloperApplication","operatingSystem":"macOS, Linux","downloadUrl":"https://github.com/dmarzzz/shade-tree-node/releases","author":{"@type":"Person","name":"dmarz","url":"https://github.com/dmarzzz"},"keywords":"agent privacy, anonymous egress, Tor proxy, MCP, zero-knowledge, RLN"}
-  </script>
   <title>Anonymous Tor Egress for AI Agents · ShadeNet</title>
 </head>
 <body class="home-page">
@@ -75,7 +72,10 @@
   <main id="roles" class="home-main">
     <section class="about-panel" aria-labelledby="about-title">
       <h2 id="about-title">About</h2>
-      <p>The canopy of Shade Trees gives agents anonymous egress when the clearnet <a href="./research/">won’t let them through</a>.<br>Access is anonymous and zk&#8209;proof gated.</p>
+      <div>
+        <p>The canopy of Shade Trees gives agents anonymous egress when the clearnet <a href="./research/">won’t let them through</a>.<br>Access is anonymous and zk&#8209;proof gated.</p>
+        <p class="about-more">Built for LLM agents such as Hermes, Claude Code and Codex. <a href="./research/">Research: anonymous agent egress over Tor</a></p>
+      </div>
     </section>
 
     <section id="get-started" class="role-trails glyph-grove" aria-label="Ways to use ShadeNet">
@@ -109,6 +109,7 @@
                 <div class="step-body">
                   <p class="step-label">Agent setup</p>
                   <button class="copy-command task-copy" type="button" data-copy="Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.4 Rust -live binary (SHADENET_VERSION=v0.7.4). Run shadenet init; it writes identity.json and prints the identity commitment and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the identity commitment on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic." data-copy-target="agent-setup-task" data-copy-noun="Setup brief" aria-label="Copy ShadeNet setup brief for an AI agent">copy agent brief</button>
+                  <p class="step-note">Use it as a local HTTPS proxy, wrap a command with <code>shadenet run</code>, or add the MCP server (<code>shadenet mcp</code>).</p>
                 </div>
               </li>
             </ol>
@@ -152,7 +153,7 @@
     <section class="how-panel" aria-labelledby="how-title">
       <canvas class="shade-canvas" aria-hidden="true"></canvas>
       <h2 id="how-title">How it works</h2>
-      <p class="how-lede">ShadeNet is a Tor-based egress layer. The node sees <a href="https://www.torproject.org/">Tor</a>, not the Proxy host&rsquo;s source IP. Each tunnel carries a proof of membership in an admitted set that never reveals which member, and the node verifies it before egress. Read the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/specs/protocol.md">full protocol specification</a>.</p>
+      <p class="how-lede">ShadeNet is a Tor-based egress layer. The node sees <a href="https://www.torproject.org/">Tor</a>, not the Proxy host&rsquo;s source IP. Each tunnel carries a proof of membership in an admitted set that never reveals which member, and the node verifies it before egress. Each member gets a fixed number of anonymous tunnels per epoch (an RLN rate limit). Read the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/specs/protocol.md">full protocol specification</a>.</p>
       <figure class="how-figure" role="region" aria-label="ShadeNet protocol diagram" tabindex="0">
         <img src="./fig/shade-tree-readme.svg" width="1200" height="700" loading="lazy" decoding="async" alt="Top row, the reputation gate: an admitted set leads to a hidden leaf and proof, which a Shade Tree node verifies. Bottom row, the network path: an agent's local Proxy tunnels through Tor to a Shade Tree node and out to the destination. The Elder Tree only serves the signed canopy directory for discovery and carries no agent traffic.">
       </figure>

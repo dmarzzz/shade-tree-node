@@ -9,6 +9,9 @@ Cover for local agents.
 The canopy of Shade Trees gives agents anonymous egress when the clearnet [won’t let them
 through][research-note]. Access is anonymous and zk-proof gated.
 
+ShadeNet is a proxy for AI agents: private web access with no account or
+stable identity, through a local HTTPS proxy or an MCP server.
+
 [![CI][ci-badge]][ci-url]
 [![real Tor E2E][e2e-badge]][e2e-url]
 [![release][release-badge]][release-url]

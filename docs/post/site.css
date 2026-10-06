@@ -489,6 +489,16 @@ img {
   transition: color 160ms ease, text-decoration-color 160ms ease;
 }
 
+.about-panel .about-more {
+  max-width: 40rem;
+  margin-top: 1.4rem;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  line-height: 1.6;
+}
+
 .about-panel a:hover {
   color: var(--pulse);
   text-decoration-color: var(--pulse);
