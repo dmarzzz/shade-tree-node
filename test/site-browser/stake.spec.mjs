@@ -80,7 +80,14 @@ async function open(page, hash = "") {
   await expect(page.locator("html")).toHaveAttribute("data-access", "ready");
 }
 
+async function enterFlow(page) {
+  if (await panel(page, "setup").isVisible().catch(() => false)) return;
+  await page.locator(".access-paths").getByRole("link", { name: "Start" }).click();
+  await expect(panel(page, "setup")).toBeVisible();
+}
+
 async function toStake(page) {
+  await enterFlow(page);
   await field(page).fill(IDC);
   await panel(page, "setup").getByRole("link", { name: "Next" }).click();
   await expect(panel(page, "stake")).toBeVisible();
@@ -117,7 +124,24 @@ test("each step shows alone, fits the viewport, and is accessible", async ({ pag
   await open(page);
 
   await expect(page.getByRole("heading", { level: 1, name: "Get access" })).toBeVisible();
-  for (const name of ["stake", "start", "details"]) await expect(panel(page, name)).toBeHidden();
+  // First screen: the chooser shows both paths; the steps stay hidden until you start.
+  for (const name of ["setup", "stake", "start", "details"]) await expect(panel(page, name)).toBeHidden();
+  await expect(page.getByRole("heading", { level: 3, name: "For agents" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "For humans" })).toBeVisible();
+  await expect(page.locator(".access-paths [data-copy-brief]")).toBeVisible();
+  await expectFits(page, "the chooser");
+  await expectAccessible(page);
+
+  // The agent's whole brief copies from the first screen (shown as its first sentence, copied in full).
+  await page.locator(".access-paths").getByRole("button", { name: "copy agent brief" }).click();
+  const copiedBrief = await page.evaluate(() => navigator.clipboard.readText());
+  const landingHtml = readFileSync(new URL("../../docs/post/index.html", import.meta.url), "utf8");
+  const briefSource = landingHtml.match(/<code id="agent-setup-task"[^>]*>([\s\S]*?)<\/code>/)[1].trim().replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  expect(copiedBrief).toBe(briefSource);
+
+  await page.locator(".access-paths").getByRole("link", { name: "Start" }).click();
+  await expect(panel(page, "setup")).toBeVisible();
+  for (const name of ["choose", "stake", "start", "details"]) await expect(panel(page, name)).toBeHidden();
   await expect(page.locator('[data-step-link="setup"]')).toHaveAttribute("aria-current", "step");
   await expect(page.getByText("Run these on the machine where your agent runs.")).toBeVisible();
   await expectFits(page, "step 1, empty");
@@ -176,6 +200,7 @@ test("each step shows alone, fits the viewport, and is accessible", async ({ pag
 
 test("controls are at least 44 px tall and commands scroll in place where they do not fit", async ({ page }) => {
   await open(page);
+  await enterFlow(page);
   const targets = page.locator(".stepper a, .panel[data-current] .cmd button, .panel[data-current] .panel-nav a");
   for (const target of await targets.all()) {
     const box = await target.boundingBox();
@@ -220,6 +245,7 @@ test("the shared nav on Get access is the one every page has", async ({ page }) 
 
 test("the pasted value is checked and each mistake is named", async ({ page }) => {
   await open(page);
+  await enterFlow(page);
   const next = panel(page, "setup").getByRole("link", { name: "Next" });
 
   await next.click();
@@ -460,12 +486,6 @@ test("Start has a Human and an Agent tab, by click and by arrow keys, and the co
   await expect(page.getByRole("tabpanel", { name: "Agent" })).toBeVisible();
   await expect(page.getByRole("tabpanel", { name: "Human" })).toBeHidden();
   await expect(tabs.nth(1)).toBeFocused();
-  await page.getByRole("button", { name: "copy agent brief" }).click();
-  const brief = await page.evaluate(() => navigator.clipboard.readText());
-  // One brief on the site: the landing page's own.
-  const landing = readFileSync(new URL("../../docs/post/index.html", import.meta.url), "utf8");
-  const source = landing.match(/<code id="agent-setup-task"[^>]*>([\s\S]*?)<\/code>/)[1].trim().replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
-  expect(brief).toBe(source);
   await page.getByRole("button", { name: "Copy: Serve the ShadeNet MCP tools" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("shadenet mcp");
 });
@@ -493,8 +513,8 @@ test.describe("without JavaScript", () => {
     // Nothing that needs a script is offered.
     await expect(page.locator(".needs-script:visible")).toHaveCount(0);
     await expect(page.getByRole("tablist")).toBeHidden();
-    await expect(page.getByRole("heading", { level: 3, name: "Human" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 3, name: "Agent" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: "Human", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: "Agent", exact: true })).toBeVisible();
     // The step links are plain anchors and still move through the document.
     await page.locator('[data-step-link="start"]').click();
     await expect(page).toHaveURL(/#start$/);

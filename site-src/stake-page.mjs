@@ -154,7 +154,7 @@ export function renderStakePage({ clientRelease = CLIENT_RELEASE } = {}) {
   <meta property="og:image" content="https://shadenet.xyz/fig/shade-tree-og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A low-poly grove crossed by a private data path">
+  <meta property="og:image:alt" content="The ShadeNet canopy a staked identity joins for anonymous egress">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="canonical" href="https://shadenet.xyz/stake/">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
@@ -162,9 +162,12 @@ export function renderStakePage({ clientRelease = CLIENT_RELEASE } = {}) {
   <link rel="stylesheet" href="./stake.css">
   <script type="module" src="./stake.js"></script>
   <script type="application/ld+json">
-    {"@context":"https://schema.org","@type":"WebApplication","name":"ShadeNet Get Access","url":"https://shadenet.xyz/stake/","applicationCategory":"FinanceApplication","operatingSystem":"Web browser"}
+    {"@context":"https://schema.org","@type":"WebApplication","name":"ShadeNet Get Access","url":"https://shadenet.xyz/stake/","applicationCategory":"SecurityApplication","operatingSystem":"Web browser"}
   </script>
-  <title>Get Access · ShadeNet</title>
+  <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"ShadeNet","item":"https://shadenet.xyz/"},{"@type":"ListItem","position":2,"name":"Get access"}]}
+  </script>
+  <title>Get access to ShadeNet on ${CHAIN_NAME} · ShadeNet</title>
 </head>
 <body class="stake-page">
   <a class="skip-link" href="#access">Skip to the steps</a>
@@ -176,6 +179,21 @@ ${siteNav("stake", { indent: "  " })}
       <p class="access-net">Research preview on ${CHAIN_NAME}</p>
     </header>
 
+    <section class="panel access-paths" id="choose" data-panel="choose" data-current aria-labelledby="choose-title">
+      <h2 class="sr-only" id="choose-title" tabindex="-1">Choose how to get access</h2>
+      <div class="path">
+        <h3>For agents</h3>
+        <p class="path-lead">${agentBriefHtml().split(/(?<=\.)\s/)[0]}</p>
+        <button class="line-action needs-script" type="button" data-copy-brief>copy agent brief</button>
+        <p class="brief-text" id="agent-brief" data-brief hidden>${agentBriefHtml()}</p>
+      </div>
+      <div class="path">
+        <h3>For humans</h3>
+        <p class="path-lead">Do it yourself, step by step.</p>
+        <a class="solid-action" href="#setup" data-go="setup">Start</a>
+      </div>
+    </section>
+
     <nav class="stepper" aria-label="Steps" data-stepper>
       <ol>
         <li><a href="#setup" data-step-link="setup" aria-current="step"><span class="step-n">1</span> Set up</a></li>
@@ -185,7 +203,7 @@ ${siteNav("stake", { indent: "  " })}
     </nav>
 
     <div class="panels">
-      <section class="panel" id="setup" data-panel="setup" data-current aria-labelledby="setup-title">
+      <section class="panel" id="setup" data-panel="setup" aria-labelledby="setup-title">
         <h2 class="sr-only" id="setup-title" tabindex="-1">Step 1: set up with the CLI</h2>
         <div class="panel-split">
           <div class="split-main">
@@ -287,10 +305,6 @@ ${siteNav("stake", { indent: "  " })}
             </div>
             <div role="tabpanel" id="start-panel-agent" aria-labelledby="start-tab-agent">
               <h3 class="tab-title">Agent</h3>
-              <div class="brief">
-                <p class="brief-text" id="agent-brief" data-brief tabindex="0">${agentBriefHtml()}</p>
-                <button class="line-action needs-script" type="button" data-copy-brief>copy agent brief</button>
-              </div>
               ${command("Serve the ShadeNet MCP tools", "shadenet mcp")}
               <p>Serves <code>shadenet_fetch</code> and <code>shadenet_status</code> to any MCP client over stdio. In Claude Code: <code>claude mcp add shadenet -- shadenet mcp</code>.</p>
             </div>
