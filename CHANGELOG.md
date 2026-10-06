@@ -4,6 +4,24 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Record RPCs: publicnode out, tenderly in (task 19)
+
+- The Sepolia record's second member-set RPC was publicnode, which intermittently answers the
+  member-set `eth_getLogs` replay with `code 4444, pruned history unavailable`. That made
+  `doctor` fail, and SearXNG's proxy refused every CONNECT. It is replaced by
+  `https://sepolia.gateway.tenderly.co`; the list is now ethpandaops, tenderly.
+- Checked 2026-10-06:
+  - tenderly returns the full log from the set's deploy block and takes a burst of 20 calls
+    without throttling;
+  - the Rust client's `doctor --rpc` reports "member log complete (7 live / 11 slots)";
+  - both v4 preflights pass;
+  - the JS root provider resolves `finalized` to a block number before `eth_getLogs` (tenderly
+    rejects the tag itself).
+- Rejected: 1rpc.io (HTTP 429/400 under the preflight), drpc and onfinality (range limits), and
+  Blast (shut down).
+- `scripts/deploy-contracts.mjs` defaults to the same pair for future records.
+- The stake page bundle is rebuilt; its only change is this URL.
+
 ### `shadenet proxy --preopen`: a session book ready before the first request
 
 - A cold first request spent most of its time proving and opening a session book: 8 s or more

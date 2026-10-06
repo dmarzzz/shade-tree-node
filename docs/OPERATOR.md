@@ -971,7 +971,7 @@ SHADE_TREE_PAY_PROTOCOLS=x402,mpp            \   # T-FEAT-9: the rails you serve
 SHADE_TREE_PAID_ACCESS_CONTRACT=0x4e8C2Bf5d3c5454A04837401095fce2646484111 \   # network/sepolia/contracts.json contracts.paidAccessSet
 SHADE_TREE_PAY_ASSET=<stablecoin>            \   # Sepolia USDC 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238, or contracts.json payAsset (tUSD)
 SHADE_TREE_PAY_PRICES=8=100000,32=400000     \   # atomic units per tier (0.10 / 0.40 with 6 decimals)
-SHADE_TREE_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com \
+SHADE_TREE_RPC_URL=https://rpc.sepolia.ethpandaops.io \
   sudo -E bash packages/node/bootnode/deploy/bootstrap.sh
 # the operator key is a SECRET: 0600 drop-in via stdin, never argv / unit file / log
 sudo install -d -m 0755 /etc/systemd/system/shade-tree-registrar.service.d
