@@ -5,7 +5,7 @@
 // Verification uses RFC 8032 rules (zip215: false) to match OpenSSL in the Node backend, so a
 // signature one side rejects the other side rejects too.
 
-import { ed25519 } from "@noble/curves/ed25519";
+import { ed25519 } from "@noble/curves/ed25519.js";
 // @noble/hashes 2 exports explicit .js subpaths; sha256 lives in sha2.js.
 import { sha3_256 as nobleSha3 } from "@noble/hashes/sha3.js";
 import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";

@@ -24,7 +24,7 @@
     "pack:dry-run": "node scripts/pack.mjs --dry-run"
   },
   "dependencies": {
-    "@noble/curves": "1.2.0",
+    "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "ethers": "^6.17.0",
     "poseidon-lite": "^0.3.0",

@@ -6,6 +6,12 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Dependencies
 
+- @noble/curves 1.2.0 → 2.4.0, the browser backend's ed25519 (Dependabot #259). The import is
+  `@noble/curves/ed25519.js`; sign/verify (RFC 8032, `zip215: false`) are unchanged.
+  - ethers, @semaphore-protocol/proof and @zk-kit/lean-imt keep their own nested 1.x.
+  - `test/crypto-backends.selftest.mjs` (32 checks), directory forward-compat under both backends
+    and the SDK conformance vectors pass.
+  - The stake page bundle is byte-identical.
 - @noble/hashes 1.3.2 → 2.4.0, the browser crypto backend's sha256 and sha3-256
   (`packages/node/lib/crypto-browser.mjs`; Dependabot #260, merged as #330). v2 exports explicit `.js`
   subpaths, so the imports are `@noble/hashes/sha3.js` and `@noble/hashes/sha2.js`.
