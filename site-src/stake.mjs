@@ -142,8 +142,8 @@ export function describeMember({ state, limit, withdrawableAt, finalized, now })
 
 export function finalityEstimate(targetBlock, finalizedBlock) {
   const remaining = BigInt(targetBlock) - BigInt(finalizedBlock);
-  if (remaining <= 0n) return { final: true, seconds: 0 };
-  return { final: false, seconds: Number(remaining) * SLOT_SECONDS };
+  if (remaining <= 0n) return { final: true, seconds: 0, blocks: 0 };
+  return { final: false, seconds: Number(remaining) * SLOT_SECONDS, blocks: Number(remaining) };
 }
 
 // Whether a wallet can pay a tier's bond plus gas, as one sentence. Pure; balance and gas price in wei.
@@ -324,7 +324,26 @@ function mount() {
     announce("");
   }
 
+  // Phase 2: your leaf in the canopy. It appears when a valid commitment is set (step 1),
+  // and lights when the stake is final (admitted). A stable position from the commitment.
+  function seatFrac() {
+    if (!state.commitment) return 0.5;
+    try { return 0.16 + 0.68 * (Number(BigInt(state.commitment) % 997n) / 997); } catch { return 0.5; }
+  }
+  function syncCanopy() {
+    const c = window.ShadeCanopy;
+    if (!c) return;
+    if (state.commitment) {
+      if (!state.seated) { c.addSeat(seatFrac()); state.seated = true; }
+      if (state.stage === "final") c.lightSeat();
+    } else if (state.seated) {
+      c.clearSeat();
+      state.seated = false;
+    }
+  }
+
   function update() {
+    syncCanopy();
     const tier = tierFor(stakeLimit());
     const bond = tier ? `${formatEth(tier.bondWei)} ${CHAIN_NAME} ETH` : "";
     const staked = ["sent", "confirmed", "final", "left"].includes(state.stage);
@@ -394,6 +413,9 @@ function mount() {
     el.stepper.hidden = panel === "details";
     update();
     save();
+    // Re-part the canopy for the new content height (the grove fills the space below).
+    const band = document.querySelector(".canopy");
+    if (band) band.dispatchEvent(new Event("canopy:relayout"));
     if (push) {
       try { window.history.pushState({ panel }, ""); } catch {}
     }
@@ -530,7 +552,8 @@ function mount() {
           final = estimate.final;
           if (!final) {
             const minutes = Math.max(1, Math.round(estimate.seconds / 60));
-            el.finality.textContent = `Waiting for ${CHAIN_NAME} finality, about ${minutes} min left. You can go on to step 3 meanwhile.`;
+            const blocks = `${estimate.blocks} ${estimate.blocks === 1 ? "block" : "blocks"}`;
+            el.finality.textContent = `${blocks} to ${CHAIN_NAME} finality, about ${minutes} min. You can go on to step 3 meanwhile.`;
           }
         }
         if (final) {
@@ -710,7 +733,18 @@ function mount() {
     readBalance();
     if (state.stage === "ready") refreshMember();
   });
-  el.primary.addEventListener("click", () => (state.stage === "ready" ? stake() : connectWallet()));
+  // The physical commit: pressing Stake sweeps a fill across the full-strength button and locks,
+  // then the wallet request goes out. The short gesture (~240ms) is the deliberate lock, not a
+  // claim the stake landed; the guard keeps a second press from firing twice, and reduced motion
+  // skips straight to the action. The button only dims once stake() marks it busy, after the sweep.
+  function commit() {
+    const motion = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!motion) { stake(); return; }
+    if ("committing" in el.primary.dataset) return;
+    el.primary.dataset.committing = "";
+    window.setTimeout(() => { delete el.primary.dataset.committing; stake(); }, 240);
+  }
+  el.primary.addEventListener("click", () => (state.stage === "ready" ? commit() : connectWallet()));
   el.changeWallet.addEventListener("click", connectWallet);
   el.copyLink.addEventListener("click", () => {
     if (!state.commitment) return;

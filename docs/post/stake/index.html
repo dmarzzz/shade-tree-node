@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="../site.css">
   <link rel="stylesheet" href="./stake.css">
   <script type="module" src="./stake.js"></script>
-  <script src="../glyphgrove.js" defer></script>
+  <script src="./canopy.js" defer></script>
   <script type="application/ld+json">
     {"@context":"https://schema.org","@type":"WebApplication","name":"ShadeNet Get Access","url":"https://shadenet.xyz/stake/","applicationCategory":"SecurityApplication","operatingSystem":"Web browser"}
   </script>
@@ -45,8 +45,7 @@
     </div>
   </nav>
 
-  <main id="access" class="access glyph-grove">
-    <canvas class="glyph-canvas" aria-hidden="true"></canvas>
+  <main id="access" class="access">
     <header class="access-head">
       <h1>Get Access</h1>
       <p class="access-net">Research preview on Sepolia</p>
@@ -54,13 +53,13 @@
 
     <section class="panel access-paths" id="choose" data-panel="choose" data-current aria-labelledby="choose-title">
       <h2 class="sr-only" id="choose-title" tabindex="-1">Choose how to get access</h2>
-      <div class="path" data-clearing>
+      <div class="path">
         <h3>For agents</h3>
         <p class="path-lead">Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md.</p>
         <button class="line-action needs-script" type="button" data-copy-brief>copy agent brief</button>
         <p class="brief-text" id="agent-brief" data-brief hidden>Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.4 Rust -live binary (SHADENET_VERSION=v0.7.4). Run shadenet init; it writes identity.json and prints the identity commitment and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the identity commitment on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic.</p>
       </div>
-      <div class="path" data-clearing>
+      <div class="path">
         <h3>For humans</h3>
         <p class="path-lead">Do it yourself, step by step.</p>
         <a class="solid-action" href="#setup" data-go="setup">Start</a>
@@ -76,7 +75,7 @@
     </nav>
 
     <div class="panels">
-      <section class="panel" data-clearing id="setup" data-panel="setup" aria-labelledby="setup-title">
+      <section class="panel" id="setup" data-panel="setup" aria-labelledby="setup-title">
         <h2 class="sr-only" id="setup-title" tabindex="-1">Step 1: set up with the CLI</h2>
         <div class="panel-split">
           <div class="split-main">
@@ -107,7 +106,7 @@
         </div>
       </section>
 
-      <section class="panel" data-clearing id="stake" data-panel="stake" data-stage="idle" aria-labelledby="stake-title">
+      <section class="panel" id="stake" data-panel="stake" data-stage="idle" aria-labelledby="stake-title">
         <h2 class="sr-only" id="stake-title" tabindex="-1">Step 2: stake the bond</h2>
         <div class="panel-split">
           <div class="split-main split-facts">
@@ -159,7 +158,7 @@
         </div>
       </section>
 
-      <section class="panel" data-clearing id="start" data-panel="start" aria-labelledby="start-title">
+      <section class="panel" id="start" data-panel="start" aria-labelledby="start-title">
         <h2 class="sr-only" id="start-title" tabindex="-1">Step 3: start</h2>
         <div class="panel-split">
           <div class="split-notes">
@@ -212,7 +211,7 @@
         </div>
       </section>
 
-      <section class="panel" data-clearing id="details" data-panel="details" aria-labelledby="details-title">
+      <section class="panel" id="details" data-panel="details" aria-labelledby="details-title">
         <div class="panel-split">
           <div class="split-main more">
             <h2 id="details-title" tabindex="-1">Leave and details</h2>
@@ -265,6 +264,10 @@
           <a class="more-link" href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/THREAT-MODEL.md" rel="noreferrer">Threat model</a>
         </div>
       </section>
+    </div>
+
+    <div class="canopy glyph-grove" aria-hidden="true">
+      <canvas class="glyph-canvas"></canvas>
     </div>
   </main>
 </body>

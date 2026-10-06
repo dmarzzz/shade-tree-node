@@ -348,7 +348,7 @@ test("Get access stakes the pinned transaction for the pasted commitment and fol
   await page.evaluate(() => { window.__answer = { eth_getBlockByNumber: { number: "0xe0" } }; });
   await primary(page).click();
   await expect(page.locator("[data-status]")).toHaveText("Stake confirmed.");
-  await expect(page.locator("[data-finality]")).toHaveText(/Waiting for Sepolia finality, about \d+ min left\. You can go on to step 3 meanwhile\./);
+  await expect(page.locator("[data-finality]")).toHaveText(/^\d+ blocks? to Sepolia finality, about \d+ min\. You can go on to step 3 meanwhile\.$/);
   await expect(page.locator("[data-member-state]")).toBeHidden();
   await expect(primary(page)).toBeHidden();
   await expect(page.locator("[data-before-stake]")).toBeHidden();
@@ -531,9 +531,12 @@ test("Get access steps match their approved visual baselines", async ({ page }, 
   test.skip(!testInfo.config.updateSnapshots.match(/all|changed/) && names.some((name) => !existsSync(testInfo.snapshotPath(name))), `no reviewed ${process.platform} baselines for the Get access steps yet`);
   await mockWallet(page);
   await open(page);
-  await expect(page.locator(".access")).toHaveScreenshot(names[0], { timeout: 30_000 });
+  // The canopy grove is a live, animated canvas; masking it keeps the baseline on the chrome
+  // (type, hairlines, rows, the one amber action) deterministic while the grove drifts behind.
+  const mask = [page.locator(".canopy")];
+  await expect(page.locator(".access")).toHaveScreenshot(names[0], { timeout: 30_000, mask });
   await connect(page);
-  await expect(page.locator(".access")).toHaveScreenshot(names[1], { timeout: 30_000 });
+  await expect(page.locator(".access")).toHaveScreenshot(names[1], { timeout: 30_000, mask });
   await panel(page, "stake").getByRole("link", { name: "Next" }).click();
-  await expect(page.locator(".access")).toHaveScreenshot(names[2], { timeout: 30_000 });
+  await expect(page.locator(".access")).toHaveScreenshot(names[2], { timeout: 30_000, mask });
 });

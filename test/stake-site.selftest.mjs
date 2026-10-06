@@ -174,12 +174,48 @@ check("errors use an assertive alert region and progress a polite status", /data
   && /data-commitment-message role="status" aria-live="polite"/.test(html) && /aria-describedby="commitment-hint commitment-message"/.test(html));
 check("the stylesheet leaves the shared nav and the site's type tokens alone", !/\.site-nav|\.wordmark|\.nav-links|\.site-footer/.test(css)
   && !/--(display|sans|serif|mono|page)\s*:/.test(css) && !/^\.stake-page\s*{[^}]*font/m.test(css)
-  && !/gradient\((?!to right, #000)/.test(css) && !/border-radius:\s*(999|50%|[2-9]\dpx)/.test(css));
+  && !/border-radius:\s*(999|50%|[2-9]\dpx)/.test(css));
+// Phase 2 brings a material language: gradients are allowed, but only on the four sanctioned
+// surfaces (the command plate's edge mask, the glass panels, the canopy field veil, and the
+// commit-button fill), and none may be a neon or a full-strength wash.
+check("gradients stay restrained: only the sanctioned surfaces, no neon, no opaque wash", (() => {
+  const gradients = css.match(/(?:linear|radial)-gradient\([^;]*\)/g) || [];
+  const sanctioned = gradients.every((g) =>
+    /to right, #000/.test(g)                                    // .cmd pre edge mask
+    || /rgba\(227, 233, 221,/.test(g)                           // glass panels (site ink, tinted)
+    || /rgba\(12, 36, 25,|rgba\(4, 10, 7,/.test(g)              // canopy field veil
+    || /rgba\(255, 244, 214,/.test(g));                         // commit fill (the amber signal, warm)
+  const neon = /#(0f0|f0f|0ff|ff0|00f|f00)\b|\b(lime|magenta|fuchsia|cyan)\b|saturate\(1\.[5-9]/i.test(css);
+  const opaqueWash = gradients.some((g) => /rgba\([^)]*,\s*(0\.[6-9]\d*|1)\s*\)/.test(g) && !/to right, #000/.test(g));
+  return gradients.length && sanctioned && !neon && !opaqueWash;
+})());
 check("juice is event-only: motion lives under no-preference, nothing loops, and reduced motion stops every animation", /@media \(prefers-reduced-motion: no-preference\)/.test(css)
   && !/animation:[^;]*\binfinite\b/.test(css)
   && /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?animation: none !important;[\s\S]*?}/.test(css)
   && /\.finality-bar i\s*{[^}]*background: var\(--signal\)/.test(css)
   && /\.stepper a\[aria-current="step"\]::after\s*{[^}]*transform: scaleX\(1\)/.test(css));
+// Phase 2: the canopy is the page's one identity object, and the four real-state events animate
+// your leaf in it. The leaf appears on a valid commitment, the commit sweeps the button, finality
+// reads real blocks from the RPC, and admission lights the leaf.
+check("the canopy grove loads once, below the content, as the page's one identity object",
+  /<script src="\.\/canopy\.js" defer><\/script>/.test(html)
+  && count(html, /canopy\.js/g) === 1
+  && /<div class="canopy glyph-grove" aria-hidden="true">\s*<canvas class="glyph-canvas"><\/canvas>\s*<\/div>/.test(html)
+  && /\.canopy\s*{[^}]*flex: 1 1 0;[^}]*min-height: 0;[^}]*}/.test(css));
+check("event 1, your leaf appears on a valid commitment, and event 4 lights it on admission",
+  /function seatFrac\(\)/.test(source) && /function syncCanopy\(\)/.test(source)
+  && /c\.addSeat\(seatFrac\(\)\)/.test(source) && /state\.stage === "final"\) c\.lightSeat\(\)/.test(source)
+  && /else if \(state\.seated\) {\s*c\.clearSeat\(\)/.test(source)
+  && /syncCanopy\(\);/.test(source));
+check("event 2, the physical commit sweeps a fill across the Stake button and clears, off under reduced motion",
+  /function commit\(\)/.test(source) && /state\.stage === "ready" \? commit\(\) : connectWallet\(\)/.test(source)
+  && /prefers-reduced-motion: reduce.*matches/.test(source.replace(/\n/g, " "))
+  && /\[data-primary\]\[data-committing\]::after\s*{[^}]*animation: commit-fill/.test(css)
+  && /@keyframes commit-fill/.test(css));
+check("event 3, finality shows real blocks-to-finality from the RPC, never a fabricated timer",
+  (() => { const e = finalityEstimate(120, 100); return e.blocks === 20 && !e.final && finalityEstimate(100, 100).final; })()
+  && /\$\{blocks\} to \$\{CHAIN_NAME\} finality/.test(source) && /estimate\.blocks/.test(source)
+  && /eth_getBlockByNumber", \["finalized"/.test(source));
 check("touch targets are 44 px: steps, buttons, copy, tabs and the tier choice", /--tap: 2\.75rem/.test(css) && count(css, /min-height: var\(--tap\)/g) >= 8);
 check("commands never wrap inside a flag: they are preformatted and scroll sideways in place", /\.cmd pre\s*{[^}]*overflow-x: auto;[^}]*white-space: pre;/.test(css) && /mask-image/.test(css));
 const balanceOk = describeBalance({ balanceWei: 10n ** 18n, tier: TIERS[0], gasPriceWei: 10n ** 9n });
@@ -274,7 +310,7 @@ const vercel = JSON.parse(readFileSync(join(ROOT, "docs/post/vercel.json"), "utf
 const cspFor = (source) => vercel.headers.find((h) => h.source === source)?.headers.find((x) => x.key === "Content-Security-Policy")?.value || "";
 check("the site-wide CSP stays strict: same-origin scripts and connections only, no eval",
   /script-src 'self'/.test(cspFor("/(.*)")) && /connect-src 'self'/.test(cspFor("/(.*)")) && !/unsafe-eval/.test(cspFor("/(.*)"))
-  && !/'unsafe-eval'/.test(cspFor("/stake/(.*)")) && !/<script(?![^>]*src="\.\/stake\.js")(?![^>]*application\/ld\+json)/.test(html) && !/https?:\/\/[^"]+\.(js|css|woff2?)"/.test(html));
+  && !/'unsafe-eval'/.test(cspFor("/stake/(.*)")) && !/<script(?![^>]*src="\.\/stake\.js")(?![^>]*src="\.\/canopy\.js")(?![^>]*application\/ld\+json)/.test(html) && !/https?:\/\/[^"]+\.(js|css|woff2?)"/.test(html));
 
 // Same-origin status API: no parameters accepted, aggregate reads only, fails closed.
 const calls = [];
