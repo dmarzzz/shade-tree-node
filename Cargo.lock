@@ -5872,7 +5872,7 @@ dependencies = [
  "shadenet-proto",
  "shadenet-rln",
  "tokio",
- "toml 0.8.23",
+ "toml 1.1.4+spec-1.1.0",
  "tracing",
  "tracing-subscriber 0.3.23",
  "zeroize",
