@@ -82,12 +82,13 @@ docker run -d --name "$CONTAINER" \
              sed -i -E "s#http://(archive|security)\.ubuntu\.com/ubuntu/?#${APT_MIRROR%/}/#g" /etc/apt/sources.list.d/ubuntu.sources;
              echo "apt mirror: $APT_MIRROR";
            fi;
-           apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20";
+           apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::http::Pipeline-Depth=0";
+           # A stalled download trickles past apt'"'"'s idle timeout; kill the attempt and retry instead.
            for attempt in 1 2 3; do
              echo "$(date -u +%T) apt attempt $attempt: update";
-             apt-get $apt update -qq &&
+             timeout 90 apt-get $apt update -qq &&
                echo "$(date -u +%T) apt attempt $attempt: install systemd" &&
-               apt-get $apt install -y -qq systemd systemd-sysv && break;
+               timeout 120 apt-get $apt install -y -qq systemd systemd-sysv && break;
              echo "$(date -u +%T) apt attempt $attempt failed; retrying"; sleep 5;
            done;
            echo "$(date -u +%T) exec systemd";
@@ -95,9 +96,10 @@ docker run -d --name "$CONTAINER" \
            exec /lib/systemd/systemd' >/dev/null
 
 log "wait for systemd to come up"
-# apt runs before systemd, so a slow mirror spends this budget; apt's output lands in `docker logs`.
+# apt runs before systemd (three attempts of at most 210 s each), so it spends this budget;
+# apt's output lands in `docker logs`.
 ok=0
-for _ in $(seq 1 90); do
+for _ in $(seq 1 330); do
   [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = "true" ] || break
   state="$(docker exec "$CONTAINER" systemctl is-system-running 2>/dev/null || true)"
   case "$state" in
