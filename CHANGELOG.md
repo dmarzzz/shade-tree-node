@@ -6,6 +6,11 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Monitoring
 
+- The compose monitoring bundle scraped the heartbeat on 9102 and the Elder on 9103; the defaults
+  are heartbeat 9103 and Elder 9100, so `HeartbeatDown` and `BootnodeDown` fired on a healthy host.
+  `RpcEndpointFailing` and `CanopyPinDrift` used `severity: warn` and had no `component`; they now
+  use `warning` with `component: rpc` and `component: fleet`. `monitoring/alerts.selftest.mjs`
+  checks both (labels on every rule, compose ports against `bootstrap.sh`).
 - `CanopyPinDrift` compares release versions, not commits. The published node image is built at the
   release tag's commit while systemd hosts run the record's commit; both report the record's
   version, so the orbital-one container (0.7.4 at 6709328) no longer fires it next to the fleet

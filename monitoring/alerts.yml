@@ -140,7 +140,8 @@ groups:
         expr: sum by (instance, endpoint) (increase(shade_tree_rpc_failovers_total[15m])) > 3
         for: 15m
         labels:
-          severity: warn
+          severity: warning
+          component: rpc
         annotations:
           summary: "RPC endpoint {{ $labels.endpoint }} keeps failing on {{ $labels.instance }}"
           description: >-
@@ -154,7 +155,8 @@ groups:
         expr: count(count by (version) (shade_tree_build_info{job=~"shade-tree-(bootnode|gateway|heartbeat)"})) > 1
         for: 30m
         labels:
-          severity: warn
+          severity: warning
+          component: fleet
         annotations:
           summary: "Canopy roles run more than one release"
           description: >-

@@ -1,4 +1,6 @@
 # Scrapes this host's loopback metrics listeners (host network; Host header stays 127.0.0.1).
+# Ports are the bootstrap defaults (bootstrap.sh): Elder 9100, node 9101, heartbeat 9103
+# (the registrar's 9102 is not scraped here).
 global:
   scrape_interval: 30s
   evaluation_interval: 30s
@@ -11,9 +13,9 @@ scrape_configs:
         labels: { instance: local-node, role: node }
   - job_name: shade-tree-heartbeat
     static_configs:
-      - targets: ["127.0.0.1:9102"]
+      - targets: ["127.0.0.1:9103"]
         labels: { instance: local-node, role: heartbeat }
   - job_name: shade-tree-bootnode
     static_configs:
-      - targets: ["127.0.0.1:9103"]
+      - targets: ["127.0.0.1:9100"]
         labels: { instance: local-elder, role: elder }
