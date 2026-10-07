@@ -14,6 +14,17 @@
   var GOLD_TIERS = 8;
   var FEATHER = 56;
 
+  /* Your leaf is not one glyph but a small rosette, so it reads at a glance among thousands:
+     a dense centre and a diamond of leaves thinning outward. [dCol, dRow, weight]. */
+  var SEAT_PATTERN = [
+    [0, 0, 1.00],
+    [-1, 0, 0.66], [1, 0, 0.66], [0, -1, 0.66], [0, 1, 0.66],
+    [-1, -1, 0.46], [1, -1, 0.46], [-1, 1, 0.46], [1, 1, 0.46],
+    [0, -2, 0.30], [0, 2, 0.30], [-2, 0, 0.30], [2, 0, 0.30],
+    [-2, -1, 0.20], [2, -1, 0.20], [-2, 1, 0.20], [2, 1, 0.20],
+    [-1, -2, 0.20], [1, -2, 0.20], [-1, 2, 0.20], [1, 2, 0.20]
+  ];
+
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function hash(ix, iy, seed) {
@@ -170,7 +181,8 @@
     this.buildAtlas();
   };
 
-  /* your leaf: a reserved cell high in the crown, lit when admitted */
+  /* your leaf: a rosette high in the crown, findable from the moment it is placed, lit when
+     admitted. Only the cluster geometry is (re)built here; lit/litAt carry across a relayout. */
   Canopy.prototype.placeSeat = function () {
     if (!this.seat) return;
     var cell = this.cell;
@@ -178,6 +190,18 @@
     var row = Math.round((this.h * 0.14) / cell);
     this.seat.col = col; this.seat.row = row;
     this.seat.x = col * cell; this.seat.y = row * cell;
+    var cluster = [];
+    for (var i = 0; i < SEAT_PATTERN.length; i++) {
+      var p = SEAT_PATTERN[i], w = p[2];
+      var x = (col + p[0]) * cell, y = (row + p[1]) * cell;
+      if (x < -cell || y < -cell || x > this.w || y > this.h) continue;
+      cluster.push({
+        x: x, y: y, w: w,
+        ch: Math.max(2, Math.min(RAMP.length - 1, Math.round(w * (RAMP.length - 1)))),
+        cf: this.clearingFactor(x + cell / 2, y + cell / 2)
+      });
+    }
+    this.seat.cluster = cluster;
   };
 
   Canopy.prototype.buildAtlas = function () {
@@ -232,16 +256,36 @@
       ctx.drawImage(this.atlas, cl.ch * s, tier * s, s, s,
         Math.round(cl.x * dpr), Math.round(cl.y * dpr), s, s);
     }
-    /* your seat */
-    if (this.seat && this.seat.x != null) {
+    /* your seat: a rosette, not a dot. Unlit it is a pale-green cluster, lifted above the
+       canopy and gently breathing so it is findable at a glance. On admission it flares gold
+       for one beat, then settles a touch brighter than the canopy. One easing, glow at half. */
+    if (this.seat && this.seat.cluster) {
+      var cl = this.seat.cluster;
       var lit = this.seat.lit;
-      var pulse = still ? 1 : 0.8 + 0.2 * Math.sin(t * TAU * 0.5);
-      var row = lit
-        ? GREEN_TIERS + Math.min(GOLD_TIERS - 1, Math.round(((still ? 0.9 : 0.75 + 0.25 * pulse)) * (GOLD_TIERS - 1)))
-        : Math.min(GREEN_TIERS - 1, Math.round((lit ? 0.9 : 0.5) * (GREEN_TIERS - 1)));
-      var ch = lit ? RAMP.length - 1 : 8; /* a bright leaf when lit */
-      ctx.drawImage(this.atlas, Math.min(RAMP.length - 1, ch) * s, row * s, s, s,
-        Math.round(this.seat.x * dpr), Math.round(this.seat.y * dpr), s, s);
+      /* one-beat flare: fast rise, ease down to the settled level by ~0.7 s */
+      var flare = 0;
+      if (lit) {
+        var ft = still ? 2 : (t - this.seat.litAt);
+        if (ft < 0) ft = 0;
+        flare = ft < 0.10 ? ft / 0.10 : Math.max(0, 1 - (ft - 0.10) / 0.60);
+      }
+      /* a slow locator breath while unlit so the eye lands on it in motion */
+      var breath = (still || lit) ? 1 : (0.86 + 0.14 * Math.sin(t * TAU * 0.3));
+      for (var k = 0; k < cl.length; k++) {
+        var sc = cl[k];
+        if (sc.cf < 0.05) continue;
+        var level = lit
+          ? (0.42 + 0.48 * sc.w) + flare * (0.45 + 0.55 * sc.w)
+          : (0.14 + 0.84 * sc.w) * breath;
+        level *= sc.cf;
+        if (level <= 0.03) continue;
+        if (level > 1) level = 1;
+        var srow = lit
+          ? GREEN_TIERS + Math.min(GOLD_TIERS - 1, Math.round(level * (GOLD_TIERS - 1)))
+          : Math.min(GREEN_TIERS - 1, Math.round(level * (GREEN_TIERS - 1)));
+        ctx.drawImage(this.atlas, sc.ch * s, srow * s, s, s,
+          Math.round(sc.x * dpr), Math.round(sc.y * dpr), s, s);
+      }
     }
   };
 
@@ -254,9 +298,15 @@
   Canopy.prototype.stop = function () { this.running = false; };
 
   /* API for the stake flow (the events layer): place and light your leaf */
-  Canopy.prototype.addSeat = function (frac) { this.seat = { frac: frac == null ? 0.5 : frac, lit: false }; this.placeSeat(); };
-  Canopy.prototype.lightSeat = function () { if (this.seat) this.seat.lit = true; };
-  Canopy.prototype.clearSeat = function () { this.seat = null; };
+  Canopy.prototype.now = function () { return (performance.now() - this.t0) / 1000; };
+  /* when motion is off the loop is not running, so seat changes repaint the still frame */
+  Canopy.prototype.repaint = function () { if (this.ctx && !this.running) this.drawFrame(0, true); };
+  Canopy.prototype.addSeat = function (frac) { this.seat = { frac: frac == null ? 0.5 : frac, lit: false, litAt: 0 }; this.placeSeat(); this.repaint(); };
+  Canopy.prototype.lightSeat = function () { if (this.seat && !this.seat.lit) { this.seat.lit = true; this.seat.litAt = this.now(); this.repaint(); } };
+  Canopy.prototype.clearSeat = function () { this.seat = null; this.repaint(); };
+  /* small introspection helpers for tests */
+  Canopy.prototype.hasSeat = function () { return !!(this.seat && this.seat.cluster); };
+  Canopy.prototype.seatLit = function () { return !!(this.seat && this.seat.lit); };
 
   function init() {
     var sections = document.querySelectorAll('.glyph-grove');
