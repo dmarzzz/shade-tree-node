@@ -157,7 +157,11 @@ check("page template hard-codes no bond, contract, rate or unbonding value", !/0
 check("step 3 has a Human and an Agent tab with commands the released client has", /id="start-tab-human"[^>]*aria-controls="start-panel-human"/.test(html) && /id="start-tab-agent"[^>]*aria-controls="start-panel-agent"/.test(html)
   && /<code>shadenet status --wait<\/code>/.test(html) && /<code>shadenet proxy<\/code>/.test(html)
   && /<code>shadenet run --no-proxy api\.openai\.com -- your-agent<\/code>/.test(html) && /<code>shadenet mcp<\/code><\/pre>/.test(html)
-  && /claude mcp add shadenet -- shadenet mcp/.test(html) && !/shadenet plan|shadenet_plan|shadenet_search/.test(html));
+  && /claude mcp add shadenet -- shadenet mcp/.test(html)
+  // The MCP line names the tools v0.7.4 actually serves: fetch, status and plan always, and search
+  // only with --searxng-url (crates/shadenet-cli/src/mcp.rs).
+  && /<code>shadenet_fetch<\/code>, <code>shadenet_status<\/code> and <code>shadenet_plan<\/code>/.test(html)
+  && /<code>shadenet_search<\/code> when you pass <code>--searxng-url<\/code>/.test(html));
 // The agent vs human split stays visible at every step: step 1 carries it as a For-humans (CLI) /
 // For-agents (copy brief) tab pair, and every step can return to the chooser.
 check("step 1 keeps the agent and human split, and every step can go back to start", /id="setup-tab-human"[^>]*aria-controls="setup-panel-human"/.test(html) && /id="setup-tab-agent"[^>]*aria-controls="setup-panel-agent"/.test(html)

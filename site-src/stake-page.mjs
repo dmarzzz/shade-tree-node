@@ -324,7 +324,7 @@ ${siteNav("stake", { indent: "  " })}
             <div role="tabpanel" id="start-panel-agent" aria-labelledby="start-tab-agent">
               <h3 class="tab-title">Agent</h3>
               ${command("Serve the ShadeNet MCP tools", "shadenet mcp")}
-              <p>Serves <code>shadenet_fetch</code> and <code>shadenet_status</code> to any MCP client over stdio. In Claude Code: <code>claude mcp add shadenet -- shadenet mcp</code>.</p>
+              <p>Serves <code>shadenet_fetch</code>, <code>shadenet_status</code> and <code>shadenet_plan</code> to any MCP client over stdio, plus <code>shadenet_search</code> when you pass <code>--searxng-url</code>. In Claude Code: <code>claude mcp add shadenet -- shadenet mcp</code>.</p>
             </div>
           </div>
         </div>
