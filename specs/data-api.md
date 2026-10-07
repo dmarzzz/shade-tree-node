@@ -27,7 +27,7 @@ Public copy calls the bootnode the **Elder Tree** and its signed directory the
 
 The Sepolia source now points at the disposable Protocol v4 research Grove
 recorded in [`network/sepolia/deployment.json`](../network/sepolia/deployment.json):
-two dedicated Elder Trees and three dedicated Shade Tree nodes. The fleet admits
+two dedicated Elder Trees and the Shade Tree nodes that announce to them. The fleet admits
 invited and staked Sepolia members and uses proof keys from an adopted,
 re-verified RLN trusted setup; it is not a production security claim. The hosted observer's earlier read-only pre-v4
 compatibility switch is disabled. Client discovery, routing, announcements, and
@@ -154,11 +154,11 @@ the project link and deploy with `vercel --prod`, then repeat the endpoint and
 Grove-page checks. Never put the Grove signing private key in Vercel: the
 function verifies snapshots and does not sign them.
 
-The three-node research Grove immediately supplies announced count and bounded
+The research Grove immediately supplies announced count and bounded
 growth history. Relay-byte publication is intentionally still suppressed: the
 v2 contract requires at least five reporting node identities, and unavailable
-or sub-cohort input is never represented as zero. Enabling private relay
-reporting on only these three nodes would not make a public byte total eligible.
+or sub-cohort input is never represented as zero. Private relay
+reporting is still off across the fleet, so no public byte total is published yet.
 
 Operator Prometheus endpoints are a separate, loopback-only system. The Elder
 Tree, nodes, heartbeats, registrars, and Proxies do not upload those metrics to

@@ -158,6 +158,11 @@ async function main() {
     ok(wj.bootnodeReachable === true, "wrong signer -> still reachable (signature is what fails)");
     ok(wj.signerOk === false, "wrong signer -> signerOk:false");
 
+    // Rotation pin: a comma-separated list (what network-record.mjs sets for a two-signer record).
+    const l = runProbe({ SHADE_TREE_BOOTNODE_URL: base, SHADE_TREE_DIR_SIGNER: `${other.pub}, ${signer.pub}` });
+    const lj = JSON.parse(l.stdout.trim().split("\n").pop());
+    ok(l.status === 0 && lj.ok === true && lj.signerOk === true, "comma-separated signer list -> healthy when one pin matches");
+
     // 3. STALE, VALIDLY SIGNED DIRECTORY -----------------------------------
     console.log("\nstale signed directory:");
     const s = runProbe({ SHADE_TREE_BOOTNODE_URL: staleBase, SHADE_TREE_DIR_SIGNER: signer.pub });
@@ -216,7 +221,8 @@ async function main() {
     console.log("\nSHADE_TREE_NETWORK record:");
     const nEnv = runProbe({ SHADE_TREE_NETWORK: "sepolia", SHADE_TREE_BOOTNODE_URL: base, SHADE_TREE_DIR_SIGNER: signer.pub });
     ok(nEnv.status === 0, "SHADE_TREE_NETWORK + explicit URL/signer -> explicit env wins, healthy");
-    const nOnly = runProbe({ SHADE_TREE_NETWORK: "sepolia" });
+    // A closed Tor port keeps this hermetic: with a reachable Tor the live record would verify.
+    const nOnly = runProbe({ SHADE_TREE_NETWORK: "sepolia", SHADE_TREE_TOR_PORT: "1" });
     let nj = {};
     try { nj = JSON.parse(nOnly.stdout.trim()); } catch {}
     ok(nOnly.status !== 0 && nj.ok === false, "SHADE_TREE_NETWORK alone (no live bootnode in the record, or a live one unreachable here) -> unhealthy, not a crash");

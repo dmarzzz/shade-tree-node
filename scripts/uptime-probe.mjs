@@ -152,10 +152,12 @@ export async function observeFleet() {
   // onion/signer inputs. `allowRetired` only suppresses the record-level guard; retired records
   // still supply zero defaults, so the explicit coordinates remain mandatory.
   try { applyNetworkEnv(process.env, { allowRetired: true }); } catch (e) { result.reason = "misconfig:" + scrub(e.message).split("\n")[0]; return { result, health, directory }; }
-  const pinnedSigner = process.env.SHADE_TREE_DIR_SIGNER;
+  // A record with more than one Elder signer sets a comma-separated list (network-record.mjs);
+  // verifyDirectory takes a list, and a joined string would match no signer.
+  const pinnedSigner = (process.env.SHADE_TREE_DIR_SIGNER || "").split(",").map((s) => s.trim()).filter(Boolean);
   const fetchJson = makeFetcher({ preferUrl: explicitUrl });
   if (!fetchJson) { result.reason = "misconfig:set SHADE_TREE_BOOTNODE_ONION or SHADE_TREE_BOOTNODE_URL"; return { result, health, directory }; }
-  if (!pinnedSigner) { result.reason = "misconfig:set SHADE_TREE_DIR_SIGNER (pinned signer)"; return { result, health, directory }; }
+  if (!pinnedSigner.length) { result.reason = "misconfig:set SHADE_TREE_DIR_SIGNER (pinned signer)"; return { result, health, directory }; }
 
   if (process.env.SHADE_TREE_BOOTNODE_ONION && !(explicitUrl && process.env.SHADE_TREE_BOOTNODE_URL) && !(await localTorUp())) {
     result.status = "unknown";

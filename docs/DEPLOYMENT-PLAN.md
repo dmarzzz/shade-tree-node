@@ -27,8 +27,8 @@ in source) verifies the v4 proof before it opens destination egress.
 ## Current inventory
 
 - The Vercel site, canopy page, and signed v1/v2 Data API are deployed from `docs/post`.
-- Two dedicated Protocol v4 Elder Trees and three dedicated Shade Tree nodes run on Ubuntu 24.04
-  across DigitalOcean New York, San Francisco, and Amsterdam. The provider-visible addresses,
+- Two Protocol v4 Elder Trees and the Shade Tree nodes in the signed canopy run on Ubuntu 24.04
+  and the node image, across several DigitalOcean regions and operator hardware. The provider-visible addresses,
   SSH inventory, OpenTofu state, and private identity backups remain outside this repository.
 - The v4 canopy admits invited members and public Sepolia stakers (`admission.paths` in the
   record) and accepts only the artifact ids pinned in its record. Its `security.proofArtifacts`
@@ -38,8 +38,8 @@ in source) verifies the v4 proof before it opens destination egress.
   closed. This is disposable research infrastructure, not production and not
   suitable for real funds or sensitive traffic. The M8 deploy and the trusted-setup adoption it
   was blocked on have landed; any production deployment beyond this preview still depends on
-  final economics (H2).
-- The Elder's signed canopy directory has three fresh Protocol v4 announcements. Signer-pinned probes over
+  an explicit production review (economics H2 is final for the preview: `network/sepolia/economics.json`).
+- At go-live the Elder's signed canopy directory had three fresh Protocol v4 announcements. Signer-pinned probes over
   Tor and real HTTPS CONNECT tunnels through all three nodes passed at go-live.
 - The isolated `agent-devops/tofu/environments/shade-tree-v4` state and `deploy/v4` Ansible role
   own reconciliation and teardown. Do not operate the older shared fleet environment.

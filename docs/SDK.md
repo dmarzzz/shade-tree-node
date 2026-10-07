@@ -9,12 +9,10 @@ Node, with the same error codes as the Rust SDK. `createClient` in `@shadenet/sd
 access proofs, chooses a node, and opens a raw HTTPS tunnel without starting
 the local proxy. The proxy in `packages/node/client/shim.mjs` uses the same class.
 
-This document covers the shipped JavaScript API. There is no public
-in-process Rust API yet. Rust applications should use the live binary's
+This document covers the shipped JavaScript API. Rust applications can use the
+in-process `shadenet` crate ([crates/README.md](../crates/README.md)) or the live binary's
 embedded-Arti CONNECT proxy described in
-[CLIENTS.md](CLIENTS.md#option-c-self-contained-rust-proxy-embedded-arti); the
-reusable Rust crate is tracked in
-[ROADMAP.md §2.6](ROADMAP.md#26-reusable-in-process-rust-client--p2).
+[CLIENTS.md](CLIENTS.md#option-c-self-contained-rust-proxy-embedded-arti).
 
 For most existing agents, the smaller integration is still:
 
@@ -39,7 +37,7 @@ npm install git+https://github.com/dmarzzz/shade-tree-node.git
 Then use the exported client surface:
 
 ```js
-import { ShadeTreeClient, cleanUp } from "shade-tree-node/client";
+import { ShadeTreeClient, cleanUp } from "shade-tree-node/packages/node/client";
 ```
 
 Pin the Git URL to a commit for a reproducible build. Everything else beneath
@@ -68,7 +66,7 @@ an environment fallback is listed below; test injection hooks such as
 | `torHost` | `SHADE_TREE_TOR_HOST` | `127.0.0.1` | Tor SOCKS host. |
 | `torPort` | `SHADE_TREE_TOR_PORT` | `9250` | Tor SOCKS port. The bundled client script uses `9260`. |
 | `socksIsolation` | `SHADE_TREE_SOCKS_ISOLATION` | enabled | Give each CONNECT tunnel distinct SOCKS credentials. This isolates Tor streams only when the Tor endpoint enables `IsolateSOCKSAuth`. |
-| `limit` | `SHADE_TREE_LIMIT` | bundled network `defaultLimit` (current Sepolia: `1`), otherwise `8` | The private rate tier used when the member leaf was enrolled. |
+| `limit` | `SHADE_TREE_LIMIT` | bundled network `defaultLimit` (current Sepolia: `8`), otherwise `8` | The private rate tier used when the member leaf was enrolled. |
 | `ratePolicy` | none | bundled network policy when using bundled discovery | Expected fixed epoch, root freshness, and payload ceiling. Dynamic selection fails closed when a node's onion-signed `caps.rate` is absent or different. |
 | `slotStateDir` | `SHADE_TREE_SLOT_STATE_DIR` | `$XDG_STATE_HOME/shade-tree/rln-slots` or `~/.local/state/shade-tree/rln-slots` | Parent for default-on RLN allocation state, namespaced by the public identity commitment. |
 | `leafSource` | `SHADE_TREE_LEAF_SOURCE` | `auto` | Pin `invited`, `staked`, or `paid` membership discovery. |
@@ -180,7 +178,7 @@ callbacks are best-effort and do not change the result.
 request so the proof worker can exit:
 
 ```js
-import { ShadeTreeClient, cleanUp } from "shade-tree-node/client";
+import { ShadeTreeClient, cleanUp } from "shade-tree-node/packages/node/client";
 
 const shadeTree = new ShadeTreeClient({
   secret: process.env.SHADE_TREE_SECRET,

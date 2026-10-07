@@ -5,7 +5,7 @@
 #   docker compose stop                 # retire: the node leaves every Elder within 15 minutes
 services:
   shadenet-node:
-    image: ghcr.io/dmarzzz/shadenet-node:0.7.1
+    image: ghcr.io/dmarzzz/shadenet-node:0.7.4
     container_name: shadenet-node
     restart: unless-stopped
     environment:

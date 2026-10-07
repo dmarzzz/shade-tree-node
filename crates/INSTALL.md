@@ -16,16 +16,16 @@ Tagged releases publish two variants:
 | Variant | Includes | Published targets |
 | --- | --- | --- |
 | default | directory and receipt verification, selection, cache | Linux x86_64/aarch64 (GNU and musl), macOS x86_64/aarch64, Windows x86_64 |
-| `-live` | default features plus identity creation, RLN proving, embedded Tor, Proxy, and `run` | Linux x86_64/aarch64 (GNU and musl), macOS aarch64, Windows x86_64 |
+| `-live` | default features plus identity creation, RLN proving, embedded Tor, Proxy, and `run` | Linux x86_64/aarch64 (GNU and musl), macOS x86_64/aarch64, Windows x86_64 |
 
 Every binary has a matching `.sha256`, SPDX SBOM, GitHub build-provenance
-attestation, and SBOM attestation. The `-live` build embeds the repository's
-testnet RLN artifacts; review
+attestation, and SBOM attestation. The `-live` build embeds the RLN artifacts
+adopted from PSE's trusted setup; review
 [`../circuits/rln/ARTIFACTS.md`](../circuits/rln/ARTIFACTS.md) before use.
 
 > [!WARNING]
-> v0.6 is an unaudited research preview built with testnet-only RLN setup
-> artifacts. Do not use it as a production anonymity or security boundary.
+> v0.7 is an unaudited research preview whose RLN keys come from an adopted,
+> re-verified trusted setup. Do not use it as a production anonymity or security boundary.
 
 ## One-line install
 
@@ -44,11 +44,11 @@ Only a missing live checksum or binary triggers a clearly reported fallback to
 that same release's verifier-only binary; network, TLS, and integrity failures
 remain fail-closed. `SHADENET_LIVE=1` disables fallback. On Apple Silicon the
 installer detects an x86_64 shell running under Rosetta and selects the native
-arm64 live asset. Intel macOS (`x86_64-apple-darwin`) has no live asset.
+arm64 live asset. Intel macOS (`x86_64-apple-darwin`) has a live asset from v0.7.0-rc.1 on.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SHADENET_VERSION` | latest release | Pin a release, such as `v0.6.0` or `0.6.0` |
+| `SHADENET_VERSION` | latest release | Pin a release, such as `v0.7.4` or `0.7.4` |
 | `SHADENET_LIVE` | `auto` | `auto` probes live, falling back only when that release lacks it; `1` requires live; `0` installs verifier-only |
 | `SHADENET_INSTALL_DIR` | `$HOME/.local/bin` | User-writable destination directory, created if missing |
 | `SHADENET_FORCE` | `0` | `1` explicitly permits replacing a destination symlink to a file; directory links are always refused |
@@ -62,7 +62,7 @@ target selection:
 ```sh
 curl -q -fsSL --proto '=https' --proto-redir '=https' \
   https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \
-  | SHADE_TREE_VERSION=v0.6.0 sh
+  | SHADENET_VERSION=v0.7.4 sh
 ```
 
 The one-liner downloads code before you inspect it. To review it first, save it
@@ -74,14 +74,14 @@ installer on x86_64 Windows; PowerShell users can use the manual process below.
 Choose the `-live` asset for your platform from the
 [latest release](https://github.com/dmarzzz/shade-tree-node/releases/latest).
 Linux users can choose GNU for ordinary glibc distributions or musl for a
-statically linked libc target. This x86_64 GNU example installs v0.6.0; change
+statically linked libc target. This x86_64 GNU example installs v0.7.4; change
 `TARGET` to another published target from the table above when needed. `-q`
 must be curl's first option so user configuration cannot disable TLS checks:
 
 ```sh
-VERSION=0.6.0
+VERSION=0.7.4
 TARGET=x86_64-unknown-linux-gnu
-ASSET="shade-tree-$VERSION-$TARGET-live"
+ASSET="shadenet-$VERSION-$TARGET-live"
 curl -q -fLO --proto '=https' --proto-redir '=https' \
   "https://github.com/dmarzzz/shade-tree-node/releases/download/v$VERSION/$ASSET"
 curl -q -fLO --proto '=https' --proto-redir '=https' \
@@ -89,8 +89,8 @@ curl -q -fLO --proto '=https' --proto-redir '=https' \
 sha256sum -c "$ASSET.sha256"
 chmod +x "$ASSET"
 mkdir -p "$HOME/.local/bin"
-install -m 0755 "$ASSET" "$HOME/.local/bin/shade-tree"
-shade-tree --version
+install -m 0755 "$ASSET" "$HOME/.local/bin/shadenet"
+shadenet --version
 ```
 
 The checksum detects transfer corruption or mismatch, but does not establish
@@ -110,14 +110,14 @@ the macOS asset is checksummed and attested but not notarized. After verifying
 the checksum, remove a Gatekeeper quarantine attribute if macOS added one:
 
 ```sh
-xattr -d com.apple.quarantine ./shade-tree-0.6.0-aarch64-apple-darwin-live
+xattr -d com.apple.quarantine ./shadenet-0.7.4-aarch64-apple-darwin-live
 ```
 
 On Windows, compare the digest printed by PowerShell with the contents of the
 downloaded `.sha256` file before renaming the binary:
 
 ```powershell
-Get-FileHash .\shade-tree-0.6.0-x86_64-pc-windows-msvc-live.exe -Algorithm SHA256
+Get-FileHash .\shadenet-0.7.4-x86_64-pc-windows-msvc-live.exe -Algorithm SHA256
 ```
 
 ## No-Node agent quickstart
@@ -132,7 +132,7 @@ shade-tree register-member --identity identity.json --key-file funded-sepolia.ke
 shade-tree member-status --identity identity.json --json
 ```
 
-The payer may register an agent's public leaf as a sponsor without receiving its
+The payer may register an agent's identity commitment (`shadenet init` prints it; never the leaf) as a sponsor without receiving its
 identity file. The sponsor's address, leaf, amount, and timing are public and the
 sponsor bears the slashing risk; only the identity holder can use or recover the
 membership.
@@ -232,7 +232,7 @@ a replacement.
 
 `identity.json` contains the member secret and must remain local. RLN slot
 allocation is default-on and coordinates with JavaScript clients under the
-public leaf in `SHADE_TREE_SLOT_STATE_DIR` (or the OS user-state directory).
+identity commitment in `SHADE_TREE_SLOT_STATE_DIR` (or the OS user-state directory).
 `--slot-cursor <file>` is an exact state-path override, not an opt-in. The
 manual `--slot` bypass requires
 `--unsafe-allow-slot-reuse-for-slashing-tests` and must never be used with a
@@ -277,12 +277,12 @@ Repository contributors can use the pinned Rust toolchain and a C compiler:
 
 ```sh
 git clone https://github.com/dmarzzz/shade-tree-node.git
-cd shade-tree-node/rust
+cd shade-tree-node
 
 cargo build --release -p shadenet-cli
 cargo build --release -p shadenet-cli --features live
 ```
 
-The result is `target/release/shade-tree` (or `shade-tree.exe` on Windows).
+The result is `target/release/shadenet` and `target/release/shade-tree` (`.exe` on Windows).
 Node.js remains part of the operator stack and some cross-language repository
 tests; it is not required by the installed agent binary.

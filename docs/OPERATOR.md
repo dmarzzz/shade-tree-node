@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > Public-host deployment is open: the proof keys come from the adopted PSE trusted setup
-> (`docs/ceremony/PSE-VERIFICATION.md`) and the Sepolia canopy runs `v0.7.0`. Still a research
+> (`docs/ceremony/PSE-VERIFICATION.md`) and the Sepolia canopy runs `v0.7.4`. Still a research
 > preview on a testnet; see [DEPLOYMENT-PLAN.md](DEPLOYMENT-PLAN.md).
 
 For running a Shade Tree node or Elder Tree. Every command here exists in
@@ -79,7 +79,7 @@ record, and keeps the identity, Tor state and spent set in the `/state` volume.
 docker run -d --name shadenet-node --restart unless-stopped \
   -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
   -v shadenet-node:/state \
-  ghcr.io/dmarzzz/shadenet-node:0.7.1
+  ghcr.io/dmarzzz/shadenet-node:0.7.4
 docker logs -f shadenet-node        # "heartbeat accepted" once per Elder means the node is listed
 ```
 
@@ -89,7 +89,7 @@ reads each Elder's `/health`.
 
 ```bash
 docker run --rm -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
-  ghcr.io/dmarzzz/shadenet-node:0.7.1 check --probe
+  ghcr.io/dmarzzz/shadenet-node:0.7.4 check --probe
 ```
 
 The Sepolia canopy's Elders admit staked operators (`elder.admission = stake`): the operator
@@ -101,16 +101,16 @@ lives (the same image does both), hand the node the two values:
 
 ```bash
 # on the node's box: mint the onion identity into the volume
-docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.7.1 identity
+docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.7.4 identity
 #   -> { "onion": "<56 chars>.onion", ... }
 
 # where the operator key lives (operator.key: one line, 64 hex, chmod 600)
 # once per operator: stake the bond (0.001 Sepolia ETH, `BOND()` on the registry), a no-op if already staked
 read -s KEY && SHADE_TREE_REGISTER_KEY="$KEY" docker run --rm -e SHADE_TREE_REGISTER_KEY \
-  --entrypoint node ghcr.io/dmarzzz/shadenet-node:0.7.1 packages/node/bin/shade-tree.mjs register-gateway \
+  --entrypoint node ghcr.io/dmarzzz/shadenet-node:0.7.4 packages/node/bin/shade-tree.mjs register-gateway \
   --gateway-registry 0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868 --rpc-url https://rpc.sepolia.ethpandaops.io; unset KEY
 # per node: sign its onion
-docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.1 authorize --onion <onion> --key-file /k/operator.key
+docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.4 authorize --onion <onion> --key-file /k/operator.key
 #   -> { "SHADENET_OPERATOR": "0x…", "SHADENET_OPERATOR_SIG": "0x…" }
 
 # back on the node's box
@@ -118,7 +118,7 @@ docker run -d --name shadenet-node --restart unless-stopped \
   --security-opt no-new-privileges:true --cap-drop ALL --read-only --tmpfs /tmp \
   --memory 1g --log-opt max-size=20m \
   -e SHADENET_RECORD=... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… \
-  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.1
+  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.4
 docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status   # "listed": Elders that accepted
 ```
 
@@ -870,7 +870,8 @@ for slot 8, and a member cannot forge a bigger limit (a different leaf, not in y
 ```bash
 # member side (they run this; only the commitment reaches you):
 shade-tree enroll --limit 32 --commitment-only        # -> leaf that commits to 32; they run SHADE_TREE_LIMIT=32
-# operator side: admit the leaf exactly like a default one (members.json / register-onchain)
+# operator side: invited -> add the leaf to members.json; staked -> the member stakes its identity
+# commitment (register-member <identity-commitment> --limit 32) and the contract derives the leaf
 # gateway: tell the slash path which limits exist, so an over-spender's leaf resolves to its tier
 export SHADE_TREE_TIERS=8,32
 ```
@@ -878,7 +879,8 @@ export SHADE_TREE_TIERS=8,32
 Limits are 1..65535 (the circuit's 16-bit range check; never admit more). With
 `SHADE_TREE_TIERS` unset a tiered over-spender is still slashed, but the log names the default-tier
 leaf (`slash: tier of the over-spent leaf not resolvable locally`). The current rln-v4
-`StakedReputationSet` admits `register(commitment, limit)`, prices tiers with `bondFor(limit)`,
+`StakedReputationSet` admits `registerIdentity(identityCommitment, limit)` and derives the leaf itself,
+prices tiers with `bondFor(limit)` (the live set has one tier, limit 8),
 and resolves the enrolled limit during slashing. The retired rln-v3 contract remains tier-8 only.
 
 ### Choose what you admit and what you sell (T-FEAT-9, ADR [0008](adr/0008-per-gateway-admission-and-payment-choice.md))
@@ -929,9 +931,9 @@ receipt, not a complete runtime preset.
   `shade-tree-gateway.service.d/` AND `shade-tree-heartbeat.service.d/` drop-ins and restart both. A heartbeat
   without `SHADE_TREE_ADMIT` advertises no policy: clients then assume you may admit anything and a
   mismatch costs them one `wrong-group-root` reject + failover (rollout compat, `docs/CLIENTS.md`).
-- The demo fleet is heterogeneous on purpose (`network/sepolia/README.md`): gateway-1
-  `invited,staked,paid` + registrar, gateway-2 `invited,staked` — so a paid buyer lands on
-  gateway-1 only, and `--max-anon` refuses both (neither is invited-only).
+- The retired August demo fleet was heterogeneous on purpose (`network/sepolia/README.md`): gateway-1
+  `invited,staked,paid` + registrar, gateway-2 `invited,staked` — so a paid buyer landed on
+  gateway-1 only, and `--max-anon` refused both (neither is invited-only).
 
 **2. What you sell — `SHADE_TREE_PAY_PROTOCOLS`, your own registrar, your own `PaidAccessSet`.**
 Selling is opt-in (`SHADE_TREE_REGISTRAR=1`, next section) and requires `paid` in `SHADE_TREE_ADMIT` (admit

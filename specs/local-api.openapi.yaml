@@ -117,13 +117,14 @@ components:
         - prove
         - internal
         - busy
+        - target_not_allowed
         - proxy_auth_required
         - bad_request
         - not_found
         - method_not_allowed
       description: >-
-        CONNECT statuses: 403 for not_admitted, not_finalized and
-        port_not_allowed; 429 for budget_exhausted; 502 for node_refused; 503
+        CONNECT statuses: 403 for not_admitted, not_finalized,
+        port_not_allowed and target_not_allowed; 429 for budget_exhausted; 502 for node_refused; 503
         for no_eligible_node, canopy, rpc, transport and busy; 500 otherwise.
         See docs/ERRORS.md.
     Error:
@@ -163,7 +164,7 @@ components:
         finalized: { type: [boolean, "null"] }
         leaf: { type: [string, "null"], description: "The member leaf, shortened." }
         admissionSet: { type: [string, "null"], description: "The contract or member file checked." }
-        tier: { type: [integer, "null"], description: "Tunnels per epoch (RLN userMessageLimit)." }
+        tier: { type: [integer, "null"], description: "Proof slots per epoch (RLN userMessageLimit); with session tickets each slot opens up to six tunnels." }
         epoch: { type: integer }
         epochSeconds: { type: integer }
         epochResetsInSeconds: { type: integer }

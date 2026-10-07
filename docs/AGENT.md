@@ -25,7 +25,7 @@ shadenet init
 ```
 
 `init` creates an owner-only identity, a proxy token and
-`~/.config/shadenet/config.toml`, then prints what is left: staking the leaf,
+`~/.config/shadenet/config.toml`, then prints what is left: staking the identity commitment,
 waiting for finality, starting the proxy. With a funded Sepolia key:
 
 ```sh
@@ -49,7 +49,7 @@ attestations and source builds.
 
 ## 2. Get admitted
 
-A member is admitted by staking its public leaf. For the bundled public Sepolia
+A member is admitted by staking its identity commitment; the contract derives the public leaf from it. For the bundled public Sepolia
 canopy the record admits one tier, limit 8: eight proof slots per fixed 60-second
 epoch, 40 MiB per slot, each slot a six-tunnel book at one node when the record
 turns session tickets on. The bond in force comes from the record;
@@ -61,8 +61,8 @@ shadenet register-member --identity ~/.config/shadenet/identity.json --key-file 
 ```
 
 The key signs locally and never reaches the RPC. The funding wallet can be any
-wallet: a person can **sponsor** an agent by staking the agent's leaf from their
-own wallet (`shadenet register-member <leaf> --key-file theirs.key`, or the
+wallet: a person can **sponsor** an agent by staking the agent's identity commitment from their
+own wallet (`shadenet register-member <identity-commitment> --key-file theirs.key`, or the
 "Get access" page). The identity file stays with the agent either way.
 
 Nodes accept only finalized registrations. `shadenet status` distinguishes
@@ -139,7 +139,7 @@ the proxy with an allow-list: `shadenet proxy --targets .wikipedia.org,api.ipify
 at once with `403 target_not_allowed`, spending nothing.
 
 **MCP tools (the agent chooses per request).** `shadenet mcp` serves
-`shadenet_fetch`, `shadenet_status` and, with `--searxng-url`,
+`shadenet_fetch`, `shadenet_status`, `shadenet_plan` and, with `--searxng-url`,
 `shadenet_search`. The agent keeps its normal network and uses ShadeNet only for
 the fetches that need it.
 
@@ -175,8 +175,7 @@ shadenet plan --count 12 --json
 ```
 
 The plan says how many tunnels are available now, how many epochs the batch
-needs, a lower bound on the seconds until its last tunnel can open, and which
-tier would do it in one epoch. The MCP tool `shadenet_plan` returns the same
+needs, and a lower bound on the seconds until its last tunnel can open. The MCP tool `shadenet_plan` returns the same
 object, and `shadenet status` / `GET /_shadenet/status` carry `queue` (depth,
 next slot, capacity) and `plan` for one more tunnel.
 
@@ -194,7 +193,8 @@ proxy` also keeps a circuit to the two best nodes warm (`--warm N`, `--no-warm`,
 `SHADENET_WARM_NODES`), so the first fetch after a quiet spell skips the onion
 rendezvous, and `status` lists each node with its measured latency. A first
 request still pays for proving and opening a session book (8 s or more); with
-`--preopen` (`SHADENET_PREOPEN=1`, `preopen_books = true`) the proxy opens a
+`--preopen` (`SHADENET_PREOPEN=1`, `preopen_books = true`; on main for v0.7.5, not in
+the v0.7.4 release) the proxy opens a
 book ahead: one at start, then again while requests came in within the last 10
 minutes. Each book is one proof of the epoch's budget, and it keeps at least one
 proof for a request. After a

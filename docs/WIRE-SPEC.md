@@ -537,8 +537,8 @@ Ordering is load-bearing (`:319` INVARIANT): 2b binds `target -> ps.x` cheaply, 
 only AUTHORITATIVE once check 4 proves the Groth16 membership proof. Both are required; never
 trust 2b without 4. Do not reorder 2b apart from 4.
 
-Epoch clock: `epoch = floor(nowMs/1000 / EPOCH_SECONDS)`, `EPOCH_SECONDS` default `120`
-(`packages/node/lib/rln.mjs:78`,`:80`). `externalNullifier(epoch) = Poseidon(epoch, RLN_IDENTIFIER)`,
+Epoch clock: `epoch = floor(nowMs/1000 / EPOCH_SECONDS)`, `EPOCH_SECONDS` = `SHADE_TREE_EPOCH_SECONDS`, code fallback `120`; the Sepolia record sets `60`
+(`packages/node/lib/rln.mjs:160`,`:162`). `externalNullifier(epoch) = Poseidon(epoch, RLN_IDENTIFIER)`,
 `RLN_IDENTIFIER` default `1` (`:72`,`:115`).
 
 ### 6.5 Determinism
