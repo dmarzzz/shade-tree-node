@@ -2,8 +2,8 @@
 #
 #   cd monitoring/compose && docker compose --profile monitoring up -d
 #
-# Prometheus scrapes the loopback metrics listeners of this host (gateway 9101, heartbeat 9102,
-# Elder 9103 by default; docs/CONFIG.md SHADE_TREE_*METRICS_PORT), loads ../alerts.yml, and
+# Prometheus scrapes the loopback metrics listeners of this host (Elder 9100, node 9101, heartbeat 9103
+# by default; docs/CONFIG.md SHADE_TREE_*METRICS_PORT), loads ../alerts.yml, and
 # Grafana comes up with ../grafana-dashboard.json provisioned. Both run on the HOST network
 # (Linux) and bind 127.0.0.1 only: the node's metrics listeners refuse any non-loopback Host
 # header, so a bridged container could not scrape them. Put a reverse proxy with auth in front
