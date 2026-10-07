@@ -11,6 +11,7 @@ through][research-note]. Access is anonymous and zk-proof gated.
 
 ShadeNet is a proxy for AI agents: private web access with no account or
 stable identity, through a local HTTPS proxy or an MCP server.
+Built for LLM agents such as Hermes, Claude Code, Codex, Pi and nanocodex.
 
 [![CI][ci-badge]][ci-url]
 [![real Tor E2E][e2e-badge]][e2e-url]
