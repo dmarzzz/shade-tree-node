@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Fetch through the local ShadeNet proxy with httpx.
 
+    pip install 'httpx[http2]'
     shadenet proxy &                      # once, or as a service
-    python3 examples/python-httpx.py https://api.ipify.org?format=json
+    python3 examples/python-httpx.py 'https://api.ipify.org?format=json'
 
 One httpx.Client keeps one tunnel open for many requests to the same host
 (keep-alive and HTTP/2), which matters: every new tunnel spends one slot of a

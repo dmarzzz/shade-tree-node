@@ -85,8 +85,8 @@ The bundled Sepolia canopy admits one public staked tier, limit 8: the bond in t
 current network record (`shadenet init` prints it; the [Get access][stake] page
 shows it) buys eight proof slots per fixed 60-second epoch, each a CONNECT tunnel
 with a 40 MiB payload ceiling. `init` creates an owner-only identity, a proxy token
-and `config.toml`; then stake the leaf from a separately funded testnet key, or
-have a sponsor stake it from the Get access page:
+and `config.toml`; then stake the identity commitment it prints (never the leaf) from a
+separately funded testnet key, or have a sponsor stake it from the Get access page:
 
 ```bash
 shadenet init
@@ -205,7 +205,7 @@ use structured JSON logs and separate loopback metrics for each role. See the
   tally is fail-open and suppresses later replays only after propagation, so
   concurrent attempts can still pass on different nodes.
 - Client RLN slots are durably coordinated across Proxy, SDK, and Rust processes
-  under the member's public leaf. The state contains only `{version, epoch,
+  under the member's public identity commitment. The state contains only `{version, epoch,
   nextSlot}` and fails closed if it is corrupt, unavailable, or remains locked.
   Allocation happens before proving, so a crash or local proof failure consumes a
   slot; state resets only when the protocol epoch advances.

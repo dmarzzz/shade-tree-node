@@ -68,12 +68,12 @@ random failover order for that tunnel. Set `--no-rotation-spread` or
 
 The same proof, slot, and Tor isolation credential are reused within one tunnel's failover attempt.
 Dial/framing failures rotate to the next onion. Proof, policy, replay, and `payload-limit` refusals
-are terminal and are not routed around. The Rust client treats every gateway refusal as terminal;
-only transport/framing failures rotate. Two local dial failures mark a node down; future selections
+are terminal and are not routed around. The Rust client treats gateway refusals as terminal except `upstream:*`, which it retries once on
+another node with a new slot; transport/framing failures rotate. Two local dial failures mark a node down; future selections
 skip it while healthy choices exist, and a later success recovers it. The JavaScript Proxy's
 periodic Canopy refresh adds and removes onions without a restart while carrying forward health for
-unchanged nodes. The Rust Proxy fetches a current signed canopy directory at each new CONNECT instead, so its
-next tunnel sees a new list even though it does not poll while idle.
+unchanged nodes. The Rust Proxy also refreshes the signed canopy directory in the background (about every five
+minutes, jittered).
 
 ## Leaf source + admission filtering + `--max-anon` (T-FEAT-9, both options)
 
@@ -101,9 +101,9 @@ the `PaidAccessSet` (**paid**). Each gateway advertises which of those it admits
 - Events: a live Elder refresh emits the local `canopy` phase with `query`, then `verified`, `cache`, or `error`. It contains only the signed issue time and node count when available. No event is sent to another service. Selection then emits `select` as before.
 
 ```bash
-shade-tree proxy --max-anon
+shade-tree-node proxy --max-anon
 
-shade-tree proxy --leaf-source paid --limit 32 \
+shade-tree-node proxy --leaf-source paid --limit 32 \
   --paid-access-contract <v4-paid-set-address>
 ```
 
@@ -115,7 +115,7 @@ Use this when the client is a **stock tool** you can't change (browser, curl, an
 [agent guide](AGENT.md), then run:
 
 ```bash
-SHADE_TREE_TOR_PORT=9260 shade-tree proxy \
+SHADE_TREE_TOR_PORT=9260 shade-tree-node proxy \
   --bootnode <v4-elder.onion> --dir-signer <v4-directory-signer-hex>
 # then: curl -x http://127.0.0.1:8888 https://api.ipify.org
 ```

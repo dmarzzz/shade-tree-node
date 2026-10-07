@@ -90,7 +90,7 @@ const COMMANDS = {
   join:              { script: "group/join.mjs",            help: "guided front door: `shade-tree-node join [member]` or `shade-tree-node join node`; make an identity + print the next commands (`gateway` remains an alias)" },
   enroll:            { script: "group/enroll.mjs",          help: "generate a member identity + print its secret/commitment" },
   identity:          { script: "group/identity.mjs",         help: "export the Rust client's --identity file {identitySecret, leaf} from your secret: shade-tree identity [--out <path>] [--secret-file <path>] (secret: --secret-file | SHADE_TREE_SECRET | ./.secret)" },
-  "register-member": { script: "group/register-onchain.mjs", help: "stake a member identity into StakedReputationSet: shade-tree-node register-member <identity-commitment> [--limit N] (current Sepolia default: 1)" },
+  "register-member": { script: "group/register-onchain.mjs", help: "stake a member identity into StakedReputationSet: shade-tree-node register-member <identity-commitment> [--limit N] (current Sepolia default: 8)" },
   pay:               { script: "group/pay.mjs",              help: "BUY a membership leaf over HTTP 402 (x402 or MPP; stablecoin, no gas): shade-tree-node pay --bootnode <onion> --limit 8|32 [--protocol x402|mpp] [--key-file <buyer-key>] [--dry-run]" },
   leaves:            { script: "group/leaves.mjs",           help: "export an on-chain set's ordered leaves as a members.json for the Rust client: shade-tree leaves --contract 0x.. [--out members.json]" },
   "register-gateway":{ script: "group/register-gateway.mjs", help: "stake a gateway operator bond into GatewayRegistry" },

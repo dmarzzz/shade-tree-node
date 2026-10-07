@@ -175,8 +175,9 @@ group"), and a real proof over a self-made tree with the wished-for leaf is reje
 member at slot 8 has no valid proof at all (client pre-check + circuit RangeCheck assert), so
 exceeding its tier forces a nullifier reuse => `over-spend-slashed`. Residual: `LessThan(16)`
 is unsound for a limit >= 2^16, so admission MUST refuse such leaves (`MAX_LIMIT`, `normLimit`
-— an admission-time rule, not a circuit one), and the on-chain hasher pins `K = 8`, so tiered
-leaves staked on chain are unslashable there until `docs/ONCHAIN.md` "Tiers on chain" ships.
+— an admission-time rule, not a circuit one). On chain, `StakedReputationSet` records each
+member's limit and slashes with it (`limitOf`, `slash(commitment, secret, limit, receiver)`); the
+live set has one tier, limit 8.
 
 ### 4.4 Message-to-target binding
 A captured proof cannot be redirected to a different destination. The committed public `x` is
