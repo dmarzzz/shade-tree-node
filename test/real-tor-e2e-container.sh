@@ -67,10 +67,15 @@ docker run -d --name "$CONTAINER" \
   -v "$SRC":/mnt/src:ro \
   "$IMAGE" \
   bash -c 'export DEBIAN_FRONTEND=noninteractive;
+           apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20";
            for attempt in 1 2 3; do
-             apt-get update -qq && apt-get install -y -qq systemd systemd-sysv && break;
-             echo "apt attempt $attempt failed; retrying"; sleep 5;
+             echo "$(date -u +%T) apt attempt $attempt: update";
+             apt-get $apt update -qq &&
+               echo "$(date -u +%T) apt attempt $attempt: install systemd" &&
+               apt-get $apt install -y -qq systemd systemd-sysv && break;
+             echo "$(date -u +%T) apt attempt $attempt failed; retrying"; sleep 5;
            done;
+           echo "$(date -u +%T) exec systemd";
            test -x /lib/systemd/systemd || { echo "systemd is not installed; see apt output above"; exit 1; };
            exec /lib/systemd/systemd' >/dev/null
 
@@ -88,6 +93,8 @@ done
 [ "$ok" = "1" ] || {
   docker logs "$CONTAINER" 2>&1 | tail -60
   docker inspect -f 'container running={{.State.Running}} exit={{.State.ExitCode}}' "$CONTAINER" 2>&1 || true
+  echo "last systemctl is-system-running: ${state:-<no answer>}; processes:"
+  docker exec "$CONTAINER" ps -eo pid,etime,args 2>&1 | head -15 || true
   fail "systemd never came up in container"
 }
 
