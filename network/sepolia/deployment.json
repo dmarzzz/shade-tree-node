@@ -24,17 +24,17 @@
   "services": {
     "elder": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
+      "commit": "114065db4d878a465e0c1d3d901a34b55cb8c193",
       "version": "0.7.4"
     },
     "node": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
+      "commit": "114065db4d878a465e0c1d3d901a34b55cb8c193",
       "version": "0.7.4"
     },
     "heartbeat": {
       "repository": "https://github.com/dmarzzz/shade-tree-node.git",
-      "commit": "954216e8dd8768a23fd07ec9eac8910331a86be9",
+      "commit": "114065db4d878a465e0c1d3d901a34b55cb8c193",
       "version": "0.7.4"
     }
   },
@@ -111,6 +111,6 @@
     "legacy": null
   },
   "created": "2026-09-02",
-  "note": "ShadeNet research preview on Sepolia: zero-config clients use the permissionless staking path (one tier: 8 proof slots per 60-second epoch for a 0.01 ETH bond, 40 MiB combined tunnel payload per slot, session tickets on; see docs/ECONOMICS.md); invited admission remains available when selected explicitly. Two Elder Trees and the Shade Tree nodes are managed from agent-devops and pinned to services.*.commit. Proof artifacts are the PSE RLN trusted-setup output; the staking contract is Sepolia testnet material and its ETH has no value. Canopy: 2 Elder Trees at 190d6433bd7a, recorded by scripts/record-canopy.mjs.",
+  "note": "ShadeNet research preview on Sepolia: zero-config clients use the permissionless staking path (one tier: 8 proof slots per 60-second epoch for a 0.01 ETH bond, 40 MiB combined tunnel payload per slot, session tickets on; see docs/ECONOMICS.md); invited admission remains available when selected explicitly. Two Elder Trees and the Shade Tree nodes are managed from agent-devops and pinned to services.*.commit. Proof artifacts are the PSE RLN trusted-setup output; the staking contract is Sepolia testnet material and its ETH has no value. Canopy: 2 Elder Trees at 114065db4d87, recorded by scripts/record-canopy.mjs.",
   "sessionTickets": true
 }

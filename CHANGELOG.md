@@ -13,6 +13,14 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   `CanopyOffRecordPin`'s job. Checked with `promtool test rules`: same version and two commits stays
   quiet, while two versions fire after 30 minutes.
 
+- The uptime probe accepts a comma-separated `SHADE_TREE_DIR_SIGNER`, which is what the record sets
+  for a canopy with two Elder Trees. It passed the joined string to `verifyDirectory` as one key, so
+  every check failed with `directory:signer-not-pinned` and the lab vantage point reported the Elder
+  unreachable while it served a fresh, signed directory.
+- The Sepolia record pins `services.*.commit` to 114065d, the commit the fleet runs (written with
+  `scripts/record-canopy.mjs`, as agent-devops' copy already was). It still named 954216e from 0.7.2,
+  so the probe reported every Elder off pin.
+
 ### Dependencies
 
 - docker/setup-qemu-action v3 → v4.4.0 in `node-image` (Dependabot #256).
