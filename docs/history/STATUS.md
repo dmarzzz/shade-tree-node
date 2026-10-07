@@ -89,6 +89,8 @@ served Google at this volume without tripping bot detection. Latency:
 | p99 / max | 8.04 s / 8.78 s |
 | first request after client start (one-time setup) | ~7 s |
 
+> **Update, 7 October 2026:** Google now answers clients that do not run JavaScript with an HTTP 200 page that has no results, from any address, so a count of 200 responses no longer shows that searches get through.
+
 About 850 of the 1000 requests fell between 1.4 and 2.0 s. The slow end is a ~1% tail
 (ten requests over 5 s) from Tor circuit variance, not the destination. An earlier
 1000-request run against api.ipify gave the same shape (zero drops, ~2.0 s median),
