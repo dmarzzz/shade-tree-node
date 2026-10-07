@@ -102,7 +102,7 @@ shadenet proxy                 # the local HTTP CONNECT proxy for agents and Sea
 shadenet run -- <agent>        # run a command through that proxy
 shadenet mcp                   # MCP tools shadenet_fetch, shadenet_status, shadenet_search
 shadenet fetch <https-url>     # one request through ShadeNet
-shadenet register-member …     # stake a leaf on chain
+shadenet register-member …     # stake an identity commitment on chain
 shadenet member-status …       # read bond and exit state
 shadenet exit-member …         # local ZK exit authorization
 shadenet withdraw-member …     # private refund to a recipient
@@ -123,7 +123,7 @@ variable under either prefix from the child's environment.
 
 ## Safety notes
 
-- RLN slot state lives in `…/shade-tree/rln-slots/<leaf>.json`, shared with the
+- RLN slot state lives in `…/shade-tree/rln-slots/<identity-commitment>.json`, shared with the
   JavaScript client. The directory keeps that name through the rename: a fresh
   directory mid-epoch would reuse a nullifier and get the member slashed.
 - The slot file is written and fsynced before a proof is built, so a crash burns
@@ -135,8 +135,8 @@ variable under either prefix from the child's environment.
   memory after use.
 - `shadenet init --passphrase` (or `shadenet identity-lock` later) encrypts the
   identity secret with a scrypt-derived key and XChaCha20-Poly1305. The public
-  leaf and tier stay readable, so `status` and staking need no passphrase;
-  tunnels, exit and withdraw do. Services read it from
+  leaf and tier stay readable, so `status` and the stake page need no passphrase;
+  `register-member --identity`, tunnels, exit and withdraw do. Services read it from
   `SHADENET_PASSPHRASE_FILE`; interactive use prompts without echo.
 
 ## Protocol changes

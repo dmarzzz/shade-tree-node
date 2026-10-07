@@ -33,6 +33,8 @@ workspace and fails only when a package that opts into publishing can't pass
    - `shadenet.rb`, the Homebrew formula for this version
    - `ghcr.io/dmarzzz/shadenet:<version>` and `:latest`, built from the musl live
      binaries, with its own provenance attestation
+   - `ghcr.io/dmarzzz/shadenet-node:<version>` (and `:latest` for a final release), the operator
+     node image (Tor + node + heartbeat), with its own provenance attestation
 
    A version with a hyphen (`v0.7.0-rc.1`) is a prerelease: the GitHub Release is marked
    prerelease and never "Latest", the image gets no `:latest`, and the Homebrew tap is left

@@ -260,6 +260,8 @@ Grounded in `docs/SLO.md` and cross-referenced to the runbooks in `docs/INCIDENT
 | `HeartbeatStale` | critical | The process is up but no announce has been accepted for 15 minutes. The node will age out of the Canopy. | INCIDENT.md #3 |
 | `HeartbeatNeverAccepted` | critical | The heartbeat has run for 15 minutes without one accepted announce. Check startup configuration and Tor reachability. | INCIDENT.md #3 |
 | `HeartbeatDown` | warning | The heartbeat metrics process is not scrapeable. Confirm the service and local port before fleet membership expires. | INCIDENT.md #3 |
+| `RpcEndpointFailing` | warning | More than 3 failovers past one `SHADE_TREE_RPC_URL` endpoint in 15 min. Roots stay fresh while another endpoint answers; replace or remove the failing one. | INCIDENT.md #6 |
+| `CanopyPinDrift` | warning | `shade_tree_build_info` reports more than one release `version` across the Elder, nodes and heartbeats for 30 min. Deploy every role from the release in the deployment record. | — |
 
 The hard line from `docs/SLO.md` section 5 applies to every response here: no alert is ever cleared by
 weakening the gate, admitting an unverified gateway, serving an unverifiable directory, narrowing the

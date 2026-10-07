@@ -70,14 +70,15 @@ shade-tree enroll --out identity.json
 chmod 600 funded-sepolia.key
 shade-tree register-member --identity identity.json --key-file funded-sepolia.key
 shade-tree member-status --identity identity.json --json
-shade-tree proxy --identity identity.json
+(umask 077; set -C; shade-tree proxy-token > proxy-token.txt)
+shade-tree proxy --identity identity.json --token-file proxy-token.txt
 ```
 
 `register-member --identity` validates that the private secret, public leaf, and exact tier match
 before the first RPC call. The file stays local; the locally signed registration transaction contains
-only its already-public leaf and tier. The payer can instead sponsor an agent by registering only the
-agent's public decimal leaf, but the sponsor bears the slashing risk and does not control the later
-refund.
+only its identity commitment and tier; the contract derives the leaf. The payer can instead sponsor an
+agent by registering only the agent's public decimal identity commitment (never its leaf), but the sponsor bears the slashing risk and does
+not control the later refund.
 
 The JavaScript SDK and Rust client both read the Elder, signer, current staking contract, RPC,
 deployment block, tier, and rate policy from the bundled deployment record. Explicit flags and
@@ -91,8 +92,8 @@ superseded root the gateway observes remains accepted for the full 60-second fre
 The staking wallet, commitment, tier, amount, and timing are public forever. Only the identity
 secret stays local. Use a separately funded wallet when address-graph separation matters.
 
-The second local allocation in one epoch fails with
-`SHADE_TREE_EPOCH_BUDGET_EXHAUSTED`; the client does not intentionally manufacture slash evidence.
+An allocation past the epoch's eight slots waits in the budget queue, then fails with
+`budget_exhausted` (JavaScript: `SHADE_TREE_EPOCH_BUDGET_EXHAUSTED`); the client does not intentionally manufacture slash evidence.
 
 ## Exit and recovery
 

@@ -27,13 +27,13 @@ Two protocol facts shape every adapter:
 ## curl
 
 ```sh
-curl -x "$PROXY" https://api.ipify.org?format=json   # prints the node's IP, not yours
+curl -x "$PROXY" 'https://api.ipify.org?format=json'   # prints the node's IP, not yours
 ```
 
 Or through `run`, which also keeps the token out of your shell's environment:
 
 ```sh
-shadenet run -- curl -s https://api.ipify.org?format=json
+shadenet run -- curl -s 'https://api.ipify.org?format=json'
 ```
 
 A refusal is a JSON body and an `X-ShadeNet-Error` header; `curl -i -x …`
@@ -46,6 +46,7 @@ import os, httpx
 
 token = open(os.path.expanduser("~/.config/shadenet/proxy-token")).read().strip()
 proxy = f"http://shadenet:{token}@127.0.0.1:8118"
+# pip install 'httpx[http2]'
 with httpx.Client(proxy=proxy, http2=True, timeout=60) as client:   # one tunnel, many requests
     print(client.get("https://api.ipify.org?format=json").json())
 ```
@@ -56,7 +57,7 @@ version is [`examples/python-httpx.py`](../examples/python-httpx.py).
 
 ## Hermes
 
-Two options, both deployed by the `shadenet` role in `agent-devops`:
+Two options:
 
 - **MCP (recommended).** Hermes keeps its normal network and calls
   `shadenet_fetch` when a site blocks Tor or datacenter IPs:
@@ -65,7 +66,7 @@ Two options, both deployed by the `shadenet` role in `agent-devops`:
   hermes mcp add shadenet --command shadenet --args mcp
   ```
 
-  Add `--env SHADENET_SEARXNG_URL=http://127.0.0.1:8080` to expose
+  Add `--env SHADENET_SEARXNG_URL=http://127.0.0.1:8080` before `--args` to expose
   `shadenet_search` too. The skill file in
   [`examples/hermes/SKILL.md`](../examples/hermes/SKILL.md) tells the model
   when to use it.
@@ -98,10 +99,11 @@ The tools:
 |---|---|---|
 | `shadenet_fetch` | `url` (https), `method`, `headers`, `body`, `max_bytes` | `status`, `headers`, `body` (text, or base64 with `bodyEncoding`), `gateway`, `epoch`, `truncated` |
 | `shadenet_status` | none | the [status object](../specs/local-api.openapi.yaml) |
+| `shadenet_plan` | `urls` or `count` | the plan object: `availableNow`, `epochsNeeded`, `completesInSeconds`, `fitsNow`, `advice` |
 | `shadenet_search` | `query`, `engines`, `categories`, `max_results` | `results` with `title`, `url`, `content`, `engine` |
 
 Failures come back with `isError: true` and `{"error": {"code", "message",
-"retryAfterSeconds"}}` so the model can wait out a spent budget instead of
+"cause", "fix", "retryAfterSeconds"}}` so the model can wait out a spent budget instead of
 retrying blindly.
 
 ## SearXNG
@@ -118,7 +120,7 @@ The settings that matter (keys verified against SearXNG's
 ```yaml
 use_default_settings: true
 outgoing:
-  request_timeout: 8.0      # a cold tunnel is canopy + proof + onion rendezvous
+  request_timeout: 20.0     # a cold tunnel is canopy + proof + onion rendezvous
   max_request_timeout: 30.0
   networks:
     shadenet:

@@ -18,7 +18,7 @@ node or canopy on a host.
 > combined tunnel ceiling. Invited credentials remain private; alternate canopies require explicit
 > membership and discovery inputs.
 
-Everything is one CLI: `shade-tree <command> [--flags]`. Install it:
+Everything is one CLI: `shade-tree-node <command> [--flags]`. Install it:
 
 ```bash
 npm install
@@ -41,12 +41,11 @@ input, Elder Tree onion, and matching canopy signer. You need a Tor SOCKS port:
 For the public path, the contract, RPC, deployment block, tier, and rate policy need no flags:
 
 ```bash
-commitment="$(shade-tree enroll --commitment-only)"  # copy the secret shown on stderr into the hidden prompt below
-read -s SHADE_TREE_REGISTER_KEY
-SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" shade-tree register-member "$commitment"
-unset SHADE_TREE_REGISTER_KEY
-read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
-shade-tree proxy --tor-port 9260
+shadenet init                       # prints the identity commitment and the exact register command
+chmod 600 funded-sepolia.key
+shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet status --wait              # about 13 minutes for Sepolia finality
+shadenet proxy
 ```
 
 Load the bearer secret without putting it in shell history or process arguments. Enter the
@@ -61,7 +60,7 @@ For an invited profile pinned to one node:
 
 ```bash
 SHADE_TREE_MEMBERS_FILE=/path/from-operator/members.json \
-shade-tree proxy --limit "$SHADE_TREE_LIMIT" --leaf-source invited \
+shade-tree-node proxy --limit "$SHADE_TREE_LIMIT" --leaf-source invited \
   --tor-port 9260 --onion <v4-node.onion>
 curl -x http://127.0.0.1:8888 https://api.ipify.org?format=json     # the node's IP
 ```
@@ -70,7 +69,7 @@ For signed discovery and rotation through the current Sepolia canopy, omit disco
 
 ```bash
 SHADE_TREE_MEMBERS_FILE=/path/from-operator/members.json \
-shade-tree proxy --limit "$SHADE_TREE_LIMIT" --leaf-source invited --tor-port 9260
+shade-tree-node proxy --limit "$SHADE_TREE_LIMIT" --leaf-source invited --tor-port 9260
 ```
 
 For an alternate canopy, add `--bootnode <v4-elder.onion> --dir-signer
@@ -81,7 +80,7 @@ chain, and contract addresses. Generate an
 identity at their tier, then copy only its secret value into the hidden prompt:
 
 ```bash
-shade-tree enroll --commitment-only --limit "$SHADE_TREE_LIMIT"
+shade-tree-node enroll --limit "$SHADE_TREE_LIMIT"   # prints "identity commitment:" to stake; never stake the leaf
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
 
 # paid admission, when offered by the v4 operator
@@ -91,7 +90,7 @@ shade-tree-node pay --bootnode <v4-elder.onion> --limit "$SHADE_TREE_LIMIT" \
 # staked admission, when offered by the v4 operator
 read -s SHADE_TREE_REGISTER_KEY
 SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" \
-shade-tree register-member <identity-commitment> --limit "$SHADE_TREE_LIMIT" \
+shade-tree-node register-member <identity-commitment> --limit "$SHADE_TREE_LIMIT" \
   --rpc-url <operator-rpc-url> --group-contract <v4-staked-set-address>
 unset SHADE_TREE_REGISTER_KEY
 ```
@@ -155,7 +154,7 @@ For this local loop, choose tier 8. The command automatically appends the commit
 `group/members.json`; no manual edit is needed. Live bootstrap never accepts this file:
 
 ```bash
-shade-tree enroll --limit 8
+shade-tree-node enroll --limit 8
 ```
 
 Copy only the printed secret value into the hidden prompt in step 5.
@@ -187,7 +186,7 @@ Paste the member secret at the hidden prompt, then run:
 
 ```bash
 SHADE_TREE_MEMBERS_FILE=./group/members.json \
-shade-tree proxy --limit 8 --leaf-source invited --tor-port 9250 \
+shade-tree-node proxy --limit 8 --leaf-source invited --tor-port 9250 \
   --bootnode <elder-onion> \
   --dir-signer <elder-signer-pubkey>
 ```
@@ -208,7 +207,7 @@ node; with tickets off it is a single CONNECT tunnel.
 ## Path C: your own canopy on a droplet (one command)
 
 > **Deployment blocked.** The private-target guard is now closed by default, but the
-> development ZK setup and the other [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md) gates remain.
+> pending outside verifier statement and the other [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md) gates remain.
 > Keep this path limited to disposable research infrastructure until they are closed.
 
 After those gates clear, the bootstrap target is a fresh Ubuntu 24.04 host:
@@ -236,8 +235,8 @@ SHADE_TREE_TIER_LIMITS=32 SHADE_TREE_TIER_BONDS_WEI=40000000000000000 \
   forge script contracts/script/DeployRegistry.s.sol:DeployRegistry --rpc-url http://127.0.0.1:8545 --broadcast \
   --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-shade-tree register-member <identity-commitment> --limit 8 # stake a tier-8 member; `enroll` prints its identity commitment
-shade-tree register-gateway                      # stake a node operator; command retains wire name
+shade-tree-node register-member <identity-commitment> --limit 8 # stake a tier-8 member; `enroll` prints its identity commitment
+shade-tree-node register-gateway                      # stake a node operator; command retains wire name
 shade-tree-node elder --admission stake --stake-mode onchain \
   --gateway-registry <addr> --rpc-url http://127.0.0.1:8545
 ```
