@@ -138,6 +138,11 @@
       "permanent": true
     },
     {
+      "source": "/:page(research|canopy|grove|stake)",
+      "destination": "/:page/",
+      "permanent": true
+    },
+    {
       "source": "/install.sh",
       "destination": "https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh",
       "permanent": false
