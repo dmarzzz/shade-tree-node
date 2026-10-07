@@ -4,6 +4,15 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Monitoring
+
+- `CanopyPinDrift` compares release versions, not commits. The published node image is built at the
+  release tag's commit while systemd hosts run the record's commit; both report the record's
+  version, so the orbital-one container (0.7.4 at 6709328) no longer fires it next to the fleet
+  (0.7.4 at 114065d). A role left on another release still fires; an off-pin commit on one host is
+  `CanopyOffRecordPin`'s job. Checked with `promtool test rules`: same version and two commits stays
+  quiet, while two versions fire after 30 minutes.
+
 ### Dependencies
 
 - docker/setup-qemu-action v3 → v4.4.0 in `node-image` (Dependabot #256).
