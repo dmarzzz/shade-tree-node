@@ -9,6 +9,7 @@
 //! searxng_url = "http://127.0.0.1:8080"
 //! queue_max_wait_secs = 120              # budget queue (ADR 0013); 0 refuses at once
 //! warm_nodes = 2                         # circuits kept warm by `shadenet proxy`
+//! preopen_books = true                   # `shadenet proxy --preopen`: a session book ready ahead
 //! targets = [".wikipedia.org", "api.ipify.org"]   # proxy allow-list; omit for any host
 //! ```
 
@@ -38,6 +39,8 @@ pub struct ConfigFile {
     pub queue_max_wait_secs: Option<u64>,
     /// Nodes to keep warm circuits to (0 disables).
     pub warm_nodes: Option<usize>,
+    /// `shadenet proxy --preopen`: keep a session-ticket book open ahead of requests.
+    pub preopen_books: Option<bool>,
     /// Destination allow-list for the proxy (names or `.suffix`); empty allows every host.
     pub targets: Option<Vec<String>>,
     /// Where this file was read from, for relative paths and `doctor`.
@@ -133,6 +136,115 @@ mod tests {
             staging.network.as_deref(),
             Some("/c/staging/deployment.json")
         );
+    }
+
+    /// The configs people have, pinned field by field, so a TOML parser change (toml 0.8 -> 1.x,
+    /// Dependabot #263) that read any of them differently fails here: what `shadenet init`
+    /// writes, what agent-devops renders for Hermes, every key at once in the styles TOML allows,
+    /// and the errors that must stay errors.
+    #[test]
+    fn the_config_corpus_parses_the_same_across_toml_versions() {
+        let base = Some(Path::new("/home/u/.config/shadenet"));
+        // `shadenet init` (v0.7.3).
+        let init = parse(
+            "# ShadeNet client configuration. Flags and SHADENET_* variables override these.\n\
+             network = \"sepolia\"\n\
+             identity = \"/home/u/.config/shadenet/identity.json\"\n\
+             proxy_token_file = \"/home/u/.config/shadenet/proxy-token\"\n\
+             listen = \"127.0.0.1:8118\"\n",
+            base,
+        )
+        .unwrap();
+        assert_eq!(
+            init,
+            ConfigFile {
+                network: Some("sepolia".into()),
+                identity: Some("/home/u/.config/shadenet/identity.json".into()),
+                proxy_token_file: Some("/home/u/.config/shadenet/proxy-token".into()),
+                listen: Some("127.0.0.1:8118".into()),
+                ..ConfigFile::default()
+            }
+        );
+        // agent-devops roles/shadenet_client (Hermes on orbital-one, 2026-10-06).
+        let hermes = parse(
+            "# Managed by agent-devops (roles/shadenet_client).\n\
+             network = \"sepolia\"\n\
+             identity = \"/home/mindagent/.config/shadenet/identity.json\"\n\
+             proxy_token_file = \"/home/mindagent/.config/shadenet/proxy-token\"\n\
+             listen = \"127.0.0.1:8118\"\n\
+             rpc_url = \"https://rpc.sepolia.ethpandaops.io,https://sepolia.gateway.tenderly.co\"\n\
+             searxng_url = \"http://127.0.0.1:8090\"\n",
+            base,
+        )
+        .unwrap();
+        assert_eq!(
+            hermes.rpc_url.as_deref(),
+            Some("https://rpc.sepolia.ethpandaops.io,https://sepolia.gateway.tenderly.co")
+        );
+        assert_eq!(hermes.searxng_url.as_deref(), Some("http://127.0.0.1:8090"));
+        // Every key, with inline comments, a literal string, a multi-line array with a trailing
+        // comma, and CRLF line endings.
+        let every = parse(
+            "network = 'staging/deployment.json'   # a record path\r\n\
+             identity = \"id.json\"\r\n\
+             proxy_token_file = \"~/token\"\r\n\
+             listen = \"127.0.0.1:9000\"\r\n\
+             rpc_url = \"https://a.example,https://b.example\"\r\n\
+             cache_dir = \"cache\"\r\n\
+             leaf_source = \"rpc\"\r\n\
+             members = \"members.json\"\r\n\
+             contract = \"0x789967F0bDD7f3a96fb60F6D315e93F103b5680b\"\r\n\
+             prover_workers = 2\r\n\
+             max_tunnels = 64\r\n\
+             max_setups = 16\r\n\
+             allow_non_loopback = false\r\n\
+             searxng_url = \"http://127.0.0.1:8080\"\r\n\
+             queue_max_wait_secs = 120\r\n\
+             warm_nodes = 0\r\n\
+             preopen_books = true\r\n\
+             targets = [\r\n  \".wikipedia.org\",\r\n  \"api.ipify.org\", # trailing comma next\r\n]\r\n",
+            base,
+        )
+        .unwrap();
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        assert_eq!(
+            every,
+            ConfigFile {
+                network: Some("/home/u/.config/shadenet/staging/deployment.json".into()),
+                identity: Some("/home/u/.config/shadenet/id.json".into()),
+                proxy_token_file: Some(if home.as_os_str().is_empty() {
+                    "/home/u/.config/shadenet/~/token".into()
+                } else {
+                    home.join("token")
+                }),
+                listen: Some("127.0.0.1:9000".into()),
+                rpc_url: Some("https://a.example,https://b.example".into()),
+                cache_dir: Some("/home/u/.config/shadenet/cache".into()),
+                leaf_source: Some("rpc".into()),
+                members: Some("/home/u/.config/shadenet/members.json".into()),
+                contract: Some("0x789967F0bDD7f3a96fb60F6D315e93F103b5680b".into()),
+                prover_workers: Some(2),
+                max_tunnels: Some(64),
+                max_setups: Some(16),
+                allow_non_loopback: Some(false),
+                searxng_url: Some("http://127.0.0.1:8080".into()),
+                queue_max_wait_secs: Some(120),
+                warm_nodes: Some(0),
+                preopen_books: Some(true),
+                targets: Some(vec![".wikipedia.org".into(), "api.ipify.org".into()]),
+                path: None,
+            }
+        );
+        // Errors stay errors: an unknown key (named in the message), a wrong type, a duplicate
+        // key, and broken syntax.
+        let unknown = parse("listn = \"x\"\n", None).unwrap_err();
+        assert!(unknown.contains("listn"), "{unknown}");
+        assert!(parse("max_tunnels = \"8\"\n", None).is_err());
+        assert!(parse("listen = \"a\"\nlisten = \"b\"\n", None).is_err());
+        assert!(parse("network = \"sepolia\n", None).is_err());
+        assert!(parse("targets = [1, 2]\n", None).is_err());
     }
 
     #[test]

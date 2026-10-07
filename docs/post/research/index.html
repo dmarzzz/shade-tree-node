@@ -976,6 +976,7 @@ none blocked, which makes sense: this is a presumably fresh IP with no
 bad history, though DigitalOcean could have recycled it from a prior
 tenant, so for now the destination sees an ordinary address and lets it
 through.</p>
+<p class="implementation-note"><strong>Update, 7 October 2026:</strong> Google now answers clients that do not run JavaScript with an HTTP 200 page that has no results, from any address, so a count of 200 responses no longer shows that searches get through.</p>
 <p>Since the onion route doubles the hops, three from the client to the
 rendezvous and three from the gateway, so every request crosses six
 relays there and back instead of three, it is worth understanding how

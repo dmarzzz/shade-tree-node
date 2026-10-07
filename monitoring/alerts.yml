@@ -146,16 +146,21 @@ groups:
           description: >-
             Requests are moving past endpoint index {{ $labels.endpoint }} of SHADE_TREE_RPC_URL.
             Roots stay fresh while another endpoint answers; replace or remove the failing one.
+      # Versions, not commits: the published node image is built at the release tag's commit while
+      # systemd hosts run the record's commit; both report the record's release version. A real
+      # drift (a role left on another release) still fires. Off-pin commits on one host are the
+      # probe's CanopyOffRecordPin.
       - alert: CanopyPinDrift
-        expr: count(count by (commit) (shade_tree_build_info{job=~"shade-tree-(bootnode|gateway|heartbeat)"})) > 1
+        expr: count(count by (version) (shade_tree_build_info{job=~"shade-tree-(bootnode|gateway|heartbeat)"})) > 1
         for: 30m
         labels:
           severity: warn
         annotations:
-          summary: "Canopy roles run more than one commit"
+          summary: "Canopy roles run more than one release"
           description: >-
-            shade_tree_build_info reports different commit labels across the Elder, nodes and
-            heartbeats. Deploy every role from the one tag in the deployment record.
+            shade_tree_build_info reports different version labels across the Elder, nodes and
+            heartbeats. Deploy every role from the release in the deployment record (a container
+            image of that release is fine: it is built at the tag's commit).
       - alert: SlashSpike
         expr: sum by (instance) (rate(shade_tree_gateway_slashes_total{job="shade-tree-gateway"}[15m])) > 0.1
         for: 10m

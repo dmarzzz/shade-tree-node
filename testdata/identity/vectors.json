@@ -1,5 +1,5 @@
 {
-  "about": "Identity files as the Rust client writes them (shadenet 0.7.1): `plain` by `shadenet init --offline`, `locked` by `shadenet identity-lock` on a copy (scrypt logN 17), `lockedLowCost` by shadenet::identity::serialize at logN 10 so debug-build tests stay fast; `overLimit` is `lockedLowCost` with scrypt logN 20, r 32, p 16, which both readers must refuse before running scrypt. A test identity: never stake this leaf. Read by crates/shadenet/src/identity.rs and packages/node/lib/identity-file.selftest.mjs.",
+  "about": "Identity files as the Rust client writes them (shadenet 0.7.1): `plain` by `shadenet init --offline`, `locked` by `shadenet identity-lock` on a copy (scrypt logN 17), `lockedLowCost` by shadenet::identity::serialize at logN 10 so debug-build tests stay fast; `overLimit` is `lockedLowCost` with scrypt logN 20, r 32, p 16, which both readers must refuse before running scrypt. `lockedScrypt012` is the same `plain` identity locked by `shadenet identity-lock` built with scrypt 0.12 (2026-10-06, Dependabot #266): a file sealed after the bump that the 0.11 build (v0.7.4) and JavaScript must open. `lockedChacha011` is the same identity locked after the chacha20poly1305 0.10 -> 0.11 bump (Dependabot #262), which v0.7.4 and JavaScript must open. A test identity: never stake this leaf. Read by crates/shadenet/src/identity.rs and packages/node/lib/identity-file.selftest.mjs.",
   "plain": "rust-init.json",
   "locked": "rust-init-locked.json",
   "lockedLowCost": "rust-sdk-locked.json",
@@ -7,5 +7,7 @@
   "leaf": "5422396744081522959706503441345376700063057855005220201447532952071108755372",
   "limit": 1,
   "identityCommitment": "7906108046570446201899988459433411961492265525729901131144863051431466501434",
-  "overLimit": "over-limit.json"
+  "overLimit": "over-limit.json",
+  "lockedScrypt012": "rust-init-locked-scrypt012.json",
+  "lockedChacha011": "rust-init-locked-chacha011.json"
 }

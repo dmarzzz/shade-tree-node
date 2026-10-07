@@ -44,7 +44,9 @@ const SEPOLIA = 11155111;
 const MIN_UNBONDING = 3720; // ratePolicy root freshness 60 + epoch 60 + slash confirmation 3600
 // ADR 0012: the record carries an RPC failover list. A full-history endpoint goes first (publicnode
 // answered eth_getLogs / receipts with nothing during the M7 rehearsal); publicnode stays as fallback.
-const PUBLIC_RPCS = ["https://rpc.sepolia.ethpandaops.io", "https://ethereum-sepolia-rpc.publicnode.com"];
+// Both replay the member set's eth_getLogs from a set's deploy block (checked 2026-10-06);
+// publicnode intermittently answers that with "pruned history unavailable" (task 19).
+const PUBLIC_RPCS = ["https://rpc.sepolia.ethpandaops.io", "https://sepolia.gateway.tenderly.co"];
 const rpcList = (v) => String(v).split(",").map((s) => s.trim()).filter(Boolean);
 const ANVIL_KEY_0 = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 

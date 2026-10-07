@@ -231,6 +231,13 @@ console.log("=== exit / withdraw proofs (real Groth16) ===");
   const vkey = JSON.parse(readFileSync(join(ROOT, "circuits", "rln", "withdraw_verification_key.json"), "utf8"));
   const proof = { pi_a: [a[0].toString(), a[1].toString(), "1"], pi_b: [[b[0][1].toString(), b[0][0].toString()], [b[1][1].toString(), b[1][0].toString()], ["1", "0"]], pi_c: [c[0].toString(), c[1].toString(), "1"], protocol: "groth16", curve: "bn128" };
   ok(await snarkjs.groth16.verify(vkey, [fixture.identityCommitment, fixture.exit.address], proof), "snarkjs verifies the exit proof against the withdraw VK");
+  // Cross-version: the SDK may carry a newer snarkjs than the repo's hoisted one, which the nodes and
+  // the JS client verify with (Dependabot #257). A proof the SDK makes must verify under both.
+  const hoisted = await import(new URL("../../../node_modules/snarkjs/main.js", import.meta.url));
+  const versionAt = (...dir) => { try { return JSON.parse(readFileSync(join(ROOT, ...dir, "snarkjs", "package.json"), "utf8")).version; } catch { return null; } };
+  const hoistedVersion = versionAt("node_modules");
+  const versions = [versionAt("packages", "sdk", "node_modules") ?? hoistedVersion, hoistedVersion];
+  ok(await hoisted.groth16.verify(vkey, [fixture.identityCommitment, fixture.exit.address], proof), `the SDK's exit proof (snarkjs ${versions[0]}) verifies under the hoisted snarkjs ${versions[1]}`);
   const w2 = fixtureWallet();
   await sdk.createStaking({ network: fixtureNet, provider: w2 }).withdraw({ identity, recipient: fixture.recipient, from: FROM });
   ok(iface.parseTransaction({ data: w2.sent[0].data }).args[1] === fixture.recipient, "withdraw binds the recipient");

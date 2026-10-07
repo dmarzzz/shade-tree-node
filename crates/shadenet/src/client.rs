@@ -350,6 +350,8 @@ pub struct Client {
     sessions: crate::session::SessionPool,
     /// Nodes that refused a session initialization as unsupported this process lifetime.
     session_refused: StdMutex<HashSet<String>>,
+    /// Wall-clock ms of the last request attempt (0 = none yet), for the book pre-opener.
+    last_request_ms: AtomicU64,
     /// Serializes session-book initialization so concurrent tunnels to one node share one
     /// proof and one book instead of each opening its own (ADR 0013).
     session_init_gate: Mutex<()>,
@@ -446,6 +448,7 @@ impl Client {
             counters: Counters::default(),
             sessions: crate::session::SessionPool::new(),
             session_refused: StdMutex::new(HashSet::new()),
+            last_request_ms: AtomicU64::new(0),
             session_init_gate: Mutex::new(()),
             queue: QueueCounters::default(),
             last_failed_gateway: StdMutex::new(None),
@@ -1440,6 +1443,7 @@ impl Client {
         target: &str,
         attempt_epoch: &mut Option<u64>,
     ) -> Result<Tunnel, Error> {
+        self.last_request_ms.store(now_ms(), Ordering::Relaxed);
         let mut result = self.connect_inner(target, None, attempt_epoch).await;
         let avoid = match &result {
             Err(Error::NodeRefused {
@@ -1791,9 +1795,32 @@ impl Client {
         target: &str,
         gateway: Gateway,
         class: &'static shadenet_proto::session::ClassPolicy,
-        mut request: transport::ConnectRequest,
+        request: transport::ConnectRequest,
     ) -> Result<Tunnel, Error> {
-        let onion = Self::onion_of(&gateway)
+        self.session_open(&gateway, class, request).await?;
+        match self
+            .session_spend(target, std::slice::from_ref(&gateway))
+            .await?
+        {
+            Some(tunnel) => Ok(tunnel),
+            None => Err(Error::NodeRefused {
+                gateway: gateway.label(),
+                reason: "session-lost".into(),
+                ack: Box::new(serde_json::Value::Null),
+            }),
+        }
+    }
+
+    /// Prove once to open a book of `class` at `gateway` and install it; spends no ticket. The
+    /// initialization carries the book instead of a target: its signal binds the node, class,
+    /// nonce and book digest (`session_signal`), so `request.proof.target` is not used.
+    async fn session_open(
+        &self,
+        gateway: &Gateway,
+        class: &'static shadenet_proto::session::ClassPolicy,
+        mut request: transport::ConnectRequest,
+    ) -> Result<(), Error> {
+        let onion = Self::onion_of(gateway)
             .ok_or_else(|| Error::Internal("session node without an onion".into()))?;
         let pending = crate::session::PendingBook::draw(&onion, class).map_err(Error::Internal)?;
         request.session = Some(transport::SessionInit {
@@ -1835,17 +1862,7 @@ impl Client {
                 tracing::info!(gateway = %gateway.label(), class = class.class, tickets = class.tickets, "session book opened");
                 self.sessions.install(pending);
                 drop(connected.stream);
-                match self
-                    .session_spend(target, std::slice::from_ref(&gateway))
-                    .await?
-                {
-                    Some(tunnel) => Ok(tunnel),
-                    None => Err(Error::NodeRefused {
-                        gateway: gateway.label(),
-                        reason: "session-lost".into(),
-                        ack: Box::new(serde_json::Value::Null),
-                    }),
-                }
+                Ok(())
             }
             Err(transport::Error::GatewayRefused { ack, .. })
                 if ack.get("err").and_then(serde_json::Value::as_str)
@@ -1861,6 +1878,95 @@ impl Client {
                 })
             }
             Err(error) => Err(self.map_transport_error(error).await),
+        }
+    }
+
+    /// Open a session book before any request needs one (task 71: opening a book is most of a
+    /// first request's latency, 8 s or more through a nearby node). It proves once for an
+    /// initialization that carries no target, installs the book and spends no ticket, so the
+    /// next request starts at a ticket. Returns the node it opened at, or `None` when it did
+    /// nothing: session tickets are off, a live book still has tickets, fewer than two proofs
+    /// are left this epoch (one stays for a request), or no candidate offers sessions.
+    pub async fn preopen_book(&self) -> Result<Option<String>, Error> {
+        let has_live_book = |c: &Self| c.sessions.summary().iter().any(|(_, left)| *left > 0);
+        if !self.config.session_tickets || has_live_book(self) {
+            return Ok(None);
+        }
+        if self.budget_snapshot().slots_left < 2 {
+            return Ok(None);
+        }
+        let identity = self
+            .identity
+            .as_ref()
+            .ok_or_else(|| Error::Config("no identity configured".into()))?;
+        if identity.secret.is_empty() {
+            return Ok(None);
+        }
+        let (gateways, advertised, demo) = self.candidates(443).await?;
+        let Some((gateway, class)) = self.session_candidate(&gateways).await else {
+            return Ok(None);
+        };
+        // One book per node at a time (ADR 0013): a request that got here first wins.
+        let gate = self.session_init_gate.lock().await;
+        if has_live_book(self) {
+            return Ok(None);
+        }
+        let limit = self.tier();
+        if !(1..=crate::profile::MAX_LIMIT).contains(&limit) {
+            return Err(Error::Config(format!(
+                "tier {limit} is outside the RLN range"
+            )));
+        }
+        let ours = self.client_artifact().await?;
+        let artifact =
+            shadenet_proto::select_artifact(advertised.as_deref(), std::slice::from_ref(&ours))
+                .map_err(|e| Error::Artifact(e.to_string()))?;
+        let slots = match &self.config.slots {
+            // The slashing test pins one slot; never spend it on a pre-open.
+            Slots::UnsafeForSlashingTest(_) => return Ok(None),
+            _ => transport::SlotPolicy::CrashSafe {
+                cursor: self
+                    .slot_path(identity)?
+                    .ok_or_else(|| Error::Internal("no slot path".into()))?,
+            },
+        };
+        let epoch = self.current_epoch();
+        let (members, _set) = self.admitted_members(&identity.leaf, demo.as_ref()).await?;
+        let request = transport::ConnectRequest {
+            gateways: vec![gateway.clone()],
+            proof: transport::ProofRequest {
+                identity_secret: identity.secret.to_string(),
+                member_leaf: identity.leaf.clone(),
+                members,
+                // Not used: the initialization's signal is session-bound (see session_open).
+                target: String::new(),
+                nonce: random_nonce(),
+                epoch,
+                rln_identifier: self.config.rln_identifier.clone(),
+                user_message_limit: limit,
+                circuits_dir: self
+                    .config
+                    .circuits_dir
+                    .as_ref()
+                    .map(|dir| dir.display().to_string()),
+            },
+            slots,
+            artifact,
+            session: None,
+        };
+        let label = gateway.label();
+        let outcome = self.session_open(&gateway, class, request).await;
+        drop(gate);
+        match outcome {
+            Ok(()) => {
+                tracing::info!(gateway = %label, class = class.class, "session book pre-opened");
+                Ok(Some(label))
+            }
+            Err(Error::NodeRefused { reason, .. }) if reason == "session-unsupported" => Ok(None),
+            Err(error) => {
+                self.record_error(&error);
+                Err(error)
+            }
         }
     }
 
@@ -1998,6 +2104,48 @@ impl Client {
                 drop(client);
                 let jitter = every.mul_f64(0.2 * (now_ms() % 1000) as f64 / 1000.0);
                 tokio::time::sleep(every + jitter).await;
+            }
+        }))
+    }
+
+    /// Keep a session book open ahead of requests (task 71). One pre-open right after start; after
+    /// that, a book that idled out or ran out of tickets is replaced only while requests came in
+    /// within `active_window`, so an idle client stops spending proofs. Each attempt is bounded
+    /// by `preopen_book` (one book, two or more proofs left this epoch). Off unless asked for.
+    pub fn spawn_preopener(
+        self: &Arc<Self>,
+        active_window: Duration,
+    ) -> Option<tokio::task::JoinHandle<()>> {
+        if !self.config.session_tickets {
+            return None;
+        }
+        let weak = Arc::downgrade(self);
+        Some(tokio::spawn(async move {
+            // Let the canopy fetch and the warm-up dials land first.
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            let mut first = true;
+            loop {
+                let Some(client) = weak.upgrade() else { return };
+                let last = client.last_request_ms.load(Ordering::Relaxed);
+                let active =
+                    last != 0 && now_ms().saturating_sub(last) <= active_window.as_millis() as u64;
+                let pause = if first || active {
+                    match client.preopen_book().await {
+                        Ok(_) => {
+                            first = false;
+                            Duration::from_secs(5)
+                        }
+                        // The start-up pre-open stays pending until one attempt completes.
+                        Err(error) => {
+                            tracing::debug!(%error, "session book pre-open failed; retrying later");
+                            Duration::from_secs(30)
+                        }
+                    }
+                } else {
+                    Duration::from_secs(5)
+                };
+                drop(client);
+                tokio::time::sleep(pause).await;
             }
         }))
     }
@@ -2739,6 +2887,16 @@ mod tests {
             dial: Duration,
             clock: impl Fn() -> u64 + Send + Sync + 'static,
         ) -> Self {
+            Self::with_limit(name, queue_max_wait, dial, clock, 1)
+        }
+
+        fn with_limit(
+            name: &str,
+            queue_max_wait: Option<Duration>,
+            dial: Duration,
+            clock: impl Fn() -> u64 + Send + Sync + 'static,
+            limit: u64,
+        ) -> Self {
             let dir =
                 std::env::temp_dir().join(format!("shadenet-queue-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
@@ -2753,7 +2911,7 @@ mod tests {
                 .identity(Some(Identity::Material {
                     secret: Zeroizing::new("1".into()),
                     leaf: "123".into(),
-                    limit: Some(1),
+                    limit: Some(limit),
                 }))
                 .slots(Slots::Cursor(cursor.clone()))
                 .circuits_dir(Some(dir.clone()))
@@ -2946,6 +3104,42 @@ mod tests {
         assert_eq!(rig.budget_errors(), 2, "the lost race and the refusal");
         assert!(rig.proofs().is_empty());
         assert_eq!(rig.client.queue_depth(), 0);
+    }
+
+    // ---- task 71: a book opened ahead of the first request ----
+
+    #[tokio::test(start_paused = true)]
+    async fn a_preopened_book_carries_the_next_request_without_a_second_proof() {
+        let (_now, clock) = hand_clock();
+        let rig = Rig::with_limit("preopen", None, Duration::ZERO, clock, 8);
+        let opened = rig.client.preopen_book().await.unwrap();
+        assert!(opened.is_some(), "a book was opened ahead of any request");
+        assert_eq!(rig.books.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            rig.spends.load(Ordering::SeqCst),
+            0,
+            "a pre-open spends no ticket"
+        );
+        assert_eq!(rig.proofs().len(), 1);
+        // The request starts at a ticket: no proof, no initialization.
+        let tunnel = rig.client.connect(TARGET).await.unwrap();
+        assert!(tunnel.session.is_some());
+        assert_eq!(rig.books.load(Ordering::SeqCst), 1);
+        assert_eq!(rig.spends.load(Ordering::SeqCst), 1);
+        assert_eq!(rig.proofs().len(), 1);
+        // A live book with tickets left: nothing to pre-open.
+        assert_eq!(rig.client.preopen_book().await.unwrap(), None);
+        assert_eq!(rig.proofs().len(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn preopen_keeps_the_last_proof_of_the_epoch_for_a_request() {
+        // Tier 1 has one proof per epoch: a pre-open would leave none for the request.
+        let (_now, clock) = hand_clock();
+        let rig = Rig::new("preopen-tier1", None, Duration::ZERO, clock);
+        assert_eq!(rig.client.preopen_book().await.unwrap(), None);
+        assert_eq!(rig.books.load(Ordering::SeqCst), 0);
+        assert!(rig.proofs().is_empty());
     }
 
     #[tokio::test(start_paused = true)]

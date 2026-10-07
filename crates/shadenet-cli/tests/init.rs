@@ -81,14 +81,15 @@ fn init_human_output_names_the_commitment_and_link_not_the_leaf_to_stake() {
     );
     let text = String::from_utf8_lossy(&out.stdout);
 
-    // Prints the identity commitment and the leaf with its tier.
+    // Prints the identity commitment, and the budget in sessions or tunnels, never "tier N"
+    // (the public record has one tier).
     assert!(
         text.contains("identity commitment "),
         "init prints the identity commitment:\n{text}"
     );
     assert!(
-        text.contains("(tier "),
-        "init prints the leaf with its tier:\n{text}"
+        !text.contains("tier"),
+        "init human output names the budget, not a tier:\n{text}"
     );
     // Prints a stake link on the stable domain.
     assert!(

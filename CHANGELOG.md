@@ -4,7 +4,115 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
-Nothing yet.
+### Monitoring
+
+- `CanopyPinDrift` compares release versions, not commits. The published node image is built at the
+  release tag's commit while systemd hosts run the record's commit; both report the record's
+  version, so the orbital-one container (0.7.4 at 6709328) no longer fires it next to the fleet
+  (0.7.4 at 114065d). A role left on another release still fires; an off-pin commit on one host is
+  `CanopyOffRecordPin`'s job. Checked with `promtool test rules`: same version and two commits stays
+  quiet, while two versions fire after 30 minutes.
+
+### Dependencies
+
+- docker/setup-qemu-action v3 → v4.4.0 in `node-image` (Dependabot #256).
+  - Without a push, `node-image` now also builds the arm64 image through QEMU (neither loaded nor
+    pushed), so a QEMU or base-image break shows up on a dispatch instead of during a release.
+  - Checked with a dispatch on the branch (run 37545890531, `push=false`): the amd64 build and
+    smoke test passed, and the arm64 build through QEMU v4 passed.
+- toml 0.8 → 1.1 for `config.toml` (Dependabot #263). toml 1.x gates `from_str` behind its `serde`
+  feature, so the dependency now enables `["parse", "serde"]`; Dependabot's version alone did not
+  compile.
+  - A new corpus test pins every config people have, field by field: what `shadenet init` writes,
+    what agent-devops renders for Hermes, and every key at once with inline comments, a literal
+    string, a multi-line array with a trailing comma, and CRLF line endings.
+  - It also checks that an unknown key (named in the error), a wrong type, a duplicate key and
+    broken syntax stay errors.
+  - It passes unchanged on 0.8 and 1.1.
+- snarkjs 0.7.5 → 0.7.6 in `packages/sdk`, which proves exit/withdraw actions in the browser
+  (`proveAction`; Dependabot #257). The repo's hoisted snarkjs, used by the nodes and the JS client
+  for RLN proofs, stays 0.7.5.
+  - Checked across versions:
+    - a fresh SDK exit proof (0.7.6) verifies under the hoisted 0.7.5; this is now a permanent
+      check in `sdk.selftest`;
+    - the on-chain `WithdrawGroth16Verifier` accepts it on Anvil and refuses it with a tampered
+      address;
+    - the pre-bump `testdata/withdraw-proof.json` fixture still verifies.
+- @noble/curves 1.2.0 → 2.4.0, the browser backend's ed25519 (Dependabot #259). The import is
+  `@noble/curves/ed25519.js`; sign/verify (RFC 8032, `zip215: false`) are unchanged.
+  - ethers, @semaphore-protocol/proof and @zk-kit/lean-imt keep their own nested 1.x.
+  - `test/crypto-backends.selftest.mjs` (32 checks), directory forward-compat under both backends
+    and the SDK conformance vectors pass.
+  - The stake page bundle is byte-identical.
+- @noble/hashes 1.3.2 → 2.4.0, the browser crypto backend's sha256 and sha3-256
+  (`packages/node/lib/crypto-browser.mjs`; Dependabot #260, merged as #330). v2 exports explicit `.js`
+  subpaths, so the imports are `@noble/hashes/sha3.js` and `@noble/hashes/sha2.js`.
+  - New `test/crypto-backends.selftest.mjs` (32 checks) pins the browser and Node (OpenSSL)
+    backends to each other: FIPS known answers, the RFC 8032 ed25519 vector, cross-verification,
+    and refusal of a corrupted or non-canonical-S signature.
+  - The stake page bundle is byte-identical.
+- chacha20poly1305 0.10 → 0.11, the XChaCha20-Poly1305 seal on passphrase-protected
+  `identity.json` (Dependabot #262, merged as #329). It moves to `hybrid-array` (the key from the
+  32-byte array, `XNonce::try_from` / `from`).
+  - Checked in both directions: every pre-bump fixture opens, and a file locked by the new build
+    opens with the v0.7.4 CLI and the JS reader.
+  - New fixture `rust-init-locked-chacha011.json` (`vectors.json` `lockedChacha011`).
+- scrypt 0.11 → 0.12, which derives the key for passphrase-protected `identity.json` (Dependabot
+  #266). `Params::new` no longer takes the output length; the 32-byte key buffer sets it, so the
+  key is identical.
+  - Checked in both directions:
+    - the existing Rust- and SDK-locked fixtures open under the new code;
+    - a file locked by the new build opens with the v0.7.4 (scrypt 0.11) CLI and with the JS
+      reader, to the same secret.
+  - New fixture `testdata/identity/rust-init-locked-scrypt012.json` (`vectors.json`
+    `lockedScrypt012`), read by both test suites.
+
+### Record RPCs: publicnode out, tenderly in (task 19)
+
+- The Sepolia record's second member-set RPC was publicnode, which intermittently answers the
+  member-set `eth_getLogs` replay with `code 4444, pruned history unavailable`. That made
+  `doctor` fail, and SearXNG's proxy refused every CONNECT. It is replaced by
+  `https://sepolia.gateway.tenderly.co`; the list is now ethpandaops, tenderly.
+- Checked 2026-10-06:
+  - tenderly returns the full log from the set's deploy block and takes a burst of 20 calls
+    without throttling;
+  - the Rust client's `doctor --rpc` reports "member log complete (7 live / 11 slots)";
+  - both v4 preflights pass;
+  - the JS root provider resolves `finalized` to a block number before `eth_getLogs` (tenderly
+    rejects the tag itself).
+- Rejected: 1rpc.io (HTTP 429/400 under the preflight), drpc and onfinality (range limits), and
+  Blast (shut down).
+- `scripts/deploy-contracts.mjs` defaults to the same pair for future records.
+- The stake page bundle is rebuilt; its only change is this URL.
+
+### `shadenet proxy --preopen`: a session book ready before the first request
+
+- A cold first request spent most of its time proving and opening a session book: 8 s or more
+  through a nearby node from a running proxy, and 68 s through Singapore from New York (task 71).
+- `--preopen` (`SHADENET_PREOPEN=1`, `preopen_books = true` in `config.toml`) opens a book ahead
+  of requests: one at start, then again after a book idles out or runs dry, but only while
+  requests came in within the last 10 minutes. An idle proxy stops spending proofs.
+- Each book costs one proof of the epoch's budget. A pre-open needs at least two proofs left, so
+  one stays for a request, and it never opens a second book while one still has tickets.
+- No wire change: a session initialization already carries no target (its signal binds the node,
+  class, nonce and book digest). The node accepts it as today.
+- Measured on the live canopy (2026-10-06, via gcc-shade-1): the book was pre-opened at start; the
+  first request then spent ticket 0 directly and returned in 9.9 s.
+- Off by default.
+
+### CLI output names the budget, not a tier
+
+- The public record has one tier, so `init`, `doctor`, `status` and `plan` no longer print
+  "tier 8", "(tier 8)" or "1 tier(s), default tier 8". They state the budget instead:
+  "8 sessions per 60s epoch" (with session tickets) or "N tunnels per epoch".
+  - `doctor` names the tier count only for a record that lists several.
+  - `--json` keeps `tier` and `limit`; the `--limit` flag is unchanged.
+- `status`: the epoch line said `tunnels used 0, left 8` next to `48 tunnel(s) per epoch`. It now
+  says `sessions (6 tunnels each) used 0 of 8, left 8`, so the two numbers agree.
+- `status`: the node line silently stopped at six nodes. It now adds `, +N more`; `--json` lists
+  every node.
+- `plan` advice no longer suggests "tier N would do it in one epoch"; the plan's
+  `one_epoch_tier` field is unchanged.
 
 ## 0.7.4 — forward-compatible capability verification
 
