@@ -64,9 +64,14 @@ docker run -d --name "$CONTAINER" \
   --privileged --cgroupns=host \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   --tmpfs /run --tmpfs /run/lock \
+  -e APT_MIRROR="${E2E_APT_MIRROR:-}" \
   -v "$SRC":/mnt/src:ro \
   "$IMAGE" \
   bash -c 'export DEBIAN_FRONTEND=noninteractive;
+           if [ -n "$APT_MIRROR" ]; then
+             sed -i -E "s#http://(archive|security)\.ubuntu\.com/ubuntu/?#${APT_MIRROR%/}/#g" /etc/apt/sources.list.d/ubuntu.sources;
+             echo "apt mirror: $APT_MIRROR";
+           fi;
            apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20";
            for attempt in 1 2 3; do
              echo "$(date -u +%T) apt attempt $attempt: update";

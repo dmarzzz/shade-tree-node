@@ -69,6 +69,10 @@ jobs:
       # ACCEPT; a propagation timeout is a soft pass (see the script header + E2E-CONTAINER.md).
       - name: Real-Tor JS client -> fleet gateway ACCEPT (over Tor)
         if: needs.changes.outputs.run == 'true'
+        env:
+          # GitHub's Ubuntu runners reach Azure's Ubuntu mirror quickly; archive.ubuntu.com
+          # stalled apt inside the container for minutes on 2026-10-07.
+          E2E_APT_MIRROR: http://azure.archive.ubuntu.com/ubuntu/
         run: bash test/real-tor-e2e-container.sh
 
   rust-real-tor-e2e:

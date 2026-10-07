@@ -60,4 +60,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         env:
           E2E_MODE: ${{ matrix.mode }}
+          # GitHub's Ubuntu runners reach Azure's Ubuntu mirror quickly; archive.ubuntu.com
+          # stalled apt inside the container for minutes on 2026-10-07.
+          E2E_APT_MIRROR: http://azure.archive.ubuntu.com/ubuntu/
         run: bash packages/node/bootnode/deploy/e2e-container.sh
