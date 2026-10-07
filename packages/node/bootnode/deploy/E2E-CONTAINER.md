@@ -19,6 +19,9 @@ Actions `ubuntu-latest`, or Docker Desktop / colima on macOS). It clones **your
 current checkout** into the container from a read-only bind mount (not GitHub), so
 you test the branch in front of you. `E2E_KEEP=1` leaves the container up for
 `docker exec` poking; `SHADE_TREE_REF=<ref>` overrides the ref that gets cloned.
+`E2E_APT_MIRROR=<url>` points the container's apt at another Ubuntu mirror (the CI workflows
+use `http://azure.archive.ubuntu.com/ubuntu/`); apt's output is in `docker logs`, which the
+script prints if systemd does not come up.
 
 ## Why systemd-in-a-container (and not `docker run ubuntu:24.04 bash bootstrap.sh`)
 

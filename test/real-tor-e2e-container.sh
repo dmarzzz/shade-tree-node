@@ -64,23 +64,46 @@ docker run -d --name "$CONTAINER" \
   --privileged --cgroupns=host \
   -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
   --tmpfs /run --tmpfs /run/lock \
+  -e APT_MIRROR="${E2E_APT_MIRROR:-}" \
   -v "$SRC":/mnt/src:ro \
   "$IMAGE" \
   bash -c 'export DEBIAN_FRONTEND=noninteractive;
-           apt-get update -qq >/dev/null 2>&1;
-           apt-get install -y -qq systemd systemd-sysv >/dev/null 2>&1;
+           if [ -n "$APT_MIRROR" ]; then
+             sed -i -E "s#http://(archive|security)\.ubuntu\.com/ubuntu/?#${APT_MIRROR%/}/#g" /etc/apt/sources.list.d/ubuntu.sources;
+             echo "apt mirror: $APT_MIRROR";
+           fi;
+           apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::http::Pipeline-Depth=0";
+           # A stalled download trickles past apt'"'"'s idle timeout; kill the attempt and retry instead.
+           for attempt in 1 2 3; do
+             echo "$(date -u +%T) apt attempt $attempt: update";
+             timeout 90 apt-get $apt update -qq &&
+               echo "$(date -u +%T) apt attempt $attempt: install systemd" &&
+               timeout 120 apt-get $apt install -y -qq systemd systemd-sysv && break;
+             echo "$(date -u +%T) apt attempt $attempt failed; retrying"; sleep 5;
+           done;
+           echo "$(date -u +%T) exec systemd";
+           test -x /lib/systemd/systemd || { echo "systemd is not installed; see apt output above"; exit 1; };
            exec /lib/systemd/systemd' >/dev/null
 
 log "wait for systemd to come up"
+# apt runs before systemd (three attempts of at most 210 s each), so it spends this budget;
+# apt's output lands in `docker logs`.
 ok=0
-for _ in $(seq 1 60); do
+for _ in $(seq 1 330); do
+  [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = "true" ] || break
   state="$(docker exec "$CONTAINER" systemctl is-system-running 2>/dev/null || true)"
   case "$state" in
     running|degraded|starting) ok=1; [ "$state" = "starting" ] || break ;;
   esac
   sleep 2
 done
-[ "$ok" = "1" ] || { docker logs "$CONTAINER" 2>&1 | tail -30; fail "systemd never came up in container"; }
+[ "$ok" = "1" ] || {
+  docker logs "$CONTAINER" 2>&1 | tail -60
+  docker inspect -f 'container running={{.State.Running}} exit={{.State.ExitCode}}' "$CONTAINER" 2>&1 || true
+  echo "last systemctl is-system-running: ${state:-<no answer>}; processes:"
+  docker exec "$CONTAINER" ps -eo pid,etime,args 2>&1 | head -15 || true
+  fail "systemd never came up in container"
+}
 
 log "run bootstrap.sh inside the container (clone file:///mnt/src @ $REF)"
 docker exec \
