@@ -67,20 +67,29 @@ docker run -d --name "$CONTAINER" \
   -v "$SRC":/mnt/src:ro \
   "$IMAGE" \
   bash -c 'export DEBIAN_FRONTEND=noninteractive;
-           apt-get update -qq >/dev/null 2>&1;
-           apt-get install -y -qq systemd systemd-sysv >/dev/null 2>&1;
+           for attempt in 1 2 3; do
+             apt-get update -qq && apt-get install -y -qq systemd systemd-sysv && break;
+             echo "apt attempt $attempt failed; retrying"; sleep 5;
+           done;
+           test -x /lib/systemd/systemd || { echo "systemd is not installed; see apt output above"; exit 1; };
            exec /lib/systemd/systemd' >/dev/null
 
 log "wait for systemd to come up"
+# apt runs before systemd, so a slow mirror spends this budget; apt's output lands in `docker logs`.
 ok=0
-for _ in $(seq 1 60); do
+for _ in $(seq 1 90); do
+  [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = "true" ] || break
   state="$(docker exec "$CONTAINER" systemctl is-system-running 2>/dev/null || true)"
   case "$state" in
     running|degraded|starting) ok=1; [ "$state" = "starting" ] || break ;;
   esac
   sleep 2
 done
-[ "$ok" = "1" ] || { docker logs "$CONTAINER" 2>&1 | tail -30; fail "systemd never came up in container"; }
+[ "$ok" = "1" ] || {
+  docker logs "$CONTAINER" 2>&1 | tail -60
+  docker inspect -f 'container running={{.State.Running}} exit={{.State.ExitCode}}' "$CONTAINER" 2>&1 || true
+  fail "systemd never came up in container"
+}
 
 log "run bootstrap.sh inside the container (clone file:///mnt/src @ $REF)"
 docker exec \
