@@ -454,7 +454,7 @@ dependencies = [
  "derive_builder_fork_arti",
  "derive_more 2.1.1",
  "educe 0.4.23",
- "fs-mistrust",
+ "fs-mistrust 0.15.1",
  "futures",
  "hostname-validator",
  "humantime",
@@ -2493,6 +2493,20 @@ dependencies = [
  "thiserror 2.0.21",
  "void",
  "walkdir",
+]
+
+[[package]]
+name = "fs-mistrust"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc7f210768dd30e30895a6024be8472615bd7b6caec6df4f4105fc03e7608bdd"
+dependencies = [
+ "derive_builder_fork_arti",
+ "extend",
+ "libc",
+ "pwd-grp",
+ "thiserror 2.0.21",
+ "void",
 ]
 
 [[package]]
@@ -5825,7 +5839,7 @@ dependencies = [
  "arti-client",
  "base64 0.23.1",
  "chacha20poly1305",
- "fs-mistrust",
+ "fs-mistrust 0.16.0",
  "futures",
  "getrandom 0.4.3",
  "hex",
@@ -6899,7 +6913,7 @@ dependencies = [
  "either",
  "extend",
  "figment",
- "fs-mistrust",
+ "fs-mistrust 0.15.1",
  "futures",
  "humantime-serde",
  "itertools 0.15.0",
@@ -7014,7 +7028,7 @@ dependencies = [
  "digest 0.10.7",
  "educe 0.4.23",
  "event-listener",
- "fs-mistrust",
+ "fs-mistrust 0.15.1",
  "fslock-guard",
  "futures",
  "hex",
@@ -7230,7 +7244,7 @@ dependencies = [
  "digest 0.10.7",
  "educe 0.4.23",
  "equix",
- "fs-mistrust",
+ "fs-mistrust 0.15.1",
  "futures",
  "growable-bloom-filter",
  "hex",
@@ -7312,7 +7326,7 @@ dependencies = [
  "derive_more 2.1.1",
  "downcast-rs",
  "dyn-clone",
- "fs-mistrust",
+ "fs-mistrust 0.15.1",
  "glob-match",
  "humantime",
  "inventory",
@@ -7566,7 +7580,7 @@ dependencies = [
  "derive_more 2.1.1",
  "extend",
  "filetime",
- "fs-mistrust",
+ "fs-mistrust 0.15.1",
  "fslock-guard",
  "futures",
  "itertools 0.15.0",
