@@ -74,6 +74,11 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Dependencies
 
+- quinn-proto 0.11.16 → 0.11.19 (`cargo update -p quinn-proto`, lock only; it arrives through
+  arti/reqwest). RustSec published five advisories against 0.11.16 on 2026-10-12
+  (RUSTSEC-2026-0339 to -0343, stream-reassembly and connection-ID memory exhaustion; fix
+  >= 0.11.17), which turned the supply-chain audit red on every PR, including #353. `cargo audit`
+  and `cargo deny check advisories` are clean on the new lock; the workspace builds `--locked`.
 - docker/setup-qemu-action v3 → v4.4.0 in `node-image` (Dependabot #256).
   - Without a push, `node-image` now also builds the arm64 image through QEMU (neither loaded nor
     pushed), so a QEMU or base-image break shows up on a dispatch instead of during a release.
