@@ -42,11 +42,14 @@ For the public path, the contract, RPC, deployment block, tier, and rate policy 
 
 ```bash
 shadenet init                       # prints the identity commitment and the exact register command
-chmod 600 funded-sepolia.key
-shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet register-member --identity ~/.config/shadenet/identity.json
+                                    # no key: creates a funding wallet, prints address + amount, waits, stakes
 shadenet status --wait              # about 13 minutes for Sepolia finality
 shadenet proxy
 ```
+
+To pay from a key you already hold: `chmod 600 funded-sepolia.key` and add
+`--key-file funded-sepolia.key`.
 
 Load the bearer secret without putting it in shell history or process arguments. Enter the
 operator-supplied tier at the second prompt:

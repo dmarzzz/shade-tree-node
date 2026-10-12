@@ -323,6 +323,24 @@ impl Wallet {
         })
     }
 
+    /// A fresh wallet from operating-system randomness, with its secret as `0x`-prefixed hex so
+    /// the caller can persist it. The secret is zeroized when the returned string drops; the
+    /// address is the only thing meant to be shown.
+    pub fn generate() -> Result<(Self, Zeroizing<String>), String> {
+        // A 32-byte value outside the curve order is astronomically unlikely; retry rather than
+        // fail so the caller never sees a transient error for it.
+        for _ in 0..8 {
+            let mut bytes = Zeroizing::new([0u8; 32]);
+            getrandom::fill(bytes.as_mut())
+                .map_err(|e| format!("operating-system randomness unavailable: {e}"))?;
+            let secret = Zeroizing::new(format!("0x{}", hex::encode(bytes.as_ref())));
+            if let Ok(wallet) = Self::from_hex(&secret) {
+                return Ok((wallet, secret));
+            }
+        }
+        Err("could not derive a valid secp256k1 key from operating-system randomness".into())
+    }
+
     /// Sign and serialize: `0x02 || rlp(fields ++ [yParity, r, s])`. Returns the raw bytes.
     pub fn sign(&self, tx: &Eip1559) -> Result<Vec<u8>, String> {
         let (signature, recovery) = self.key.sign_prehash_recoverable(&tx.sighash());
@@ -357,6 +375,16 @@ mod tests {
         );
         assert!(Wallet::from_hex("0x1234").is_err());
         assert!(!format!("{wallet:?}").contains("ac0974"));
+    }
+
+    #[test]
+    fn generated_wallets_are_distinct_and_round_trip_through_from_hex() {
+        let (a, secret_a) = Wallet::generate().unwrap();
+        let (b, _) = Wallet::generate().unwrap();
+        assert_ne!(a.address, b.address);
+        assert!(secret_a.starts_with("0x") && secret_a.len() == 66);
+        assert_eq!(Wallet::from_hex(&secret_a).unwrap().address, a.address);
+        assert!(!format!("{a:?}").contains(&secret_a[2..]));
     }
 
     #[test]

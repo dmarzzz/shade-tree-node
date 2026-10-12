@@ -4,6 +4,52 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### `register-member` funds itself (feature request: mirror zkAPI's funding path)
+
+- `shadenet register-member --identity …` with no `--key-file` and no `SHADENET_REGISTER_KEY` on
+  a remote RPC used to fail asking for a funded key. It now does what `zkapi-clientd config`
+  does: creates an owner-only funding wallet (`funding.key` next to the identity file;
+  `--funding-key <path>` to move it), prints the wallet's address and the one amount to send
+  (the tier's bond from `bondFor` plus a gas reserve of 1 800 000 gas at the current EIP-1559
+  fee or 1 gwei, whichever is higher, since Sepolia idles at a few wei and then spends a week
+  near 1 gwei; the sum is rounded up to 0.0001 ETH), polls the balance every 15 s, and stakes once the balance
+  covers it. The same command resumes after Ctrl-C and reuses the key; an already-staked
+  identity is reported before anyone is asked for money. `--wait-timeout <seconds>` (default
+  3600; `0` quotes once; `SHADENET_FUNDING_POLL_MS` sets the poll) bounds the wait; an unfunded
+  wallet at the deadline exits 4 naming what is still missing. The quote signs nothing and never calls `eth_estimateGas` (an
+  unfunded sender cannot be estimated against), which is why the reserve is a ceiling; what
+  the registration does not spend stays in the wallet. `--key-file`, the environment key and
+  the loopback Anvil default are unchanged.
+- Proven live on 2026-10-11 against the bundled Sepolia set `0x789967F0…680b`: a fresh identity,
+  `shadenet register-member --identity …` with no key, funding wallet
+  `0x33ec7E53E143e2065887Bd5D5d7EB47159D72982` quoted 0.0116 ETH (0.01 bond + 1 600 000 gas at the
+  1 gwei floor, the ceiling at the time); the deployer sent exactly that
+  (`0x80dd0656d783f4279fa06e4448e1d3f40672b0f9369401a88bb1456d2cbe67ef`, block 11897250); the
+  waiting command saw it on its next poll and staked
+  (`0xd0ebc6fbc3ca69fbf95a490b0205d4f70c89ccad88f500f139f3e9faf1ea8a17`, block 11897251,
+  1 471 267 gas at 0.001 gwei, `member-status` → `active`, index 14), leaving 0.0016 ETH in the
+  wallet. Two earlier one-hour waits also ran to the deadline and exited 4, and retried two
+  transient RPC errors (`eth_call: expected 0x-hex data`, a 15 s timeout) without losing the
+  wait. The stake used more gas than the first live registration (1 317 674), and the signer
+  prices at estimate + 20 % (about 1.77M), so the ceiling moved from 1 600 000 to 1 800 000 after
+  this run: the quote is now 0.0118 ETH at the floor.
+- `shadenet init` prints the keyless `register-member` command and says where the funding
+  wallet will be created; `--key-file` is mentioned as the alternative.
+- The JavaScript `shade-tree register-member` does the same with no `SHADE_TREE_REGISTER_KEY` on a
+  remote RPC: `--funding-key <path>` / `SHADE_TREE_FUNDING_KEY` (default `~/.config/shade-tree/funding.key`),
+  `--wait-timeout`, `SHADE_TREE_FUNDING_POLL_MS`, exit 4, same quote and the same printed
+  lines. The arithmetic, rounding, key file and wait loop live in
+  `packages/node/lib/funding-wallet.mjs` with a selftest (quote and floor, rounding, owner-only
+  creation and reuse, refusal of a world-readable or malformed file, the wait loop against an
+  injected clock: one quote, progress on partial payments, a retried RPC error, exit 4 at the
+  deadline, no quote for a staked leaf).
+- Library: `Wallet::generate()`, `member::fee_terms` (factored out of the signer, same
+  numbers), `member::funding_quote` / `FundingQuote` / `REGISTER_GAS_CEILING` / `QUOTE_MIN_FEE_PER_GAS`; the bond
+  checks `register` performs moved into `tier_bond`, shared with the quote. Tests cover the
+  quote arithmetic and the staked / wrong-chain refusals against the mock RPC, the owner-only
+  creation and reuse of `funding.key` (and the `chmod 600` refusal), the default key location,
+  the parser, and the rounding.
+
 ### Monitoring
 
 - The compose monitoring bundle scraped the heartbeat on 9102 and the Elder on 9103; the defaults
@@ -28,6 +74,11 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ### Dependencies
 
+- quinn-proto 0.11.16 → 0.11.19 (`cargo update -p quinn-proto`, lock only; it arrives through
+  arti/reqwest). RustSec published five advisories against 0.11.16 on 2026-10-12
+  (RUSTSEC-2026-0339 to -0343, stream-reassembly and connection-ID memory exhaustion; fix
+  >= 0.11.17), which turned the supply-chain audit red on every PR, including #353. `cargo audit`
+  and `cargo deny check advisories` are clean on the new lock; the workspace builds `--locked`.
 - docker/setup-qemu-action v3 → v4.4.0 in `node-image` (Dependabot #256).
   - Without a push, `node-image` now also builds the arm64 image through QEMU (neither loaded nor
     pushed), so a QEMU or base-image break shows up on a dispatch instead of during a release.

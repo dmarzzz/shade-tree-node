@@ -362,6 +362,171 @@ pub fn checked_fee(base: &U256, priority: &U256) -> Result<U256, String> {
         .ok_or_else(|| "RPC returned fees too large to encode".to_string())
 }
 
+/// The EIP-1559 terms a transaction is priced at right now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeeTerms {
+    pub priority: U256,
+    /// `max(base * 2 + priority, eth_gasPrice)`: what a transaction may spend per gas.
+    pub max_fee: U256,
+}
+
+/// Price a transaction: `eth_gasPrice`, the latest base fee and the suggested tip.
+pub fn fee_terms<R: Rpc>(rpc: &mut R) -> Result<FeeTerms, String> {
+    let gas_price = quantity(rpc.call("eth_gasPrice", json!([]))?, "eth_gasPrice")?;
+    let block = rpc.call("eth_getBlockByNumber", json!(["latest", false]))?;
+    let base_fee = quantity(
+        block.get("baseFeePerGas").cloned().ok_or_else(|| {
+            "latest block has no baseFeePerGas; this signer requires EIP-1559".to_string()
+        })?,
+        "baseFeePerGas",
+    )?;
+    let priority = rpc
+        .call("eth_maxPriorityFeePerGas", json!([]))
+        .ok()
+        .and_then(|value| quantity(value, "eth_maxPriorityFeePerGas").ok())
+        // eth_gasPrice is normally base + suggested tip; keep that suggestion if the optional
+        // method is missing instead of tipping the whole gas price.
+        .or_else(|| {
+            gas_price
+                .checked_sub(&base_fee)
+                .filter(|value| !value.is_zero())
+        })
+        .unwrap_or_else(|| gas_price.clone().min(U256::from(1_000_000_000)));
+    let max_fee = checked_fee(&base_fee, &priority)?.max(gas_price);
+    Ok(FeeTerms { priority, max_fee })
+}
+
+/// Gas reserved for `registerIdentity` when quoting a wallet that cannot yet be estimated
+/// against (an unfunded one: `eth_estimateGas` with a value refuses it). Live registrations used
+/// 1 317 674 and 1 471 267 gas (`docs/ECONOMICS.md`, `CHANGELOG.md`); [`send_transaction`] later
+/// signs with the real estimate plus 20 % (about 1.77M), so this ceiling keeps that balance check
+/// from failing on a wallet funded to the quote. Unspent gas money stays in the wallet.
+pub const REGISTER_GAS_CEILING: u64 = 1_800_000;
+
+/// The least fee per gas a funding quote prices at: 1 gwei. Sepolia's base fee sits at a few
+/// wei for days and then spends a week near 1 gwei (`docs/ECONOMICS.md` measured 1.0 to 1.1
+/// gwei on 2026-10-05); a wallet funded at the quiet price would then fail the signer's balance
+/// check once the ETH arrived. The floor costs 0.0018 ETH of reserve, which stays in the wallet.
+pub const QUOTE_MIN_FEE_PER_GAS: u64 = 1_000_000_000;
+
+/// What an unfunded wallet needs to hold before [`register`] can run from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FundingQuote {
+    pub chain_id: u64,
+    /// The tier's bond, from the contract.
+    pub bond: U256,
+    /// `REGISTER_GAS_CEILING * max(max_fee, QUOTE_MIN_FEE_PER_GAS)`: the most the registration
+    /// may spend on gas, priced no lower than the floor.
+    pub gas_reserve: U256,
+    /// `bond + gas_reserve`.
+    pub required: U256,
+    /// The wallet's current balance.
+    pub balance: U256,
+}
+
+impl FundingQuote {
+    /// What is still missing; zero once the wallet covers the quote.
+    pub fn shortfall(&self) -> U256 {
+        self.required
+            .checked_sub(&self.balance)
+            .unwrap_or_else(U256::zero)
+    }
+
+    pub fn is_funded(&self) -> bool {
+        self.balance >= self.required
+    }
+}
+
+/// Result of [`funding_quote`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Funding {
+    /// The leaf is already staked; nothing needs funding.
+    AlreadyActive,
+    Quote(FundingQuote),
+}
+
+/// Price a registration for `from` without signing anything: the chain is checked, the bond
+/// is read from the contract, and the leaf is checked for an existing stake first so nobody is
+/// asked to fund a registration that would be a no-op.
+pub fn funding_quote<R: Rpc>(
+    rpc: &mut R,
+    set: &StakingSet,
+    registration: &Registration,
+    from: Address,
+) -> Result<Funding, String> {
+    let chain_id = check_chain(rpc, set)?;
+    let bond = tier_bond(rpc, set, registration)?;
+    let active = call_uint(
+        rpc,
+        set.contract,
+        &eth::calldata(
+            "isActive(uint256)",
+            &[Token::Uint(registration.leaf.clone())],
+        ),
+    )?;
+    if !active.is_zero() {
+        return Ok(Funding::AlreadyActive);
+    }
+    let FeeTerms { max_fee, .. } = fee_terms(rpc)?;
+    let gas_reserve = U256::from(REGISTER_GAS_CEILING)
+        .checked_mul(&max_fee.max(U256::from(QUOTE_MIN_FEE_PER_GAS)))
+        .ok_or_else(|| "RPC returned fees too large to encode".to_string())?;
+    let required = bond
+        .checked_add(&gas_reserve)
+        .ok_or_else(|| "registration cost is too large to encode".to_string())?;
+    let balance = quantity(
+        rpc.call("eth_getBalance", json!([from.to_string(), "latest"]))?,
+        "eth_getBalance",
+    )?;
+    Ok(Funding::Quote(FundingQuote {
+        chain_id,
+        bond,
+        gas_reserve,
+        required,
+        balance,
+    }))
+}
+
+/// `bondFor(limit)`, refusing a contract without it and a tier it does not admit, and the
+/// configured bond when the two disagree.
+fn tier_bond<R: Rpc>(
+    rpc: &mut R,
+    set: &StakingSet,
+    registration: &Registration,
+) -> Result<U256, String> {
+    let bond = call_uint(
+        rpc,
+        set.contract,
+        &eth::calldata(
+            "bondFor(uint256)",
+            &[Token::Uint(U256::from(registration.limit))],
+        ),
+    )
+    .map_err(|error| {
+        format!(
+            "contract does not expose bondFor({}); it is not a ShadeNet staking set ({error})",
+            registration.limit
+        )
+    })?;
+    if bond.is_zero() {
+        return Err(format!(
+            "tier {} is not admitted by {} (bondFor returned zero)",
+            registration.limit, set.contract
+        ));
+    }
+    if let Some(expected) = registration
+        .expected_bond
+        .as_ref()
+        .filter(|expected| **expected != bond)
+    {
+        return Err(format!(
+            "configured bond {expected} does not equal the contract's tier-{} bond {bond}; refusing a transaction that would revert",
+            registration.limit
+        ));
+    }
+    Ok(bond)
+}
+
 /// Estimate, price, check balance, sign, broadcast, and wait for one confirmation.
 #[allow(clippy::too_many_arguments)]
 fn send_transaction<R: Rpc>(
@@ -399,27 +564,7 @@ fn send_transaction<R: Rpc>(
         .checked_mul(&U256::from(120))
         .and_then(|value| U256::from_big_endian(&(value.as_biguint() / 100u32).to_bytes_be()))
         .ok_or_else(|| "eth_estimateGas returned an unsupported value".to_string())?;
-    let gas_price = quantity(rpc.call("eth_gasPrice", json!([]))?, "eth_gasPrice")?;
-    let block = rpc.call("eth_getBlockByNumber", json!(["latest", false]))?;
-    let base_fee = quantity(
-        block.get("baseFeePerGas").cloned().ok_or_else(|| {
-            "latest block has no baseFeePerGas; this signer requires EIP-1559".to_string()
-        })?,
-        "baseFeePerGas",
-    )?;
-    let priority = rpc
-        .call("eth_maxPriorityFeePerGas", json!([]))
-        .ok()
-        .and_then(|value| quantity(value, "eth_maxPriorityFeePerGas").ok())
-        // eth_gasPrice is normally base + suggested tip; keep that suggestion if the optional
-        // method is missing instead of tipping the whole gas price.
-        .or_else(|| {
-            gas_price
-                .checked_sub(&base_fee)
-                .filter(|value| !value.is_zero())
-        })
-        .unwrap_or_else(|| gas_price.clone().min(U256::from(1_000_000_000)));
-    let max_fee = checked_fee(&base_fee, &priority)?.max(gas_price);
+    let FeeTerms { priority, max_fee } = fee_terms(rpc)?;
     let balance = quantity(
         rpc.call("eth_getBalance", json!([from, "latest"]))?,
         "eth_getBalance",
@@ -627,36 +772,7 @@ pub fn register<R: Rpc>(
             "staking RPC chainId {chain_id} does not match configured chainId {expected}; refusing to sign"
         ));
     }
-    let bond = call_uint(
-        rpc,
-        set.contract,
-        &eth::calldata(
-            "bondFor(uint256)",
-            &[Token::Uint(U256::from(registration.limit))],
-        ),
-    )
-    .map_err(|error| {
-        format!(
-            "contract does not expose bondFor({}); it is not a ShadeNet staking set ({error})",
-            registration.limit
-        )
-    })?;
-    if bond.is_zero() {
-        return Err(format!(
-            "tier {} is not admitted by {} (bondFor returned zero)",
-            registration.limit, set.contract
-        ));
-    }
-    if let Some(expected) = registration
-        .expected_bond
-        .as_ref()
-        .filter(|expected| **expected != bond)
-    {
-        return Err(format!(
-            "configured bond {expected} does not equal the contract's tier-{} bond {bond}; refusing a transaction that would revert",
-            registration.limit
-        ));
-    }
+    let bond = tier_bond(rpc, set, registration)?;
     let active = call_uint(
         rpc,
         set.contract,
@@ -883,6 +999,9 @@ mod tests {
         active: bool,
         send_error: bool,
         chain_id: &'static str,
+        balance: &'static str,
+        /// Price everything at 1 wei, the way Sepolia idles.
+        cheap: bool,
         sent_raw: Option<String>,
     }
 
@@ -893,6 +1012,8 @@ mod tests {
                 active: false,
                 send_error: false,
                 chain_id,
+                balance: "0xde0b6b3a7640000",
+                cheap: false,
                 sent_raw: None,
             }
         }
@@ -926,9 +1047,14 @@ mod tests {
                 }
                 "eth_getTransactionCount" => Value::String("0x7".into()),
                 "eth_estimateGas" => Value::String("0x186a0".into()),
+                "eth_gasPrice" if self.cheap => Value::String("0x1".into()),
+                "eth_maxPriorityFeePerGas" if self.cheap => Value::String("0x1".into()),
+                "eth_getBlockByNumber" if self.cheap => {
+                    json!({"baseFeePerGas":"0x1","timestamp":"0x15180"})
+                }
                 "eth_gasPrice" => Value::String("0x77359400".into()),
                 "eth_maxPriorityFeePerGas" => Value::String("0x3b9aca00".into()),
-                "eth_getBalance" => Value::String("0xde0b6b3a7640000".into()),
+                "eth_getBalance" => Value::String(self.balance.into()),
                 "eth_getBlockByNumber" => {
                     json!({"baseFeePerGas":"0x3b9aca00","timestamp":"0x15180"})
                 }
@@ -974,6 +1100,75 @@ mod tests {
             receipt_timeout: Duration::from_secs(5),
             poll: Duration::from_millis(10),
         }
+    }
+
+    #[test]
+    fn funding_quote_prices_bond_plus_gas_ceiling_and_skips_a_staked_leaf() {
+        let from = Wallet::from_hex(ANVIL_KEY).unwrap().address;
+        let mut rpc = MockRpc::new("0xaa36a7");
+        // Mock fees: base 1 gwei, tip 1 gwei, gasPrice 2 gwei → max fee 3 gwei.
+        let quote = match funding_quote(&mut rpc, &set(), &registration(), from).unwrap() {
+            Funding::Quote(quote) => quote,
+            other => panic!("expected a quote, got {other:?}"),
+        };
+        let gas_reserve = U256::from(REGISTER_GAS_CEILING * 3_000_000_000);
+        assert_eq!(quote.chain_id, 11_155_111);
+        assert_eq!(quote.bond, U256::from(100_000_000_000_000_000));
+        assert_eq!(quote.gas_reserve, gas_reserve);
+        assert_eq!(
+            quote.required,
+            U256::from(100_000_000_000_000_000)
+                .checked_add(&gas_reserve)
+                .unwrap()
+        );
+        assert!(quote.is_funded());
+        assert!(quote.shortfall().is_zero());
+        {
+            let calls = rpc.calls.lock().unwrap();
+            assert!(
+                !calls.iter().any(|(m, _)| m == "eth_sendRawTransaction"
+                    || m == "eth_estimateGas"
+                    || m == "eth_getTransactionCount"),
+                "a quote signs and estimates nothing"
+            );
+            assert_eq!(calls.last().unwrap().1[0], from.to_string());
+        }
+
+        let mut empty = MockRpc::new("0xaa36a7");
+        empty.balance = "0x0";
+        match funding_quote(&mut empty, &set(), &registration(), from).unwrap() {
+            Funding::Quote(quote) => {
+                assert!(!quote.is_funded());
+                assert_eq!(quote.shortfall(), quote.required);
+            }
+            other => panic!("expected a quote, got {other:?}"),
+        }
+
+        let mut idle = MockRpc::new("0xaa36a7");
+        idle.cheap = true;
+        match funding_quote(&mut idle, &set(), &registration(), from).unwrap() {
+            Funding::Quote(quote) => assert_eq!(
+                quote.gas_reserve,
+                U256::from(REGISTER_GAS_CEILING * QUOTE_MIN_FEE_PER_GAS),
+                "a 3 wei max fee is priced at the 1 gwei floor"
+            ),
+            other => panic!("expected a quote, got {other:?}"),
+        }
+
+        let mut staked = MockRpc::new("0xaa36a7");
+        staked.active = true;
+        staked.balance = "0x0";
+        assert_eq!(
+            funding_quote(&mut staked, &set(), &registration(), from).unwrap(),
+            Funding::AlreadyActive
+        );
+
+        let mut wrong_chain = MockRpc::new("0x1");
+        assert!(
+            funding_quote(&mut wrong_chain, &set(), &registration(), from)
+                .unwrap_err()
+                .contains("chainId")
+        );
     }
 
     #[test]
