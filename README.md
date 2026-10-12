@@ -85,13 +85,14 @@ The bundled Sepolia canopy admits one public staked tier, limit 8: the bond in t
 current network record (`shadenet init` prints it; the [Get access][stake] page
 shows it) buys eight proof slots per fixed 60-second epoch, each a CONNECT tunnel
 with a 40 MiB payload ceiling. `init` creates an owner-only identity, a proxy token
-and `config.toml`; then stake the identity commitment it prints (never the leaf) from a
-separately funded testnet key, or have a sponsor stake it from the Get access page:
+and `config.toml`; then stake the identity commitment it prints (never the leaf). Without a
+key, `register-member` creates a funding wallet, prints its address and the Sepolia ETH to send,
+and stakes once it arrives; `--key-file funded-sepolia.key` pays from a key you hold, and a
+sponsor can stake it from the Get access page instead:
 
 ```bash
 shadenet init
-chmod 600 funded-sepolia.key
-shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet register-member --identity ~/.config/shadenet/identity.json
 shadenet status --wait        # returns once the registration is final
 ```
 

@@ -127,10 +127,13 @@ client validate the secret/leaf/tier tuple before it contacts an RPC:
 
 ```sh
 shade-tree enroll --limit 8 --out identity.json
-chmod 600 funded-sepolia.key
-shade-tree register-member --identity identity.json --key-file funded-sepolia.key
+shade-tree register-member --identity identity.json
 shade-tree member-status --identity identity.json --json
 ```
+
+Without `--key-file`, `register-member` creates an owner-only funding wallet (`funding.key`
+next to the identity), prints its address and the Sepolia ETH to send, waits for the balance
+and then stakes; `--key-file funded-sepolia.key` (`chmod 600`) pays from a key you hold.
 
 The payer may register an agent's identity commitment (`shadenet init` prints it; never the leaf) as a sponsor without receiving its
 identity file. The sponsor's address, leaf, amount, and timing are public and the
