@@ -52,6 +52,7 @@ import {
   DEFAULT_FUNDING_POLL_MS,
   DEFAULT_WAIT_TIMEOUT_SECS,
   EXIT_NOT_FUNDED,
+  FUNDING_PRIVACY,
   REGISTER_GAS_CEILING,
   chainLabel,
   defaultFundingKeyPath,
@@ -191,6 +192,16 @@ async function main() {
   console.log(`  tx:       ${tx.hash}  (waiting for confirmation...)`);
   const rcpt = await waitForTransactionReceipt(tx, { operation: "member registration" });
   console.log(`  mined in block ${rcpt.blockNumber}; member staked. Public admission begins after this block reaches finality.`);
+  if (funding) {
+    // What is left is the unspent gas reserve; it is tied to the stake on chain.
+    const left = await provider.getBalance(wallet.address).catch(() => 0n);
+    if (left > 0n) {
+      const chainId = Number((await provider.getNetwork()).chainId);
+      console.log(`  leftover: ${formatEth(left, chainId)} stays in ${FUNDING_KEY_PATH} (the unspent gas reserve).`);
+      console.log("            It is tied to this stake on chain: keep it for a later top-up, or send it to a");
+      console.log("            fresh address, not back to the wallet that funded it.");
+    }
+  }
 }
 
 // The funding path: quote bond + gas reserve for the funding wallet, print the address and the
@@ -217,12 +228,13 @@ async function fundFromOwnWallet({ provider, contract, wallet, funding, commitme
         console.log(`  wallet:   ${FUNDING_KEY_PATH}  (${funding.created ? "created now" : "existing"}; owner-only; keep it, it holds the gas money)`);
         console.log(`  address:  ${wallet.address}`);
         console.log(`  bond:     ${eth(q.bond)} (tier ${LIMIT})`);
-        console.log(`  gas:      up to ${eth(q.gasReserve)} reserved (${REGISTER_GAS_CEILING} gas at the current fee, at least 1 gwei)`);
+        console.log(`  gas:      up to ${eth(q.gasReserve)} reserved (${REGISTER_GAS_CEILING} gas at the current fee, rounded up to a 0.002 ETH x 2^k step)`);
         console.log(`  balance:  ${eth(q.balance)}`);
         break;
       case "progress":
         console.log(`\nSend ${eth(event.send)} to ${wallet.address} (${chainLabel(chainId)}).`);
         if (event.first) {
+          console.log(FUNDING_PRIVACY);
           if (WAIT_TIMEOUT_SECS === 0) console.log("Not waiting (--wait-timeout 0); run the same command again once it has arrived.");
           else console.log(`Waiting for it: checking every ${Math.max(1, Math.round(FUNDING_POLL_MS / 1000))} s, for up to ${WAIT_TIMEOUT_SECS} s. Ctrl-C stops; the same command resumes.`);
         } else {

@@ -67,8 +67,9 @@ With no `--key-file` and no `SHADENET_REGISTER_KEY`, the command pays from a **f
 it keeps for this purpose, the way zkAPI's client does: the first run writes an owner-only key
 to `funding.key` next to the identity file (`--funding-key <path>` moves it), then it prints
 the wallet's address and one amount to send, the tier's bond plus a gas reserve
-(1 800 000 gas at the current fee, priced no lower than 1 gwei; what the registration does not
-spend stays in the wallet),
+(the smallest of 0.002, 0.004, 0.008 … ETH that covers 1 800 000 gas at the current fee, so
+0.012 ETH in all on Sepolia at quiet fees; what the registration does not spend stays in the
+wallet),
 and polls the balance every 15 seconds. Once the balance covers the quote it signs and
 broadcasts the stake. Ctrl-C is safe at any point: the key file and any ETH already sent
 remain, and the same command resumes. `--wait-timeout <seconds>` bounds the wait (default
@@ -76,8 +77,16 @@ remain, and the same command resumes. `--wait-timeout <seconds>` bounds the wait
 with code 4 and the amount still missing. An identity that is already staked is reported, not
 quoted. Should fees climb past the quoted reserve while the ETH is on its way, the signer's own
 balance check refuses rather than sending a transaction that would fail, and the same command,
-run again, quotes the difference. The funding address is public on chain and tied to this registration, so send to it
-from a wallet whose history you are comfortable linking to the stake.
+run again, quotes the difference.
+
+The funding address, the amount and the stake are public on chain, so the wallet that sends
+the ETH is linked to this membership. It is not linked to what the member does: each request
+carries an RLN proof that hides which member sent it. To keep your main wallet out of it, send
+from a fresh address funded through a large shared pool (Railgun, Privacy Pools, a CEX
+withdrawal) and send exactly the quoted amount; the reserve moves only in coarse steps so that
+amount is shared by other registrations. The command prints this advice with the amount, and
+after the stake it prints the leftover gas money: that is tied to the stake too, so keep it for
+a later top-up or send it on to a fresh address, not back to the wallet that funded it.
 
 To pay from a key you already hold instead, pass `--key-file funded-sepolia.key`
 (owner-only, `chmod 600`). Either key signs locally and never reaches the RPC. The funding

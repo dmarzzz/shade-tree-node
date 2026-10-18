@@ -10,10 +10,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   a remote RPC used to fail asking for a funded key. It now does what `zkapi-clientd config`
   does: creates an owner-only funding wallet (`funding.key` next to the identity file;
   `--funding-key <path>` to move it), prints the wallet's address and the one amount to send
-  (the tier's bond from `bondFor` plus a gas reserve of 1 800 000 gas at the current EIP-1559
-  fee or 1 gwei, whichever is higher, since Sepolia idles at a few wei and then spends a week
-  near 1 gwei; the sum is rounded up to 0.0001 ETH), polls the balance every 15 s, and stakes once the balance
-  covers it. The same command resumes after Ctrl-C and reuses the key; an already-staked
+  (the tier's bond from `bondFor` plus a gas reserve: the smallest of 0.002, 0.004, 0.008 … ETH
+  that covers 1 800 000 gas at the current EIP-1559 fee; the lowest rung covers up to 1.11 gwei,
+  since Sepolia idles at a few wei and then spends a week near 1 gwei), polls the balance every
+  15 s, and stakes once the balance covers it. The reserve moves in those coarse steps rather
+  than tracking the fee to the wei because the amount is public next to the stake: on the
+  bundled Sepolia set every quiet-fee registration sends the same 0.012 ETH, so the amount does
+  not single out its sender. Top-ups after a partial payment are rounded up to 0.0001 ETH.
+- With the first amount it prints the Layer-0 advice from `docs/PAYMENTS.md`: the address, amount
+  and stake are public and link the sending wallet to the membership (not to its use), so send
+  from a fresh address funded through a large shared pool (Railgun, Privacy Pools, a CEX
+  withdrawal) and send exactly the quoted amount. After the stake it prints the leftover gas
+  money still in the funding wallet and says it is tied to the stake: keep it for a later
+  top-up or send it on to a fresh address, not back to the wallet that funded it. The same command resumes after Ctrl-C and reuses the key; an already-staked
   identity is reported before anyone is asked for money. `--wait-timeout <seconds>` (default
   3600; `0` quotes once; `SHADENET_FUNDING_POLL_MS` sets the poll) bounds the wait; an unfunded
   wallet at the deadline exits 4 naming what is still missing. The quote signs nothing and never calls `eth_estimateGas` (an
@@ -32,14 +41,15 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   transient RPC errors (`eth_call: expected 0x-hex data`, a 15 s timeout) without losing the
   wait. The stake used more gas than the first live registration (1 317 674), and the signer
   prices at estimate + 20 % (about 1.77M), so the ceiling moved from 1 600 000 to 1 800 000 after
-  this run: the quote is now 0.0118 ETH at the floor.
+  this run, and the reserve ladder above replaced the per-fee figure: the quote is now 0.012 ETH
+  at quiet fees.
 - `shadenet init` prints the keyless `register-member` command and says where the funding
   wallet will be created; `--key-file` is mentioned as the alternative.
 - The JavaScript `shade-tree register-member` does the same with no `SHADE_TREE_REGISTER_KEY` on a
   remote RPC: `--funding-key <path>` / `SHADE_TREE_FUNDING_KEY` (default `~/.config/shade-tree/funding.key`),
   `--wait-timeout`, `SHADE_TREE_FUNDING_POLL_MS`, exit 4, same quote and the same printed
   lines. The arithmetic, rounding, key file and wait loop live in
-  `packages/node/lib/funding-wallet.mjs` with a selftest (quote and floor, rounding, owner-only
+  `packages/node/lib/funding-wallet.mjs` with a selftest (quote and reserve ladder, privacy text, rounding, owner-only
   creation and reuse, refusal of a world-readable or malformed file, the wait loop against an
   injected clock: one quote, progress on partial payments, a retried RPC error, exit 4 at the
   deadline, no quote for a staked leaf).

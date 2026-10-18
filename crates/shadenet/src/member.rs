@@ -403,11 +403,30 @@ pub fn fee_terms<R: Rpc>(rpc: &mut R) -> Result<FeeTerms, String> {
 /// from failing on a wallet funded to the quote. Unspent gas money stays in the wallet.
 pub const REGISTER_GAS_CEILING: u64 = 1_800_000;
 
-/// The least fee per gas a funding quote prices at: 1 gwei. Sepolia's base fee sits at a few
-/// wei for days and then spends a week near 1 gwei (`docs/ECONOMICS.md` measured 1.0 to 1.1
-/// gwei on 2026-10-05); a wallet funded at the quiet price would then fail the signer's balance
-/// check once the ETH arrived. The floor costs 0.0018 ETH of reserve, which stays in the wallet.
-pub const QUOTE_MIN_FEE_PER_GAS: u64 = 1_000_000_000;
+/// The smallest gas reserve a funding quote asks for: 0.002 ETH, which covers
+/// `REGISTER_GAS_CEILING` up to about 1.11 gwei. Sepolia's base fee sits at a few wei for days
+/// and then spends a week near 1 gwei (`docs/ECONOMICS.md` measured 1.0 to 1.1 gwei on
+/// 2026-10-05), so a wallet funded at the quiet price would fail the signer's balance check once
+/// the ETH arrived.
+pub const GAS_RESERVE_STEP_WEI: u64 = 2_000_000_000_000_000;
+
+/// The gas reserve for a registration priced at `max_fee`: the smallest rung of
+/// `GAS_RESERVE_STEP_WEI * 2^k` that covers `REGISTER_GAS_CEILING * max_fee`. The amount a
+/// person is asked to send is public on chain next to the stake; a figure that tracked the fee
+/// to the wei would pick its sender out of every other transfer, so quotes move only in these
+/// coarse steps and most registrations on a chain send the same amount.
+pub fn gas_reserve_for(max_fee: &U256) -> Result<U256, String> {
+    let needed = U256::from(REGISTER_GAS_CEILING)
+        .checked_mul(max_fee)
+        .ok_or_else(|| "RPC returned fees too large to encode".to_string())?;
+    let mut reserve = U256::from(GAS_RESERVE_STEP_WEI);
+    while reserve < needed {
+        reserve = reserve
+            .checked_add(&reserve)
+            .ok_or_else(|| "RPC returned fees too large to encode".to_string())?;
+    }
+    Ok(reserve)
+}
 
 /// What an unfunded wallet needs to hold before [`register`] can run from it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -415,8 +434,8 @@ pub struct FundingQuote {
     pub chain_id: u64,
     /// The tier's bond, from the contract.
     pub bond: U256,
-    /// `REGISTER_GAS_CEILING * max(max_fee, QUOTE_MIN_FEE_PER_GAS)`: the most the registration
-    /// may spend on gas, priced no lower than the floor.
+    /// [`gas_reserve_for`] the current max fee: the most the registration may spend on gas,
+    /// rounded up to a rung of the reserve ladder.
     pub gas_reserve: U256,
     /// `bond + gas_reserve`.
     pub required: U256,
@@ -468,16 +487,11 @@ pub fn funding_quote<R: Rpc>(
         return Ok(Funding::AlreadyActive);
     }
     let FeeTerms { max_fee, .. } = fee_terms(rpc)?;
-    let gas_reserve = U256::from(REGISTER_GAS_CEILING)
-        .checked_mul(&max_fee.max(U256::from(QUOTE_MIN_FEE_PER_GAS)))
-        .ok_or_else(|| "RPC returned fees too large to encode".to_string())?;
+    let gas_reserve = gas_reserve_for(&max_fee)?;
     let required = bond
         .checked_add(&gas_reserve)
         .ok_or_else(|| "registration cost is too large to encode".to_string())?;
-    let balance = quantity(
-        rpc.call("eth_getBalance", json!([from.to_string(), "latest"]))?,
-        "eth_getBalance",
-    )?;
+    let balance = balance(rpc, from)?;
     Ok(Funding::Quote(FundingQuote {
         chain_id,
         bond,
@@ -485,6 +499,14 @@ pub fn funding_quote<R: Rpc>(
         required,
         balance,
     }))
+}
+
+/// `address`'s balance at the latest block.
+pub fn balance<R: Rpc>(rpc: &mut R, address: Address) -> Result<U256, String> {
+    quantity(
+        rpc.call("eth_getBalance", json!([address.to_string(), "latest"]))?,
+        "eth_getBalance",
+    )
 }
 
 /// `bondFor(limit)`, refusing a contract without it and a tier it does not admit, and the
@@ -1111,7 +1133,8 @@ mod tests {
             Funding::Quote(quote) => quote,
             other => panic!("expected a quote, got {other:?}"),
         };
-        let gas_reserve = U256::from(REGISTER_GAS_CEILING * 3_000_000_000);
+        // 1.8M gas at 3 gwei is 0.0054 ETH: the 0.008 ETH rung.
+        let gas_reserve = U256::from(4 * GAS_RESERVE_STEP_WEI);
         assert_eq!(quote.chain_id, 11_155_111);
         assert_eq!(quote.bond, U256::from(100_000_000_000_000_000));
         assert_eq!(quote.gas_reserve, gas_reserve);
@@ -1149,8 +1172,8 @@ mod tests {
         match funding_quote(&mut idle, &set(), &registration(), from).unwrap() {
             Funding::Quote(quote) => assert_eq!(
                 quote.gas_reserve,
-                U256::from(REGISTER_GAS_CEILING * QUOTE_MIN_FEE_PER_GAS),
-                "a 3 wei max fee is priced at the 1 gwei floor"
+                U256::from(GAS_RESERVE_STEP_WEI),
+                "a 3 wei max fee asks for the lowest rung"
             ),
             other => panic!("expected a quote, got {other:?}"),
         }
@@ -1169,6 +1192,28 @@ mod tests {
                 .unwrap_err()
                 .contains("chainId")
         );
+    }
+
+    #[test]
+    fn gas_reserve_climbs_a_doubling_ladder() {
+        let step = U256::from(GAS_RESERVE_STEP_WEI);
+        let at =
+            |gwei_tenths: u64| gas_reserve_for(&U256::from(gwei_tenths * 100_000_000)).unwrap();
+        assert_eq!(gas_reserve_for(&U256::zero()).unwrap(), step);
+        // The lowest rung covers the ceiling up to 1.11 gwei.
+        assert_eq!(at(11), step);
+        assert!(
+            U256::from(REGISTER_GAS_CEILING * 1_111_111_111) <= step,
+            "0.002 ETH covers 1.8M gas at 1.11 gwei"
+        );
+        assert_eq!(at(12), U256::from(2 * GAS_RESERVE_STEP_WEI));
+        assert_eq!(at(30), U256::from(4 * GAS_RESERVE_STEP_WEI));
+        assert_eq!(at(500), U256::from(64 * GAS_RESERVE_STEP_WEI));
+        for tenths in [1, 7, 11, 12, 25, 90, 333, 2_000] {
+            let fee = U256::from(tenths * 100_000_000);
+            let reserve = gas_reserve_for(&fee).unwrap();
+            assert!(U256::from(REGISTER_GAS_CEILING).checked_mul(&fee).unwrap() <= reserve);
+        }
     }
 
     #[test]

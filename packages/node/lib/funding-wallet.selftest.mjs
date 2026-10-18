@@ -4,13 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   EXIT_NOT_FUNDED,
-  QUOTE_MIN_FEE_PER_GAS,
+  FUNDING_PRIVACY,
+  GAS_RESERVE_STEP_WEI,
   REGISTER_GAS_CEILING,
   SEND_GRANULARITY_WEI,
   chainLabel,
   defaultFundingKeyPath,
   formatEth,
   loadOrCreateFundingWallet,
+  gasReserveFor,
   quoteFunding,
   roundUpToSend,
   waitForFunding,
@@ -22,15 +24,28 @@ const GWEI = 1_000_000_000n;
 // ---- quote arithmetic
 {
   const q = quoteFunding({ bond: BOND, maxFeePerGas: 3n * GWEI, balance: 0n, chainId: 11155111 });
-  assert.equal(q.gasReserve, REGISTER_GAS_CEILING * 3n * GWEI);
+  // 1.8M gas at 3 gwei is 0.0054 ETH: the 0.008 ETH rung.
+  assert.equal(q.gasReserve, 4n * GAS_RESERVE_STEP_WEI);
   assert.equal(q.required, BOND + q.gasReserve);
   assert.equal(q.shortfall, q.required);
   assert.equal(q.funded, false);
   assert.equal(q.chainId, 11155111);
 
   const idle = quoteFunding({ bond: BOND, maxFeePerGas: 3n, balance: "0", chainId: "11155111" });
-  assert.equal(idle.gasReserve, REGISTER_GAS_CEILING * QUOTE_MIN_FEE_PER_GAS, "a 3 wei fee is priced at the 1 gwei floor");
-  assert.equal(formatEth(idle.required, 11155111), "0.0118 Sepolia ETH");
+  assert.equal(idle.gasReserve, GAS_RESERVE_STEP_WEI, "a 3 wei fee asks for the lowest rung");
+  assert.equal(formatEth(idle.required, 11155111), "0.012 Sepolia ETH");
+
+  // The ladder: 0.002, 0.004, 0.008 ... ETH, always covering the ceiling at the fee.
+  assert.equal(gasReserveFor(0n), GAS_RESERVE_STEP_WEI);
+  assert.equal(gasReserveFor(11n * GWEI / 10n), GAS_RESERVE_STEP_WEI);
+  assert.equal(gasReserveFor(12n * GWEI / 10n), 2n * GAS_RESERVE_STEP_WEI);
+  assert.equal(gasReserveFor(50n * GWEI), 64n * GAS_RESERVE_STEP_WEI);
+  for (const tenths of [1n, 7n, 11n, 12n, 25n, 90n, 333n, 2000n]) {
+    const fee = tenths * GWEI / 10n;
+    assert.ok(REGISTER_GAS_CEILING * fee <= gasReserveFor(fee));
+  }
+  assert.match(FUNDING_PRIVACY, /shared pool/);
+  assert.match(FUNDING_PRIVACY, /exactly this\namount/);
 
   const funded = quoteFunding({ bond: BOND, maxFeePerGas: GWEI, balance: idle.required, chainId: 1 });
   assert.equal(funded.funded, true);
@@ -108,7 +123,7 @@ const GWEI = 1_000_000_000n;
   const sleep = async (ms) => { t += ms; };
   const events = [];
   const report = (e) => events.push(e.kind + (e.send !== undefined ? `:${e.send}` : ""));
-  const balances = [0n, 0n, 5n * 10n ** 15n, "boom", 11_800_000_000_000_000n];
+  const balances = [0n, 0n, 5n * 10n ** 15n, "boom", 12_000_000_000_000_000n];
   const getQuote = async () => {
     const b = balances.shift();
     if (b === "boom") throw new Error("rpc down");
@@ -118,8 +133,8 @@ const GWEI = 1_000_000_000n;
   assert.equal(quote.funded, true);
   assert.deepEqual(events, [
     "quote",
-    "progress:11800000000000000",
-    "progress:6800000000000000",
+    "progress:12000000000000000",
+    "progress:7000000000000000",
     "rpc-error",
     "funded",
   ]);
@@ -132,7 +147,7 @@ const GWEI = 1_000_000_000n;
   t = 0;
   await assert.rejects(
     waitForFunding({ getQuote: async () => quoteFunding({ bond: BOND, maxFeePerGas: GWEI, balance: 0n, chainId: 11155111 }), timeoutMs: 0, pollMs: 1, now, sleep }),
-    (e) => e.code === EXIT_NOT_FUNDED && /0.0118 Sepolia ETH short/.test(e.message),
+    (e) => e.code === EXIT_NOT_FUNDED && /0.012 Sepolia ETH short/.test(e.message),
   );
 
   // the first quote failing is not retried

@@ -28,7 +28,8 @@ const DEFAULT_WAIT_TIMEOUT_SECS: u64 = 3600;
 const EXIT_NOT_FUNDED: u8 = 4;
 /// The file that holds the funding wallet's key, next to the identity.
 const FUNDING_KEY_FILE: &str = "funding.key";
-/// `0.0001 ETH`: the amount to send is rounded up to this so it reads and types well.
+/// `0.0001 ETH`: a top-up after a partial payment is rounded up to this so it reads and types
+/// well. A first quote is already a round figure (bond plus a reserve rung).
 const SEND_GRANULARITY_WEI: u64 = 100_000_000_000_000;
 const ANVIL_KEY_0: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
@@ -49,10 +50,19 @@ same command resumes after Ctrl-C; an existing funding.key is reused, never
 replaced. --wait-timeout (default 3600; 0 checks once) bounds the wait; an
 unfunded wallet at the deadline exits 4 after printing what is still missing
 (SHADENET_FUNDING_POLL_MS sets the poll interval, default 15000). Unspent gas
-money stays in the funding wallet. The quote reserves 1 800 000 gas at the
-current fee, no lower than 1 gwei; should fees climb past that while the ETH
-is on its way, the signer's own balance check refuses and the same command,
-run again, re-quotes the difference.
+money stays in the funding wallet. The gas reserve is the smallest of 0.002,
+0.004, 0.008 ... ETH that covers 1 800 000 gas at the current fee, so the
+amount moves only in coarse steps and does not single out its sender; should
+fees climb past it while the ETH is on its way, the signer's own balance check
+refuses and the same command, run again, re-quotes the difference.
+
+The funding address, the amount and the stake are public on chain, so whoever
+sends the ETH is linked to this membership (not to its use: each request
+carries an RLN proof that hides which member sent it). To keep your main
+wallet out of it, send from a fresh address funded through a large shared pool
+(Railgun, Privacy Pools, a CEX withdrawal), and send exactly the quoted amount.
+The leftover gas money is tied to the stake too: send it on to a fresh
+address, not back to the wallet that funded it.
 
 The staking contract takes the identity commitment Poseidon1(identitySecret)
 and derives the member leaf Poseidon2(identityCommitment, limit) itself, so the
@@ -501,7 +511,7 @@ fn wait_for_funding(
                 reg.limit
             );
             println!(
-                "  gas:      up to {} reserved ({} gas at the current fee, at least 1 gwei)",
+                "  gas:      up to {} reserved ({} gas at the current fee, rounded up to a 0.002 ETH x 2^k step)",
                 eth(&quote.gas_reserve, chain),
                 member::REGISTER_GAS_CEILING
             );
@@ -526,6 +536,7 @@ fn wait_for_funding(
                 chain_label(chain)
             );
             if last_report.is_none() {
+                println!("{FUNDING_PRIVACY}");
                 if timeout.is_zero() {
                     println!("Not waiting (--wait-timeout 0); run the same command again once it has arrived.");
                 } else {
@@ -556,6 +567,32 @@ fn wait_for_funding(
         }
         std::thread::sleep(poll);
     }
+}
+
+/// Printed once with the first amount to send: the funding hop is the one on-chain link between
+/// a wallet and a membership, and only the sender can break it (docs/PAYMENTS.md, Layer 0).
+const FUNDING_PRIVACY: &str = "\
+Privacy: this address, the amount and the stake are public on chain, so the wallet that sends
+it is linked to this membership (not to its use; requests carry an RLN proof that hides which
+member sent them). To keep your main wallet out of it, send from a fresh address funded
+through a large shared pool (Railgun, Privacy Pools, a CEX withdrawal), and send exactly this
+amount.";
+
+/// Printed after a stake from the funding wallet: what is left is the unspent gas reserve.
+fn leftover_note(rpc: &mut HttpRpc, wallet: &Wallet, key_path: &Path, chain_id: u64) {
+    let Ok(left) = member::balance(rpc, wallet.address) else {
+        return;
+    };
+    if left.is_zero() {
+        return;
+    }
+    println!(
+        "  leftover: {} stays in {} (the unspent gas reserve).",
+        eth(&left, chain_id),
+        key_path.display()
+    );
+    println!("            It is tied to this stake on chain: keep it for a later top-up, or send it to a");
+    println!("            fresh address, not back to the wallet that funded it.");
 }
 
 fn chain_label(chain_id: u64) -> &'static str {
@@ -657,11 +694,15 @@ pub fn cmd_register_member(args: &[String]) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    let mut funded_from: Option<(PathBuf, u64)> = None;
     let wallet = match (explicit, funding) {
         (Some(wallet), _) => wallet,
         (None, Some((wallet, path, created))) => {
             match wait_for_funding(&mut rpc, &registration, &wallet, &path, created, timeout) {
-                Ok(Some(_)) => wallet,
+                Ok(Some(quote)) => {
+                    funded_from = Some((path, quote.chain_id));
+                    wallet
+                }
                 Ok(None) => {
                     println!("member is already staked; nothing to do.");
                     return ExitCode::SUCCESS;
@@ -711,6 +752,9 @@ pub fn cmd_register_member(args: &[String]) -> ExitCode {
         }
         Ok(RegisterOutcome::Mined(mined)) => {
             println!("  mined:    {} in block {}; member staked. Public admission begins after this block reaches finality.", mined.hash, mined.block);
+            if let Some((path, chain_id)) = &funded_from {
+                leftover_note(&mut rpc, &wallet, path, *chain_id);
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {

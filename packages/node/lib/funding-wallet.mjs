@@ -18,15 +18,27 @@ import { dirname, join } from "node:path";
 /// CHANGELOG.md); the signer later uses the real estimate plus 20 % (about 1.77M), and this
 /// ceiling covers that.
 export const REGISTER_GAS_CEILING = 1_800_000n;
-/// The least fee per gas a quote prices at: 1 gwei. Sepolia idles at a few wei and then spends a
-/// week near 1 gwei; a wallet funded at the idle price would be short once the ETH arrived.
-export const QUOTE_MIN_FEE_PER_GAS = 1_000_000_000n;
-/// The amount to send is rounded up to 0.0001 ETH so it reads and types well.
+/// The smallest gas reserve a quote asks for: 0.002 ETH, which covers REGISTER_GAS_CEILING up to
+/// about 1.11 gwei. Sepolia idles at a few wei and then spends a week near 1 gwei; a wallet funded
+/// at the idle price would be short once the ETH arrived.
+export const GAS_RESERVE_STEP_WEI = 2_000_000_000_000_000n;
+/// A top-up after a partial payment is rounded up to 0.0001 ETH so it reads and types well; a
+/// first quote is already a round figure (bond plus a reserve rung).
 export const SEND_GRANULARITY_WEI = 100_000_000_000_000n;
 export const DEFAULT_FUNDING_POLL_MS = 15_000;
 export const DEFAULT_WAIT_TIMEOUT_SECS = 3600;
 /// Exit code when the wallet was not funded within the deadline.
 export const EXIT_NOT_FUNDED = 4;
+
+/// Printed once with the first amount to send (docs/PAYMENTS.md, Layer 0): the funding hop is the
+/// one on-chain link between a wallet and a membership, and only the sender can break it.
+export const FUNDING_PRIVACY = [
+  "Privacy: this address, the amount and the stake are public on chain, so the wallet that sends",
+  "it is linked to this membership (not to its use; requests carry an RLN proof that hides which",
+  "member sent them). To keep your main wallet out of it, send from a fresh address funded",
+  "through a large shared pool (Railgun, Privacy Pools, a CEX withdrawal), and send exactly this",
+  "amount.",
+].join("\n");
 
 const KEY_RE = /^0x[0-9a-fA-F]{64}$/;
 
@@ -49,14 +61,23 @@ function toBigInt(value, label) {
   }
 }
 
-/// bond + REGISTER_GAS_CEILING * max(maxFeePerGas, QUOTE_MIN_FEE_PER_GAS), against `balance`.
+/// The gas reserve at `maxFeePerGas`: the smallest rung of GAS_RESERVE_STEP_WEI * 2^k that covers
+/// REGISTER_GAS_CEILING * maxFeePerGas. The amount sent is public next to the stake; a figure that
+/// tracked the fee to the wei would pick its sender out of every other transfer, so quotes move only
+/// in these coarse steps and most registrations on a chain send the same amount.
+export function gasReserveFor(maxFeePerGas) {
+  const needed = REGISTER_GAS_CEILING * toBigInt(maxFeePerGas, "maxFeePerGas");
+  let reserve = GAS_RESERVE_STEP_WEI;
+  while (reserve < needed) reserve *= 2n;
+  return reserve;
+}
+
+/// bond + gasReserveFor(maxFeePerGas), against `balance`.
 export function quoteFunding({ bond, maxFeePerGas, balance, chainId }) {
   const bondWei = toBigInt(bond, "bond");
   if (bondWei === 0n) throw new Error("bond is zero; the tier is not admitted");
-  const fee = toBigInt(maxFeePerGas, "maxFeePerGas");
   const held = toBigInt(balance, "balance");
-  const priced = fee > QUOTE_MIN_FEE_PER_GAS ? fee : QUOTE_MIN_FEE_PER_GAS;
-  const gasReserve = REGISTER_GAS_CEILING * priced;
+  const gasReserve = gasReserveFor(maxFeePerGas);
   const required = bondWei + gasReserve;
   const shortfall = held >= required ? 0n : required - held;
   return { chainId: Number(chainId), bond: bondWei, gasReserve, required, balance: held, shortfall, funded: shortfall === 0n };
