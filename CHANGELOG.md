@@ -4,6 +4,14 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### `register-member`: the leftover note reads the stake's block
+
+- The first live v0.7.5 stake (2026-10-20, funding wallet `0xa94f…8790`, stake tx `0xcf11…c3f8`,
+  block 11959428) printed `leftover: 0.012 Sepolia ETH`, the whole deposit; the wallet held 0.0019997.
+  The RPC answered `latest` from a replica one block behind. The note now reads the balance at the
+  block the stake was mined in (`member::balance_at`), retrying for a few seconds while a lagging
+  replica lacks that block, and prints nothing rather than a stale figure.
+
 ## 0.7.5 — register-member funds itself
 
 `shadenet register-member` with no key creates its own funding wallet, quotes one amount, waits for it and stakes (zkAPI's deposit step). Also: the proxy as a scheduler with `--preopen` session books, CLI output that names the budget, record RPC changes, monitoring fixes and dependency security bumps.

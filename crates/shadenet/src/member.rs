@@ -509,6 +509,19 @@ pub fn balance<R: Rpc>(rpc: &mut R, address: Address) -> Result<U256, String> {
     )
 }
 
+/// The balance as of `block`. A load-balanced RPC can answer `latest` from a replica that has not
+/// seen a just-mined transaction yet; pinning the block makes such a replica fail instead of
+/// answering with the balance from before it.
+pub fn balance_at<R: Rpc>(rpc: &mut R, address: Address, block: &U256) -> Result<U256, String> {
+    quantity(
+        rpc.call(
+            "eth_getBalance",
+            json!([address.to_string(), block.to_quantity()]),
+        )?,
+        "eth_getBalance",
+    )
+}
+
 /// `bondFor(limit)`, refusing a contract without it and a tier it does not admit, and the
 /// configured bond when the two disagree.
 fn tier_bond<R: Rpc>(
@@ -1448,5 +1461,22 @@ mod tests {
         assert_eq!(parse_uint("0x10", "x").unwrap(), U256::from(16));
         assert_eq!(parse_uint("0x0", "x").unwrap(), U256::zero());
         assert!(parse_uint("-1", "x").is_err());
+    }
+
+    #[test]
+    fn balance_at_pins_the_block_instead_of_latest() {
+        struct Pinned(Vec<Value>);
+        impl Rpc for Pinned {
+            fn call(&mut self, method: &str, params: Value) -> Result<Value, String> {
+                assert_eq!(method, "eth_getBalance");
+                self.0.push(params);
+                Ok(Value::String("0x71afd498d0000".into()))
+            }
+        }
+        let mut rpc = Pinned(Vec::new());
+        let address = Address::from_str("0xa94f7847137BAeb0F6E206885eE54f94c2F38790").unwrap();
+        let left = balance_at(&mut rpc, address, &U256::from(11_959_428)).unwrap();
+        assert_eq!(left, U256::from(2_000_000_000_000_000));
+        assert_eq!(rpc.0[0][1], json!("0xb67c84"));
     }
 }
