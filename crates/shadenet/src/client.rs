@@ -370,6 +370,28 @@ struct QueueCounters {
     waited_ms_total: AtomicU64,
 }
 
+/// A request's place in the budget queue. Dropping it leaves the queue, so a held request
+/// that is cancelled mid-wait does not stay counted in `depth`.
+struct QueueEntry<'a> {
+    counters: &'a QueueCounters,
+    stagger: u64,
+}
+
+impl<'a> QueueEntry<'a> {
+    fn join(counters: &'a QueueCounters) -> Self {
+        counters.depth.fetch_add(1, Ordering::Relaxed);
+        counters.queued_total.fetch_add(1, Ordering::Relaxed);
+        let stagger = counters.seq.fetch_add(1, Ordering::Relaxed) % 64;
+        Self { counters, stagger }
+    }
+}
+
+impl Drop for QueueEntry<'_> {
+    fn drop(&mut self) {
+        self.counters.depth.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 impl Client {
     /// Validate the configuration and load the identity. No network I/O happens here.
     pub fn new(config: Config) -> Result<Self, Error> {
@@ -1323,14 +1345,12 @@ impl Client {
         spent_epoch: Option<u64>,
     ) -> Result<Duration, Error> {
         let started = tokio::time::Instant::now();
-        let mut queued = false;
-        let mut stagger = 0;
+        let mut entry: Option<QueueEntry<'_>> = None;
         loop {
             let budget = self.budget_snapshot();
             let held = spent_epoch == Some(self.current_epoch());
             if budget.available_now() > 0 && !held {
-                if queued {
-                    self.queue.depth.fetch_sub(1, Ordering::Relaxed);
+                if entry.is_some() {
                     let waited = started.elapsed();
                     self.queue
                         .waited_ms_total
@@ -1339,7 +1359,7 @@ impl Client {
                 }
                 return Ok(Duration::ZERO);
             }
-            let position = if queued {
+            let position = if entry.is_some() {
                 self.queue.depth.load(Ordering::Relaxed).saturating_sub(1)
             } else {
                 self.queue.depth.load(Ordering::Relaxed)
@@ -1349,9 +1369,6 @@ impl Client {
                 scheduler::queue_eta_seconds(&budget, position).max(boundary.as_secs()),
             );
             if already + started.elapsed() + boundary > max_wait {
-                if queued {
-                    self.queue.depth.fetch_sub(1, Ordering::Relaxed);
-                }
                 let error = Error::BudgetExhausted {
                     detail: format!(
                         "used {}/{} tunnels in epoch {}; {position} request(s) queued ahead, the wait would exceed {}s",
@@ -1365,17 +1382,16 @@ impl Client {
                 self.record_error(&error);
                 return Err(error);
             }
-            if !queued {
-                queued = true;
-                self.queue.depth.fetch_add(1, Ordering::Relaxed);
-                self.queue.queued_total.fetch_add(1, Ordering::Relaxed);
-                stagger = self.queue.seq.fetch_add(1, Ordering::Relaxed) % 64;
+            if entry.is_none() {
                 tracing::info!(
                     position,
                     eta_secs = eta.as_secs(),
                     "budget spent; queued for the next epoch"
                 );
             }
+            let stagger = entry
+                .get_or_insert_with(|| QueueEntry::join(&self.queue))
+                .stagger;
             // Wake just past the boundary, staggered by arrival so slots go out in order.
             tokio::time::sleep(boundary + Duration::from_millis(100 + 25 * stagger)).await;
         }
@@ -3298,6 +3314,25 @@ mod tests {
             tunnel.waited
         );
         assert_eq!(tunnel.epoch, EPOCH + 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_held_request_that_is_dropped_leaves_the_queue() {
+        let (_now, clock) = hand_clock();
+        let rig = Rig::new(
+            "dropped",
+            Some(Duration::from_secs(120)),
+            Duration::ZERO,
+            clock,
+        );
+        slot::allocate(&rig.cursor, EPOCH, 1).unwrap();
+        let request = rig.connect();
+        until(|| rig.client.queue_depth() == 1 || request.is_finished()).await;
+        assert!(!request.is_finished(), "held for the next epoch");
+        request.abort();
+        assert!(request.await.is_err_and(|e| e.is_cancelled()));
+        assert_eq!(rig.client.queue_depth(), 0);
+        assert!(rig.proofs().is_empty());
     }
 
     #[tokio::test(start_paused = true)]
