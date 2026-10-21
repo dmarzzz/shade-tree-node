@@ -685,6 +685,10 @@ export class ShadeTreeClient {
     if (opts.bootnode) process.env.SHADE_TREE_BOOTNODE_ONION = String(opts.bootnode);
     if (opts.directory) process.env.SHADE_TREE_DIRECTORY = String(opts.directory);
     if (opts.dirSigner) process.env.SHADE_TREE_DIR_SIGNER = String(opts.dirSigner);
+    // selection.mjs fetches the canopy over Tor with the SOCKS address it read at import, so the
+    // caller's torHost/torPort must reach the env too, or the canopy fetch dials 127.0.0.1:9250.
+    if (opts.torHost) process.env.SHADE_TREE_TOR_HOST = String(opts.torHost);
+    if (opts.torPort) process.env.SHADE_TREE_TOR_PORT = String(opts.torPort);
     applyClientNetworkEnv(process.env);
     this.onion = (process.env.SHADE_TREE_ONION || "").replace(/\.onion$/, "") || null;
     this._selection = null;

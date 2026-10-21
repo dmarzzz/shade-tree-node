@@ -633,7 +633,7 @@ pub fn check_identity_elsewhere(
                     active.public_profile().map(|p| p.contract).unwrap_or_default()
                 ),
                 format!(
-                    "either run against that network (`--network {}` or SHADENET_NETWORK=<path to its deployment.json>) or register this identity commitment here: `shadenet register-member --identity <file> --key-file <funded key>`",
+                    "either run against that network (`--network {}` or SHADENET_NETWORK=<path to its deployment.json>) or register this identity commitment here: `shadenet register-member --identity <file>` (no key: it creates a funding wallet and prints the address and amount to send)",
                     network.name
                 ),
             )),

@@ -149,7 +149,7 @@ fn parse_args(args: &[String]) -> Result<Option<EnrollOptions>, String> {
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-fn private_open(path: &Path) -> Result<std::fs::File, String> {
+pub(crate) fn private_open(path: &Path) -> Result<std::fs::File, String> {
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
     let mut options = OpenOptions::new();
     options.write(true).create_new(true).mode(0o600);
@@ -181,7 +181,7 @@ fn private_open(path: &Path) -> Result<std::fs::File, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn private_open(path: &Path) -> Result<std::fs::File, String> {
+pub(crate) fn private_open(path: &Path) -> Result<std::fs::File, String> {
     use std::ffi::{c_void, CString};
     use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::ffi::OsStrExt;
@@ -326,12 +326,12 @@ fn private_open(path: &Path) -> Result<std::fs::File, String> {
 }
 
 #[cfg(windows)]
-fn private_open(path: &Path) -> Result<std::fs::File, String> {
+pub(crate) fn private_open(path: &Path) -> Result<std::fs::File, String> {
     windows_private::create_owner_only(path)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn private_open(path: &Path) -> Result<std::fs::File, String> {
+pub(crate) fn private_open(path: &Path) -> Result<std::fs::File, String> {
     OpenOptions::new()
         .write(true)
         .create_new(true)

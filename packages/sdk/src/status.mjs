@@ -20,14 +20,18 @@ export function normalizeStatus(body) {
   return Object.fromEntries(FIELDS.map((f) => [f, body[f] ?? null]));
 }
 
-export async function daemonStatus({ daemon = DEFAULT_DAEMON, fetchImpl = globalThis.fetch, timeoutMs = 3_000 } = {}) {
+// `token` is the proxy token (`~/.config/shadenet/proxy-token`); the daemon answers 407 without it.
+// The timeout covers a cold call: when its canopy is due the daemon refreshes it first (~5 s over Tor).
+export async function daemonStatus({ daemon = DEFAULT_DAEMON, token, fetchImpl = globalThis.fetch, timeoutMs = 10_000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
-    res = await fetchImpl(new URL(STATUS_PATH, daemon), { signal: controller.signal, headers: { accept: "application/json" } });
+    const headers = { accept: "application/json" };
+    if (token) headers.authorization = `Bearer ${token}`;
+    res = await fetchImpl(new URL(STATUS_PATH, daemon), { signal: controller.signal, headers });
   } catch (cause) {
-    throw new ShadeNetError("Transport", `no shadenet daemon answered at ${daemon}; start it with \`shade-tree proxy\``, { cause });
+    throw new ShadeNetError("Transport", `no shadenet daemon answered at ${daemon}; start it with \`shadenet proxy\``, { cause });
   } finally {
     clearTimeout(timer);
   }

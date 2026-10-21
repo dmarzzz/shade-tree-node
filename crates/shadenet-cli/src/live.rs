@@ -344,7 +344,7 @@ fn print_status(status: &shadenet::Status) {
             status.admission_set.as_deref().unwrap_or("?")
         ),
         (Some(false), _) => println!(
-            "admitted: no; register with `shadenet register-member --identity <file> --key-file <funded key>`"
+            "admitted: no; register with `shadenet register-member --identity <file>` (no key: it creates a funding wallet and prints the address and amount to send)"
         ),
         (None, _) => {}
     }
@@ -1448,7 +1448,14 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
                         chain_name(profile.chain_id, &network.name),
                     );
                 }
-                println!("  {bin} register-member --identity {} --key-file <owner-only file with a funded key>", identity_path.display());
+                println!(
+                    "  {bin} register-member --identity {}",
+                    identity_path.display()
+                );
+                println!(
+                    "Without a funded key it creates a funding wallet in {}, prints the address and the amount to send, and stakes once the ETH arrives; to pay from a key you hold, add --key-file <owner-only file>.",
+                    dir.display()
+                );
                 if let Some(link) = &stake_link {
                     println!("Or open the stake page in a browser (the link carries your identity commitment; the secret never leaves this machine):");
                     println!("  {link}");
@@ -2053,7 +2060,7 @@ fn doctor(args: DoctorArgs, ctx: &Context) -> ExitCode {
 /// A bond in wei, printed the way the Get access page prints it: `0.01 ETH` (trailing zeros
 /// trimmed, at most 18 decimals), falling back to the raw figure when the string is not an
 /// integer. Sepolia's ether is named so nobody reads it as mainnet ETH.
-fn format_bond(wei: &str, chain_id: u64) -> String {
+pub(crate) fn format_bond(wei: &str, chain_id: u64) -> String {
     let digits = wei.trim();
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return format!("{wei} wei");
