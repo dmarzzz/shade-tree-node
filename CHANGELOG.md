@@ -4,6 +4,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Rust proxy: a queued request whose client hangs up spends nothing
+
+- The proxy watches the local connection while a CONNECT is held for budget or waits for a setup
+  permit. A client that hangs up there leaves the queue at once: no proof, no slot, no onion dial.
+  It used to stay queued for up to two epochs and then spend a slot on a tunnel nobody read, so an
+  agent that timed out and retried burned one slot per abandoned attempt. An attempt that has
+  started proving still runs to its end. Bytes a client sends ahead of the `200` are kept.
+- The budget queue's depth no longer stays too high when a held request is cancelled (an SDK
+  timeout around `connect_queued`, an aborted task). Queue positions, `X-ShadeNet-ETA`,
+  `Status.queue.depth` and the `queue_depth` metric were inflated for the rest of the process.
+- SDK: `Client::connect_after_wait` takes an `abandoned` future and returns `Option<Tunnel>`,
+  `None` when it resolved while the request was held.
+
 ### Monitoring
 
 - The compose monitoring bundle scraped the heartbeat on 9102 and the Elder on 9103; the defaults
