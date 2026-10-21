@@ -18,7 +18,7 @@ runs the same diagnosis for the whole setup, canopy side included (see below).
 
 | Code | HTTP | Exit | What happened | Typical cause | Fix |
 |---|---|---|---|---|---|
-| `not_admitted` | 403 | 2 | Your leaf is not in the set the canopy's nodes accept | Never staked here, or staked in another network's set (an identity from the staging page on the production record) | `shadenet doctor` names the record that has it; else `shadenet register-member --identity identity.json --key-file <funded key>`, or hand the commitment to a sponsor |
+| `not_admitted` | 403 | 2 | Your leaf is not in the set the canopy's nodes accept | Never staked here, or staked in another network's set (an identity from the staging page on the production record) | `shadenet doctor` names the record that has it; else `shadenet register-member --identity identity.json` (it creates a funding wallet and prints the address and amount to send; `--key-file <funded key>` pays from a key you hold), or hand the commitment to a sponsor |
 | `not_finalized` | 403 | 2 | Registered, but the block is not final yet; nodes read the finalized set | Sepolia finality (about 13 minutes) plus one node root refresh (60 s) | `shadenet status --wait` returns when final |
 | `port_not_allowed` | 403 | 2 | No node egresses to that port. Nodes serve HTTPS on 443 | An http:// URL or a non-443 port | Use https on port 443 |
 | `budget_exhausted` | 429 | 4 | The budget queue could not hold the request within its maximum wait (two epochs by default, ADR 0013), or one tunnel hit its payload cap. A request that fits is held, not refused, and opens with `X-ShadeNet-Queued` | A burst of fetches to new hosts, or a model API routed through the proxy | Wait `Retry-After` / `X-ShadeNet-ETA` seconds (queue-aware), reuse open connections, or run `shadenet plan` before the next batch |
@@ -38,7 +38,9 @@ runs the same diagnosis for the whole setup, canopy side included (see below).
 
 Exit code 0 means success. `shadenet status` also exits with the state:
 0 `ready`, 2 `not_admitted`/`not_finalized`/`no_identity`, 3 `degraded`,
-4 `budget_exhausted`.
+4 `budget_exhausted`. `shadenet register-member` paying from its own funding wallet exits
+4 when the wallet was not funded within `--wait-timeout`, after printing the address and the
+amount still missing; run the same command again once it has arrived.
 
 ## `problems[]` before you retry
 

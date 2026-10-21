@@ -244,7 +244,7 @@ impl Error {
             }
             Self::NotAdmitted { set, live, .. } => Explanation::new(
                 format!("your leaf is not in the finalized member set {set} ({live} live leaves); either it was never staked there, or it was staked in another network's set (staging vs production)"),
-                "run `shadenet doctor` (it looks for your leaf in every record it knows and names the one that has it); to stake here: `shadenet register-member --identity <file> --key-file <funded key>`, or hand the identity commitment to a sponsor",
+                "run `shadenet doctor` (it looks for your leaf in every record it knows and names the one that has it); to stake here: `shadenet register-member --identity <file>` (no key: it creates a funding wallet and prints the address and amount to send), or hand the identity commitment to a sponsor",
             ),
             Self::NotFinalized { set, .. } => Explanation::new(
                 format!("your registration in {set} is on chain but not finalized; nodes read the finalized set (about 13 minutes on Sepolia)"),
