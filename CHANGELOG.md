@@ -12,6 +12,21 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   block the stake was mined in (`member::balance_at`), retrying for a few seconds while a lagging
   replica lacks that block, and prints nothing rather than a stale figure.
 
+### JS SDK fixes from the v0.7.5 live end-to-end test
+
+- `proxyConnect` / `proxyFetch` sent the proxy token as `Proxy-Authorization: Bearer`, which the
+  Rust daemon has never accepted on CONNECT (it takes `Basic base64(shadenet:<token>)`), so every
+  SDK request through `shadenet proxy` got 407. They now send Basic credentials.
+- `daemonStatus` sent no token (407 from the daemon) and timed out at 3 s, while a cold status call
+  takes ~5 s when the daemon refreshes its canopy first. It now takes `{ token }`, sends it as
+  `Authorization: Bearer`, and waits up to 10 s.
+- `memberStatus` decided `finalized` with `eth_getLogs` from the set's deploy block, a ~110k-block
+  range on Sepolia that public RPCs refuse ("exceeded max allowed range"); this also broke the
+  stake page's finality check. It now reads `limitOf(leaf)` at the `finalized` block.
+- `createClient({ torPort })` did not reach the canopy fetch, which dialed the default SOCKS port
+  127.0.0.1:9250 and failed with "no verifiable bootnode directory" on any other port. The
+  client now hands `torHost`/`torPort` to the selection layer.
+
 ## 0.7.5 — register-member funds itself
 
 `shadenet register-member` with no key creates its own funding wallet, quotes one amount, waits for it and stakes (zkAPI's deposit step). Also: the proxy as a scheduler with `--preopen` session books, CLI output that names the budget, record RPC changes, monitoring fixes and dependency security bumps.
