@@ -579,8 +579,20 @@ through a large shared pool (Railgun, Privacy Pools, a CEX withdrawal), and send
 amount.";
 
 /// Printed after a stake from the funding wallet: what is left is the unspent gas reserve.
-fn leftover_note(rpc: &mut HttpRpc, wallet: &Wallet, key_path: &Path, chain_id: u64) {
-    let Ok(left) = member::balance(rpc, wallet.address) else {
+fn leftover_note(rpc: &mut HttpRpc, wallet: &Wallet, block: &U256, key_path: &Path, chain_id: u64) {
+    // Read at the stake's block: on 2026-10-20 `latest` came from a replica one block behind and
+    // reported the whole deposit as left over. A replica that lacks the block errors; retry briefly.
+    let mut left = None;
+    for attempt in 0..5 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        if let Ok(balance) = member::balance_at(rpc, wallet.address, block) {
+            left = Some(balance);
+            break;
+        }
+    }
+    let Some(left) = left else {
         return;
     };
     if left.is_zero() {
@@ -753,7 +765,7 @@ pub fn cmd_register_member(args: &[String]) -> ExitCode {
         Ok(RegisterOutcome::Mined(mined)) => {
             println!("  mined:    {} in block {}; member staked. Public admission begins after this block reaches finality.", mined.hash, mined.block);
             if let Some((path, chain_id)) = &funded_from {
-                leftover_note(&mut rpc, &wallet, path, *chain_id);
+                leftover_note(&mut rpc, &wallet, &mined.block, path, *chain_id);
             }
             ExitCode::SUCCESS
         }
