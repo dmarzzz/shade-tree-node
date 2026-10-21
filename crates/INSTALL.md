@@ -48,7 +48,7 @@ arm64 live asset. Intel macOS (`x86_64-apple-darwin`) has a live asset from v0.7
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SHADENET_VERSION` | latest release | Pin a release, such as `v0.7.4` or `0.7.4` |
+| `SHADENET_VERSION` | latest release | Pin a release, such as `v0.7.5` or `0.7.5` |
 | `SHADENET_LIVE` | `auto` | `auto` probes live, falling back only when that release lacks it; `1` requires live; `0` installs verifier-only |
 | `SHADENET_INSTALL_DIR` | `$HOME/.local/bin` | User-writable destination directory, created if missing |
 | `SHADENET_FORCE` | `0` | `1` explicitly permits replacing a destination symlink to a file; directory links are always refused |
@@ -62,7 +62,7 @@ target selection:
 ```sh
 curl -q -fsSL --proto '=https' --proto-redir '=https' \
   https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh \
-  | SHADENET_VERSION=v0.7.4 sh
+  | SHADENET_VERSION=v0.7.5 sh
 ```
 
 The one-liner downloads code before you inspect it. To review it first, save it
@@ -74,12 +74,12 @@ installer on x86_64 Windows; PowerShell users can use the manual process below.
 Choose the `-live` asset for your platform from the
 [latest release](https://github.com/dmarzzz/shade-tree-node/releases/latest).
 Linux users can choose GNU for ordinary glibc distributions or musl for a
-statically linked libc target. This x86_64 GNU example installs v0.7.4; change
+statically linked libc target. This x86_64 GNU example installs v0.7.5; change
 `TARGET` to another published target from the table above when needed. `-q`
 must be curl's first option so user configuration cannot disable TLS checks:
 
 ```sh
-VERSION=0.7.4
+VERSION=0.7.5
 TARGET=x86_64-unknown-linux-gnu
 ASSET="shadenet-$VERSION-$TARGET-live"
 curl -q -fLO --proto '=https' --proto-redir '=https' \
@@ -110,14 +110,14 @@ the macOS asset is checksummed and attested but not notarized. After verifying
 the checksum, remove a Gatekeeper quarantine attribute if macOS added one:
 
 ```sh
-xattr -d com.apple.quarantine ./shadenet-0.7.4-aarch64-apple-darwin-live
+xattr -d com.apple.quarantine ./shadenet-0.7.5-aarch64-apple-darwin-live
 ```
 
 On Windows, compare the digest printed by PowerShell with the contents of the
 downloaded `.sha256` file before renaming the binary:
 
 ```powershell
-Get-FileHash .\shadenet-0.7.4-x86_64-pc-windows-msvc-live.exe -Algorithm SHA256
+Get-FileHash .\shadenet-0.7.5-x86_64-pc-windows-msvc-live.exe -Algorithm SHA256
 ```
 
 ## No-Node agent quickstart

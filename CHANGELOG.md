@@ -4,6 +4,10 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+## 0.7.5 — register-member funds itself
+
+`shadenet register-member` with no key creates its own funding wallet, quotes one amount, waits for it and stakes (zkAPI's deposit step). Also: the proxy as a scheduler with `--preopen` session books, CLI output that names the budget, record RPC changes, monitoring fixes and dependency security bumps.
+
 ### `register-member` funds itself (feature request: mirror zkAPI's funding path)
 
 - `shadenet register-member --identity …` with no `--key-file` and no `SHADENET_REGISTER_KEY` on
