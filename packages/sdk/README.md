@@ -107,11 +107,13 @@ test checks both builds byte for byte.
 ```js
 import { daemonStatus } from "@shadenet/sdk";
 
-await daemonStatus({ daemon: "http://127.0.0.1:8118" });
+const token = "<contents of ~/.config/shadenet/proxy-token>";
+await daemonStatus({ daemon: "http://127.0.0.1:8118", token });
 // { admitted, finalized, tier, slotsLeft, slotsPerEpoch, epochResetsAt, canopy, network }
 ```
 
-This reads `GET /_shadenet/status` from the local Rust proxy. Fields an older daemon doesn't
+This reads `GET /_shadenet/status` from the local Rust proxy, with the proxy token as a Bearer
+credential (`shadenet init` writes it; without it the daemon answers 407). Fields an older daemon doesn't
 report come back as `null`.
 
 ## Egress (Node)
@@ -119,9 +121,9 @@ report come back as `null`.
 ```js
 import { proxyFetch, proxyConnect, createClient } from "@shadenet/sdk/node";
 
-// Through a running `shade-tree proxy` (recommended)
-const res = await proxyFetch("https://example.com/", { proxy: "http://127.0.0.1:8118" });
-const socket = await proxyConnect("example.com:443");
+// Through a running `shadenet proxy` (recommended); `token` is its proxy token
+const res = await proxyFetch("https://example.com/", { proxy: "http://127.0.0.1:8118", token });
+const socket = await proxyConnect("example.com:443", { token });
 
 // In process, over a local Tor SOCKS port
 const client = createClient({ secret, limit: 1, network: "sepolia", torPort: 9050 });

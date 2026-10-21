@@ -53,7 +53,8 @@ export function proxyConnect(target, { proxy = DEFAULT_DAEMON, token, timeoutMs 
   const { host, port } = splitTarget(target);
   const p = new URL(proxy);
   const headers = { host: `${host}:${port}` };
-  if (token) headers["proxy-authorization"] = `Bearer ${token}`;
+  // The daemon takes Basic credentials (user `shadenet`) on CONNECT; Bearer only on its GET endpoints.
+  if (token) headers["proxy-authorization"] = `Basic ${Buffer.from(`shadenet:${token}`).toString("base64")}`;
   return new Promise((resolve, reject) => {
     const req = http.request({ host: p.hostname, port: Number(p.port || 80), method: "CONNECT", path: `${host}:${port}`, headers, timeout: timeoutMs });
     req.once("connect", (res, socket, head) => {

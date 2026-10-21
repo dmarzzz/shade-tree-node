@@ -130,7 +130,7 @@ const iface = new Interface([
   "function bondFor(uint256) view returns (uint256)", "function isActive(uint256) view returns (bool)",
   "function limitOf(uint256) view returns (uint256)", "function withdrawableAt(uint256) view returns (uint256)",
 ]);
-function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 0n, chain = 11155111n, finalizedLogs = [], views = {} } = {}) {
+function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 0n, chain = 11155111n, finalizedLimit = 0n, views = {} } = {}) {
   const sent = [];
   return {
     sent,
@@ -138,7 +138,7 @@ function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 
       if (method === "eth_chainId") return `0x${chain.toString(16)}`;
       if (method === "eth_sendTransaction") { sent.push(params[0]); return "0x" + "ab".repeat(32); }
       if (method === "eth_getTransactionReceipt") return { status: "0x1" };
-      if (method === "eth_getLogs") return finalizedLogs;
+      if (method === "eth_getLogs") throw new Error("getLogs request exceeded max allowed range"); // public RPCs cap the range
       if (method === "eth_getCode") return "0x6080";
       if (method === "eth_getBalance") return "0xde0b6b3a7640000"; // 1 ETH
       if (method === "eth_estimateGas") return "0x30d40";
@@ -149,7 +149,7 @@ function mockWallet({ bond = null, active = false, limit = 0n, withdrawableAt = 
         const enc = (v) => iface.encodeFunctionResult(fn.name, [v]);
         if (fn.name === "bondFor") return enc(bond ?? BOND[Number(fn.args[0])] ?? 0n);
         if (fn.name === "isActive") return enc(active);
-        if (fn.name === "limitOf") return enc(limit);
+        if (fn.name === "limitOf") return enc(params[1] === "finalized" ? finalizedLimit : limit);
         if (fn.name === "withdrawableAt") return enc(withdrawableAt);
         if (fn.name === "members") return iface.encodeFunctionResult(fn.name, views.member ?? [0n, 0n, 0n, 0n]);
         if (fn.name === "exitContext") return enc(views.exitContext);
@@ -197,7 +197,7 @@ ok(await code(() => sdk.createStaking({ provider: mockWallet({ chain: 1n }) }).s
   ok((await sdk.createStaking({ network: shadenetNet, provider: mockWallet({ active: true }) }).stake({ commitment: idc, from: FROM })).alreadyActive === true, "already-active check uses the derived leaf");
 }
 {
-  const st = await sdk.createStaking({ provider: mockWallet({ active: true, limit: 1n, finalizedLogs: [{}] }) }).memberStatus(id.leaf);
+  const st = await sdk.createStaking({ provider: mockWallet({ active: true, limit: 1n, finalizedLimit: 1n }) }).memberStatus(id.leaf);
   ok(st.state === "active" && st.limit === 1 && st.finalized === true, "memberStatus active + finalized");
   const pending = await sdk.createStaking({ provider: mockWallet({ active: true, limit: 1n }) }).memberStatus(id.leaf);
   ok(pending.finalized === false, "memberStatus reports not finalized");
@@ -255,6 +255,9 @@ console.log("=== proxy refusals ===");
       socket.end("HTTP/1.1 429 Too Many Requests\r\nX-ShadeNet-Error: BudgetExhausted\r\nRetry-After: 42\r\n\r\n");
     } else if (req.url.startsWith("closed")) {
       socket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+    } else if (req.url.startsWith("auth") && req.headers["proxy-authorization"] !== `Basic ${Buffer.from("shadenet:tok").toString("base64")}`) {
+      // The Rust daemon's rule: Basic base64(shadenet:<token>) on CONNECT, nothing else.
+      socket.end("HTTP/1.1 407 Proxy Authentication Required\r\nX-ShadeNet-Error: proxy_auth_required\r\n\r\n");
     } else {
       const up = net.connect(echo.address().port, "127.0.0.1", () => { socket.write("HTTP/1.1 200 Connection Established\r\n\r\n"); up.pipe(socket); socket.pipe(up); });
     }
@@ -271,6 +274,12 @@ console.log("=== proxy refusals ===");
   const reply = await new Promise((r) => { sock.once("data", (d) => r(d.toString())); sock.write("ping"); });
   ok(reply === "ping", "200 -> a live tunnel");
   sock.destroy();
+  const authed = await proxyConnect("auth.example:443", { proxy: url, token: "tok" });
+  ok(authed.writable, "token -> Basic shadenet:<token> on CONNECT, as the daemon requires");
+  authed.destroy();
+  err = null;
+  try { await proxyConnect("auth.example:443", { proxy: url, token: "wrong" }); } catch (e) { err = e; }
+  ok(err != null, "wrong token -> refused");
   err = null;
   try { await proxyConnect("example.com:443", { proxy: "http://127.0.0.1:1" }); } catch (e) { err = e; }
   ok(err?.code === "Transport", "no proxy listening -> Transport");
@@ -279,9 +288,11 @@ console.log("=== proxy refusals ===");
 
 console.log("=== daemon status ===");
 {
-  const fetchImpl = async (u) => ({ ok: true, status: 200, json: async () => ({ admitted: true, tier: 1, slotsLeft: 0, extra: 1, url: String(u) }) });
-  const st = await sdk.daemonStatus({ fetchImpl });
+  let sentAuth;
+  const fetchImpl = async (u, init) => { sentAuth = init?.headers?.authorization; return { ok: true, status: 200, json: async () => ({ admitted: true, tier: 1, slotsLeft: 0, extra: 1, url: String(u) }) }; };
+  const st = await sdk.daemonStatus({ fetchImpl, token: "tok" });
   ok(st.admitted === true && st.slotsLeft === 0 && st.finalized === null && !("extra" in st), "status normalized to the documented fields");
+  ok(sentAuth === "Bearer tok", "token -> Authorization: Bearer on the status GET");
   ok(await code(() => sdk.daemonStatus({ fetchImpl: async () => { throw new Error("ECONNREFUSED"); } })) === "Transport", "no daemon -> Transport");
 }
 
