@@ -98,6 +98,7 @@ The tools:
 | Tool | Arguments | Returns |
 |---|---|---|
 | `shadenet_fetch` | `url` (https), `method`, `headers`, `body`, `max_bytes` | `status`, `headers`, `body` (text, or base64 with `bodyEncoding`), `gateway`, `epoch`, `truncated` |
+| `shadenet_fetch_fallback` | `url`, `method`, `headers`, `body`, `max_bytes` | `route` (`direct` or `shadenet`), `status`, `headers`, `body` as for `shadenet_fetch`; after a fallback also `directBlock` (why the direct request was refused), `block` (whether the ShadeNet answer is refused too), `gateway`, `epoch` |
 | `shadenet_status` | none | the [status object](../specs/local-api.openapi.yaml) |
 | `shadenet_plan` | `urls` or `count` | the plan object: `availableNow`, `epochsNeeded`, `completesInSeconds`, `fitsNow`, `advice` |
 | `shadenet_search` | `query`, `engines`, `categories`, `max_results` | `results` with `title`, `url`, `content`, `engine` |

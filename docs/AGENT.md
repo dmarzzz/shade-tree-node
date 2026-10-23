@@ -139,9 +139,13 @@ the proxy with an allow-list: `shadenet proxy --targets .wikipedia.org,api.ipify
 at once with `403 target_not_allowed`, spending nothing.
 
 **MCP tools (the agent chooses per request).** `shadenet mcp` serves
-`shadenet_fetch`, `shadenet_status`, `shadenet_plan` and, with `--searxng-url`,
-`shadenet_search`. The agent keeps its normal network and uses ShadeNet only for
-the fetches that need it.
+`shadenet_fetch`, `shadenet_fetch_fallback`, `shadenet_status`, `shadenet_plan` and,
+with `--searxng-url`, `shadenet_search`. The agent keeps its normal network and uses
+ShadeNet only for the fetches that need it. `shadenet_fetch_fallback` makes that choice
+itself: it tries the direct connection first and spends a tunnel only when the site
+answers with a block (403, 429, a CAPTCHA or a JavaScript challenge) or the connection
+fails. The direct attempt shows the site this machine's IP, so use `shadenet_fetch`
+when a request must not be linked to the machine.
 
 ```sh
 hermes mcp add shadenet --command shadenet --args mcp

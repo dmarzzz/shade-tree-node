@@ -2,6 +2,8 @@
 //!
 //! Tools:
 //! - `shadenet_fetch`: fetch an https URL through ShadeNet.
+//! - `shadenet_fetch_fallback`: fetch a URL directly, and retry it through `ShadeNet` only when
+//!   the site blocks the direct request.
 //! - `shadenet_status`: admission, tunnel budget, queue and canopy state.
 //! - `shadenet_plan`: what a batch of fetches costs in epochs and seconds, and the tier that
 //!   would do it in one epoch (ADR 0013).
@@ -26,6 +28,7 @@ use crate::McpArgs;
 
 const PROTOCOL_VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const MAX_TEXT: usize = 200_000;
+const DIRECT_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn tools(search: bool) -> Value {
     let mut list = vec![
@@ -37,6 +40,23 @@ fn tools(search: bool) -> Value {
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "https URL"},
+                    "method": {"type": "string", "default": "GET"},
+                    "headers": {"type": "object", "additionalProperties": {"type": "string"}},
+                    "body": {"type": "string"},
+                    "max_bytes": {"type": "integer", "minimum": 1, "maximum": 10_000_000, "default": 2_000_000}
+                },
+                "required": ["url"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "shadenet_fetch_fallback",
+            "title": "Fetch a URL, falling back to ShadeNet when blocked",
+            "description": "Fetch a URL over this machine's own connection first. Only when the site blocks it (403, 429, a CAPTCHA, a JavaScript challenge, or a failed connection) retry the same request through ShadeNet, spending one tunnel. The result says which route answered (`route`), why the direct attempt was blocked (`directBlock`), and whether the ShadeNet answer is itself a block (`block`). The direct attempt reveals this machine's IP to the site, so use shadenet_fetch instead when the request must not be linked to this machine. Do not use it for model APIs, localhost or anything that needs your login.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL; the ShadeNet retry needs https"},
                     "method": {"type": "string", "default": "GET"},
                     "headers": {"type": "object", "additionalProperties": {"type": "string"}},
                     "body": {"type": "string"},
@@ -99,6 +119,124 @@ fn tool_error(code: &str, message: String) -> Value {
     text_result(&json!({"error": {"code": code, "message": message}}), true)
 }
 
+fn fetch_request(args: &Value) -> Result<shadenet::FetchRequest, Value> {
+    let Some(url) = args.get("url").and_then(Value::as_str) else {
+        return Err(tool_error("config", "url is required".into()));
+    };
+    let headers = args
+        .get("headers")
+        .and_then(Value::as_object)
+        .map(|map| {
+            map.iter()
+                .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(shadenet::FetchRequest {
+        url: url.to_string(),
+        method: args
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or("GET")
+            .to_ascii_uppercase(),
+        headers,
+        body: args
+            .get("body")
+            .and_then(Value::as_str)
+            .map(|s| s.as_bytes().to_vec()),
+        max_bytes: args
+            .get("max_bytes")
+            .and_then(Value::as_u64)
+            .map_or(shadenet::fetch::DEFAULT_MAX_BYTES, |n| {
+                n.clamp(1, 10_000_000) as usize
+            }),
+        timeout: Duration::from_secs(180),
+    })
+}
+
+/// Adds `body` (text, or base64 with `bodyEncoding`), `truncated` and `contentType` to `value`.
+fn with_body(
+    mut value: Value,
+    headers: &[(String, String)],
+    body: &[u8],
+    truncated: bool,
+) -> Value {
+    let content_type = headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    if let Ok(text) = std::str::from_utf8(body) {
+        let clipped: String = text.chars().take(MAX_TEXT).collect();
+        value["truncated"] = (truncated || clipped.len() < text.len()).into();
+        value["body"] = clipped.into();
+    } else {
+        use base64::Engine as _;
+        value["truncated"] = truncated.into();
+        value["bodyEncoding"] = "base64".into();
+        value["body"] = base64::engine::general_purpose::STANDARD
+            .encode(&body[..body.len().min(MAX_TEXT)])
+            .into();
+    }
+    value["contentType"] = content_type.into();
+    value
+}
+
+struct DirectPage {
+    status: u16,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+    truncated: bool,
+}
+
+/// The same request over this machine's own connection, ignoring any proxy settings.
+fn direct(request: &shadenet::FetchRequest) -> Result<DirectPage, String> {
+    use std::io::Read as _;
+
+    let method = reqwest::Method::from_bytes(request.method.as_bytes())
+        .map_err(|e| format!("bad method {}: {e}", request.method))?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(DIRECT_TIMEOUT)
+        .user_agent(concat!("shadenet/", env!("CARGO_PKG_VERSION")))
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("build the direct HTTP client: {e}"))?;
+    let mut builder = client.request(method, &request.url);
+    for (name, value) in &request.headers {
+        builder = builder.header(name, value);
+    }
+    if let Some(body) = &request.body {
+        builder = builder.body(body.clone());
+    }
+    let response = builder
+        .send()
+        .map_err(|e| format!("direct request to {}: {e}", request.url))?;
+    let status = response.status().as_u16();
+    let headers = response
+        .headers()
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.to_string(),
+                String::from_utf8_lossy(v.as_bytes()).into_owned(),
+            )
+        })
+        .collect();
+    let mut body = Vec::new();
+    response
+        .take(request.max_bytes as u64 + 1)
+        .read_to_end(&mut body)
+        .map_err(|e| format!("read the direct response from {}: {e}", request.url))?;
+    let truncated = body.len() > request.max_bytes;
+    body.truncate(request.max_bytes);
+    Ok(DirectPage {
+        status,
+        headers,
+        body,
+        truncated,
+    })
+}
+
 struct Server {
     client: Arc<shadenet::Client>,
     searxng: Option<String>,
@@ -113,6 +251,7 @@ impl Server {
                 text_result(&serde_json::to_value(status).unwrap_or_default(), false)
             }
             "shadenet_fetch" => self.fetch(args),
+            "shadenet_fetch_fallback" => self.fetch_fallback(args),
             "shadenet_plan" => {
                 let count = args
                     .get("urls")
@@ -132,66 +271,58 @@ impl Server {
     }
 
     fn fetch(&self, args: &Value) -> Value {
-        let Some(url) = args.get("url").and_then(Value::as_str) else {
-            return tool_error("config", "url is required".into());
-        };
-        let headers = args
-            .get("headers")
-            .and_then(Value::as_object)
-            .map(|map| {
-                map.iter()
-                    .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let request = shadenet::FetchRequest {
-            url: url.to_string(),
-            method: args
-                .get("method")
-                .and_then(Value::as_str)
-                .unwrap_or("GET")
-                .to_ascii_uppercase(),
-            headers,
-            body: args
-                .get("body")
-                .and_then(Value::as_str)
-                .map(|s| s.as_bytes().to_vec()),
-            max_bytes: args
-                .get("max_bytes")
-                .and_then(Value::as_u64)
-                .map(|n| n.clamp(1, 10_000_000) as usize)
-                .unwrap_or(shadenet::fetch::DEFAULT_MAX_BYTES),
-            timeout: Duration::from_secs(180),
+        let request = match fetch_request(args) {
+            Ok(request) => request,
+            Err(error) => return error,
         };
         match self.runtime.block_on(self.client.fetch(request)) {
             Ok(response) => {
-                let content_type = response
-                    .headers
-                    .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
-                let mut value = serde_json::to_value(&response).unwrap_or_default();
-                match std::str::from_utf8(&response.body) {
-                    Ok(text) => {
-                        let clipped: String = text.chars().take(MAX_TEXT).collect();
-                        value["truncated"] =
-                            (response.truncated || clipped.len() < text.len()).into();
-                        value["body"] = clipped.into();
-                    }
-                    Err(_) => {
-                        use base64::Engine as _;
-                        value["bodyEncoding"] = "base64".into();
-                        value["body"] = base64::engine::general_purpose::STANDARD
-                            .encode(&response.body[..response.body.len().min(MAX_TEXT)])
-                            .into();
-                    }
-                }
-                value["contentType"] = content_type.into();
-                text_result(&value, false)
+                let value = serde_json::to_value(&response).unwrap_or_default();
+                text_result(
+                    &with_body(value, &response.headers, &response.body, response.truncated),
+                    false,
+                )
             }
             Err(error) => text_result(&error.to_json(), true),
         }
+    }
+
+    fn fetch_fallback(&self, args: &Value) -> Value {
+        let request = match fetch_request(args) {
+            Ok(request) => request,
+            Err(error) => return error,
+        };
+        let (direct_block, direct_error) = match direct(&request) {
+            Ok(page) => match shadenet::Block::classify(page.status, &page.body) {
+                None => {
+                    let value =
+                        json!({"route": "direct", "status": page.status, "headers": page.headers});
+                    return text_result(
+                        &with_body(value, &page.headers, &page.body, page.truncated),
+                        false,
+                    );
+                }
+                Some(block) => (block, None),
+            },
+            Err(message) => (shadenet::Block::Unreachable, Some(message)),
+        };
+        let (mut value, is_error) = match self.runtime.block_on(self.client.fetch(request)) {
+            Ok(response) => {
+                let mut value = serde_json::to_value(&response).unwrap_or_default();
+                value["block"] = json!(shadenet::Block::classify(response.status, &response.body));
+                (
+                    with_body(value, &response.headers, &response.body, response.truncated),
+                    false,
+                )
+            }
+            Err(error) => (error.to_json(), true),
+        };
+        value["route"] = "shadenet".into();
+        value["directBlock"] = json!(direct_block);
+        if let Some(message) = direct_error {
+            value["directError"] = message.into();
+        }
+        text_result(&value, is_error)
     }
 
     fn search(&self, args: &Value) -> Value {
@@ -276,7 +407,7 @@ impl Server {
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": false}},
                     "serverInfo": {"name": "shadenet", "title": "ShadeNet", "version": crate::VERSION},
-                    "instructions": "ShadeNet gives this agent anonymous egress. Use shadenet_fetch only for sites that block Tor or datacenter IPs or when the request must not be linked to this machine; never for model APIs or logged-in sites. Each fetch spends one tunnel of a small per-epoch budget. When the budget is spent a fetch waits for the next epoch by itself (up to about two epochs); call shadenet_plan before a batch to see how long it will take, and on budget_exhausted wait retryAfterSeconds."
+                    "instructions": "ShadeNet gives this agent anonymous egress. Use shadenet_fetch only for sites that block Tor or datacenter IPs or when the request must not be linked to this machine; never for model APIs or logged-in sites. For ordinary browsing that should only use ShadeNet when a site blocks you, use shadenet_fetch_fallback: it tries this machine's connection first and spends a tunnel only on a block. Each fetch spends one tunnel of a small per-epoch budget. When the budget is spent a fetch waits for the next epoch by itself (up to about two epochs); call shadenet_plan before a batch to see how long it will take, and on budget_exhausted wait retryAfterSeconds."
                 }))
             }
             "ping" => Ok(json!({})),
@@ -375,12 +506,18 @@ mod tests {
         };
         assert_eq!(
             names(tools(false)),
-            vec!["shadenet_fetch", "shadenet_status", "shadenet_plan"]
+            vec![
+                "shadenet_fetch",
+                "shadenet_fetch_fallback",
+                "shadenet_status",
+                "shadenet_plan"
+            ]
         );
         assert_eq!(
             names(tools(true)),
             vec![
                 "shadenet_fetch",
+                "shadenet_fetch_fallback",
                 "shadenet_status",
                 "shadenet_plan",
                 "shadenet_search"
