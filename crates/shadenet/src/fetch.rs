@@ -18,6 +18,55 @@ use crate::{Client, Error};
 /// Largest response body [`Client::fetch`] returns by default.
 pub const DEFAULT_MAX_BYTES: usize = 2_000_000;
 
+const SNIFF_BYTES: usize = 64 * 1024;
+const CHALLENGE_MARKERS: [&str; 5] = [
+    "cf-chl",
+    "<title>just a moment...</title>",
+    "checking your browser",
+    "enable javascript and cookies to continue",
+    "ddos-guard",
+];
+const CAPTCHA_MARKERS: [&str; 6] = [
+    "g-recaptcha",
+    "h-captcha",
+    "/sorry/index",
+    "unusual traffic from your computer",
+    "anomaly-modal",
+    "are you a robot",
+];
+
+/// Why a site turned a request away, in the categories of `docs/exit-blocking-benchmark.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Block {
+    AccessDenied,
+    RateLimited,
+    Captcha,
+    Challenge,
+    /// The connection itself failed.
+    Unreachable,
+}
+
+impl Block {
+    /// The block a response shows, if any. Challenge and CAPTCHA pages are recognised by their
+    /// markers whatever the status, since some sites serve them with 200.
+    #[must_use]
+    pub fn classify(status: u16, body: &[u8]) -> Option<Self> {
+        let text = String::from_utf8_lossy(&body[..body.len().min(SNIFF_BYTES)]).to_lowercase();
+        if CHALLENGE_MARKERS.iter().any(|marker| text.contains(marker)) {
+            return Some(Self::Challenge);
+        }
+        if CAPTCHA_MARKERS.iter().any(|marker| text.contains(marker)) {
+            return Some(Self::Captcha);
+        }
+        match status {
+            403 => Some(Self::AccessDenied),
+            429 => Some(Self::RateLimited),
+            _ => None,
+        }
+    }
+}
+
 /// An HTTPS request.
 #[derive(Debug, Clone)]
 pub struct FetchRequest {
@@ -222,5 +271,25 @@ mod tests {
         assert!(parse_https("http://example.com").is_err());
         assert!(parse_https("https://user:pw@example.com").is_err());
         assert!(parse_https("not a url").is_err());
+    }
+
+    #[test]
+    fn blocks_are_classified() {
+        assert_eq!(Block::classify(200, b"<html>results</html>"), None);
+        assert_eq!(Block::classify(404, b"not found"), None);
+        assert_eq!(Block::classify(403, b""), Some(Block::AccessDenied));
+        assert_eq!(Block::classify(429, b""), Some(Block::RateLimited));
+        assert_eq!(
+            Block::classify(403, b"<title>Just a moment...</title>"),
+            Some(Block::Challenge)
+        );
+        assert_eq!(
+            Block::classify(200, b"<div class=\"g-recaptcha\"></div>"),
+            Some(Block::Captcha)
+        );
+        assert_eq!(
+            Block::classify(429, b"<form action=\"/sorry/index\">"),
+            Some(Block::Captcha)
+        );
     }
 }
