@@ -33,7 +33,9 @@ ended the request even when another node would have served it.
    boundary plus one epoch per full capacity of requests ahead. A tunnel that waited answers
    `200 Connection Established` with `X-ShadeNet-Queued: <seconds>`. `--no-queue` (or a maximum
    of 0) restores the old behaviour exactly, which the proxy concurrency harness still checks.
-   SDK callers opt in through `Config::queue_max_wait`; the SDK default is unchanged.
+   SDK callers opt in through `Config::queue_max_wait`; the SDK default is unchanged. A client
+   that hangs up while its request is held leaves the queue and spends nothing; an attempt that
+   has started proving runs to its end.
 2. **Agents can plan.** `shadenet plan --url … | --count N` and the MCP tool `shadenet_plan`
    compute, from the record's rate policy, the member's tier, the slots used this epoch, the
    tickets open in live books and the queue depth: how many tunnels are available now, how many
