@@ -4,6 +4,13 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Dependencies: RUSTSEC-2026-0385, -0386, -0387
+
+- `tokio` 1.53.1 -> 1.54.1 (RUSTSEC-2026-0386, `AsyncFd` constructors; ShadeNet does not call them),
+  `ctutils` 0.4.2 -> 0.4.5 (RUSTSEC-2026-0385), `crypto-bigint` 0.7.5 -> 0.7.6 (RUSTSEC-2026-0387).
+- The `crypto-bigint` 0.5.5 copy that ark-circom pulls in through ethers-core has no patched release;
+  `deny.toml` ignores RUSTSEC-2026-0387 for it with the reason. ShadeNet's own signing is on 0.7.6.
+
 ### `register-member`: the leftover note reads the stake's block
 
 - The first live v0.7.5 stake (2026-10-20, funding wallet `0xa94f…8790`, stake tx `0xcf11…c3f8`,
