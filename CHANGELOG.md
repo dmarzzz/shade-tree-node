@@ -4,6 +4,40 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Dependencies: RUSTSEC-2026-0385, -0386, -0387
+
+- `tokio` 1.53.1 -> 1.54.1 (RUSTSEC-2026-0386, `AsyncFd` constructors; ShadeNet does not call them),
+  `ctutils` 0.4.2 -> 0.4.5 (RUSTSEC-2026-0385), `crypto-bigint` 0.7.5 -> 0.7.6 (RUSTSEC-2026-0387).
+- The `crypto-bigint` 0.5.5 copy that ark-circom pulls in through ethers-core has no patched release;
+  `deny.toml` ignores RUSTSEC-2026-0387 for it with the reason. ShadeNet's own signing is on 0.7.6.
+
+### Rust proxy: a queued request whose client hangs up spends nothing
+
+- The proxy watches the local connection while a CONNECT is held for budget or waits for a setup
+  permit. A client that hangs up there leaves the queue at once: no proof, no slot, no onion dial.
+  It used to stay queued for up to two epochs and then spend a slot on a tunnel nobody read, so an
+  agent that timed out and retried burned one slot per abandoned attempt. An attempt that has
+  started proving still runs to its end. Bytes a client sends ahead of the `200` are kept, and a
+  client that sends them and then shuts its write side (`nc -N`) is still served, not dropped.
+- The budget queue's depth no longer stays too high when a held request is cancelled (an SDK
+  timeout around `connect_queued`, an aborted task). Queue positions, `X-ShadeNet-ETA`,
+  `Status.queue.depth` and the `queue_depth` metric were inflated for the rest of the process.
+- SDK: `Client::connect_after_wait` takes an `abandoned` future and returns `Option<Tunnel>`,
+  `None` when it resolved while the request was held.
+
+### `shadenet mcp`: `shadenet_fetch_fallback`
+
+- A new MCP tool fetches an https URL over the machine's own connection and retries it through
+  ShadeNet only when the site blocks it (403, 429, a CAPTCHA or a JavaScript challenge) or the
+  connection never opened. Only GET, HEAD and OPTIONS are retried. The direct attempt sends no
+  ShadeNet User-Agent, follows no redirects, honours `HTTPS_PROXY`/`ALL_PROXY` unless it is the
+  ShadeNet proxy, and refuses local and private targets. It exposes the machine's IP to the site;
+  `shadenet_fetch` remains the tool for requests that must not be linked to the machine.
+- `shadenet::Block::classify` tells a refused response from a normal one. On a 2xx it needs a
+  challenge-specific signal (the Cloudflare challenge page, Google's `/sorry/` page, a short
+  CAPTCHA wall), so a page with a reCAPTCHA comment form is not a block.
+- `crates/shadenet/examples/fallback_fetch.rs` shows the same pattern for an agent tool.
+
 ### `register-member`: the leftover note reads the stake's block
 
 - The first live v0.7.5 stake (2026-10-20, funding wallet `0xa94f…8790`, stake tx `0xcf11…c3f8`,

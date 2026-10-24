@@ -370,6 +370,28 @@ struct QueueCounters {
     waited_ms_total: AtomicU64,
 }
 
+/// A request's place in the budget queue. Dropping it leaves the queue, so a held request
+/// that is cancelled mid-wait does not stay counted in `depth`.
+struct QueueEntry<'a> {
+    counters: &'a QueueCounters,
+    stagger: u64,
+}
+
+impl<'a> QueueEntry<'a> {
+    fn join(counters: &'a QueueCounters) -> Self {
+        counters.depth.fetch_add(1, Ordering::Relaxed);
+        counters.queued_total.fetch_add(1, Ordering::Relaxed);
+        let stagger = counters.seq.fetch_add(1, Ordering::Relaxed) % 64;
+        Self { counters, stagger }
+    }
+}
+
+impl Drop for QueueEntry<'_> {
+    fn drop(&mut self) {
+        self.counters.depth.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 impl Client {
     /// Validate the configuration and load the identity. No network I/O happens here.
     pub fn new(config: Config) -> Result<Self, Error> {
@@ -1323,14 +1345,12 @@ impl Client {
         spent_epoch: Option<u64>,
     ) -> Result<Duration, Error> {
         let started = tokio::time::Instant::now();
-        let mut queued = false;
-        let mut stagger = 0;
+        let mut entry: Option<QueueEntry<'_>> = None;
         loop {
             let budget = self.budget_snapshot();
             let held = spent_epoch == Some(self.current_epoch());
             if budget.available_now() > 0 && !held {
-                if queued {
-                    self.queue.depth.fetch_sub(1, Ordering::Relaxed);
+                if entry.is_some() {
                     let waited = started.elapsed();
                     self.queue
                         .waited_ms_total
@@ -1339,7 +1359,7 @@ impl Client {
                 }
                 return Ok(Duration::ZERO);
             }
-            let position = if queued {
+            let position = if entry.is_some() {
                 self.queue.depth.load(Ordering::Relaxed).saturating_sub(1)
             } else {
                 self.queue.depth.load(Ordering::Relaxed)
@@ -1349,9 +1369,6 @@ impl Client {
                 scheduler::queue_eta_seconds(&budget, position).max(boundary.as_secs()),
             );
             if already + started.elapsed() + boundary > max_wait {
-                if queued {
-                    self.queue.depth.fetch_sub(1, Ordering::Relaxed);
-                }
                 let error = Error::BudgetExhausted {
                     detail: format!(
                         "used {}/{} tunnels in epoch {}; {position} request(s) queued ahead, the wait would exceed {}s",
@@ -1365,17 +1382,16 @@ impl Client {
                 self.record_error(&error);
                 return Err(error);
             }
-            if !queued {
-                queued = true;
-                self.queue.depth.fetch_add(1, Ordering::Relaxed);
-                self.queue.queued_total.fetch_add(1, Ordering::Relaxed);
-                stagger = self.queue.seq.fetch_add(1, Ordering::Relaxed) % 64;
+            if entry.is_none() {
                 tracing::info!(
                     position,
                     eta_secs = eta.as_secs(),
                     "budget spent; queued for the next epoch"
                 );
             }
+            let stagger = entry
+                .get_or_insert_with(|| QueueEntry::join(&self.queue))
+                .stagger;
             // Wake just past the boundary, staggered by arrival so slots go out in order.
             tokio::time::sleep(boundary + Duration::from_millis(100 + 25 * stagger)).await;
         }
@@ -1391,23 +1407,40 @@ impl Client {
     /// boundary; it is refused only when the time it has been held would exceed `max_wait`
     /// (#253: the onion dial of the first book used to count against it).
     pub async fn connect_queued(&self, target: &str, max_wait: Duration) -> Result<Tunnel, Error> {
-        self.connect_after_wait(target, max_wait, Duration::ZERO)
-            .await
+        let opened = self
+            .connect_after_wait(target, max_wait, Duration::ZERO, std::future::pending())
+            .await?;
+        // Invariant: `pending()` never resolves, so the request is never abandoned.
+        let Some(tunnel) = opened else {
+            unreachable!("a request that cannot be abandoned was abandoned")
+        };
+        Ok(tunnel)
     }
 
     /// [`Client::connect_queued`] for a request a caller has already held for `already` of its
     /// `max_wait` with [`Client::wait_for_budget`] (the proxy waits before taking a setup
     /// permit): the whole hold honours `max_wait`, and the tunnel's `waited` is the total.
+    ///
+    /// `abandoned` resolves when nobody wants the tunnel any more (the proxy's local client hung
+    /// up). It is checked only while the request is held for budget, and then returns `None`
+    /// with nothing proved or spent. An attempt that has started runs to its end.
     pub async fn connect_after_wait(
         &self,
         target: &str,
         max_wait: Duration,
         already: Duration,
-    ) -> Result<Tunnel, Error> {
+        abandoned: impl std::future::Future<Output = ()>,
+    ) -> Result<Option<Tunnel>, Error> {
+        let mut abandoned = std::pin::pin!(abandoned);
         let mut waited = already;
         let mut spent_epoch = None;
         loop {
-            waited += self.hold_for_budget(max_wait, waited, spent_epoch).await?;
+            waited += tokio::select! {
+                // Biased: budget that is ready wins over a hang-up already buffered beside it.
+                biased;
+                held = self.hold_for_budget(max_wait, waited, spent_epoch) => held?,
+                () = &mut abandoned => return Ok(None),
+            };
             let mut attempt_epoch = None;
             match self.connect_once(target, &mut attempt_epoch).await {
                 Ok(mut tunnel) => {
@@ -1415,7 +1448,7 @@ impl Client {
                     if tunnel.waited >= Duration::from_secs(1) {
                         tracing::info!(%target, waited_ms = tunnel.waited.as_millis() as u64, "queued tunnel opened");
                     }
-                    return Ok(tunnel);
+                    return Ok(Some(tunnel));
                 }
                 Err(Error::BudgetExhausted { .. }) => {
                     // The estimate let it through and the attempt found the budget of the epoch
@@ -2827,6 +2860,8 @@ mod tests {
         tunnel_groups: Arc<AtomicUsize>,
         /// Every dial: its group and the book digest its envelope carried.
         dials: Arc<StdMutex<Vec<(Group, String)>>>,
+        /// Every byte a tunnel carried to the node after its envelope.
+        forwarded: Arc<StdMutex<Vec<u8>>>,
     }
 
     impl BookNode {
@@ -2839,6 +2874,7 @@ mod tests {
                 group,
                 tunnel_groups: Arc::clone(&self.tunnel_groups),
                 dials: Arc::clone(&self.dials),
+                forwarded: Arc::clone(&self.forwarded),
             })
         }
     }
@@ -2853,6 +2889,7 @@ mod tests {
                 let (books, spends) = (Arc::clone(&self.books), Arc::clone(&self.spends));
                 let refuse = Arc::clone(&self.refuse);
                 let (group, dials) = (self.group, Arc::clone(&self.dials));
+                let forwarded = Arc::clone(&self.forwarded);
                 tokio::spawn(async move {
                     let mut line = Vec::new();
                     let mut byte = [0_u8; 1];
@@ -2902,7 +2939,9 @@ mod tests {
                     let _ = node.write_all(format!("{reply}\n").as_bytes()).await;
                     // Hold the stream until the client drops its end.
                     let mut rest = [0_u8; 64];
-                    while matches!(node.read(&mut rest).await, Ok(n) if n > 0) {}
+                    while let Ok(n @ 1..) = node.read(&mut rest).await {
+                        forwarded.lock().unwrap().extend_from_slice(&rest[..n]);
+                    }
                 });
                 Ok(Box::pin(client) as BoxStream)
             })
@@ -2937,6 +2976,7 @@ mod tests {
         spends: Arc<AtomicUsize>,
         refuse: Arc<AtomicUsize>,
         dials: Arc<StdMutex<Vec<(Group, String)>>>,
+        forwarded: Arc<StdMutex<Vec<u8>>>,
     }
 
     impl Rig {
@@ -3011,6 +3051,7 @@ mod tests {
             });
             let refuse = Arc::new(AtomicUsize::new(0));
             let dials = Arc::new(StdMutex::new(Vec::new()));
+            let forwarded = Arc::new(StdMutex::new(Vec::new()));
             let dialer = BookNode {
                 dial,
                 books: Arc::clone(&books),
@@ -3019,6 +3060,7 @@ mod tests {
                 group: Group::Base,
                 tunnel_groups: Arc::new(AtomicUsize::new(0)),
                 dials: Arc::clone(&dials),
+                forwarded: Arc::clone(&forwarded),
             };
             let mut client = Client::with_transport(
                 config,
@@ -3035,6 +3077,7 @@ mod tests {
                 spends,
                 refuse,
                 dials,
+                forwarded,
             }
         }
 
@@ -3392,7 +3435,12 @@ mod tests {
         // 1.0 s already waited and a boundary 1 s away: the hold would exceed 1.5 s.
         let error = rig
             .client
-            .connect_after_wait(TARGET, Duration::from_millis(1500), Duration::from_secs(1))
+            .connect_after_wait(
+                TARGET,
+                Duration::from_millis(1500),
+                Duration::from_secs(1),
+                std::future::pending(),
+            )
             .await
             .err()
             .expect("refused by the queue");
@@ -3408,18 +3456,180 @@ mod tests {
                     TARGET,
                     Duration::from_millis(1500),
                     Duration::from_millis(300),
+                    std::future::pending(),
                 )
                 .await
         });
         until(|| rig.client.queue_depth() == 1 || request.is_finished()).await;
         now.store((EPOCH + 1) * 60, Ordering::SeqCst);
-        let tunnel = request.await.unwrap().expect("served");
+        let tunnel = request
+            .await
+            .unwrap()
+            .expect("served")
+            .expect("never abandoned");
         assert!(
             tunnel.waited >= Duration::from_millis(1400),
             "{:?}",
             tunnel.waited
         );
         assert_eq!(tunnel.epoch, EPOCH + 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_held_request_that_is_dropped_leaves_the_queue() {
+        let (_now, clock) = hand_clock();
+        let rig = Rig::new(
+            "dropped",
+            Some(Duration::from_secs(120)),
+            Duration::ZERO,
+            clock,
+        );
+        slot::allocate(&rig.cursor, EPOCH, 1).unwrap();
+        let request = rig.connect();
+        until(|| rig.client.queue_depth() == 1 || request.is_finished()).await;
+        assert!(!request.is_finished(), "held for the next epoch");
+        request.abort();
+        assert!(request.await.is_err_and(|e| e.is_cancelled()));
+        assert_eq!(rig.client.queue_depth(), 0);
+        assert!(rig.proofs().is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_abandoned_request_held_after_a_lost_race_spends_nothing() {
+        // The estimate lets the request through, it waits behind an opening book, and finds the
+        // epoch's slot spent: it is held again. Its client hangs up during that second hold.
+        let (now, clock) = hand_clock();
+        let rig = Rig::new(
+            "abandoned",
+            Some(Duration::from_secs(120)),
+            Duration::ZERO,
+            clock,
+        );
+        let gate = rig.client.session_init_gate.lock().await;
+        let (hang_up, closed) = tokio::sync::oneshot::channel::<()>();
+        let client = Arc::clone(&rig.client);
+        let request = tokio::spawn(async move {
+            client
+                .connect_after_wait(TARGET, Duration::from_secs(120), Duration::ZERO, async {
+                    let _ = closed.await;
+                })
+                .await
+        });
+        settle().await;
+        slot::allocate(&rig.cursor, EPOCH, 1).unwrap();
+        drop(gate);
+        until(|| rig.client.queue_depth() == 1 || request.is_finished()).await;
+        assert!(!request.is_finished(), "held again for the next epoch");
+
+        hang_up.send(()).unwrap();
+        let opened = request.await.unwrap().expect("not an error");
+        assert!(opened.is_none(), "abandoned, not opened");
+        assert_eq!(rig.client.queue_depth(), 0);
+        now.store((EPOCH + 1) * 60, Ordering::SeqCst);
+        settle().await;
+        assert!(rig.proofs().is_empty(), "no proof for a client that left");
+        assert_eq!(slot::peek(&rig.cursor, EPOCH + 1).unwrap(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_proxy_client_that_hangs_up_while_queued_spends_nothing() {
+        use base64::Engine as _;
+        use tokio::io::AsyncWriteExt as _;
+
+        let (now, clock) = hand_clock();
+        let rig = Rig::new(
+            "proxy-hangup",
+            Some(Duration::from_secs(120)),
+            Duration::ZERO,
+            clock,
+        );
+        slot::allocate(&rig.cursor, EPOCH, 1).unwrap();
+        let token = "a".repeat(32);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(crate::proxy::serve(
+            Arc::clone(&rig.client),
+            listener,
+            crate::proxy::ProxyConfig::new(address.to_string(), token.clone()),
+        ));
+        let credentials =
+            base64::engine::general_purpose::STANDARD.encode(format!("shadenet:{token}"));
+        let mut local = tokio::net::TcpStream::connect(address).await.unwrap();
+        local
+            .write_all(
+                format!("CONNECT {TARGET} HTTP/1.1\r\nHost: {TARGET}\r\nProxy-Authorization: Basic {credentials}\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        until(|| rig.client.queue_depth() == 1).await;
+
+        drop(local);
+        until(|| rig.client.queue_depth() == 0).await;
+        now.store((EPOCH + 1) * 60, Ordering::SeqCst);
+        settle().await;
+        assert!(rig.proofs().is_empty(), "no proof for a client that left");
+        assert_eq!(slot::peek(&rig.cursor, EPOCH + 1).unwrap(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_proxy_client_that_half_closes_after_early_bytes_is_served() {
+        // `nc -N`: the client sends its first bytes (a TLS hello) while queued, then shuts its
+        // write side. That is not a hang-up: it gets its 200, the bytes reach the node and the
+        // tunnel carries the half-close.
+        use base64::Engine as _;
+        use tokio::io::AsyncWriteExt as _;
+
+        let (now, clock) = hand_clock();
+        let rig = Rig::new(
+            "proxy-half-close",
+            Some(Duration::from_secs(120)),
+            Duration::ZERO,
+            clock,
+        );
+        slot::allocate(&rig.cursor, EPOCH, 1).unwrap();
+        let token = "a".repeat(32);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(crate::proxy::serve(
+            Arc::clone(&rig.client),
+            listener,
+            crate::proxy::ProxyConfig::new(address.to_string(), token.clone()),
+        ));
+        let credentials =
+            base64::engine::general_purpose::STANDARD.encode(format!("shadenet:{token}"));
+        let mut local = tokio::net::TcpStream::connect(address).await.unwrap();
+        local
+            .write_all(
+                format!("CONNECT {TARGET} HTTP/1.1\r\nHost: {TARGET}\r\nProxy-Authorization: Basic {credentials}\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        until(|| rig.client.queue_depth() == 1).await;
+
+        local.write_all(b"HELLO").await.unwrap();
+        local.shutdown().await.unwrap();
+        // Give the proxy time to read the bytes and the end of the stream.
+        for _ in 0..5 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            settle().await;
+        }
+        assert_eq!(rig.client.queue_depth(), 1, "still held, not abandoned");
+
+        now.store((EPOCH + 1) * 60, Ordering::SeqCst);
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(30), local.read_to_end(&mut response))
+            .await
+            .expect("the tunnel ends once the node closes")
+            .unwrap();
+        let response = String::from_utf8_lossy(&response);
+        assert!(
+            response.starts_with("HTTP/1.1 200 Connection Established\r\n"),
+            "{response}"
+        );
+        assert_eq!(rig.forwarded.lock().unwrap().as_slice(), b"HELLO");
+        assert_eq!(rig.proofs(), vec![EPOCH + 1]);
     }
 
     #[tokio::test(start_paused = true)]

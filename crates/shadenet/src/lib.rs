@@ -74,7 +74,7 @@ pub use scheduler::{Budget, Plan};
 #[cfg(feature = "live")]
 pub use client::{CanopyStatus, Client, Metrics, NodeStatus, Problem, QueueStatus, Status, Tunnel};
 #[cfg(feature = "live")]
-pub use fetch::{FetchRequest, FetchResponse};
+pub use fetch::{Block, FetchRequest, FetchResponse};
 #[cfg(feature = "live")]
 pub use proxy::ProxyConfig;
 

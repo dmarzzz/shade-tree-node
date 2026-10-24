@@ -100,7 +100,7 @@ shadenet status [--json]       # admission, budget, canopy; --wait polls until r
 shadenet doctor [--json]       # every local problem at once
 shadenet proxy                 # the local HTTP CONNECT proxy for agents and SearXNG
 shadenet run -- <agent>        # run a command through that proxy
-shadenet mcp                   # MCP tools shadenet_fetch, shadenet_status, shadenet_search
+shadenet mcp                   # MCP tools shadenet_fetch, shadenet_fetch_fallback, shadenet_status, shadenet_search
 shadenet fetch <https-url>     # one request through ShadeNet
 shadenet register-member …     # stake an identity commitment on chain
 shadenet member-status …       # read bond and exit state
