@@ -99,7 +99,7 @@
                   <p class="step-label">Install the live Rust binary</p>
                   <div class="command agent-install" aria-label="Install ShadeNet for an agent">
                     <code tabindex="0" aria-label="v0.7.5 live binary installation command">curl -q -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.5 sh</code>
-                    <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.5 sh" aria-label="Copy v0.7.5 live binary installation command">copy install</button>
+                    <button class="copy-command" type="button" data-copy="curl -q -fsSL --proto '=https' --proto-redir '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.5 sh" aria-label="Copy install: v0.7.5 live binary installation command">copy install</button>
                   </div>
                   <p class="step-note">The installer selects the release's published <code>-live</code> asset and verifies its checksum; v0.7.5 is the latest release, pinned so the build stays fixed. The binary embeds Arti; it needs neither Node.js nor system Tor. See the <a href="https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md">agent guide</a> for supported platforms and manual verification.</p>
                 </div>
@@ -108,7 +108,7 @@
                 <span class="step-num" aria-hidden="true">02</span>
                 <div class="step-body">
                   <p class="step-label">Agent setup</p>
-                  <button class="copy-command task-copy" type="button" data-copy="Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.5 Rust -live binary (SHADENET_VERSION=v0.7.5). Run shadenet init; it writes identity.json and prints the identity commitment and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the identity commitment on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic." data-copy-target="agent-setup-task" data-copy-noun="Setup brief" aria-label="Copy ShadeNet setup brief for an AI agent">copy agent brief</button>
+                  <button class="copy-command task-copy" type="button" data-copy="Set up ShadeNet using https://github.com/dmarzzz/shade-tree-node/blob/main/docs/AGENT.md. Install the v0.7.5 Rust -live binary (SHADENET_VERSION=v0.7.5). Run shadenet init; it writes identity.json and prints the identity commitment and bond. Stake with shadenet register-member --identity ~/.config/shadenet/identity.json --key-file &lt;funded key&gt;, or have a sponsor stake the identity commitment on the Get access page. Then shadenet status --wait, shadenet proxy, and shadenet run --no-proxy &lt;model API host&gt; -- &lt;agent-command&gt;. Keep identity.json and the key private; no real funds or sensitive traffic." data-copy-target="agent-setup-task" data-copy-noun="Setup brief" aria-label="Copy agent brief: ShadeNet setup for an AI agent">copy agent brief</button>
                   <p class="step-note">Use it as a local HTTPS proxy, wrap a command with <code>shadenet run</code>, or add the MCP server (<code>shadenet mcp</code>).</p>
                 </div>
               </li>
@@ -130,7 +130,7 @@
                   <p class="step-label">Install from a checkout</p>
                   <div class="command" aria-label="Install a Shade Tree node">
                     <code>git clone https://github.com/dmarzzz/shade-tree-node.git &amp;&amp; cd shade-tree-node &amp;&amp; npm ci &amp;&amp; npm link</code>
-                    <button class="copy-command" type="button" data-copy="git clone https://github.com/dmarzzz/shade-tree-node.git &amp;&amp; cd shade-tree-node &amp;&amp; npm ci &amp;&amp; npm link" aria-label="Copy node installation commands">copy install</button>
+                    <button class="copy-command" type="button" data-copy="git clone https://github.com/dmarzzz/shade-tree-node.git &amp;&amp; cd shade-tree-node &amp;&amp; npm ci &amp;&amp; npm link" aria-label="Copy install: node installation commands">copy install</button>
                   </div>
                 </div>
               </li>
@@ -140,7 +140,7 @@
                   <p class="step-label">Mint your node identity</p>
                   <div class="command" aria-label="Create the node identity">
                     <code>shade-tree-node join node</code>
-                    <button class="copy-command" type="button" data-copy="shade-tree-node join node" aria-label="Copy join command">copy join</button>
+                    <button class="copy-command" type="button" data-copy="shade-tree-node join node" aria-label="Copy join: node identity command">copy join</button>
                   </div>
                 </div>
               </li>

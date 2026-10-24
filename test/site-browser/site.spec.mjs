@@ -30,9 +30,11 @@ test("homepage remains usable, quiet, and accessible", async ({ page }) => {
   );
   expect(hasHorizontalOverflow).toBe(false);
 
-  const installCopy = page.getByRole("button", { name: "Copy v0.7.5 live binary installation command" });
+  const installCopy = page.locator(".agent-install > button");
+  await expect(installCopy).toHaveAccessibleName("Copy install: v0.7.5 live binary installation command");
   await installCopy.click();
   await expect(installCopy).toHaveText("copied");
+  await expect(installCopy).toHaveAccessibleName("Copied: v0.7.5 live binary installation command");
 
   const accessibility = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
