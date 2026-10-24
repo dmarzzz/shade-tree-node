@@ -38,6 +38,16 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   CAPTCHA wall), so a page with a reCAPTCHA comment form is not a block.
 - `crates/shadenet/examples/fallback_fetch.rs` shows the same pattern for an agent tool.
 
+### Docs: response-timing watermark recorded as in scope, not fixed (#369)
+
+- `docs/THREAT-MODEL.md` §5 now lists the active-destination response-timing watermark
+  (destination plus a colluding guard or ISP; destination plus the agent's unprotected model call;
+  response size; token-stream timing) as a residual risk that ShadeNet v0 does not defend.
+- New design note `docs/design/RESPONSE-TIMING-AND-COVER.md`: constant-rate shaped tunnels with
+  498-byte cells, rate classes fixed at open, doubling lifetimes, cover pipes that carry the real
+  traffic, costs in rate and monthly volume, and staging pass bars. Analysis only; an ADR follows
+  staging measurements.
+
 ### Session books: expiry ends spends, not streams (#379)
 
 - A book's 90 s lifetime destroyed every stream of the book, so a response that started late
