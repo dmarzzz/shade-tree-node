@@ -129,6 +129,10 @@ pub struct Config {
     pub nonce: Option<String>,
     /// Session tickets (#103): off until the economics pass turns them on.
     pub session_tickets: bool,
+    /// One Tor isolation group per tunnel instead of one per session-ticket book. Off by default:
+    /// a book's tunnels share one circuit (ADR 0011), so a ticket spend costs one `RELAY_BEGIN`
+    /// instead of a rendezvous. On, every ticket spend builds its own circuit (stricter, slower).
+    pub circuit_per_tunnel: bool,
     /// Passphrase for an encrypted identity file. Never printed by `Debug`.
     pub passphrase: Option<Zeroizing<String>>,
     /// Queue a tunnel whose epoch budget is spent for at most this long before refusing it
@@ -307,6 +311,7 @@ impl Default for ConfigBuilder {
                 tor_directories: default_tor_directories(),
                 nonce: None,
                 session_tickets: false,
+                circuit_per_tunnel: false,
                 passphrase: None,
                 queue_max_wait: None,
                 retry_other_node: true,
@@ -378,6 +383,10 @@ impl ConfigBuilder {
     setter!(
         /// Session tickets are a research flag (#103) and off by default.
         session_tickets: bool
+    );
+    setter!(
+        /// A Tor circuit per tunnel instead of per session-ticket book (ADR 0011).
+        circuit_per_tunnel: bool
     );
     setter!(
         /// Hold a tunnel whose budget is spent for at most this long instead of refusing it.

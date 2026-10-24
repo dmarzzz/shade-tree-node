@@ -14,12 +14,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use arti_client::config::TorClientConfigBuilder;
-use arti_client::{TorClient, TorClientConfig};
+use arti_client::{StreamPrefs, TorClient, TorClientConfig};
 use shadenet_rln::prover::{BuiltEnvelope, EnvelopeInput};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{OnceCell, Semaphore};
 use tor_rtcompat::PreferredRuntime;
 
+use crate::isolation::CircuitIsolation;
 use crate::slot;
 
 /// A bidirectional stream returned after a gateway accepts the RLN envelope.
@@ -98,6 +99,9 @@ pub struct SessionInit {
     pub nonce: String,
     pub commitments: Vec<String>,
     pub ticket_book_digest: String,
+    /// The book's isolation group: `Some` dials the initialization on the circuit its ticket
+    /// spends will reuse (ADR 0011); `None` gives it a group of its own (`--circuit-per-tunnel`).
+    pub isolation: Option<CircuitIsolation>,
 }
 
 /// One ticket spend (ADR 0011): a proof-less envelope for one tunnel inside a live book.
@@ -108,6 +112,8 @@ pub struct TicketSpend {
     pub secret: [u8; 32],
     pub request_nonce: String,
     pub target: String,
+    /// The book's isolation group, as in [`SessionInit::isolation`].
+    pub isolation: Option<CircuitIsolation>,
 }
 
 /// Production callers use `CrashSafe`. The deliberately loud unsafe variant is
@@ -215,12 +221,23 @@ pub trait Dialer: Send + Sync {
     /// Return a per-tunnel isolation group. Failover candidates for one
     /// request share the returned group; separate requests must not.
     fn isolated(&self) -> Arc<dyn Dialer>;
+    /// Return the isolation group named by `isolation`: every dialer returned for an equal
+    /// value may share circuits, and none shares with another value, with [`Dialer::isolated`]
+    /// or with the base dialer. One session-ticket book dials all its tunnels in its own group
+    /// (ADR 0011). The default falls back to a fresh per-tunnel group, the stricter posture.
+    fn isolated_with(&self, isolation: CircuitIsolation) -> Arc<dyn Dialer> {
+        let _ = isolation;
+        self.isolated()
+    }
     fn successful_bootstraps(&self) -> usize;
 }
 
 struct ArtiDialer {
     shared: Arc<ArtiShared>,
     isolated: Option<OnceCell<Arc<TorClient<PreferredRuntime>>>>,
+    /// A book's group (`isolated_with`): streams on the base client tagged with this token
+    /// share circuits with each other and with nothing else.
+    stream_isolation: Option<arti_client::IsolationToken>,
 }
 
 struct ArtiShared {
@@ -243,6 +260,7 @@ impl ArtiDialer {
                 directories,
             }),
             isolated: None,
+            stream_isolation: None,
         }
     }
 
@@ -371,18 +389,25 @@ impl Dialer for ArtiDialer {
                 Gateway::Onion { onion, port } => {
                     let host = format!("{}.onion", onion.trim_end_matches(".onion"));
                     let tor = Arc::clone(self.tor().await?);
-                    let stream = tokio::time::timeout(
-                        self.shared.timeout,
-                        tor.connect((host.as_str(), *port)),
-                    )
-                    .await
-                    .map_err(|_| {
-                        format!(
-                            "onion connect {host}:{port} timed out after {:?}",
-                            self.shared.timeout
-                        )
-                    })?
-                    .map_err(|e| format!("connect onion {host}:{port}: {e}"))?;
+                    let connect = async {
+                        match self.stream_isolation {
+                            Some(token) => {
+                                let mut prefs = StreamPrefs::new();
+                                prefs.set_isolation(token);
+                                tor.connect_with_prefs((host.as_str(), *port), &prefs).await
+                            }
+                            None => tor.connect((host.as_str(), *port)).await,
+                        }
+                    };
+                    let stream = tokio::time::timeout(self.shared.timeout, connect)
+                        .await
+                        .map_err(|_| {
+                            format!(
+                                "onion connect {host}:{port} timed out after {:?}",
+                                self.shared.timeout
+                            )
+                        })?
+                        .map_err(|e| format!("connect onion {host}:{port}: {e}"))?;
                     Ok(Box::pin(stream) as BoxStream)
                 }
             }
@@ -393,6 +418,15 @@ impl Dialer for ArtiDialer {
         Arc::new(Self {
             shared: Arc::clone(&self.shared),
             isolated: Some(OnceCell::new()),
+            stream_isolation: None,
+        })
+    }
+
+    fn isolated_with(&self, isolation: CircuitIsolation) -> Arc<dyn Dialer> {
+        Arc::new(Self {
+            shared: Arc::clone(&self.shared),
+            isolated: None,
+            stream_isolation: Some(isolation.token()),
         })
     }
 
@@ -602,7 +636,11 @@ impl Client {
         }
         let wire = serde_json::to_string(&envelope).expect("serialize envelope") + "\n";
         let mut attempts = Vec::with_capacity(request.gateways.len());
-        let dialer = self.dialer.isolated();
+        // A session initialization rides its book's group (ADR 0011); a plain tunnel gets its own.
+        let dialer = match session.as_ref().and_then(|init| init.isolation) {
+            Some(isolation) => self.dialer.isolated_with(isolation),
+            None => self.dialer.isolated(),
+        };
         let plain_tunnel = session.is_none();
         let mut root_refusal: Option<Error> = None;
 
@@ -730,7 +768,11 @@ impl Client {
             target: spend.target.clone(),
             nullifier: String::new(),
         };
-        let dialer = self.dialer.isolated();
+        // The book's group: one circuit per book, a spend costs one `RELAY_BEGIN` (ADR 0011).
+        let dialer = match spend.isolation {
+            Some(isolation) => self.dialer.isolated_with(isolation),
+            None => self.dialer.isolated(),
+        };
         let mut attempts = Vec::with_capacity(1);
         let started = Instant::now();
         match dialer.dial(gateway).await {
@@ -1169,6 +1211,7 @@ mod tests {
                     nonce: "00".repeat(16),
                     commitments: vec!["00".repeat(32)],
                     ticket_book_digest: "11".repeat(32),
+                    isolation: None,
                 }),
             })
             .await
@@ -1409,6 +1452,7 @@ mod tests {
             nonce: "86fe22b71e0d1c681e679150f8f103aa".into(),
             commitments: book.commitments.clone(),
             ticket_book_digest: book.ticket_book_digest.clone(),
+            isolation: None,
         };
         let connected = client
             .connect(ConnectRequest {
@@ -1485,6 +1529,7 @@ mod tests {
                     secret,
                     request_nonce: "ab".repeat(16),
                     target: "example.com:443".into(),
+                    isolation: None,
                 },
             )
             .await

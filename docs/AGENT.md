@@ -226,9 +226,16 @@ time, every few seconds) keeps its session book at nodes that serve
 Knobs, on `proxy`, `mcp` and `fetch`: `--max-wait <secs>`
 (`SHADENET_QUEUE_MAX_WAIT_SECS`, `queue_max_wait_secs` in `config.toml`; default
 two epochs) and `--no-queue` for the old refuse-at-once contract. `shadenet
-proxy` also keeps a circuit to the two best nodes warm (`--warm N`, `--no-warm`,
-`SHADENET_WARM_NODES`), so the first fetch after a quiet spell skips the onion
-rendezvous, and `status` lists each node with its measured latency. A first
+proxy` also dials the two best nodes every minute (`--warm N`, `--no-warm`,
+`SHADENET_WARM_NODES`): that keeps embedded Tor bootstrapped with fresh
+directory data, and `status` lists each node with its measured latency. A
+warm-up dial does not build the circuit a tunnel uses (Arti keeps onion circuits
+per isolation group, and every book has its own), so the first request at a node
+still pays the onion rendezvous. The tunnels of one session book then share its
+circuit: a ticket spend costs one stream, not a new rendezvous (ADR 0011).
+`--circuit-per-tunnel` (`SHADENET_CIRCUIT_PER_TUNNEL=1`, `circuit_per_tunnel =
+true`) gives every tunnel its own circuit instead: stricter, and every ticket
+spend pays a rendezvous. A first
 request still pays for proving and opening a session book (8 s or more); with
 `--preopen` (`SHADENET_PREOPEN=1`, `preopen_books = true`; on main for v0.7.5, not in
 the v0.7.4 release) the proxy opens a

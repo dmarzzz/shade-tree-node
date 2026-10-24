@@ -273,7 +273,8 @@ pub struct ProxyArgs {
     /// Most tunnels being set up at once [env: SHADENET_MAX_SETUPS] [default: 16]
     #[arg(long)]
     pub max_setups: Option<usize>,
-    /// Keep circuits to this many of the best nodes warm [env: SHADENET_WARM_NODES] [default: 2]
+    /// Dial this many of the best nodes ahead: Tor stays bootstrapped, `status` gets their latency
+    /// [env: SHADENET_WARM_NODES] [default: 2]
     #[arg(long, value_name = "N")]
     pub warm: Option<usize>,
     /// Only these destination hosts may use ShadeNet: names, or `.suffix` for a domain and its
@@ -281,7 +282,7 @@ pub struct ProxyArgs {
     /// nothing [env: SHADENET_TARGETS]
     #[arg(long, value_name = "HOSTS")]
     pub targets: Vec<String>,
-    /// Do not warm circuits
+    /// Do not dial nodes ahead
     #[arg(long)]
     pub no_warm: bool,
     /// Keep a session-ticket book open ahead of requests, so a first request starts at a ticket

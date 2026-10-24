@@ -8,8 +8,9 @@
 //! rpc_url = "https://rpc.sepolia.example"
 //! searxng_url = "http://127.0.0.1:8080"
 //! queue_max_wait_secs = 120              # budget queue (ADR 0013); 0 refuses at once
-//! warm_nodes = 2                         # circuits kept warm by `shadenet proxy`
+//! warm_nodes = 2                         # nodes `shadenet proxy` dials ahead (Tor warm, health)
 //! preopen_books = true                   # `shadenet proxy --preopen`: a session book ready ahead
+//! circuit_per_tunnel = false             # true: a Tor circuit per tunnel, not per session book
 //! targets = [".wikipedia.org", "api.ipify.org"]   # proxy allow-list; omit for any host
 //! ```
 
@@ -41,6 +42,8 @@ pub struct ConfigFile {
     pub warm_nodes: Option<usize>,
     /// `shadenet proxy --preopen`: keep a session-ticket book open ahead of requests.
     pub preopen_books: Option<bool>,
+    /// `--circuit-per-tunnel`: a Tor circuit per tunnel instead of per session book (ADR 0011).
+    pub circuit_per_tunnel: Option<bool>,
     /// Destination allow-list for the proxy (names or `.suffix`); empty allows every host.
     pub targets: Option<Vec<String>>,
     /// Where this file was read from, for relative paths and `doctor`.
@@ -202,6 +205,7 @@ mod tests {
              queue_max_wait_secs = 120\r\n\
              warm_nodes = 0\r\n\
              preopen_books = true\r\n\
+             circuit_per_tunnel = true\r\n\
              targets = [\r\n  \".wikipedia.org\",\r\n  \"api.ipify.org\", # trailing comma next\r\n]\r\n",
             base,
         )
@@ -233,6 +237,7 @@ mod tests {
                 queue_max_wait_secs: Some(120),
                 warm_nodes: Some(0),
                 preopen_books: Some(true),
+                circuit_per_tunnel: Some(true),
                 targets: Some(vec![".wikipedia.org".into(), "api.ipify.org".into()]),
                 path: None,
             }
