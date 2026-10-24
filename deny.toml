@@ -24,6 +24,9 @@ ignore = [
   # tracing-subscriber 0.2 via ark-relations (constraint tracing). We never install that
   # subscriber or log user input through it. Clears with the arkworks 0.6 upgrade.
   { id = "RUSTSEC-2025-0055", reason = "subscriber not installed; clears with arkworks 0.6" },
+  # crypto-bigint 0.5 via ark-circom -> ethers-core -> k256 0.13 (elliptic-curve 0.13). Our own
+  # signing uses k256 0.14 on crypto-bigint 0.7.6 (patched); ark-circom never signs. No 0.5 fix.
+  { id = "RUSTSEC-2026-0387", reason = "0.5 copy unused for secrets via ark-circom; ours is 0.7.6" },
 ]
 
 [licenses]
