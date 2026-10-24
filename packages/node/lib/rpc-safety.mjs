@@ -27,6 +27,10 @@ const rpcFailovers = registry.counter(
   "shade_tree_rpc_failovers_total",
   "JSON-RPC requests that moved to the next configured endpoint, by bounded endpoint index that failed.",
 );
+const rpcThrottleRetries = registry.counter(
+  "shade_tree_rpc_throttle_retries_total",
+  "JSON-RPC requests resent after an HTTP 429 (or 503 with Retry-After), by status.",
+);
 // The endpoint that last answered, per configured list, so a dead first endpoint costs one
 // timeout per outage rather than one per request.
 const stickyEndpoint = new Map();
@@ -57,6 +61,60 @@ export function txReceiptTimeoutMs(env = process.env) {
     ? value
     : DEFAULT_TX_RECEIPT_TIMEOUT_MS;
 }
+
+// HTTP 429, or a 503 that names Retry-After, is the endpoint refusing a request before it
+// processes it. Hosted RPCs meter short windows (Tenderly's Sepolia RPC allows 20 requests per
+// window, `x-tdly-limit: 20`), and a fleet roll's record preflight bursts past that, so without a
+// retry every attempt fails. Each throttled request waits and is resent on the same endpoint, at
+// most SHADE_TREE_RPC_RETRIES times and RPC_RETRY_BUDGET_MS of total waiting. Every other status,
+// transport error and JSON-RPC error body is handled exactly as before (failover or throw).
+//
+// Resending is safe for every method, eth_sendRawTransaction included: a throttle response means
+// the request was rejected at the endpoint's front door and never reached a node's mempool, and
+// even if it had, the same signed bytes carry the same nonce and hash, so a resend can only be
+// answered "already known" or "nonce too low"; it can never spend twice.
+export const DEFAULT_RPC_RETRIES = 6;
+export const MAX_RPC_RETRIES = 10;
+export const RPC_RETRY_BASE_MS = 400;
+export const RPC_RETRY_DELAY_CAP_MS = 10_000;
+export const RPC_RETRY_BUDGET_MS = 30_000;
+
+export function rpcRetries(env = process.env) {
+  const raw = env.SHADE_TREE_RPC_RETRIES;
+  if (raw === undefined || raw === "") return DEFAULT_RPC_RETRIES;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value >= 0 ? Math.min(value, MAX_RPC_RETRIES) : DEFAULT_RPC_RETRIES;
+}
+
+// Retry-After is either delta-seconds or an HTTP date (RFC 9110 10.2.3). Anything else is ignored
+// and the exponential schedule applies.
+export function retryAfterMs(value, now = Date.now()) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  if (!/[a-z]/i.test(text)) return null;
+  const at = Date.parse(text);
+  return Number.isFinite(at) ? Math.max(0, at - now) : null;
+}
+
+// Wait before retry `attempt` (0-based): the server's Retry-After when it gave one, else
+// 400 ms * 2^min(attempt, 4); either is capped at 10 s, plus up to 300 ms of jitter so a fleet
+// that was throttled together does not come back together.
+export function rpcRetryDelayMs(attempt, retryAfter = null, random = Math.random) {
+  const base = retryAfter ?? RPC_RETRY_BASE_MS * 2 ** Math.min(attempt, 4);
+  return Math.min(base, RPC_RETRY_DELAY_CAP_MS) + Math.floor(random() * 300);
+}
+
+// The delay for a throttle response, or null when the response is not one.
+function throttleDelayMs(response, attempt) {
+  const header = response.headers?.get?.("retry-after") ?? null;
+  const after = retryAfterMs(header);
+  if (response.status === 429) return rpcRetryDelayMs(attempt, after);
+  if (response.status === 503 && after != null) return rpcRetryDelayMs(attempt, after);
+  return null;
+}
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const safeTransactionHash = (value) => (/^0x[0-9a-fA-F]{64}$/.test(String(value || ""))
   ? String(value)
@@ -142,21 +200,27 @@ function retryableRpcError(error) {
 // A small raw JSON-RPC call used both by the root provider and by the bounded ethers bootstrap.
 // The AbortSignal covers connection, response headers and response-body decoding. With several
 // configured endpoints, a transport failure, timeout, HTTP error, malformed body or retryable
-// JSON-RPC error moves to the next endpoint; the last error is thrown only when all fail.
+// JSON-RPC error moves to the next endpoint; the last error is thrown only when all fail. A
+// throttled endpoint is not waited on while another is untried: only the last endpoint in the
+// rotation backs off and retries, so a list fails over first and waits only when all are limited.
 export async function jsonRpcCall(url, method, params = [], {
   timeoutMs = rpcTimeoutMs(),
   fetchImpl = globalThis.fetch,
   id = 1,
+  retries = rpcRetries(),
+  sleep = sleepMs,
 } = {}) {
   const urls = rpcUrlList(url);
-  if (urls.length <= 1) return jsonRpcCallOne(urls[0] ?? url, method, params, { timeoutMs, fetchImpl, id });
+  if (urls.length <= 1) return jsonRpcCallOne(urls[0] ?? url, method, params, { timeoutMs, fetchImpl, id, retries, sleep });
   const key = urls.join(",");
   const start = stickyEndpoint.get(key) ?? 0;
   let lastError;
   for (let step = 0; step < urls.length; step++) {
     const index = (start + step) % urls.length;
     try {
-      const result = await jsonRpcCallOne(urls[index], method, params, { timeoutMs, fetchImpl, id });
+      const result = await jsonRpcCallOne(urls[index], method, params, {
+        timeoutMs, fetchImpl, id, retries: step === urls.length - 1 ? retries : 0, sleep,
+      });
       stickyEndpoint.set(key, index);
       return result;
     } catch (error) {
@@ -168,26 +232,43 @@ export async function jsonRpcCall(url, method, params = [], {
   throw new Error(`${method}: all ${urls.length} RPC endpoints failed; last: ${lastError?.message || lastError}`, { cause: lastError });
 }
 
-async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id }) {
-  const signal = AbortSignal.timeout(timeoutMs);
+async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, retries = 0, sleep = sleepMs }) {
   let response;
   let json;
-  try {
-    response = await fetchImpl(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-      signal,
-    });
-    // `ok` is present on real Fetch Responses. Some injected/test transports expose only
-    // `json()`; retain that supported seam while still refusing explicit HTTP errors.
-    if (response.ok === false) throw new Error(`HTTP ${response.status}`);
-    json = await response.json();
-  } catch (error) {
-    if (signal.aborted || error?.name === "TimeoutError" || error?.name === "AbortError") {
-      throw new Error(`${method}: RPC request timed out after ${timeoutMs}ms at ${rpcOrigin(url)}`, { cause: error });
+  let waited = 0;
+  for (let attempt = 0; ; attempt++) {
+    // A fresh deadline per attempt: the timeout bounds one request, the retry budget bounds waiting.
+    const signal = AbortSignal.timeout(timeoutMs);
+    try {
+      response = await fetchImpl(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+        signal,
+      });
+      // `ok` is present on real Fetch Responses. Some injected/test transports expose only
+      // `json()`; retain that supported seam while still refusing explicit HTTP errors.
+      if (response.ok === false) {
+        const delay = throttleDelayMs(response, attempt);
+        if (delay != null && attempt < retries && waited + delay <= RPC_RETRY_BUDGET_MS) {
+          try { await response.body?.cancel?.(); } catch { /* release the socket; nothing to read */ }
+          rpcThrottleRetries.inc({ status: String(response.status) });
+          waited += delay;
+          await sleep(delay);
+          continue;
+        }
+        throw new Error(delay != null && attempt > 0
+          ? `HTTP ${response.status} (still throttled after ${attempt} retries)`
+          : `HTTP ${response.status}`);
+      }
+      json = await response.json();
+    } catch (error) {
+      if (signal.aborted || error?.name === "TimeoutError" || error?.name === "AbortError") {
+        throw new Error(`${method}: RPC request timed out after ${timeoutMs}ms at ${rpcOrigin(url)}`, { cause: error });
+      }
+      throw new Error(`${method}: RPC request failed at ${rpcOrigin(url)}: ${error?.message || error}`, { cause: error });
     }
-    throw new Error(`${method}: RPC request failed at ${rpcOrigin(url)}: ${error?.message || error}`, { cause: error });
+    break;
   }
   if (json?.error) {
     const error = new Error(`${method}: ${json.error.message || "JSON-RPC error"}`);
@@ -199,6 +280,30 @@ async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id })
   return json.result;
 }
 
+// The ethers transport for one endpoint. ethers already resends a 429 (up to 12 attempts) but reads
+// a delta-seconds Retry-After as milliseconds and otherwise backs off from 250 ms slots, so a
+// window-metered endpoint is hammered until the deadline. Here ethers' own delay is zeroed and the
+// retry hook sleeps the same schedule as jsonRpcCall; FetchRequest's timeout still bounds the
+// whole exchange, retries and waits included. The same front-door reasoning above makes resending
+// eth_sendRawTransaction safe.
+export function boundedFetchRequest(ethers, url, {
+  timeoutMs = rpcTimeoutMs(),
+  retries = rpcRetries(),
+  sleep = sleepMs,
+} = {}) {
+  const request = new ethers.FetchRequest(url);
+  request.timeout = timeoutMs;
+  request.setThrottleParams({ slotInterval: 0, maxAttempts: retries + 1 });
+  request.retryFunc = async (_req, response, attempt) => {
+    if (attempt >= retries) return false; // the last attempt's 429 is the answer; do not sleep for nothing
+    const delay = rpcRetryDelayMs(attempt, retryAfterMs(response.headers?.["retry-after"]));
+    rpcThrottleRetries.inc({ status: String(response.statusCode) });
+    await sleep(delay);
+    return true;
+  };
+  return request;
+}
+
 // Probe eth_chainId once under the deadline, then pin ethers to that network. Pinning prevents
 // JsonRpcProvider's background network-detection retry loop from keeping a CLI or registrar boot
 // alive forever when the endpoint is unreachable. The FetchRequest deadline applies to every
@@ -206,20 +311,21 @@ async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id })
 export async function makeBoundedJsonRpcProvider(ethers, rpcUrl, {
   timeoutMs = rpcTimeoutMs(),
   fetchImpl = globalThis.fetch,
+  retries = rpcRetries(),
 } = {}) {
   const urls = rpcUrlList(rpcUrl);
-  const bounded = (url, chainId) => {
-    const request = new ethers.FetchRequest(url);
-    request.timeout = timeoutMs;
-    return new ethers.JsonRpcProvider(request, ethers.Network.from(BigInt(chainId)), { staticNetwork: true });
-  };
+  const bounded = (url, chainId) => new ethers.JsonRpcProvider(
+    boundedFetchRequest(ethers, url, { timeoutMs, retries }),
+    ethers.Network.from(BigInt(chainId)),
+    { staticNetwork: true },
+  );
   if (urls.length <= 1) {
     const url = urls[0] ?? rpcUrl;
-    return bounded(url, await jsonRpcCall(url, "eth_chainId", [], { timeoutMs, fetchImpl }));
+    return bounded(url, await jsonRpcCall(url, "eth_chainId", [], { timeoutMs, fetchImpl, retries }));
   }
   // Every reachable endpoint must report the same chain; an endpoint on another chain is a
   // misconfiguration that could sign or read against the wrong network, so refuse to start.
-  const probes = await Promise.allSettled(urls.map((url) => jsonRpcCall(url, "eth_chainId", [], { timeoutMs, fetchImpl })));
+  const probes = await Promise.allSettled(urls.map((url) => jsonRpcCall(url, "eth_chainId", [], { timeoutMs, fetchImpl, retries })));
   const live = probes.map((p, i) => ({ url: urls[i], p })).filter(({ p }) => p.status === "fulfilled");
   if (live.length === 0) throw new Error(`eth_chainId: all ${urls.length} RPC endpoints failed`);
   const chains = new Set(live.map(({ p }) => BigInt(p.value).toString()));
