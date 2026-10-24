@@ -82,7 +82,7 @@
     "socks": "^2.8.10"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
+    "@axe-core/playwright": "^4.14.0",
     "@playwright/test": "^1.64.1",
     "@semaphore-protocol/group": "^4.14.3",
     "@semaphore-protocol/identity": "^4.14.3",
