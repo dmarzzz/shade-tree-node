@@ -25,6 +25,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 - SDK: `Client::connect_after_wait` takes an `abandoned` future and returns `Option<Tunnel>`,
   `None` when it resolved while the request was held.
 
+### `shadenet mcp`: `shadenet_fetch_fallback`
+
+- A new MCP tool fetches an https URL over the machine's own connection and retries it through
+  ShadeNet only when the site blocks it (403, 429, a CAPTCHA or a JavaScript challenge) or the
+  connection never opened. Only GET, HEAD and OPTIONS are retried. The direct attempt sends no
+  ShadeNet User-Agent, follows no redirects, honours `HTTPS_PROXY`/`ALL_PROXY` unless it is the
+  ShadeNet proxy, and refuses local and private targets. It exposes the machine's IP to the site;
+  `shadenet_fetch` remains the tool for requests that must not be linked to the machine.
+- `shadenet::Block::classify` tells a refused response from a normal one. On a 2xx it needs a
+  challenge-specific signal (the Cloudflare challenge page, Google's `/sorry/` page, a short
+  CAPTCHA wall), so a page with a reCAPTCHA comment form is not a block.
+- `crates/shadenet/examples/fallback_fetch.rs` shows the same pattern for an agent tool.
+
 ### `register-member`: the leftover note reads the stake's block
 
 - The first live v0.7.5 stake (2026-10-20, funding wallet `0xa94f…8790`, stake tx `0xcf11…c3f8`,

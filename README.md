@@ -113,8 +113,8 @@ are removed from the child environment. Keep the model API host on
 `--no-proxy`: it has its own network path and would waste tunnels. Software that
 ignores proxy variables must be configured with the authenticated URL
 `http://shadenet:$SHADENET_PROXY_TOKEN@127.0.0.1:8118`. Agents that speak MCP
-can use `shadenet mcp` instead (`shadenet_fetch`, `shadenet_status`,
-`shadenet_search`). Rust applications
+can use `shadenet mcp` instead (`shadenet_fetch`, `shadenet_fetch_fallback`,
+`shadenet_status`, `shadenet_search`). Rust applications
 can use the [`shadenet` SDK crate](crates/README.md); JavaScript applications can import
 [`ShadeTreeClient`](docs/SDK.md). The exact public semantics and their non-atomic
 cross-gateway caveat are recorded in
