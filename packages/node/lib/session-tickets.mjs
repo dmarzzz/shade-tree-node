@@ -49,6 +49,10 @@ export const SESSION_CLASSES = Object.freeze({
   }),
 });
 export const SESSION_CLASS_IDS = Object.freeze(Object.keys(SESSION_CLASSES));
+// The class lifetime closes a book to NEW spends only; a stream established before it drains
+// under the book's byte ceiling and idle clocks, and never outlives this hard cap from its
+// establishment (SESSION-TICKETS.md §16.4). Node-wide, not per class; echoed as `streamMaxMs`.
+export const STREAM_MAX_MS = 900_000;
 export const MAX_SESSION_CLASSES = 8;
 export const MAX_TICKETS = 64;
 export const TICKET_SECRET_BYTES = 32;
@@ -208,8 +212,11 @@ export function validateTicket(ticket) {
   return { ok: true, book: ticket.book, index: ticket.i, secret, requestNonce: ticket.n };
 }
 
-// The policy echo a node returns; a client compares it field by field with its own table.
-export function policyEcho(classId, policy = SESSION_CLASSES[classId]) {
+// The policy echo a node returns; a client compares the class fields with its own table.
+// `streamMaxMs` is advisory and additive: nodes before it omit it and older clients ignore it,
+// so it is never part of the match.
+const POLICY_MATCH_KEYS = Object.freeze(["class", "tickets", "maxPayloadBytes", "lifetimeMs", "idleTimeoutMs", "maxConcurrentStreams"]);
+export function policyEcho(classId, policy = SESSION_CLASSES[classId], { streamMaxMs = STREAM_MAX_MS } = {}) {
   return {
     class: classId,
     tickets: policy.tickets,
@@ -217,6 +224,7 @@ export function policyEcho(classId, policy = SESSION_CLASSES[classId]) {
     lifetimeMs: policy.lifetimeMs,
     idleTimeoutMs: policy.idleTimeoutMs,
     maxConcurrentStreams: policy.maxConcurrentStreams,
+    streamMaxMs,
   };
 }
 
@@ -224,5 +232,5 @@ export function policyMatches(echo, classId, classes = SESSION_CLASSES) {
   const mine = classes[classId];
   if (!mine || !echo || typeof echo !== "object") return false;
   const expected = policyEcho(classId, mine);
-  return Object.keys(expected).every((k) => echo[k] === expected[k]);
+  return POLICY_MATCH_KEYS.every((k) => echo[k] === expected[k]);
 }

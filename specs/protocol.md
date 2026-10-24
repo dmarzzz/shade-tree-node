@@ -185,8 +185,9 @@ and carries `session: { v: 1, class, gateway, nonce, ticketCommitments[], ticket
 over raw commitment bytes. The node checks grammar, that `gateway` is its own onion, the signal
 binding, then the same root, artifact, Groth16 and spent-set checks as a tunnel, and answers
 `{ "ok": true, "session": { "ticketBookDigest", "policy": { class, tickets, maxPayloadBytes,
-lifetimeMs, idleTimeoutMs, maxConcurrentStreams } } }` and closes. The client fails closed when
-the echoed policy differs from its table. One proof slot opens at most one book; an exact replay
+lifetimeMs, idleTimeoutMs, maxConcurrentStreams, streamMaxMs } } }` and closes. The client fails
+closed when an echoed class field differs from its table; `streamMaxMs` is advisory and may be
+absent (nodes before it), so it is not compared. One proof slot opens at most one book; an exact replay
 of a live book is idempotent, another digest for the same slot is `session-conflict`.
 
 **Spend.** A proof-less v4 envelope `{ "v": 4, "ticket": { "v": 1, "book", "i", "t", "n" },
@@ -199,7 +200,9 @@ timeout) returns it to `unused`; an ambiguous one burns it. The spend digest
 target || requestNonce)` tells an exact in-flight retry (`ticket-inflight`) from a reuse for
 another target (`ticket-conflict`).
 
-**research-v1.** 6 tickets, 90 s hard lifetime from the ack, 15 s session idle (reset only by
+**research-v1.** 6 tickets, 90 s hard lifetime from the ack (it ends spends, not streams: later
+spends are `session-expired`, pending connects are reset, established streams drain until the
+session idle, the byte ceiling or `streamMaxMs`, default 900 s from establishment), 15 s session idle (reset only by
 relayed payload), 4 concurrent streams and pending connects, shared token buckets of 64 KiB/s
 (burst 128 KiB) agent to destination and 512 KiB/s (burst 1 MiB) back, and the byte ceiling is
 the proof's own per-slot payload budget (40 MiB), shared by every stream of the book and

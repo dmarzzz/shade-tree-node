@@ -43,7 +43,7 @@ import { dirname, join } from "node:path";
 import { verifyEnvelope, loadGroupOnchain, loadGroup, currentEpoch, EPOCH_SECONDS, MEMBERS_PATH, getArtifactSet } from "../lib/semaphore.mjs";
 import { reconstructSecret, resolveSlashLeaf, deriveCommitments, TIERS, K_SLOTS } from "../lib/rln.mjs";
 import { verifySessionEnvelope } from "../lib/rln.mjs";
-import { validateSessionInit, validateTicket, policyEcho, SESSION_CLASS_IDS } from "../lib/session-tickets.mjs";
+import { validateSessionInit, validateTicket, policyEcho, SESSION_CLASS_IDS, STREAM_MAX_MS } from "../lib/session-tickets.mjs";
 import { makeSessionBooks, SESSION_REASONS } from "./session.mjs";
 import { makeRootProvider, configuredContracts } from "../lib/root-provider.mjs";
 import { ADMIT_ORDER, DEFAULT_ADMIT, parseAdmit, admitsFromRoots, describeAdmits } from "../lib/admission.mjs";
@@ -1739,13 +1739,14 @@ export function makeHandler(spentSet, {
       digest: v.session.digest, commitments: v.session.commitments, classId: v.session.classId,
       nullifier: v.nullifier, epoch: v.externalNullifier,
       onClose: (reason) => { M.tunnelCloses.inc({ reason }); },
+      onStreamClose: (reason) => { M.tunnelCloses.inc({ reason }); },
     });
     if (!opened.ok) return drop(opened.reason);
     // Publishing the slot to the fleet tally here makes the book single-use across nodes.
     if (!opened.replay) spentSet.commit?.(v.nullifier, v.externalNullifier);
     M.sessions.inc({ result: "pass" });
     log.debug("session opened", { class: v.session.classId, replay: opened.replay });
-    reply(socket, { ok: true, session: { ticketBookDigest: v.session.digest, policy: policyEcho(v.session.classId, opened.book.policy) } });
+    reply(socket, { ok: true, session: { ticketBookDigest: v.session.digest, policy: policyEcho(v.session.classId, opened.book.policy, { streamMaxMs: opened.book.streamMaxMs }) } });
     socket.end();
   }
 
@@ -1765,7 +1766,7 @@ export function makeHandler(spentSet, {
     const tgt = validTarget(env.target, targetPolicy);
     if (!tgt.ok) return drop(tgt.reason);
     const streamId = ++nextStreamId;
-    const r = sessions.reserve({ digest: t.book, index: t.index, secret: t.secret, target: env.target, requestNonce: t.requestNonce, streamId });
+    const r = sessions.reserve({ digest: t.book, index: t.index, secret: t.secret, target: env.target, requestNonce: t.requestNonce, streamId, socket });
     if (!r.ok) return drop(r.reason);
     const { book, ticket } = r;
     socket.once("close", () => sessions.streamClosed(book, ticket, streamId, socket));
@@ -2011,8 +2012,9 @@ async function makeSessionSupport() {
     return null;
   }
   const maxSessions = envInt("SHADE_TREE_SESSION_MAX", 256);
-  log.info("session tickets enabled", { classes: [...SESSION_CLASS_IDS], maxSessions });
-  return { sessions: makeSessionBooks({ maxSessions }), onion: String(id.onion).toLowerCase() };
+  const streamMaxMs = envInt("SHADE_TREE_SESSION_STREAM_MAX_MS", STREAM_MAX_MS);
+  log.info("session tickets enabled", { classes: [...SESSION_CLASS_IDS], maxSessions, streamMaxMs });
+  return { sessions: makeSessionBooks({ maxSessions, streamMaxMs }), onion: String(id.onion).toLowerCase() };
 }
 
 async function main() {
