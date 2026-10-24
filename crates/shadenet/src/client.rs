@@ -1436,6 +1436,8 @@ impl Client {
         let mut spent_epoch = None;
         loop {
             waited += tokio::select! {
+                // Biased: budget that is ready wins over a hang-up already buffered beside it.
+                biased;
                 held = self.hold_for_budget(max_wait, waited, spent_epoch) => held?,
                 () = &mut abandoned => return Ok(None),
             };
@@ -2825,6 +2827,8 @@ mod tests {
         spends: Arc<AtomicUsize>,
         /// Session initializations still to refuse `payload-limit` before accepting.
         refuse: Arc<AtomicUsize>,
+        /// Every byte a tunnel carried to the node after its envelope.
+        forwarded: Arc<StdMutex<Vec<u8>>>,
     }
 
     impl transport::Dialer for BookNode {
@@ -2836,6 +2840,7 @@ mod tests {
                 let (client, mut node) = tokio::io::duplex(64 * 1024);
                 let (books, spends) = (Arc::clone(&self.books), Arc::clone(&self.spends));
                 let refuse = Arc::clone(&self.refuse);
+                let forwarded = Arc::clone(&self.forwarded);
                 tokio::spawn(async move {
                     let mut line = Vec::new();
                     let mut byte = [0_u8; 1];
@@ -2879,7 +2884,9 @@ mod tests {
                     let _ = node.write_all(format!("{reply}\n").as_bytes()).await;
                     // Hold the stream until the client drops its end.
                     let mut rest = [0_u8; 64];
-                    while matches!(node.read(&mut rest).await, Ok(n) if n > 0) {}
+                    while let Ok(n @ 1..) = node.read(&mut rest).await {
+                        forwarded.lock().unwrap().extend_from_slice(&rest[..n]);
+                    }
                 });
                 Ok(Box::pin(client) as BoxStream)
             })
@@ -2891,6 +2898,7 @@ mod tests {
                 books: Arc::clone(&self.books),
                 spends: Arc::clone(&self.spends),
                 refuse: Arc::clone(&self.refuse),
+                forwarded: Arc::clone(&self.forwarded),
             })
         }
 
@@ -2909,6 +2917,7 @@ mod tests {
         books: Arc<AtomicUsize>,
         spends: Arc<AtomicUsize>,
         refuse: Arc<AtomicUsize>,
+        forwarded: Arc<StdMutex<Vec<u8>>>,
     }
 
     impl Rig {
@@ -2970,11 +2979,13 @@ mod tests {
                 })
             });
             let refuse = Arc::new(AtomicUsize::new(0));
+            let forwarded = Arc::new(StdMutex::new(Vec::new()));
             let dialer = BookNode {
                 dial,
                 books: Arc::clone(&books),
                 spends: Arc::clone(&spends),
                 refuse: Arc::clone(&refuse),
+                forwarded: Arc::clone(&forwarded),
             };
             let mut client = Client::with_transport(
                 config,
@@ -2990,6 +3001,7 @@ mod tests {
                 books,
                 spends,
                 refuse,
+                forwarded,
             }
         }
 
@@ -3436,6 +3448,66 @@ mod tests {
         settle().await;
         assert!(rig.proofs().is_empty(), "no proof for a client that left");
         assert_eq!(slot::peek(&rig.cursor, EPOCH + 1).unwrap(), 0);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_proxy_client_that_half_closes_after_early_bytes_is_served() {
+        // `nc -N`: the client sends its first bytes (a TLS hello) while queued, then shuts its
+        // write side. That is not a hang-up: it gets its 200, the bytes reach the node and the
+        // tunnel carries the half-close.
+        use base64::Engine as _;
+        use tokio::io::AsyncWriteExt as _;
+
+        let (now, clock) = hand_clock();
+        let rig = Rig::new(
+            "proxy-half-close",
+            Some(Duration::from_secs(120)),
+            Duration::ZERO,
+            clock,
+        );
+        slot::allocate(&rig.cursor, EPOCH, 1).unwrap();
+        let token = "a".repeat(32);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(crate::proxy::serve(
+            Arc::clone(&rig.client),
+            listener,
+            crate::proxy::ProxyConfig::new(address.to_string(), token.clone()),
+        ));
+        let credentials =
+            base64::engine::general_purpose::STANDARD.encode(format!("shadenet:{token}"));
+        let mut local = tokio::net::TcpStream::connect(address).await.unwrap();
+        local
+            .write_all(
+                format!("CONNECT {TARGET} HTTP/1.1\r\nHost: {TARGET}\r\nProxy-Authorization: Basic {credentials}\r\n\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        until(|| rig.client.queue_depth() == 1).await;
+
+        local.write_all(b"HELLO").await.unwrap();
+        local.shutdown().await.unwrap();
+        // Give the proxy time to read the bytes and the end of the stream.
+        for _ in 0..5 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            settle().await;
+        }
+        assert_eq!(rig.client.queue_depth(), 1, "still held, not abandoned");
+
+        now.store((EPOCH + 1) * 60, Ordering::SeqCst);
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(30), local.read_to_end(&mut response))
+            .await
+            .expect("the tunnel ends once the node closes")
+            .unwrap();
+        let response = String::from_utf8_lossy(&response);
+        assert!(
+            response.starts_with("HTTP/1.1 200 Connection Established\r\n"),
+            "{response}"
+        );
+        assert_eq!(rig.forwarded.lock().unwrap().as_slice(), b"HELLO");
+        assert_eq!(rig.proofs(), vec![EPOCH + 1]);
     }
 
     #[tokio::test(start_paused = true)]

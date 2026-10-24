@@ -43,7 +43,8 @@ pub struct ProxyConfig {
     pub max_tunnels: usize,
     /// Tunnels being set up (canopy, proof, onion rendezvous) at once; others wait.
     pub max_setups: usize,
-    /// Serve one CONNECT, then return (tests).
+    /// Serve one CONNECT, then return (tests). A CONNECT whose client hung up while it was
+    /// held does not count.
     pub once: bool,
     /// Allowed destination hosts: exact names, or `.suffix` for a domain and its subdomains.
     /// Empty allows every host. A refused target spends nothing (ADR 0013, #230).
@@ -161,7 +162,7 @@ pub async fn serve(
         if config.once {
             match handle(Arc::clone(&shared), stream).await {
                 Handled::Tunnel(result) => return result,
-                Handled::Local => continue,
+                Handled::Local | Handled::Abandoned => continue,
             }
         }
         let shared = Arc::clone(&shared);
@@ -188,6 +189,8 @@ enum Handled {
     Tunnel(Result<(), Error>),
     /// A local request (status, health, auth failure, bad request).
     Local,
+    /// A CONNECT whose client hung up while it was held: nothing was spent or served.
+    Abandoned,
 }
 
 fn expected_credentials(token: &str) -> [Zeroizing<String>; 2] {
@@ -478,7 +481,10 @@ async fn handle(shared: Arc<Shared>, mut stream: TcpStream) -> Handled {
                     .await;
                 return Handled::Local;
             }
-            Handled::Tunnel(tunnel(shared, stream, target, head.rest).await)
+            match tunnel(shared, stream, target, head.rest).await {
+                Some(result) => Handled::Tunnel(result),
+                None => Handled::Abandoned,
+            }
         }
         ("GET", _) => {
             let _ = stream
@@ -522,6 +528,8 @@ async fn setup(
     let mut queued_for = Duration::ZERO;
     if let Some(max_wait) = max_wait {
         tokio::select! {
+            // Biased: budget that is ready wins over a hang-up already buffered beside it.
+            biased;
             waited = shared.client.wait_for_budget(max_wait) => match waited {
                 Ok(waited) => queued_for = waited,
                 Err(error) => return Setup::Failed(error),
@@ -530,6 +538,7 @@ async fn setup(
         }
     }
     let setup_permit = tokio::select! {
+        biased;
         permit = tokio::time::timeout(
             Duration::from_secs(60),
             Arc::clone(&shared.setups).acquire_owned(),
@@ -558,14 +567,19 @@ async fn setup(
     }
 }
 
-/// Resolves once the local client closes its side. Bytes it sends ahead of the `200` (an
-/// eager TLS hello) are kept in `early` for the tunnel; past [`MAX_HEAD`] they stay unread.
+/// Resolves once the local client hangs up. Bytes it sends ahead of the `200` (an eager TLS
+/// hello) are kept in `early` for the tunnel; past [`MAX_HEAD`] they stay unread. A client
+/// that sent such bytes and then shut its write side (`nc -N`) still wants the answer: the
+/// end of its stream only counts as a hang-up when nothing came after the head, and the tunnel
+/// carries the half-close otherwise.
 async fn closed(stream: &mut TcpStream, early: &mut Vec<u8>) {
     let mut chunk = [0u8; 2048];
     while early.len() < MAX_HEAD {
         let room = (MAX_HEAD - early.len()).min(chunk.len());
         match stream.read(&mut chunk[..room]).await {
-            Ok(0) | Err(_) => return,
+            Ok(0) if early.is_empty() => return,
+            Ok(0) => break,
+            Err(_) => return,
             Ok(n) => early.extend_from_slice(&chunk[..n]),
         }
     }
@@ -577,12 +591,12 @@ async fn tunnel(
     mut stream: TcpStream,
     target: String,
     mut early: Vec<u8>,
-) -> Result<(), Error> {
+) -> Option<Result<(), Error>> {
     let Ok(_tunnel_permit) = Arc::clone(&shared.tunnels).try_acquire_owned() else {
         let _ = stream
             .write_all(local_error(503, "busy", "too many open tunnels; retry shortly").as_bytes())
             .await;
-        return Err(Error::Transport("too many open tunnels".into()));
+        return Some(Err(Error::Transport("too many open tunnels".into())));
     };
     let setup = setup(
         &shared,
@@ -594,7 +608,7 @@ async fn tunnel(
         Setup::Open(tunnel) => tunnel,
         Setup::Abandoned => {
             tracing::debug!(%target, "client closed while queued; nothing spent");
-            return Ok(());
+            return None;
         }
         Setup::Busy => {
             let _ = stream
@@ -603,11 +617,11 @@ async fn tunnel(
                         .as_bytes(),
                 )
                 .await;
-            return Err(Error::Transport("tunnel setup queue is full".into()));
+            return Some(Err(Error::Transport("tunnel setup queue is full".into())));
         }
         Setup::Failed(error) => {
             let _ = stream.write_all(error_response(&error).as_bytes()).await;
-            return Err(error);
+            return Some(Err(error));
         }
     };
     let gateway = tunnel.gateway.clone();
@@ -637,7 +651,7 @@ async fn tunnel(
         // After 200 the exchange cannot become an HTTP error; a relay error only ends the tunnel.
         Err(error) => tracing::debug!(%gateway, %target, %error, "tunnel ended with an error"),
     }
-    Ok(())
+    Some(Ok(()))
 }
 
 fn prometheus(shared: &Shared) -> String {
@@ -728,15 +742,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn closed_keeps_early_bytes_and_resolves_on_hang_up() {
+    async fn closed_resolves_when_a_client_that_sent_nothing_hangs_up() {
         let (mut local, mut accepted) = pair().await;
-        let mut early = b"HEAD".to_vec();
-        local.write_all(b"HELLO").await.unwrap();
+        let mut early = Vec::new();
         local.shutdown().await.unwrap();
         tokio::time::timeout(Duration::from_secs(5), closed(&mut accepted, &mut early))
             .await
             .expect("a hang-up resolves");
+        assert!(early.is_empty());
+    }
+
+    #[tokio::test]
+    async fn closed_keeps_early_bytes_and_pends_after_a_half_close() {
+        // `nc -N` and eager TLS clients: bytes after the head, then the write side shut. The
+        // client still reads the answer, so this is not a hang-up.
+        let (mut local, mut accepted) = pair().await;
+        let mut early = b"HEAD".to_vec();
+        local.write_all(b"HELLO").await.unwrap();
+        local.shutdown().await.unwrap();
+        let watch = tokio::time::timeout(
+            Duration::from_millis(200),
+            closed(&mut accepted, &mut early),
+        )
+        .await;
+        assert!(watch.is_err(), "a half-close after early bytes pends");
         assert_eq!(early, b"HEADHELLO");
+
+        // Bytes that came with the head count the same.
+        let (mut local, mut accepted) = pair().await;
+        let mut early = b"HEAD".to_vec();
+        local.shutdown().await.unwrap();
+        let watch = tokio::time::timeout(
+            Duration::from_millis(200),
+            closed(&mut accepted, &mut early),
+        )
+        .await;
+        assert!(
+            watch.is_err(),
+            "a half-close after the head's early bytes pends"
+        );
+        assert_eq!(early, b"HEAD");
     }
 
     #[tokio::test]

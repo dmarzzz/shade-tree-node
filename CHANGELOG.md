@@ -10,7 +10,8 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   permit. A client that hangs up there leaves the queue at once: no proof, no slot, no onion dial.
   It used to stay queued for up to two epochs and then spend a slot on a tunnel nobody read, so an
   agent that timed out and retried burned one slot per abandoned attempt. An attempt that has
-  started proving still runs to its end. Bytes a client sends ahead of the `200` are kept.
+  started proving still runs to its end. Bytes a client sends ahead of the `200` are kept, and a
+  client that sends them and then shuts its write side (`nc -N`) is still served, not dropped.
 - The budget queue's depth no longer stays too high when a held request is cancelled (an SDK
   timeout around `connect_queued`, an aborted task). Queue positions, `X-ShadeNet-ETA`,
   `Status.queue.depth` and the `queue_depth` metric were inflated for the rest of the process.
