@@ -28,7 +28,10 @@ use crate::McpArgs;
 
 const PROTOCOL_VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const MAX_TEXT: usize = 200_000;
-const DIRECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// The direct attempt: a connect deadline, then an overall one for the whole exchange (reqwest's
+/// blocking client has no per-read timeout).
+const DIRECT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const DIRECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 fn tools(search: bool) -> Value {
     let mut list = vec![
@@ -52,11 +55,11 @@ fn tools(search: bool) -> Value {
         json!({
             "name": "shadenet_fetch_fallback",
             "title": "Fetch a URL, falling back to ShadeNet when blocked",
-            "description": "Fetch a URL over this machine's own connection first. Only when the site blocks it (403, 429, a CAPTCHA, a JavaScript challenge, or a failed connection) retry the same request through ShadeNet, spending one tunnel. The result says which route answered (`route`), why the direct attempt was blocked (`directBlock`), and whether the ShadeNet answer is itself a block (`block`). The direct attempt reveals this machine's IP to the site, so use shadenet_fetch instead when the request must not be linked to this machine. Do not use it for model APIs, localhost or anything that needs your login.",
+            "description": "Fetch an https URL over this machine's own connection first (through the proxy in HTTPS_PROXY/ALL_PROXY if one is set, unless that proxy is ShadeNet's own; no User-Agent unless you pass one; redirects are returned, not followed). Only when the site blocks it (403, 429, a CAPTCHA, a JavaScript challenge) or the connection could not be opened, retry the same request through ShadeNet, spending one tunnel. Only GET, HEAD and OPTIONS are retried; any other method gets the direct answer as it is, with `block` saying whether it was a block. The result says which route answered (`route`), why the direct attempt was blocked (`directBlock`), and whether the answer is itself a block (`block`); when the ShadeNet attempt fails the result is an error with `code`, plus `route`, `directBlock` and, if the direct connection failed, `directError`. The direct attempt reveals this machine's IP to the site, and the retry follows it within seconds with the same headers, so use shadenet_fetch instead when the request must not be linked to this machine. Local and private addresses are refused. Do not use it for model APIs or anything that needs your login.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "url": {"type": "string", "description": "URL; the ShadeNet retry needs https"},
+                    "url": {"type": "string", "description": "https URL on a public host"},
                     "method": {"type": "string", "default": "GET"},
                     "headers": {"type": "object", "additionalProperties": {"type": "string"}},
                     "body": {"type": "string"},
@@ -132,13 +135,17 @@ fn fetch_request(args: &Value) -> Result<shadenet::FetchRequest, Value> {
                 .collect()
         })
         .unwrap_or_default();
+    let method = args
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or("GET")
+        .to_ascii_uppercase();
+    if reqwest::Method::from_bytes(method.as_bytes()).is_err() {
+        return Err(tool_error("config", format!("bad method {method:?}")));
+    }
     Ok(shadenet::FetchRequest {
         url: url.to_string(),
-        method: args
-            .get("method")
-            .and_then(Value::as_str)
-            .unwrap_or("GET")
-            .to_ascii_uppercase(),
+        method,
         headers,
         body: args
             .get("body")
@@ -189,18 +196,72 @@ struct DirectPage {
     truncated: bool,
 }
 
-/// The same request over this machine's own connection, ignoring any proxy settings.
-fn direct(request: &shadenet::FetchRequest) -> Result<DirectPage, String> {
+/// Why the direct attempt produced no response.
+struct DirectError {
+    message: String,
+    /// The failure came before the request could reach the server (DNS, TCP or TLS handshake),
+    /// so sending it again elsewhere cannot repeat anything.
+    before_send: bool,
+}
+
+/// Whether `proxy` (a proxy URL from the environment) is the ShadeNet proxy at `listen`. The
+/// direct attempt must not go through it: that would spend a tunnel on the "direct" request.
+fn is_shadenet_proxy(proxy: &str, listen: &str) -> bool {
+    let with_scheme = if proxy.contains("://") {
+        proxy.to_string()
+    } else {
+        format!("http://{proxy}")
+    };
+    let (Ok(proxy), Ok(listen)) = (
+        reqwest::Url::parse(&with_scheme),
+        reqwest::Url::parse(&format!("http://{listen}")),
+    ) else {
+        return false;
+    };
+    let loopback = |url: &reqwest::Url| {
+        let host = url.host_str().unwrap_or_default();
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
+    };
+    proxy.port_or_known_default() == listen.port_or_known_default()
+        && (proxy.host_str() == listen.host_str() || (loopback(&proxy) && loopback(&listen)))
+}
+
+/// The proxy reqwest would take from the environment for an https URL points at ShadeNet.
+fn env_proxy_is_shadenet(listen: &str) -> bool {
+    ["HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"]
+        .iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .any(|proxy| is_shadenet_proxy(&proxy, listen))
+}
+
+/// The same request over this machine's own connection. It honours the proxy in the
+/// environment (a VPN, Tor or corporate proxy) unless that proxy is ShadeNet's own at `listen`,
+/// sends only the caller's headers (no User-Agent naming ShadeNet), and returns redirects
+/// instead of following them, like the ShadeNet route.
+fn direct(request: &shadenet::FetchRequest, listen: &str) -> Result<DirectPage, DirectError> {
     use std::io::Read as _;
 
+    let refused = |message: String| DirectError {
+        message,
+        before_send: false,
+    };
     let method = reqwest::Method::from_bytes(request.method.as_bytes())
-        .map_err(|e| format!("bad method {}: {e}", request.method))?;
-    let client = reqwest::blocking::Client::builder()
+        .map_err(|e| refused(format!("bad method {}: {e}", request.method)))?;
+    let mut builder = reqwest::blocking::Client::builder()
+        .connect_timeout(DIRECT_CONNECT_TIMEOUT)
         .timeout(DIRECT_TIMEOUT)
-        .user_agent(concat!("shadenet/", env!("CARGO_PKG_VERSION")))
-        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none());
+    if env_proxy_is_shadenet(listen) {
+        builder = builder.no_proxy();
+    }
+    let client = builder
         .build()
-        .map_err(|e| format!("build the direct HTTP client: {e}"))?;
+        .map_err(|e| refused(format!("build the direct HTTP client: {e}")))?;
     let mut builder = client.request(method, &request.url);
     for (name, value) in &request.headers {
         builder = builder.header(name, value);
@@ -208,9 +269,10 @@ fn direct(request: &shadenet::FetchRequest) -> Result<DirectPage, String> {
     if let Some(body) = &request.body {
         builder = builder.body(body.clone());
     }
-    let response = builder
-        .send()
-        .map_err(|e| format!("direct request to {}: {e}", request.url))?;
+    let response = builder.send().map_err(|e| DirectError {
+        message: format!("direct request to {}: {e}", request.url),
+        before_send: e.is_connect(),
+    })?;
     let status = response.status().as_u16();
     let headers = response
         .headers()
@@ -226,7 +288,12 @@ fn direct(request: &shadenet::FetchRequest) -> Result<DirectPage, String> {
     response
         .take(request.max_bytes as u64 + 1)
         .read_to_end(&mut body)
-        .map_err(|e| format!("read the direct response from {}: {e}", request.url))?;
+        .map_err(|e| {
+            refused(format!(
+                "read the direct response from {}: {e}",
+                request.url
+            ))
+        })?;
     let truncated = body.len() > request.max_bytes;
     body.truncate(request.max_bytes);
     Ok(DirectPage {
@@ -240,6 +307,8 @@ fn direct(request: &shadenet::FetchRequest) -> Result<DirectPage, String> {
 struct Server {
     client: Arc<shadenet::Client>,
     searxng: Option<String>,
+    /// Where `shadenet proxy` listens, so the direct attempt can avoid going through it.
+    listen: String,
     runtime: tokio::runtime::Runtime,
 }
 
@@ -287,24 +356,44 @@ impl Server {
         }
     }
 
+    /// Direct first; ShadeNet only on a block or a connection that never opened, and only for
+    /// GET, HEAD and OPTIONS. Other methods get the direct answer, block or not, and a direct
+    /// failure as an error: retrying them could repeat a side effect.
     fn fetch_fallback(&self, args: &Value) -> Value {
         let request = match fetch_request(args) {
             Ok(request) => request,
             Err(error) => return error,
         };
-        let (direct_block, direct_error) = match direct(&request) {
-            Ok(page) => match shadenet::Block::classify(page.status, &page.body) {
-                None => {
-                    let value =
-                        json!({"route": "direct", "status": page.status, "headers": page.headers});
+        if let Err(error) = shadenet::fetch::parse_public_https(&request.url) {
+            return text_result(&error.to_json(), true);
+        }
+        let retry = shadenet::fetch::safe_to_retry(&request.method);
+        let (direct_block, direct_error) = match direct(&request, &self.listen) {
+            Ok(page) => {
+                let block = shadenet::Block::classify(page.status, &page.body);
+                if block.is_none() || !retry {
+                    let value = json!({
+                        "route": "direct",
+                        "status": page.status,
+                        "headers": page.headers,
+                        "block": block,
+                    });
                     return text_result(
                         &with_body(value, &page.headers, &page.body, page.truncated),
                         false,
                     );
                 }
-                Some(block) => (block, None),
-            },
-            Err(message) => (shadenet::Block::Unreachable, Some(message)),
+                (block, None)
+            }
+            Err(error) if error.before_send && retry => {
+                (Some(shadenet::Block::Unreachable), Some(error.message))
+            }
+            Err(error) => {
+                return text_result(
+                    &json!({"code": "transport", "message": error.message, "route": "direct"}),
+                    true,
+                );
+            }
         };
         let (mut value, is_error) = match self.runtime.block_on(self.client.fetch(request)) {
             Ok(response) => {
@@ -407,7 +496,7 @@ impl Server {
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": false}},
                     "serverInfo": {"name": "shadenet", "title": "ShadeNet", "version": crate::VERSION},
-                    "instructions": "ShadeNet gives this agent anonymous egress. Use shadenet_fetch only for sites that block Tor or datacenter IPs or when the request must not be linked to this machine; never for model APIs or logged-in sites. For ordinary browsing that should only use ShadeNet when a site blocks you, use shadenet_fetch_fallback: it tries this machine's connection first and spends a tunnel only on a block. Each fetch spends one tunnel of a small per-epoch budget. When the budget is spent a fetch waits for the next epoch by itself (up to about two epochs); call shadenet_plan before a batch to see how long it will take, and on budget_exhausted wait retryAfterSeconds."
+                    "instructions": "ShadeNet gives this agent anonymous egress. Use shadenet_fetch only for sites that block Tor or datacenter IPs or when the request must not be linked to this machine; never for model APIs or logged-in sites. For ordinary browsing that should only use ShadeNet when a site blocks you, use shadenet_fetch_fallback: it tries this machine's own connection first, which exposes this machine's IP to the site, and spends a tunnel only on a block (GET, HEAD and OPTIONS only). Each fetch spends one tunnel of a small per-epoch budget. When the budget is spent a fetch waits for the next epoch by itself (up to about two epochs); call shadenet_plan before a batch to see how long it will take, and on budget_exhausted wait retryAfterSeconds."
                 }))
             }
             "ping" => Ok(json!({})),
@@ -460,9 +549,13 @@ pub fn serve(args: McpArgs, ctx: &Context) -> ExitCode {
         .clone()
         .or_else(|| shadenet::env::var_lenient("SEARXNG_URL"))
         .or_else(|| ctx.file.searxng_url.clone());
+    let listen = shadenet::env::var_lenient("LISTEN")
+        .or_else(|| ctx.file.listen.clone())
+        .unwrap_or_else(|| "127.0.0.1:8118".into());
     let server = Server {
         client,
         searxng,
+        listen,
         runtime,
     };
     let stdin = std::io::stdin();
@@ -523,6 +616,28 @@ mod tests {
                 "shadenet_search"
             ]
         );
+    }
+
+    #[test]
+    fn the_shadenet_proxy_is_recognised() {
+        let listen = "127.0.0.1:8118";
+        assert!(is_shadenet_proxy("http://127.0.0.1:8118", listen));
+        assert!(is_shadenet_proxy("http://localhost:8118/", listen));
+        assert!(is_shadenet_proxy("127.0.0.1:8118", listen));
+        assert!(is_shadenet_proxy("http://token@[::1]:8118", listen));
+        assert!(!is_shadenet_proxy("socks5h://127.0.0.1:9050", listen));
+        assert!(!is_shadenet_proxy("http://proxy.corp.example:8118", listen));
+        assert!(!is_shadenet_proxy("http://127.0.0.1:3128", listen));
+        assert!(is_shadenet_proxy("http://10.0.0.5:9000", "10.0.0.5:9000"));
+    }
+
+    #[test]
+    fn a_bad_method_is_a_parameter_error() {
+        let Err(error) = fetch_request(&json!({"url": "https://example.com/", "method": "GE T"}))
+        else {
+            panic!("a method with a space must be refused");
+        };
+        assert_eq!(error["structuredContent"]["error"]["code"], "config");
     }
 
     #[test]

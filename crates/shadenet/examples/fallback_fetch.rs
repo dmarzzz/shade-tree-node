@@ -1,6 +1,12 @@
 //! An agent tool: fetch a URL directly, and only when the site blocks the request, retry it
 //! through `ShadeNet`. Prints one JSON object on stdout for the agent to read.
 //!
+//! The direct request exposes this machine's IP to the site, so it carries no User-Agent naming
+//! `ShadeNet`, does not follow redirects, and is refused for local or private targets. It honours
+//! `HTTPS_PROXY`/`ALL_PROXY` like any reqwest client. Only a block, or a connection that never
+//! opened (DNS, TCP or TLS handshake), sends the request through `ShadeNet`; a timeout or a
+//! failure after the request went out does not.
+//!
 //! ```sh
 //! SHADENET_IDENTITY=~/.config/shadenet/identity.json \
 //!   cargo run -p shadenet --example fallback_fetch -- https://duckduckgo.com/html/?q=shadenet
@@ -14,8 +20,8 @@ use serde::Serialize;
 use serde_json::json;
 use shadenet::Block;
 
-const USER_AGENT: &str = concat!("shadenet/", env!("CARGO_PKG_VERSION"));
-const DIRECT_TIMEOUT: Duration = Duration::from_secs(30);
+const DIRECT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const DIRECT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -78,11 +84,13 @@ async fn main() -> eyre::Result<()> {
     let url = std::env::args()
         .nth(1)
         .ok_or_else(|| eyre::eyre!("usage: fallback_fetch <url>"))?;
+    shadenet::fetch::parse_public_https(&url)?;
     let identity = std::env::var("SHADENET_IDENTITY").unwrap_or_else(|_| "identity.json".into());
 
     let http = reqwest::Client::builder()
-        .user_agent(USER_AGENT)
+        .connect_timeout(DIRECT_CONNECT_TIMEOUT)
         .timeout(DIRECT_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .wrap_err("failed to build the direct HTTP client")?;
 
@@ -102,7 +110,8 @@ async fn main() -> eyre::Result<()> {
             }
             Some(block) => block,
         },
-        Err(_) => Block::Unreachable,
+        Err(error) if error.is_connect() => Block::Unreachable,
+        Err(error) => return Err(error).wrap_err_with(|| format!("direct request to {url}")),
     };
     eprintln!("direct request blocked ({direct_block:?}); retrying through ShadeNet");
 

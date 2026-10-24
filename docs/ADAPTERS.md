@@ -98,7 +98,7 @@ The tools:
 | Tool | Arguments | Returns |
 |---|---|---|
 | `shadenet_fetch` | `url` (https), `method`, `headers`, `body`, `max_bytes` | `status`, `headers`, `body` (text, or base64 with `bodyEncoding`), `gateway`, `epoch`, `truncated` |
-| `shadenet_fetch_fallback` | `url`, `method`, `headers`, `body`, `max_bytes` | `route` (`direct` or `shadenet`), `status`, `headers`, `body` as for `shadenet_fetch`; after a fallback also `directBlock` (why the direct request was refused), `block` (whether the ShadeNet answer is refused too), `gateway`, `epoch` |
+| `shadenet_fetch_fallback` | `url` (https, public host), `method`, `headers`, `body`, `max_bytes` | `route` (`direct` or `shadenet`), `status`, `headers`, `body`, `block` (whether the answer is a block; a non-GET/HEAD/OPTIONS request is never retried, so its block comes back on the direct route); after a fallback also `directBlock` (why the direct request was refused), `directError` (when the direct connection never opened), `gateway`, `epoch`. When the ShadeNet attempt fails: `isError: true` with the error's `code`, `message`, `retryAfterSeconds` as for `shadenet_fetch`, plus `route: "shadenet"`, `directBlock` and `directError`. A direct failure that is not retried: `isError: true`, `code: "transport"`, `route: "direct"` |
 | `shadenet_status` | none | the [status object](../specs/local-api.openapi.yaml) |
 | `shadenet_plan` | `urls` or `count` | the plan object: `availableNow`, `epochsNeeded`, `completesInSeconds`, `fitsNow`, `advice` |
 | `shadenet_search` | `query`, `engines`, `categories`, `max_results` | `results` with `title`, `url`, `content`, `engine` |

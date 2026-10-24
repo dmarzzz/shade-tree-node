@@ -173,8 +173,12 @@ with `--searxng-url`, `shadenet_search`. The agent keeps its normal network and 
 ShadeNet only for the fetches that need it. `shadenet_fetch_fallback` makes that choice
 itself: it tries the direct connection first and spends a tunnel only when the site
 answers with a block (403, 429, a CAPTCHA or a JavaScript challenge) or the connection
-fails. The direct attempt shows the site this machine's IP, so use `shadenet_fetch`
-when a request must not be linked to the machine.
+never opens (DNS, TCP or TLS handshake). Only GET, HEAD and OPTIONS are retried; other
+methods get the direct answer as it is. Targets must be https on a public host. The direct
+attempt sends no User-Agent of its own, does not follow redirects, and goes through the proxy
+in `HTTPS_PROXY`/`ALL_PROXY` unless that proxy is ShadeNet's own. It still shows the site
+this machine's IP (or the proxy's), and the retry follows within seconds with the same
+headers, so use `shadenet_fetch` when a request must not be linked to the machine.
 
 ```sh
 hermes mcp add shadenet --command shadenet --args mcp
