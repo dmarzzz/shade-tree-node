@@ -4,6 +4,20 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### RPC: a rate-limited endpoint is waited on, not failed (roadmap #369 M0)
+
+- HTTP 429, and 503 with `Retry-After`, are resent with bounded exponential backoff and jitter
+  (`packages/node/lib/rpc-safety.mjs`): the server's `Retry-After` (delta-seconds or HTTP date,
+  capped at 10 s) or 400 ms doubling to 6.4 s, at most `SHADE_TREE_RPC_RETRIES` times (default 6)
+  and 30 s of total waiting per request. Every other HTTP status, transport error and JSON-RPC error
+  is handled as before. The v4 record preflight hit the Tenderly Sepolia RPC's 20-request window on
+  every try during fleet rolls and needed a `NODE_OPTIONS` fetch shim; it no longer does.
+- With several `SHADE_TREE_RPC_URL` endpoints a throttled one still fails over at once; only the
+  last endpoint in the rotation backs off.
+- The ethers transport (registration, slashing, registrar settlement) uses the same schedule.
+  ethers alone read a delta-seconds `Retry-After` as milliseconds.
+- New metric `shade_tree_rpc_throttle_retries_total{status}`.
+
 ### Clients never exit through their own node (#369 M0)
 
 - A node exits from its own public IP, so a client that picked its own node, or a node on the same

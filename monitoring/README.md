@@ -53,6 +53,7 @@ Files:
 | `shade_tree_registrar_txs_total` | counter | `kind` (settle\|insert), `result` (ok\|failed) | `packages/node/payments/registrar.mjs` |
 | `shade_tree_registrar_orders` / `shade_tree_registrar_inflight` | gauge | none | `packages/node/payments/registrar.mjs` |
 | `shade_tree_rpc_failovers_total` | counter | `endpoint` (list index that failed; never the URL) | `packages/node/lib/rpc-safety.mjs` (any role with `SHADE_TREE_RPC_URL`) |
+| `shade_tree_rpc_throttle_retries_total` | counter | `status` (`429` or `503`) | `packages/node/lib/rpc-safety.mjs`: requests resent after the endpoint rate-limited them (`SHADE_TREE_RPC_RETRIES`) |
 | `shade_tree_build_info` | gauge | `role`, `version`, `commit` (running checkout, or `unknown`) | every long-running role |
 | `shade_tree_process_start_time_seconds` | gauge | none | every long-running role |
 | `shade_tree_process_uptime_seconds` | gauge | none | every long-running role |
