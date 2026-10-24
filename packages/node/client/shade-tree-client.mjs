@@ -341,6 +341,10 @@ export const DEFAULT_GATEWAY_ACK_TIMEOUT_MS = 30_000;
 export const MAX_GATEWAY_ACK_BYTES = 64 * 1024;
 export const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
 export const DEFAULT_FETCH_MAX_BODY_BYTES = 8 * 1024 * 1024;
+// A session book with less life left than this opens no new tunnel: a long response (an LLM
+// stream, a large download) started late in a book must not run into the node's lifetime, which
+// nodes before the drain change (#379) enforce by destroying every stream. Same as the Rust client.
+export const SESSION_NEW_STREAM_HEADROOM_MS = 45_000;
 
 export class ShadeTreeGatewayAckError extends Error {
   constructor(code, message, options = {}) {
@@ -1101,7 +1105,7 @@ export class ShadeTreeClient {
     if (!book) return null;
     const now = Date.now();
     const p = book.policy;
-    if (book.unused.length === 0 || now - book.openedAt >= p.lifetimeMs - 1000 || now - book.lastUse >= p.idleTimeoutMs - 1000) {
+    if (book.unused.length === 0 || now - book.openedAt >= p.lifetimeMs - SESSION_NEW_STREAM_HEADROOM_MS || now - book.lastUse >= p.idleTimeoutMs - 1000) {
       this._books.delete(onion);
       return null;
     }

@@ -334,7 +334,8 @@
       "maxPayloadBytes": 41943040,
       "lifetimeMs": 90000,
       "idleTimeoutMs": 15000,
-      "maxConcurrentStreams": 4
+      "maxConcurrentStreams": 4,
+      "streamMaxMs": 900000
     },
     "secretsHex": [
       "0101010101010101010101010101010101010101010101010101010101010101",

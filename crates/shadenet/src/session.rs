@@ -16,6 +16,12 @@ use zeroize::Zeroizing;
 
 use crate::isolation::CircuitIsolation;
 
+/// A book with less life left than this opens no new tunnel; the pool opens a new book instead.
+/// A long response (an LLM stream, a large download) started late in a book must not run into
+/// the node's lifetime: nodes before the drain change (#379) destroy every stream of a book when
+/// it expires, and later ones still refuse its spends. Matches the JS client.
+pub const NEW_STREAM_HEADROOM: Duration = Duration::from_secs(45);
+
 /// The ticket the pool hands out for one spend.
 pub struct Ticket {
     pub onion: String,
@@ -43,9 +49,10 @@ pub struct LiveBook {
 
 impl LiveBook {
     fn expired(&self, now: Instant) -> bool {
-        // Leave a margin under the node's clocks: a ticket spent in the last second of the
-        // lifetime is a wasted round trip, and an idle book closes on the node first.
-        let lifetime = Duration::from_millis(self.class.lifetime_ms.saturating_sub(1_000));
+        // Leave a margin under the node's clocks: a stream needs `NEW_STREAM_HEADROOM` of the
+        // lifetime to finish, and an idle book closes on the node first.
+        let lifetime =
+            Duration::from_millis(self.class.lifetime_ms).saturating_sub(NEW_STREAM_HEADROOM);
         let idle = Duration::from_millis(self.class.idle_timeout_ms.saturating_sub(1_000));
         now.duration_since(self.opened_at) >= lifetime || now.duration_since(self.last_use) >= idle
     }
@@ -268,12 +275,42 @@ mod tests {
     }
 
     #[test]
+    fn a_book_without_headroom_for_a_new_stream_is_not_spent() {
+        let pool = SessionPool::new();
+        pool.install(PendingBook::draw(ONION, &st::RESEARCH_V2).unwrap());
+        let onions = vec![ONION.to_string()];
+        let age = |secs: u64| {
+            let mut books = pool.books.lock().unwrap();
+            let book = books.get_mut(ONION).unwrap();
+            let now = Instant::now();
+            book.opened_at = now.checked_sub(Duration::from_secs(secs)).unwrap();
+            book.last_use = now;
+        };
+        // 90 s lifetime, 45 s headroom: second 44 still spends; from second 45 a new book opens.
+        age(44);
+        assert!(
+            pool.take(&onions).is_some(),
+            "46 s of life left: still spent"
+        );
+        age(45);
+        assert!(pool.take(&onions).is_none(), "45 s left: no new tunnel");
+        assert!(
+            pool.summary().is_empty(),
+            "the book is dropped, not kept for later"
+        );
+    }
+
+    #[test]
     fn policy_echo_must_match_the_class_exactly() {
         let good = serde_json::json!({
             "class": "research-v1", "tickets": 6, "maxPayloadBytes": 41943040,
             "lifetimeMs": 90000, "idleTimeoutMs": 15000, "maxConcurrentStreams": 4
         });
         assert!(policy_matches(&good, &st::RESEARCH_V1));
+        // `streamMaxMs` (#379) is advisory and additive: present or absent, the class matches.
+        let mut with_cap = good.clone();
+        with_cap["streamMaxMs"] = serde_json::json!(900000);
+        assert!(policy_matches(&with_cap, &st::RESEARCH_V1));
         let mut bad = good.clone();
         bad["tickets"] = serde_json::json!(7);
         assert!(!policy_matches(&bad, &st::RESEARCH_V1));

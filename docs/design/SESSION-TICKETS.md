@@ -677,15 +677,17 @@ cache-control: no-store
     "maxPayloadBytes": 41943040,
     "lifetimeMs": 90000,
     "idleTimeoutMs": 15000,
-    "maxConcurrentStreams": 4
+    "maxConcurrentStreams": 4,
+    "streamMaxMs": 900000
   }
 }
 ```
 
 The response contains no member identifier, leaf, payer, target, fine timestamp, or
 server-generated per-session identifier. The HTTP/2 connection itself is the session
-handle. The client verifies every returned policy value against its understanding of the
-class and closes on disagreement.
+handle. The client verifies every returned class value against its understanding of the
+class and closes on disagreement. `streamMaxMs` (§16.4) is a node setting, not a class
+value: it is advisory, absent from nodes that predate it, and not compared.
 
 ### 12.5 Failure response
 
@@ -957,13 +959,26 @@ not accumulate a session-sized buffer in user space.
 ### 16.4 Hard lifetime
 
 The absolute session deadline begins when the node commits initialization and returns
-`201`. Activity never extends it. At expiry the node:
+`201`. Activity never extends it. The deadline bounds when tickets may be SPENT, not how
+long an established stream may run. At expiry the node:
 
-1. sends GOAWAY refusing new streams;
-2. resets pending DNS/TCP streams;
-3. grants established streams only a small fixed drain interval;
-4. destroys remaining upstream sockets;
-5. releases the HTTP/2 connection and all session state.
+1. refuses new streams: every later spend is `session-expired` (the GOAWAY of the
+   line-framed transport, which has no session control channel);
+2. resets streams still in DNS/TCP connect; their tickets burn as an ambiguous outcome;
+3. lets established streams drain, each bounded by the session byte ceiling (§16.2), the
+   session idle timeout (§16.5), the per-tunnel upstream idle timer and a hard cap
+   `streamMaxMs` counted from the stream's establishment (default `900000`, node setting
+   `SHADE_TREE_SESSION_STREAM_MAX_MS`, echoed in the policy);
+4. destroys a stream's sockets when any of those limits ends it;
+5. releases all session state when the last stream closes, or at once when none is open.
+
+A fixed drain interval after the deadline was the first draft. It cut any response that
+started late in a book (an LLM stream begun at second 85 got about ten seconds), the agent
+could not resume the TLS stream, and the cut time leaked the book's open time at the
+client's uplink (#379). Every resource a draining stream holds is already bounded by the
+limits above, and a draining book still counts toward the node's session cap, so the drain
+adds no new unbounded state. Clients still avoid starting a long stream on a book with
+little life left (§20.1): until every node drains, an older node destroys streams at expiry.
 
 ### 16.5 Idle timeout
 
@@ -1136,7 +1151,8 @@ keyed by the selected onion and policy class. A session is eligible when:
 - its HTTP/2 connection is healthy;
 - initialization succeeded;
 - at least one local ticket remains;
-- its hard deadline has sufficient headroom for a new request;
+- its hard deadline has sufficient headroom for a new request (45 s in both clients, so a
+  book's last 45 s open no new tunnels);
 - its concurrent-stream count is below policy;
 - its locally observed byte budget is not exhausted.
 
@@ -1919,7 +1935,9 @@ These do not block storing the roadmap design, but ST-SESSION-0 must close them:
 4. Should the byte limit terminate the whole session immediately or send GOAWAY and let
    only the stream that reached the boundary close cleanly? This page currently stops all
    streams because the budget is shared and exhausted.
-5. What bounded drain interval follows the 90-second hard deadline?
+5. ~~What bounded drain interval follows the 90-second hard deadline?~~ Closed (#379): no
+   fixed interval. The deadline ends spends; established streams drain under the byte
+   ceiling, the idle timeouts and `streamMaxMs` (default 900 s from establishment), §16.4.
 6. Is inner TLS connection reuse ever allowed for the SDK, or must one fetch always own
    one child stream and one inner TLS connection? This page currently requires the latter.
 7. Is short-lived exact book recovery necessary for the first live experiment?

@@ -38,6 +38,28 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   CAPTCHA wall), so a page with a reCAPTCHA comment form is not a block.
 - `crates/shadenet/examples/fallback_fetch.rs` shows the same pattern for an agent tool.
 
+### Docs: response-timing watermark recorded as in scope, not fixed (#369)
+
+- `docs/THREAT-MODEL.md` §5 now lists the active-destination response-timing watermark
+  (destination plus a colluding guard or ISP; destination plus the agent's unprotected model call;
+  response size; token-stream timing) as a residual risk that ShadeNet v0 does not defend.
+- New design note `docs/design/RESPONSE-TIMING-AND-COVER.md`: constant-rate shaped tunnels with
+  498-byte cells, rate classes fixed at open, doubling lifetimes, cover pipes that carry the real
+  traffic, costs in rate and monthly volume, and staging pass bars. Analysis only; an ADR follows
+  staging measurements.
+
+### Session books: expiry ends spends, not streams (#379)
+
+- A book's 90 s lifetime destroyed every stream of the book, so a response that started late
+  (an LLM stream, a large download) was cut mid-TLS. The node now closes an expired book to new
+  spends only (`session-expired`), resets connects still pending, and lets established streams
+  drain until the session idle timeout, the byte ceiling or a new per-stream cap `streamMaxMs`
+  (default 900 s, `SHADE_TREE_SESSION_STREAM_MAX_MS`), which the policy echo advertises. Older
+  clients ignore the extra echo field and new clients do not require it. Takes effect after a
+  fleet roll.
+- Both clients (Rust `shadenet`, JS) open no new tunnel from a book with less than 45 s of life
+  left and open a new book instead, which protects long responses on nodes that have not rolled.
+
 ### `register-member`: the leftover note reads the stake's block
 
 - The first live v0.7.5 stake (2026-10-20, funding wallet `0xa94f…8790`, stake tx `0xcf11…c3f8`,

@@ -9,16 +9,22 @@
 // existing per-slot payload budget (gateway.mjs makePayloadBudget), so a session can never relay
 // more than the one RLN slot it was bought with.
 //
+// The lifetime ends SPENDS, not streams (§16.4): at expiry the book refuses new tickets with
+// `session-expired`, resets connects still pending, and lets established streams drain under the
+// byte ceiling, the book's idle clock and the per-stream hard cap `streamMaxMs`. The book closes
+// when its last stream ends.
+//
 // Ticket, target, session, nullifier and spend identifiers are never log or metric labels; the
 // bounded reasons below are the only strings that leave this module.
 
-import { SESSION_CLASSES, spendDigest as computeSpendDigest, ticketCommitment } from "../lib/session-tickets.mjs";
+import { SESSION_CLASSES, STREAM_MAX_MS, spendDigest as computeSpendDigest, ticketCommitment } from "../lib/session-tickets.mjs";
 import { bytesEqual, fromHex } from "#crypto";
 
 export const SESSION_REASONS = Object.freeze([
   "session-unsupported", "session-malformed", "session-version", "session-class", "session-gateway", "session-nonce",
   "session-ticket-count", "session-commitment", "session-digest", "session-wrong-gateway", "session-conflict",
   "session-capacity", "session-unknown", "session-expired", "session-idle", "session-streams", "session-pending",
+  "session-stream-max",
   "ticket-malformed", "ticket-version", "ticket-book", "ticket-index", "ticket-secret", "ticket-nonce",
   "ticket-mismatch", "ticket-spent", "ticket-conflict", "ticket-inflight",
 ]);
@@ -43,6 +49,7 @@ export function makeTokenBucket({ bytesPerSecond, burstBytes, now = () => Date.n
 export function makeSessionBooks({
   classes = SESSION_CLASSES,
   maxSessions = 256,
+  streamMaxMs = STREAM_MAX_MS,
   now = () => Date.now(),
   setTimer = (fn, ms) => { const t = setTimeout(fn, ms); t.unref?.(); return t; },
   clearTimer = clearTimeout,
@@ -51,17 +58,34 @@ export function makeSessionBooks({
   const byNullifier = new Map(); // "epoch\0nullifier" -> ticketBookDigest (one book per proof slot)
   const slotKey = (nullifier, epoch) => `${String(epoch)}\0${String(nullifier)}`;
 
+  const destroy = (socket) => { try { socket?.destroy(); } catch { /* already gone */ } };
+
   function close(book, reason) {
     if (book.closed) return;
     book.closed = true;
     book.closeReason = reason;
     clearTimer(book.lifetimeTimer);
     clearTimer(book.idleTimer);
+    for (const timer of book.streamTimers.values()) clearTimer(timer);
+    book.streamTimers.clear();
     books.delete(book.digest);
     if (byNullifier.get(book.slot) === book.digest) byNullifier.delete(book.slot);
-    for (const socket of book.sockets) { try { socket.destroy(); } catch { /* already gone */ } }
+    for (const socket of book.connecting.values()) destroy(socket);
+    book.connecting.clear();
+    for (const socket of book.sockets) destroy(socket);
     book.sockets.clear();
     book.onClose?.(reason);
+  }
+
+  // The hard lifetime: closed to new spends, pending connects reset (their tickets burn as an
+  // ambiguous outcome), established streams drain. With none established the book closes now.
+  function expire(book) {
+    if (book.closed || book.draining) return;
+    book.draining = true;
+    clearTimer(book.lifetimeTimer);
+    for (const socket of book.connecting.values()) destroy(socket);
+    book.connecting.clear();
+    if (book.sockets.size === 0) close(book, "session-expired");
   }
 
   function armIdle(book) {
@@ -76,11 +100,13 @@ export function makeSessionBooks({
   // Open a book for a verified initialization. An exact replay of a live book (same digest for
   // the same proof slot) is idempotent; a different digest for the same slot is a conflict (the
   // spent set has already seen the second share and taken its own action).
-  function open({ digest, commitments, classId, policy = classes[classId], nullifier, epoch, onClose = null }) {
+  // `onStreamClose(reason)` reports a single stream the book ended (`session-stream-max`).
+  function open({ digest, commitments, classId, policy = classes[classId], nullifier, epoch, onClose = null, onStreamClose = null }) {
     if (!policy) return { ok: false, reason: "session-class" };
     const slot = slotKey(nullifier, epoch);
     const existing = byNullifier.get(slot);
     if (existing !== undefined) {
+      if (existing === digest && books.get(digest)?.draining) return { ok: false, reason: "session-expired" };
       if (existing === digest && books.has(digest)) return { ok: true, book: books.get(digest), replay: true };
       return { ok: false, reason: "session-conflict" };
     }
@@ -92,12 +118,13 @@ export function makeSessionBooks({
       commitments: commitments.map((c) => fromHex(c)),
       tickets: commitments.map(() => ({ state: "unused", spendDigest: null, streamId: null })),
       createdAt: t, expiresAt: t + policy.lifetimeMs, lastPayloadAt: t,
-      openStreams: 0, pendingConnects: 0, sockets: new Set(), closed: false, closeReason: null, onClose,
+      openStreams: 0, pendingConnects: 0, sockets: new Set(), closed: false, closeReason: null, onClose, onStreamClose,
+      draining: false, streamMaxMs, connecting: new Map(), streamTimers: new Map(),
       up: makeTokenBucket({ bytesPerSecond: policy.agentToDestinationBytesPerSecond, burstBytes: policy.agentToDestinationBurstBytes, now }),
       down: makeTokenBucket({ bytesPerSecond: policy.destinationToAgentBytesPerSecond, burstBytes: policy.destinationToAgentBurstBytes, now }),
       lifetimeTimer: null, idleTimer: null,
     };
-    book.lifetimeTimer = setTimer(() => close(book, "session-expired"), policy.lifetimeMs);
+    book.lifetimeTimer = setTimer(() => expire(book), policy.lifetimeMs);
     armIdle(book);
     books.set(digest, book);
     byNullifier.set(slot, digest);
@@ -105,11 +132,13 @@ export function makeSessionBooks({
   }
 
   // SYNCHRONOUS: verify the ticket against its commitment and move it UNUSED -> RESERVED, taking
-  // one stream and one pending-connect slot. Nothing here awaits.
-  function reserve({ digest, index, secret, target, requestNonce, streamId }) {
+  // one stream and one pending-connect slot. Nothing here awaits. `socket` (the agent side) is
+  // held while the connect is pending so expiry can reset it.
+  function reserve({ digest, index, secret, target, requestNonce, streamId, socket = null }) {
     const book = books.get(digest);
     if (!book || book.closed) return { ok: false, reason: "session-unknown" };
-    if (now() >= book.expiresAt) { close(book, "session-expired"); return { ok: false, reason: "session-expired" }; }
+    if (!book.draining && now() >= book.expiresAt) expire(book);
+    if (book.draining) return { ok: false, reason: "session-expired" };
     if (index >= book.tickets.length) return { ok: false, reason: "ticket-index" };
     const expected = book.commitments[index];
     if (!bytesEqual(fromHex(ticketCommitment(index, secret)), expected)) return { ok: false, reason: "ticket-mismatch" };
@@ -126,6 +155,7 @@ export function makeSessionBooks({
     ticket.streamId = streamId;
     book.openStreams += 1;
     book.pendingConnects += 1;
+    if (socket) book.connecting.set(streamId, socket);
     return { ok: true, book, ticket };
   }
 
@@ -136,17 +166,29 @@ export function makeSessionBooks({
     ticket.state = "unused";
     ticket.spendDigest = null;
     ticket.streamId = null;
+    book.connecting.delete(streamId);
     book.pendingConnects = Math.max(0, book.pendingConnects - 1);
     book.openStreams = Math.max(0, book.openStreams - 1);
     return true;
   }
 
-  // The commit point: inside the successful upstream connect, before the success ack.
+  // The commit point: inside the successful upstream connect, before the success ack. The
+  // stream's hard cap starts here and holds whether or not the book is still within its lifetime.
   function spend(book, ticket, streamId, socket) {
     if (ticket.state !== "reserved" || ticket.streamId !== streamId) return false;
     ticket.state = "spent";
     book.pendingConnects = Math.max(0, book.pendingConnects - 1);
-    if (socket) book.sockets.add(socket);
+    book.connecting.delete(streamId);
+    if (socket) {
+      book.sockets.add(socket);
+      if (book.streamMaxMs > 0) {
+        book.streamTimers.set(streamId, setTimer(() => {
+          book.streamTimers.delete(streamId);
+          book.onStreamClose?.("session-stream-max");
+          destroy(socket);
+        }, book.streamMaxMs));
+      }
+    }
     return true;
   }
 
@@ -154,6 +196,8 @@ export function makeSessionBooks({
   // connect whose outcome is ambiguous stays SPENT — it is burned rather than refunded).
   function streamClosed(book, ticket, streamId, socket) {
     if (socket) book.sockets.delete(socket);
+    book.connecting.delete(streamId);
+    if (book.streamTimers.has(streamId)) { clearTimer(book.streamTimers.get(streamId)); book.streamTimers.delete(streamId); }
     if (ticket.state === "reserved" && ticket.streamId === streamId) {
       ticket.state = "spent";
       book.pendingConnects = Math.max(0, book.pendingConnects - 1);
@@ -162,6 +206,8 @@ export function makeSessionBooks({
       ticket.streamId = null;
       book.openStreams = Math.max(0, book.openStreams - 1);
     }
+    // A draining book closes with its last established stream.
+    if (book.draining && book.sockets.size === 0) close(book, "session-expired");
   }
 
   // Payload forwarded in either direction resets the session idle clock (control traffic and
@@ -172,5 +218,5 @@ export function makeSessionBooks({
 
   function closeAll(reason = "shutdown") { for (const book of [...books.values()]) close(book, reason); }
 
-  return { open, reserve, release, spend, streamClosed, touch, get, close, closeAll, size: () => books.size };
+  return { open, reserve, release, spend, streamClosed, touch, get, close, expire, closeAll, streamMaxMs, size: () => books.size };
 }
