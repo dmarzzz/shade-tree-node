@@ -2,7 +2,7 @@
 // EIP-1193 provider (a browser wallet, or `jsonRpcProvider(url)` for reads). Every address, tier
 // and bond comes from the network record; the client refuses to send if the chain disagrees.
 
-import { Interface, getAddress, id as topicOf } from "ethers";
+import { Interface, getAddress } from "ethers";
 import { identityCommitmentOf, leafFromIdentityCommitment, parseCommitment, rateCommitment, tierLimit } from "../../node/lib/identity-core.mjs";
 import { resolveNetwork, tierFor } from "./network.mjs";
 import { exitContext, withdrawContext } from "./contexts.mjs";
@@ -24,10 +24,8 @@ const ABI = [
   "function withdrawableAt(uint256 commitment) view returns (uint256)",
 ];
 export const stakingInterface = new Interface(ABI);
-const REGISTERED_TOPIC = topicOf("MemberRegistered(uint256,uint64,uint256)");
 
 const hexQuantity = (v) => `0x${BigInt(v).toString(16)}`;
-const word = (v) => `0x${BigInt(v).toString(16).padStart(64, "0")}`;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A minimal read-only EIP-1193 provider over HTTP JSON-RPC (for status checks without a wallet).
@@ -82,9 +80,9 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
     }
   }
 
-  async function call(name, args) {
+  async function call(name, args, block = "latest") {
     const data = stakingInterface.encodeFunctionData(name, args);
-    const result = await rpc(reader, "eth_call", [{ to: contract, data }, "latest"]);
+    const result = await rpc(reader, "eth_call", [{ to: contract, data }, block]);
     return stakingInterface.decodeFunctionResult(name, result)[0];
   }
 
@@ -182,15 +180,9 @@ export function createStaking({ network = "sepolia", provider, readProvider } = 
       if (active) state = "active";
       else if (limit !== 0n) state = BigInt(Math.floor(Date.now() / 1000)) >= withdrawableAt ? "withdrawable" : "exiting";
       let finalized = null;
-      if (state !== "none") {
-        const logs = await rpc(reader, "eth_getLogs", [{
-          address: contract,
-          topics: [REGISTERED_TOPIC, word(c)],
-          fromBlock: profile.deployBlock == null ? "earliest" : hexQuantity(profile.deployBlock),
-          toBlock: "finalized",
-        }]);
-        finalized = Array.isArray(logs) && logs.length > 0;
-      }
+      // Read the member at the finalized block rather than scanning logs: a scan from deployBlock
+      // outgrows public RPCs' getLogs range caps (ethpandaops refuses ~110k blocks on Sepolia).
+      if (state !== "none") finalized = (await call("limitOf", [c], "finalized")) !== 0n;
       return {
         state,
         limit: Number(limit),

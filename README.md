@@ -67,14 +67,14 @@ and filename, and installs without sudo into `~/.local/bin`:
 
 ```sh
 curl -q -fsSL --proto '=https' --proto-redir '=https' \
-  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.4 sh
+  https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh | SHADENET_VERSION=v0.7.5 sh
 shadenet --version
 ```
 
 Automatic mode first tries the selected release's self-contained `-live` agent
 and falls back to its verifier-only binary only when that live asset is absent.
 On Apple Silicon it detects Rosetta shells and still selects the native arm64
-live build. v0.7.4 is the latest release; pin it with `SHADENET_VERSION=v0.7.4` if you need a
+live build. v0.7.5 is the latest release; pin it with `SHADENET_VERSION=v0.7.5` if you need a
 fixed build. v0.6.0 installs only the older `shade-tree` binary, without `init`, `status` or
 `mcp`, and has no Intel macOS live build. The
 [installer options and manual verification steps](crates/INSTALL.md) cover the rest. Checksums
@@ -85,13 +85,14 @@ The bundled Sepolia canopy admits one public staked tier, limit 8: the bond in t
 current network record (`shadenet init` prints it; the [Get access][stake] page
 shows it) buys eight proof slots per fixed 60-second epoch, each a CONNECT tunnel
 with a 40 MiB payload ceiling. `init` creates an owner-only identity, a proxy token
-and `config.toml`; then stake the identity commitment it prints (never the leaf) from a
-separately funded testnet key, or have a sponsor stake it from the Get access page:
+and `config.toml`; then stake the identity commitment it prints (never the leaf). Without a
+key, `register-member` creates a funding wallet, prints its address and the Sepolia ETH to send,
+and stakes once it arrives; `--key-file funded-sepolia.key` pays from a key you hold, and a
+sponsor can stake it from the Get access page instead:
 
 ```bash
 shadenet init
-chmod 600 funded-sepolia.key
-shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet register-member --identity ~/.config/shadenet/identity.json
 shadenet status --wait        # returns once the registration is final
 ```
 

@@ -67,8 +67,8 @@ For agents and terminals, the released Rust client uses the bundled live Sepolia
 
 ```bash
 shade-tree enroll --out identity.json
-chmod 600 funded-sepolia.key
-shade-tree register-member --identity identity.json --key-file funded-sepolia.key
+shade-tree register-member --identity identity.json
+# or, from a key you hold: chmod 600 funded-sepolia.key; add --key-file funded-sepolia.key
 shade-tree member-status --identity identity.json --json
 (umask 077; set -C; shade-tree proxy-token > proxy-token.txt)
 shade-tree proxy --identity identity.json --token-file proxy-token.txt

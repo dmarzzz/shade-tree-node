@@ -26,15 +26,18 @@ shadenet init
 
 `init` creates an owner-only identity, a proxy token and
 `~/.config/shadenet/config.toml`, then prints what is left: staking the identity commitment,
-waiting for finality, starting the proxy. With a funded Sepolia key:
+waiting for finality, starting the proxy.
 
 ```sh
-chmod 600 funded-sepolia.key
-shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet register-member --identity ~/.config/shadenet/identity.json
 shadenet status --wait        # returns once the registration is final (about 13 minutes)
 shadenet proxy                # leave running, or install it as a service (below)
 shadenet run --no-proxy api.openai.com -- your-agent
 ```
+
+`register-member` without a key creates a funding wallet of its own, prints its address and
+the Sepolia ETH to send (the bond plus a gas reserve), waits for it to arrive, and stakes. To
+pay from a key you already hold, add `--key-file funded-sepolia.key` (owner-only, `chmod 600`).
 
 That is the whole path. The rest of this page explains each step and the
 choices an agent developer has.
@@ -57,13 +60,39 @@ turns session tickets on. The bond in force comes from the record;
 [ECONOMICS.md](ECONOMICS.md).
 
 ```sh
-shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded-sepolia.key
+shadenet register-member --identity ~/.config/shadenet/identity.json
 ```
 
-The key signs locally and never reaches the RPC. The funding wallet can be any
-wallet: a person can **sponsor** an agent by staking the agent's identity commitment from their
-own wallet (`shadenet register-member <identity-commitment> --key-file theirs.key`, or the
-"Get access" page). The identity file stays with the agent either way.
+With no `--key-file` and no `SHADENET_REGISTER_KEY`, the command pays from a **funding wallet**
+it keeps for this purpose, the way zkAPI's client does: the first run writes an owner-only key
+to `funding.key` next to the identity file (`--funding-key <path>` moves it), then it prints
+the wallet's address and one amount to send, the tier's bond plus a gas reserve
+(the smallest of 0.002, 0.004, 0.008 … ETH that covers 1 800 000 gas at the current fee, so
+0.012 ETH in all on Sepolia at quiet fees; what the registration does not spend stays in the
+wallet),
+and polls the balance every 15 seconds. Once the balance covers the quote it signs and
+broadcasts the stake. Ctrl-C is safe at any point: the key file and any ETH already sent
+remain, and the same command resumes. `--wait-timeout <seconds>` bounds the wait (default
+3600; `0` prints the address and amount and exits); an unfunded wallet at the deadline exits
+with code 4 and the amount still missing. An identity that is already staked is reported, not
+quoted. Should fees climb past the quoted reserve while the ETH is on its way, the signer's own
+balance check refuses rather than sending a transaction that would fail, and the same command,
+run again, quotes the difference.
+
+The funding address, the amount and the stake are public on chain, so the wallet that sends
+the ETH is linked to this membership. It is not linked to what the member does: each request
+carries an RLN proof that hides which member sent it. To keep your main wallet out of it, send
+from a fresh address funded through a large shared pool (Railgun, Privacy Pools, a CEX
+withdrawal) and send exactly the quoted amount; the reserve moves only in coarse steps so that
+amount is shared by other registrations. The command prints this advice with the amount, and
+after the stake it prints the leftover gas money: that is tied to the stake too, so keep it for
+a later top-up or send it on to a fresh address, not back to the wallet that funded it.
+
+To pay from a key you already hold instead, pass `--key-file funded-sepolia.key`
+(owner-only, `chmod 600`). Either key signs locally and never reaches the RPC. The funding
+wallet can be any wallet: a person can **sponsor** an agent by staking the agent's identity
+commitment from their own wallet (`shadenet register-member <identity-commitment> --key-file
+theirs.key`, or the "Get access" page). The identity file stays with the agent either way.
 
 Nodes accept only finalized registrations. `shadenet status` distinguishes
 `not_admitted` from `not_finalized`; `shadenet status --wait` returns when the

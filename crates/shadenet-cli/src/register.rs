@@ -7,18 +7,30 @@
 
 use shadenet::eth::{Address, Wallet, U256};
 use shadenet::member::{
-    self, is_loopback_rpc, parse_uint, rpc_label, HttpRpc, Progress, RegisterOutcome,
+    self, is_loopback_rpc, parse_uint, rpc_label, Funding, FundingQuote, HttpRpc, Progress,
+    RegisterOutcome,
 };
 use std::fs;
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 const DEFAULT_RPC_TIMEOUT_MS: u64 = 15_000;
 const DEFAULT_RECEIPT_TIMEOUT_MS: u64 = 180_000;
+/// How often the funding wallet's balance is read while waiting for ETH.
+const DEFAULT_FUNDING_POLL_MS: u64 = 15_000;
+/// How long `register-member` waits for the funding wallet to be funded.
+const DEFAULT_WAIT_TIMEOUT_SECS: u64 = 3600;
+/// Exit code when the funding wallet was not funded within `--wait-timeout`.
+const EXIT_NOT_FUNDED: u8 = 4;
+/// The file that holds the funding wallet's key, next to the identity.
+const FUNDING_KEY_FILE: &str = "funding.key";
+/// `0.0001 ETH`: a top-up after a partial payment is rounded up to this so it reads and types
+/// well. A first quote is already a round figure (bond plus a reserve rung).
+const SEND_GRANULARITY_WEI: u64 = 100_000_000_000_000;
 const ANVIL_KEY_0: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 
 const HELP: &str = r#"shadenet register-member — stake a member identity
@@ -27,6 +39,30 @@ usage: shadenet register-member --identity identity.json
        shadenet register-member <identity-commitment> [--limit N]
        [--contract 0xaddress] [--rpc-url https://...]
        [--key-file <owner-only-file>]
+       [--funding-key <path>] [--wait-timeout <seconds>]
+
+Without --key-file or SHADENET_REGISTER_KEY, register-member pays from a
+funding wallet of its own: it creates an owner-only key at --funding-key
+(default: funding.key next to the identity file, else in the config directory)
+the first time, prints the wallet's address and the amount to send (the tier's
+bond plus a gas reserve), waits for the balance to cover it, then stakes. The
+same command resumes after Ctrl-C; an existing funding.key is reused, never
+replaced. --wait-timeout (default 3600; 0 checks once) bounds the wait; an
+unfunded wallet at the deadline exits 4 after printing what is still missing
+(SHADENET_FUNDING_POLL_MS sets the poll interval, default 15000). Unspent gas
+money stays in the funding wallet. The gas reserve is the smallest of 0.002,
+0.004, 0.008 ... ETH that covers 1 800 000 gas at the current fee, so the
+amount moves only in coarse steps and does not single out its sender; should
+fees climb past it while the ETH is on its way, the signer's own balance check
+refuses and the same command, run again, re-quotes the difference.
+
+The funding address, the amount and the stake are public on chain, so whoever
+sends the ETH is linked to this membership (not to its use: each request
+carries an RLN proof that hides which member sent it). To keep your main
+wallet out of it, send from a fresh address funded through a large shared pool
+(Railgun, Privacy Pools, a CEX withdrawal), and send exactly the quoted amount.
+The leftover gas money is tied to the stake too: send it on to a fresh
+address, not back to the wallet that funded it.
 
 The staking contract takes the identity commitment Poseidon1(identitySecret)
 and derives the member leaf Poseidon2(identityCommitment, limit) itself, so the
@@ -52,6 +88,8 @@ struct CliOptions {
     key_file: Option<PathBuf>,
     identity: Option<PathBuf>,
     bond: Option<String>,
+    funding_key: Option<PathBuf>,
+    wait_timeout: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +128,8 @@ fn parse_args(args: &[String]) -> Result<Option<CliOptions>, String> {
             "--key-file",
             "--identity",
             "--bond",
+            "--funding-key",
+            "--wait-timeout",
         ]
         .iter()
         .find(|name| arg == **name || arg.starts_with(&format!("{name}=")))
@@ -125,6 +165,16 @@ fn parse_args(args: &[String]) -> Result<Option<CliOptions>, String> {
                 "--bond" => {
                     if out.bond.replace(value).is_some() {
                         return Err("pass --bond only once".into());
+                    }
+                }
+                "--funding-key" => {
+                    if out.funding_key.replace(PathBuf::from(value)).is_some() {
+                        return Err("pass --funding-key only once".into());
+                    }
+                }
+                "--wait-timeout" => {
+                    if out.wait_timeout.replace(value).is_some() {
+                        return Err("pass --wait-timeout only once".into());
                     }
                 }
                 _ => unreachable!(),
@@ -305,7 +355,9 @@ pub(crate) fn key_file(path: &Path) -> Result<String, String> {
         .map_err(|e| format!("read funding key {}: {e}", path.display()))
 }
 
-fn wallet_for(cli: &CliOptions, rpc_url: &str) -> Result<Wallet, String> {
+/// The wallet an explicit key names: `--key-file`, `SHADENET_REGISTER_KEY`, or the public Anvil
+/// key on a loopback RPC. `None` means no key was given and the funding wallet pays.
+fn wallet_for(cli: &CliOptions, rpc_url: &str) -> Result<Option<Wallet>, String> {
     let key = Zeroizing::new(if let Some(path) = &cli.key_file {
         key_file(path)?
     } else if let Some(key) = shadenet::env::var("REGISTER_KEY")? {
@@ -316,12 +368,252 @@ fn wallet_for(cli: &CliOptions, rpc_url: &str) -> Result<Wallet, String> {
     } else if is_loopback_rpc(rpc_url) {
         ANVIL_KEY_0.to_string()
     } else {
-        return Err(
-            "member registration on a non-loopback RPC needs --key-file or SHADENET_REGISTER_KEY; the public Anvil key is never used remotely"
-                .into(),
-        );
+        return Ok(None);
     });
-    Wallet::from_hex(&key)
+    Wallet::from_hex(&key).map(Some)
+}
+
+/// Where the funding wallet's key lives: `--funding-key`, else next to the identity file, else
+/// the config directory.
+fn funding_key_path(cli: &CliOptions) -> Result<PathBuf, String> {
+    if let Some(path) = &cli.funding_key {
+        return Ok(path.clone());
+    }
+    if let Some(identity) = &cli.identity {
+        let dir = identity
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        return Ok(dir.join(FUNDING_KEY_FILE));
+    }
+    crate::config_file::default_dir()
+        .map(|dir| dir.join(FUNDING_KEY_FILE))
+        .ok_or_else(|| "no config directory for the funding wallet; pass --funding-key".into())
+}
+
+/// Load the funding wallet at `path`, or create it owner-only. The second value says whether it
+/// was created by this call. The key is never printed; only the address is.
+fn load_or_create_funding_wallet(path: &Path) -> Result<(Wallet, bool), String> {
+    if path.exists() {
+        let key = Zeroizing::new(key_file(path)?);
+        return Wallet::from_hex(&key)
+            .map(|wallet| (wallet, false))
+            .map_err(|error| format!("funding wallet {}: {error}", path.display()));
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+    }
+    let (wallet, secret) = Wallet::generate()?;
+    let mut file = crate::enroll::private_open(path)?;
+    let written = file
+        .write_all(secret.as_bytes())
+        .and_then(|()| file.write_all(b"\n"))
+        .and_then(|()| file.sync_all());
+    drop(file);
+    if let Err(error) = written {
+        let _ = fs::remove_file(path);
+        return Err(format!("write {}: {error}", path.display()));
+    }
+    Ok((wallet, true))
+}
+
+fn funding_poll() -> Duration {
+    Duration::from_millis(
+        shadenet::env::var_lenient("FUNDING_POLL_MS")
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(DEFAULT_FUNDING_POLL_MS),
+    )
+}
+
+fn wait_timeout(cli: &CliOptions) -> Result<Duration, String> {
+    cli.wait_timeout
+        .as_deref()
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| "--wait-timeout must be a number of seconds".to_string())
+        })
+        .transpose()
+        .map(|secs| Duration::from_secs(secs.unwrap_or(DEFAULT_WAIT_TIMEOUT_SECS)))
+}
+
+/// `wei` rounded up to the next multiple of `SEND_GRANULARITY_WEI`, so the figure a person
+/// copies into a wallet is short and always covers the quote.
+fn round_up_to_send(wei: &U256) -> U256 {
+    let unit = U256::from(SEND_GRANULARITY_WEI);
+    let unit_big = unit.as_biguint();
+    let rounded = ((wei.as_biguint() + unit_big - 1u32) / unit_big) * unit_big;
+    U256::from_big_endian(&rounded.to_bytes_be()).unwrap_or_else(|| wei.clone())
+}
+
+fn eth(wei: &U256, chain_id: u64) -> String {
+    crate::live::format_bond(&wei.to_string(), chain_id)
+}
+
+/// Why the funding path stopped without a funded wallet.
+enum FundingStop {
+    /// The deadline passed; the wallet still holds less than the quote (exit 4).
+    NotFunded(String),
+    /// The first quote failed, or the RPC kept failing until the deadline (exit 1).
+    Rpc(String),
+}
+
+/// The funding path: quote the registration for the funding wallet, print the address and the
+/// amount, and poll the balance until it covers the quote or the deadline passes. An RPC error
+/// after the first quote is retried on the next poll, so a flaky endpoint does not lose the
+/// wait; the first quote failing is reported at once.
+fn wait_for_funding(
+    rpc: &mut HttpRpc,
+    registration: &Registration,
+    wallet: &Wallet,
+    key_path: &Path,
+    created: bool,
+    timeout: Duration,
+) -> Result<Option<FundingQuote>, FundingStop> {
+    let set = &registration.set;
+    let reg = &registration.registration;
+    let started = Instant::now();
+    let poll = funding_poll();
+    let mut last_report: Option<(U256, U256)> = None;
+    loop {
+        let quote = match member::funding_quote(rpc, set, reg, wallet.address) {
+            Ok(Funding::AlreadyActive) => return Ok(None),
+            Ok(Funding::Quote(quote)) => quote,
+            Err(error) if last_report.is_some() && started.elapsed() < timeout => {
+                eprintln!(
+                    "  rpc: {error}; checking again in {} s",
+                    poll.as_secs().max(1)
+                );
+                std::thread::sleep(poll);
+                continue;
+            }
+            Err(error) => return Err(FundingStop::Rpc(error)),
+        };
+        let chain = quote.chain_id;
+        if last_report.is_none() {
+            println!(
+                "No funded key was given (--key-file / SHADENET_REGISTER_KEY), so this machine's funding wallet pays:"
+            );
+            println!(
+                "  wallet:   {}  ({}; owner-only; keep it, it holds the gas money)",
+                key_path.display(),
+                if created { "created now" } else { "existing" }
+            );
+            println!("  address:  {}", wallet.address);
+            println!(
+                "  bond:     {} (tier {})",
+                eth(&quote.bond, chain),
+                reg.limit
+            );
+            println!(
+                "  gas:      up to {} reserved ({} gas at the current fee, rounded up to a 0.002 ETH x 2^k step)",
+                eth(&quote.gas_reserve, chain),
+                member::REGISTER_GAS_CEILING
+            );
+            println!("  balance:  {}", eth(&quote.balance, chain));
+        }
+        if quote.is_funded() {
+            println!(
+                "funded: {} covers the bond and gas reserve; staking.",
+                eth(&quote.balance, chain)
+            );
+            return Ok(Some(quote));
+        }
+        let shortfall = quote.shortfall();
+        let report = (quote.balance.clone(), shortfall.clone());
+        if last_report.as_ref() != Some(&report) {
+            let send = round_up_to_send(&shortfall);
+            println!();
+            println!(
+                "Send {} to {} ({}).",
+                eth(&send, chain),
+                wallet.address,
+                chain_label(chain)
+            );
+            if last_report.is_none() {
+                println!("{FUNDING_PRIVACY}");
+                if timeout.is_zero() {
+                    println!("Not waiting (--wait-timeout 0); run the same command again once it has arrived.");
+                } else {
+                    println!(
+                        "Waiting for it: checking every {} s, for up to {} s. Ctrl-C stops; the same command resumes.",
+                        poll.as_secs().max(1),
+                        timeout.as_secs()
+                    );
+                }
+            } else {
+                println!(
+                    "  balance {}, {} still needed",
+                    eth(&quote.balance, chain),
+                    eth(&shortfall, chain)
+                );
+            }
+            let _ = io::stdout().flush();
+            last_report = Some(report);
+        }
+        if started.elapsed() >= timeout {
+            return Err(FundingStop::NotFunded(format!(
+                "funding wallet {} holds {}, {} short of the {} this registration needs; send the rest and run the same command again",
+                wallet.address,
+                eth(&quote.balance, chain),
+                eth(&shortfall, chain),
+                eth(&quote.required, chain)
+            )));
+        }
+        std::thread::sleep(poll);
+    }
+}
+
+/// Printed once with the first amount to send: the funding hop is the one on-chain link between
+/// a wallet and a membership, and only the sender can break it (docs/PAYMENTS.md, Layer 0).
+const FUNDING_PRIVACY: &str = "\
+Privacy: this address, the amount and the stake are public on chain, so the wallet that sends
+it is linked to this membership (not to its use; requests carry an RLN proof that hides which
+member sent them). To keep your main wallet out of it, send from a fresh address funded
+through a large shared pool (Railgun, Privacy Pools, a CEX withdrawal), and send exactly this
+amount.";
+
+/// Printed after a stake from the funding wallet: what is left is the unspent gas reserve.
+fn leftover_note(rpc: &mut HttpRpc, wallet: &Wallet, block: &U256, key_path: &Path, chain_id: u64) {
+    // Read at the stake's block: on 2026-10-20 `latest` came from a replica one block behind and
+    // reported the whole deposit as left over. A replica that lacks the block errors; retry briefly.
+    let mut left = None;
+    for attempt in 0..5 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        if let Ok(balance) = member::balance_at(rpc, wallet.address, block) {
+            left = Some(balance);
+            break;
+        }
+    }
+    let Some(left) = left else {
+        return;
+    };
+    if left.is_zero() {
+        return;
+    }
+    println!(
+        "  leftover: {} stays in {} (the unspent gas reserve).",
+        eth(&left, chain_id),
+        key_path.display()
+    );
+    println!("            It is tied to this stake on chain: keep it for a later top-up, or send it to a");
+    println!("            fresh address, not back to the wallet that funded it.");
+}
+
+fn chain_label(chain_id: u64) -> &'static str {
+    match chain_id {
+        1 => "Ethereum mainnet",
+        11_155_111 => "Sepolia",
+        17_000 => "Holesky",
+        _ => "this chain",
+    }
 }
 
 pub(crate) fn rpc_timeout_ms() -> u64 {
@@ -372,11 +664,39 @@ pub fn cmd_register_member(args: &[String]) -> ExitCode {
     };
     // Resolve and validate the key before the first network request. This keeps a
     // missing/malformed key from leaking any membership intent to a public RPC.
-    let wallet = match wallet_for(&cli, &registration.set.rpc_url) {
+    let explicit = match wallet_for(&cli, &registration.set.rpc_url) {
         Ok(wallet) => wallet,
         Err(error) => {
             eprintln!("register-member: {error}");
             return ExitCode::from(2);
+        }
+    };
+    let timeout = match wait_timeout(&cli) {
+        Ok(timeout) => timeout,
+        Err(error) => {
+            eprintln!("register-member: {error}\n\n{HELP}");
+            return ExitCode::from(2);
+        }
+    };
+    // No explicit key: the funding wallet is loaded or created before any network request,
+    // for the same reason.
+    let funding = match &explicit {
+        Some(_) => None,
+        None => {
+            let path = match funding_key_path(&cli) {
+                Ok(path) => path,
+                Err(error) => {
+                    eprintln!("register-member: {error}");
+                    return ExitCode::from(2);
+                }
+            };
+            match load_or_create_funding_wallet(&path) {
+                Ok((wallet, created)) => Some((wallet, path, created)),
+                Err(error) => {
+                    eprintln!("register-member: {error}");
+                    return ExitCode::from(2);
+                }
+            }
         }
     };
     let mut rpc = match http_rpc(&registration.set.rpc_url) {
@@ -385,6 +705,31 @@ pub fn cmd_register_member(args: &[String]) -> ExitCode {
             eprintln!("register-member: {error}");
             return ExitCode::from(1);
         }
+    };
+    let mut funded_from: Option<(PathBuf, u64)> = None;
+    let wallet = match (explicit, funding) {
+        (Some(wallet), _) => wallet,
+        (None, Some((wallet, path, created))) => {
+            match wait_for_funding(&mut rpc, &registration, &wallet, &path, created, timeout) {
+                Ok(Some(quote)) => {
+                    funded_from = Some((path, quote.chain_id));
+                    wallet
+                }
+                Ok(None) => {
+                    println!("member is already staked; nothing to do.");
+                    return ExitCode::SUCCESS;
+                }
+                Err(FundingStop::NotFunded(error)) => {
+                    eprintln!("register-member: {error}");
+                    return ExitCode::from(EXIT_NOT_FUNDED);
+                }
+                Err(FundingStop::Rpc(error)) => {
+                    eprintln!("register-member: {error}");
+                    return ExitCode::from(1);
+                }
+            }
+        }
+        (None, None) => unreachable!("a missing key always resolves to a funding wallet"),
     };
     let reg = &registration.registration;
     println!(
@@ -419,6 +764,9 @@ pub fn cmd_register_member(args: &[String]) -> ExitCode {
         }
         Ok(RegisterOutcome::Mined(mined)) => {
             println!("  mined:    {} in block {}; member staked. Public admission begins after this block reaches finality.", mined.hash, mined.block);
+            if let Some((path, chain_id)) = &funded_from {
+                leftover_note(&mut rpc, &wallet, &mined.block, path, *chain_id);
+            }
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -451,6 +799,128 @@ mod tests {
         assert!(parse_args(&["123".into(), "456".into()]).is_err());
         assert!(parse_args(&["123".into(), "--register-key=secret".into()]).is_err());
         assert!(parse_args(&["123".into(), "--identity=identity.json".into()]).is_err());
+    }
+
+    #[test]
+    fn parser_takes_funding_wallet_flags_once() {
+        let parsed = parse_args(&[
+            "--identity".into(),
+            "identity.json".into(),
+            "--funding-key=/tmp/f.key".into(),
+            "--wait-timeout".into(),
+            "0".into(),
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(parsed.funding_key, Some(PathBuf::from("/tmp/f.key")));
+        assert_eq!(parsed.wait_timeout.as_deref(), Some("0"));
+        assert_eq!(wait_timeout(&parsed).unwrap(), Duration::ZERO);
+        assert_eq!(
+            wait_timeout(&CliOptions::default()).unwrap(),
+            Duration::from_secs(DEFAULT_WAIT_TIMEOUT_SECS)
+        );
+        assert!(wait_timeout(&CliOptions {
+            wait_timeout: Some("soon".into()),
+            ..CliOptions::default()
+        })
+        .is_err());
+        assert!(parse_args(&["--funding-key=a".into(), "--funding-key=b".into()]).is_err());
+    }
+
+    #[test]
+    fn funding_key_sits_next_to_the_identity_unless_told_otherwise() {
+        let beside = funding_key_path(&CliOptions {
+            identity: Some(PathBuf::from("/srv/agent/identity.json")),
+            ..CliOptions::default()
+        })
+        .unwrap();
+        assert_eq!(beside, PathBuf::from("/srv/agent/funding.key"));
+        let explicit = funding_key_path(&CliOptions {
+            identity: Some(PathBuf::from("/srv/agent/identity.json")),
+            funding_key: Some(PathBuf::from("/elsewhere/gas.key")),
+            ..CliOptions::default()
+        })
+        .unwrap();
+        assert_eq!(explicit, PathBuf::from("/elsewhere/gas.key"));
+        let bare = funding_key_path(&CliOptions {
+            identity: Some(PathBuf::from("identity.json")),
+            ..CliOptions::default()
+        })
+        .unwrap();
+        assert_eq!(bare, PathBuf::from("./funding.key"));
+    }
+
+    #[test]
+    fn missing_key_on_a_remote_rpc_means_the_funding_wallet_pays() {
+        let cli = CliOptions::default();
+        assert!(wallet_for(&cli, "https://rpc.sepolia.example")
+            .unwrap()
+            .is_none());
+        assert!(wallet_for(&cli, "http://127.0.0.1:8545").unwrap().is_some());
+    }
+
+    #[test]
+    fn funding_wallet_is_created_owner_only_once_and_reused() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "shadenet-funding-wallet-{}-{nonce}",
+            std::process::id()
+        ));
+        let path = dir.join("nested").join(FUNDING_KEY_FILE);
+        let (first, created) = load_or_create_funding_wallet(&path).unwrap();
+        assert!(created);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let stored = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            stored.trim().len(),
+            66,
+            "0x + 32 bytes of hex, newline-terminated"
+        );
+        assert_eq!(Wallet::from_hex(&stored).unwrap().address, first.address);
+        let (second, created_again) = load_or_create_funding_wallet(&path).unwrap();
+        assert!(!created_again);
+        assert_eq!(second.address, first.address);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(load_or_create_funding_wallet(&path)
+                .unwrap_err()
+                .contains("chmod 600"));
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn send_amounts_round_up_to_a_tenth_of_a_milliether() {
+        let unit = U256::from(SEND_GRANULARITY_WEI);
+        assert_eq!(round_up_to_send(&U256::zero()), U256::zero());
+        assert_eq!(round_up_to_send(&U256::from(1)), unit);
+        assert_eq!(round_up_to_send(&unit), unit);
+        // A sum that already sits on the grid (0.0148 ETH) is unchanged.
+        let exact = U256::from(14_800_000_000_000_000);
+        assert_eq!(round_up_to_send(&exact), exact);
+        assert_eq!(
+            round_up_to_send(&U256::from(14_800_000_000_000_001)),
+            U256::from(14_900_000_000_000_000)
+        );
+        assert_eq!(
+            eth(
+                &round_up_to_send(&U256::from(14_800_000_000_000_001)),
+                11_155_111
+            ),
+            "0.0149 Sepolia ETH"
+        );
     }
 
     #[test]
