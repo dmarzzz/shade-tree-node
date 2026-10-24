@@ -3,7 +3,8 @@
 // covered by test/session-e2e.selftest.mjs with real Groth16 proofs). Invariants from the design:
 // one proof -> at most one book; one ticket -> at most one upstream establishment; a duplicate
 // spend can never obtain a second socket; a definite pre-connect failure refunds, an ambiguous one
-// burns; streams share the book's concurrency, byte ceiling, lifetime and idle limits; v4 is
+// burns; streams share the book's concurrency, byte ceiling, lifetime and idle limits; the lifetime
+// ends spends, not established streams, which drain until idle or `streamMaxMs`; v4 is
 // byte-identical on the same handler; with the flag off every session envelope is refused.
 //
 //   node gateway/session.selftest.mjs
@@ -169,16 +170,58 @@ console.log("\nsession books (unit):");
     assert.equal(books.reserve({ digest: cb.ticketBookDigest, index: 4, secret: cb.secrets[4], target: "a:443", requestNonce: nonce(), streamId: 30 }).ok, true);
     books.close(o.book, "test");
   });
-  await test("the hard lifetime closes the book and destroys its sockets; then every spend is session-unknown", () => {
-    const fake = { destroyed: false, destroy() { this.destroyed = true; } };
+  await test("a book with no established stream closes at its lifetime; then every spend is session-unknown", () => {
     const r = books.reserve({ digest: b.ticketBookDigest, index: 3, secret: b.secrets[3], target: "a:443", requestNonce: nonce(), streamId: 40 });
-    books.spend(r.book, r.ticket, 40, fake);
+    books.spend(r.book, r.ticket, 40, null);
+    books.streamClosed(r.book, r.ticket, 40, null);
     now += 90_000; fire();
-    assert.equal(fake.destroyed, true);
     assert.equal(r.book.closeReason, "session-expired");
     assert.equal(books.get(b.ticketBookDigest), null);
     assert.equal(books.reserve({ digest: b.ticketBookDigest, index: 4, secret: b.secrets[4], target: "a:443", requestNonce: nonce(), streamId: 41 }).reason, "session-unknown");
     assert.equal(books.size(), 0);
+  });
+  await test("the lifetime closes the book to spends only: a stream opened at second 85 keeps flowing past it and ends on idle; a pending connect is reset", () => {
+    const fake = () => ({ destroyed: false, destroy() { this.destroyed = true; } });
+    const lb = newBook();
+    const o = books.open({ digest: lb.ticketBookDigest, commitments: lb.commitments, classId: "research-v1", nullifier: "n10", epoch: "e1" });
+    now += 85_000; books.touch(o.book); fire();
+    const live = fake(); const pending = fake();
+    const r = books.reserve({ digest: lb.ticketBookDigest, index: 0, secret: lb.secrets[0], target: "a:443", requestNonce: nonce(), streamId: 50, socket: live });
+    books.spend(r.book, r.ticket, 50, live);
+    assert.equal(books.reserve({ digest: lb.ticketBookDigest, index: 1, secret: lb.secrets[1], target: "a:443", requestNonce: nonce(), streamId: 51, socket: pending }).ok, true);
+    now += 5_000; books.touch(o.book); fire();
+    assert.equal(o.book.draining, true);
+    assert.equal(o.book.closed, false);
+    assert.equal(pending.destroyed, true, "a connect still pending at expiry is reset");
+    assert.equal(live.destroyed, false, "an established stream outlives the lifetime");
+    assert.equal(books.reserve({ digest: lb.ticketBookDigest, index: 2, secret: lb.secrets[2], target: "a:443", requestNonce: nonce(), streamId: 52 }).reason, "session-expired");
+    assert.equal(books.open({ digest: lb.ticketBookDigest, commitments: lb.commitments, classId: "research-v1", nullifier: "n10", epoch: "e1" }).reason, "session-expired", "a replayed init cannot revive a draining book");
+    for (let i = 0; i < 6; i++) { now += 10_000; books.touch(o.book); fire(); }
+    assert.equal(live.destroyed, false, "payload keeps the drain alive 60 s past the lifetime");
+    now += 15_000; fire();
+    assert.equal(o.book.closeReason, "session-idle");
+    assert.equal(live.destroyed, true);
+    assert.equal(books.reserve({ digest: lb.ticketBookDigest, index: 2, secret: lb.secrets[2], target: "a:443", requestNonce: nonce(), streamId: 53 }).reason, "session-unknown");
+  });
+  await test("a draining stream that never idles ends at streamMaxMs (default 900 s from establishment); the book closes with it", () => {
+    const fake = { destroyed: false, destroy() { this.destroyed = true; } };
+    const ended = [];
+    const sb = newBook();
+    const o = books.open({ digest: sb.ticketBookDigest, commitments: sb.commitments, classId: "research-v1", nullifier: "n11", epoch: "e1", onStreamClose: (reason) => ended.push(reason) });
+    assert.equal(o.book.streamMaxMs, st.STREAM_MAX_MS);
+    assert.equal(st.STREAM_MAX_MS, 900_000);
+    now += 85_000; books.touch(o.book); fire();
+    const r = books.reserve({ digest: sb.ticketBookDigest, index: 0, secret: sb.secrets[0], target: "a:443", requestNonce: nonce(), streamId: 60, socket: fake });
+    books.spend(r.book, r.ticket, 60, fake);
+    const spentAt = now;
+    while (!fake.destroyed && now - spentAt < 1_000_000) { now += 10_000; books.touch(o.book); fire(); }
+    assert.equal(fake.destroyed, true);
+    assert.equal(now - spentAt, 900_000);
+    assert.deepEqual(ended, ["session-stream-max"]);
+    assert.equal(o.book.closed, false, "the book waits for the stream's close event");
+    books.streamClosed(r.book, r.ticket, 60, fake);
+    assert.equal(o.book.closeReason, "session-expired");
+    assert.equal(books.get(sb.ticketBookDigest), null);
   });
   await test("the idle clock is reset only by payload; without it the book closes session-idle before its lifetime", () => {
     const b2 = newBook();
@@ -341,21 +384,39 @@ await test("the byte ceiling is the proof's slot budget, shared by every stream 
   } finally { await closeServer(gw); }
 });
 
-await test("the session lifetime destroys live tunnels on the handler too", async () => {
+await test("on the handler a tunnel opened late in a book relays past the lifetime, a later spend is session-expired, and streamMaxMs ends it", async () => {
   let now = Date.now();
   const timers = [];
-  const sessions = makeSessionBooks({ now: () => now, setTimer: (fn, ms) => { const t = { fn, at: now + ms }; timers.push(t); return t; }, clearTimer: (t) => { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); } });
+  const fire = () => { for (const x of [...timers]) if (x.at <= now) { timers.splice(timers.indexOf(x), 1); x.fn(); } };
+  const sessions = makeSessionBooks({ streamMaxMs: 30_000, now: () => now, setTimer: (fn, ms) => { const t = { fn, at: now + ms }; timers.push(t); return t; }, clearTimer: (t) => { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); } });
   const gw = await startGateway(makeHandler(makeAdmitAll(), { verify: stubVerify, verifySession: stubVerifySession, sessions, sessionOnion: ONION, lookup }));
   try {
     const port = gw.address().port;
     const lb = newBook();
-    await exchange(port, initEnvelope(lb, "l1"));
+    const init = await exchange(port, initEnvelope(lb, "l1"));
+    assert.equal(init.ack.session.policy.streamMaxMs, 30_000, "the echo advertises the node's stream cap");
+    assert.equal(st.policyMatches(init.ack.session.policy, "research-v1"), true, "streamMaxMs is not part of the class match");
+    // Earlier traffic of the book keeps its idle clock alive up to second 85.
+    for (const step of [10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 5_000]) {
+      now += step; sessions.touch(sessions.get(lb.ticketBookDigest)); fire();
+    }
     const t = await exchange(port, ticketEnvelope(lb, 0, echoTarget));
     assert.deepEqual(t.ack, { ok: true });
-    now += 90_000;
-    for (const x of [...timers]) if (x.at <= now) { timers.splice(timers.indexOf(x), 1); x.fn(); }
-    await waitFor(() => t.c.closed, 3000, "tunnel closed at the lifetime");
-    assert.equal((await exchange(port, ticketEnvelope(lb, 1, echoTarget))).ack.err, "session-unknown");
+    const echoed = () => Buffer.concat(t.c.raw).toString("utf8");
+    let sent = 0;
+    // Second 90 (expiry), 100, 110: payload still flows both ways and keeps the book's idle clock.
+    for (const step of [5_000, 10_000, 10_000]) {
+      now += step; fire();
+      const msg = `chunk-${++sent};`;
+      t.c.sock.write(msg);
+      await waitFor(() => echoed().includes(msg), 3000, `echo of ${msg}`);
+    }
+    assert.equal(t.c.closed, false);
+    assert.equal((await exchange(port, ticketEnvelope(lb, 1, echoTarget))).ack.err, "session-expired");
+    now += 10_000; fire();                                   // second 120 = 35 s after establishment
+    await waitFor(() => t.c.closed, 3000, "tunnel closed at streamMaxMs");
+    await waitFor(() => sessions.size() === 0, 3000, "the drained book closes");
+    assert.equal((await exchange(port, ticketEnvelope(lb, 2, echoTarget))).ack.err, "session-unknown");
   } finally { await closeServer(gw); }
 });
 
