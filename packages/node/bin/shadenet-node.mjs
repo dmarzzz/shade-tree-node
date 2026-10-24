@@ -28,6 +28,7 @@ import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { resolveBuildCommit } from "../lib/build-info.mjs";
 import { torInfo, startTor, supervise, writeStatus, heartbeatListing, probeElders } from "../lib/node-supervisor.mjs";
 import { rpcUrlsOf, eldersOf, recordDrift } from "../lib/network-record.mjs";
+import { registerOwnNode } from "../lib/own-nodes.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "../../..");
@@ -208,6 +209,15 @@ async function run() {
   const hsDir = join(knobs.state, "hs-gateway");
   const record = await fetchRecord(knobs.record, knobs.state);
   const id = await ensureIdentity(hsDir);
+  // Own-IP exit avoidance (#369 M0): this node exits from this connection's IP, so a ShadeNet
+  // client run by the same user here must never pick it. Record the onion in the avoid-nodes file
+  // the clients read. Best-effort; SHADENET_REGISTER_OWN_NODE=0 skips it.
+  if (process.env.SHADENET_REGISTER_OWN_NODE !== "0") {
+    try {
+      const r = registerOwnNode(id.onion);
+      if (r.added) log(`added ${id.onion} to ${r.file}: ShadeNet clients on this machine will not exit through this node`);
+    } catch (e) { log(`warning: could not record this node in the clients' avoid-nodes file (${e.message}); clients here may exit through it`); }
+  }
   const tor = torInfo();
   if (!tor.present) { log("tor is not on PATH"); process.exit(2); }
   const env = deriveNodeEnv({ knobs, record, explicit: process.env, hsDir });

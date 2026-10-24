@@ -435,6 +435,30 @@ tier: Layer 0 (a fresh, pool-funded address) is the buyer's mitigation, stated i
 output and `docs/JOIN.md`. The gateway is unchanged: it sees an RLN proof over the paid root,
 never a leaf or a payer.
 
+### 4.18 Own-node exclusion: never exit from the member's own IP (roadmap #369 M0)
+
+**Property.** Canopy selection never offers a node the member has named as running on this
+machine or this connection, because that node's egress IP is the member's own and the destination
+would see it. If every offered node is such a node, selection fails closed (`only-own-nodes`)
+instead of using one. This is the ShadeNet form of Tor's rule against building a path through
+relays in the client's own family or /16.
+
+**Where.** The rule and its normalization: `packages/node/lib/own-nodes.mjs:excludeOwnNodes` /
+`normalizeOwnNode` and `crates/shadenet-proto/src/lib.rs:exclude_own_nodes` /
+`normalize_own_node`, pinned together in `testdata/vectors.json` `ownNodes`. Applied first in
+`packages/node/client/selection.mjs:selectCandidates` and `crates/shadenet/src/client.rs:candidates`
+(through `crates/shadenet/src/own_nodes.rs`). Sources, all local and read without any network
+call: `SHADENET_AVOID_NODES`, the avoid-nodes file in the user's config directory (which
+`shadenet-node run` appends its own onion to), `$SHADENET_STATE/hs-gateway/hostname`, and the Rust
+client's `--avoid-nodes` / `avoid_nodes`.
+
+**Limits, stated plainly.** The rule is keyed by onion, not IP. A node behind the same NAT that the
+member has not listed (another machine on the home network, a container with its own home
+directory, a neighbour's node on a shared connection) is not detected. Detecting it needs two
+facts the client does not have: each node's egress IP (deliberately unpublished, ROADMAP §3.1) and
+the member's own public IP (which the client will not ask a clear-net IP-echo service for). An
+explicitly pinned onion is not filtered. See the residual-risk entry in §5.
+
 ## 5. Known residual risks and out-of-scope
 
 These are documented limitations, not new findings. Cross-referenced to `docs/history/SHIP-PLAN.md`,
@@ -523,6 +547,17 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
   tracked in roadmap [#369](https://github.com/dmarzzz/shade-tree-node/issues/369). Until it ships
   and is measured, a member whose threat includes a destination colluding with its network path, or
   whose model calls bypass ShadeNet, should assume that destination can link it.
+
+- **Exiting through an unlisted node on the member's own connection — partly fixed.** A node exits
+  from its own public IP; a member on the same home connection as a node that rotation picks exits
+  from their own IP, and the destination sees it (observed live: a client on the same home network
+  as a canopy node). §4.18 excludes every node the member's machine knows is its own (the node it
+  runs, and nodes listed in the avoid-nodes file or `SHADENET_AVOID_NODES`). A node on the same
+  connection that is not listed is still eligible. Closing that needs an IP-keyed check that keeps
+  egress IPs off the public canopy: for example, a node telling an admitted member its egress IP
+  inside the tunnel ack, compared against the member's public IP learned from the home router
+  (NAT-PMP / PCP) rather than a third-party echo, at /32 for IPv4 and /64 for IPv6. Tracked as a
+  follow-up to roadmap #369.
 
 **Explicitly out of scope (design boundaries, not bugs):**
 

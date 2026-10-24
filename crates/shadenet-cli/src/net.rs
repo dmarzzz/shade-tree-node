@@ -108,6 +108,10 @@ pub struct NetArgs {
     pub rotation_spread: Option<String>,
     #[arg(long, hide = true)]
     pub no_rotation_spread: bool,
+    /// Never pick these nodes: they exit from this connection's IP (comma-separated onions;
+    /// adds to SHADENET_AVOID_NODES, `avoid_nodes` in config.toml and the avoid-nodes file)
+    #[arg(long, value_name = "ONION,...", help_heading = "Discovery")]
+    pub avoid_nodes: Option<String>,
     /// Require nodes that egress to this port
     #[arg(long, help_heading = "Discovery")]
     pub port: Option<u64>,
@@ -392,6 +396,18 @@ impl NetArgs {
                 .and_then(parse_bool)
                 .unwrap_or(true)
         };
+        // Own nodes (#369 M0): the flag and config.toml here; the library adds
+        // SHADENET_AVOID_NODES, the avoid-nodes file and SHADENET_STATE itself.
+        let mut avoid: Vec<String> = ctx.file.avoid_nodes.clone().unwrap_or_default();
+        if let Some(list) = &self.avoid_nodes {
+            avoid.extend(
+                list.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from),
+            );
+        }
+        builder = builder.avoid_nodes(avoid);
         builder =
             builder
                 .rotation_spread(rotation)
@@ -428,6 +444,29 @@ mod tests {
             network: None,
             file: ConfigFile::default(),
         }
+    }
+
+    #[test]
+    fn avoid_nodes_flag_and_config_file_reach_the_sdk_config() {
+        let onion = shadenet_proto::pubkey_to_onion(&[0x33; 32]);
+        let other = shadenet_proto::pubkey_to_onion(&[0x44; 32]);
+        let mut context = ctx();
+        context.file.avoid_nodes = Some(vec![other.clone()]);
+        let args = NetArgs {
+            identity: Some("id.json".into()),
+            avoid_nodes: Some(format!(" {onion}:80 , ")),
+            ..NetArgs::default()
+        };
+        let config = args.to_config(&context, true).unwrap();
+        assert_eq!(config.avoid_nodes, vec![other, format!("{onion}:80")]);
+        assert!(config.detect_own_nodes);
+        let junk = NetArgs {
+            identity: Some("id.json".into()),
+            avoid_nodes: Some("not-an-onion".into()),
+            ..NetArgs::default()
+        };
+        let error = junk.to_config(&ctx(), true).unwrap_err();
+        assert!(error.contains("not a v3 onion"), "{error}");
     }
 
     #[test]

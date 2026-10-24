@@ -96,6 +96,35 @@ async function main() {
     // and its full set is still every gateway
     ok(new Set(afterFail.map((c) => c.onion)).size === 3, "after degradation the order still covers all 3 with no duplicates");
 
+    // --- own-node exclusion (roadmap #369 M0) ----------------------------------
+    // A node this machine runs (or the user lists) exits from the user's own IP: never a
+    // candidate, not even in the failover tail; all-own fails closed.
+    console.log("\nown-node exclusion:");
+    const savedAvoid = process.env.SHADENET_AVOID_NODES;
+    const savedXdg = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = join(work, "no-config"); // keep the developer's own avoid-nodes file out of it
+    try {
+      process.env.SHADENET_AVOID_NODES = ` ${gateways[0].onion.toUpperCase()}:80 , not-an-onion`;
+      sel._setOwnNodes(null);
+      for (let i = 0; i < 50; i++) {
+        const c = await sel.selectCandidates();
+        if (c.length !== 2 || c.some((x) => x.onion === gateways[0].onion.replace(/\.onion$/, ""))) { ok(false, "an own node appeared among candidates"); break; }
+      }
+      ok(true, "a node listed in SHADENET_AVOID_NODES (any case, :port suffix) never appears among candidates, junk entries are ignored");
+      process.env.SHADENET_AVOID_NODES = gateways.map((g) => g.onion).join(",");
+      sel._setOwnNodes(null);
+      let refused = "";
+      try { await sel.selectCandidates(); } catch (e) { refused = e.message; }
+      ok(refused.startsWith("only-own-nodes:"), "when every canopy node is an own node, selection fails closed (only-own-nodes)");
+      delete process.env.SHADENET_AVOID_NODES;
+      sel._setOwnNodes(null);
+      ok((await sel.selectCandidates()).length === 3, "with no own node configured the full fleet is offered again");
+    } finally {
+      if (savedAvoid === undefined) delete process.env.SHADENET_AVOID_NODES; else process.env.SHADENET_AVOID_NODES = savedAvoid;
+      if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = savedXdg;
+      sel._setOwnNodes(null);
+    }
+
     // --- negative: a WRONG pinned signer must fail verification --------------
     // Run in a fresh process so the module re-reads env; re-importing in-process would reuse the
     // already-captured (correct) signer.

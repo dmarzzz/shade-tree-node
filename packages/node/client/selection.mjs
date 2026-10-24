@@ -26,6 +26,7 @@ import { verifyAnnounce } from "../bootnode/announce.mjs";
 import { makeStakeVerifier } from "../lib/gateway-registry.mjs";
 import { applyClientNetworkEnv } from "../lib/network-record.mjs";
 import { createLogger } from "../lib/log.mjs";
+import { loadOwnNodes, excludeOwnNodes, onlyOwnNodesMessage } from "../lib/own-nodes.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const clientLog = createLogger("proxy");
@@ -905,7 +906,9 @@ export function describeFleetAdmits(gateways) {
 export async function selectCandidates(req = null, adm = null, opts = null) {
   const { dir } = await ensureLoaded(opts?.onEvent);
   startDirectoryPolling();
-  let gateways = dir.gateways;
+  // Own-node exclusion runs FIRST and fails closed: an own node is never a candidate, not even as
+  // the failover tail. Same reference (byte-identical default path) when nothing is excluded.
+  let gateways = filterOwnNodes(dir.gateways);
   if (VERIFY_STAKE) gateways = await filterReverified(gateways);
   // Admission-aware filter (T-FEAT-9). Runs FIRST so a policy mismatch is named precisely even
   // when a capability requirement is also active. Same-reference when inactive.
@@ -966,6 +969,38 @@ export async function selectCandidates(req = null, adm = null, opts = null) {
     if (session) c.session = session;
     return c;
   });
+}
+
+// Own-node exclusion (roadmap #369 M0, packages/node/lib/own-nodes.mjs): nodes this machine runs,
+// or that the user lists as sharing its connection, exit from the user's own IP, so selection
+// never offers them. The local sources are re-read at most once a minute (a file read, no network).
+const OWN_NODES_TTL_MS = 60 * 1000;
+let _ownNodes = null;
+let _ownNodesAt = 0;
+let _ownNodesOverride = null;
+let _ownNodesLogged = "";
+export function _setOwnNodes(set) { _ownNodesOverride = set ? new Set(set) : null; _ownNodes = null; _ownNodesLogged = ""; } // test seam
+export function ownNodes(now = Date.now()) {
+  if (_ownNodesOverride) return _ownNodesOverride;
+  if (!_ownNodes || now - _ownNodesAt > OWN_NODES_TTL_MS) {
+    const found = loadOwnNodes();
+    if (found.junk.length) clientLog.warn("ignoring avoid-nodes entries that are not v3 onions", { count: found.junk.length });
+    _ownNodes = found.nodes;
+    _ownNodesAt = now;
+  }
+  return _ownNodes;
+}
+export function filterOwnNodes(gateways, own = ownNodes()) {
+  const { gateways: kept, excluded } = excludeOwnNodes(gateways, own);
+  if (excluded.length) {
+    const key = excluded.slice().sort().join(",");
+    if (key !== _ownNodesLogged) {
+      _ownNodesLogged = key;
+      clientLog.info("skipping own node(s): they exit from this connection's IP", { count: excluded.length });
+    }
+    if (kept.length === 0) throw new Error(onlyOwnNodesMessage(gateways.length));
+  }
+  return kept;
 }
 
 // Health/latency feedback from the client proxy after a dial attempt.
