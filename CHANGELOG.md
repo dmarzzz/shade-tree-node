@@ -11,6 +11,20 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 - The `crypto-bigint` 0.5.5 copy that ark-circom pulls in through ethers-core has no patched release;
   `deny.toml` ignores RUSTSEC-2026-0387 for it with the reason. ShadeNet's own signing is on 0.7.6.
 
+### Rust proxy: a queued request whose client hangs up spends nothing
+
+- The proxy watches the local connection while a CONNECT is held for budget or waits for a setup
+  permit. A client that hangs up there leaves the queue at once: no proof, no slot, no onion dial.
+  It used to stay queued for up to two epochs and then spend a slot on a tunnel nobody read, so an
+  agent that timed out and retried burned one slot per abandoned attempt. An attempt that has
+  started proving still runs to its end. Bytes a client sends ahead of the `200` are kept, and a
+  client that sends them and then shuts its write side (`nc -N`) is still served, not dropped.
+- The budget queue's depth no longer stays too high when a held request is cancelled (an SDK
+  timeout around `connect_queued`, an aborted task). Queue positions, `X-ShadeNet-ETA`,
+  `Status.queue.depth` and the `queue_depth` metric were inflated for the rest of the process.
+- SDK: `Client::connect_after_wait` takes an `abandoned` future and returns `Option<Tunnel>`,
+  `None` when it resolved while the request was held.
+
 ### `register-member`: the leftover note reads the stake's block
 
 - The first live v0.7.5 stake (2026-10-20, funding wallet `0xa94f…8790`, stake tx `0xcf11…c3f8`,
