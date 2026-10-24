@@ -27,6 +27,18 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   127.0.0.1:9250 and failed with "no verifiable bootnode directory" on any other port. The
   client now hands `torHost`/`torPort` to the selection layer.
 
+### Rust client: one Tor circuit per session book (#380)
+
+- ADR 0011 says a book's tunnels ride one circuit, so a ticket spend costs one `RELAY_BEGIN`. The
+  client gave every tunnel, every ticket spend included, a fresh Arti isolation group, so each
+  spend paid a new onion rendezvous. A book now draws one isolation token; its initialization and
+  every ticket spend dial with it (`Dialer::isolated_with`, Arti `StreamPrefs::set_isolation`), and
+  two books never share one. `--circuit-per-tunnel` (`SHADENET_CIRCUIT_PER_TUNNEL=1`,
+  `circuit_per_tunnel = true` in `config.toml`) keeps the old per-tunnel circuits. Proof-carrying
+  tunnels without a book keep a group of their own. `docs/AGENT.md` no longer says warm-up dials
+  skip the rendezvous: Arti keeps onion circuits per isolation group, so they keep Tor
+  bootstrapped and measure node latency, and build no circuit a tunnel reuses.
+
 ## 0.7.5 — register-member funds itself
 
 `shadenet register-member` with no key creates its own funding wallet, quotes one amount, waits for it and stakes (zkAPI's deposit step). Also: the proxy as a scheduler with `--preopen` session books, CLI output that names the budget, record RPC changes, monitoring fixes and dependency security bumps.

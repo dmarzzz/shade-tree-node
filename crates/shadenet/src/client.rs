@@ -1712,6 +1712,15 @@ impl Client {
         self.session_capable(gateways).await.into_iter().next()
     }
 
+    /// The isolation group a book's dials use: the book's own (one circuit per book, ADR 0011),
+    /// or a fresh one per tunnel under `circuit_per_tunnel`.
+    fn book_isolation(
+        &self,
+        book: crate::isolation::CircuitIsolation,
+    ) -> Option<crate::isolation::CircuitIsolation> {
+        (!self.config.circuit_per_tunnel).then_some(book)
+    }
+
     /// Spend a ticket from a live book at one of the candidates. `Ok(None)` means no usable
     /// book (or the book turned out to be gone): the caller proves as usual.
     async fn session_spend(
@@ -1734,6 +1743,7 @@ impl Client {
             secret: ticket.secret,
             request_nonce: ticket.request_nonce.clone(),
             target: target.to_string(),
+            isolation: self.book_isolation(ticket.isolation),
         };
         match self.transport.spend_ticket(&gateway, spend).await {
             Ok(connected) => {
@@ -1829,6 +1839,7 @@ impl Client {
             nonce: pending.nonce.clone(),
             commitments: pending.commitments.clone(),
             ticket_book_digest: pending.ticket_book_digest.clone(),
+            isolation: self.book_isolation(pending.isolation),
         });
         let outcome = self.transport.connect(request).await;
         match &outcome {
@@ -2150,6 +2161,12 @@ impl Client {
         }))
     }
 
+    /// Dial up to `count` nodes on the base, unisolated Tor client and record their health. Arti
+    /// keeps onion-service state (descriptor, introduction points, rendezvous circuit) per
+    /// isolation group, and every tunnel dials in a group of its own (its book's, or a fresh one
+    /// per proof-carrying tunnel), so a tunnel reuses no circuit these dials build. What they buy:
+    /// a bootstrapped Arti with fresh directory data and open guard channels, and node health for
+    /// selection (#380).
     async fn warm_nodes(&self, count: usize) {
         let Ok((gateways, _, _)) = self.candidates(443).await else {
             return;
@@ -2786,6 +2803,17 @@ mod tests {
     const TARGET: &str = "example.com:443";
     const EPOCH: u64 = 29_847_374;
 
+    /// The Tor isolation group a dial used (#380).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Group {
+        /// The base dialer (warm-up dials).
+        Base,
+        /// `isolated()`: a fresh group, numbered in the order they were handed out.
+        Tunnel(usize),
+        /// `isolated_with(..)`: a book's group.
+        Book(crate::isolation::CircuitIsolation),
+    }
+
     /// A node that accepts every envelope: a session initialization gets the policy echo, a
     /// ticket spend opens a tunnel. `dial` is how long an onion rendezvous takes.
     struct BookNode {
@@ -2794,6 +2822,25 @@ mod tests {
         spends: Arc<AtomicUsize>,
         /// Session initializations still to refuse `payload-limit` before accepting.
         refuse: Arc<AtomicUsize>,
+        group: Group,
+        /// Groups handed out by `isolated()` so far.
+        tunnel_groups: Arc<AtomicUsize>,
+        /// Every dial: its group and the book digest its envelope carried.
+        dials: Arc<StdMutex<Vec<(Group, String)>>>,
+    }
+
+    impl BookNode {
+        fn in_group(&self, group: Group) -> Arc<dyn transport::Dialer> {
+            Arc::new(Self {
+                dial: self.dial,
+                books: Arc::clone(&self.books),
+                spends: Arc::clone(&self.spends),
+                refuse: Arc::clone(&self.refuse),
+                group,
+                tunnel_groups: Arc::clone(&self.tunnel_groups),
+                dials: Arc::clone(&self.dials),
+            })
+        }
     }
 
     impl transport::Dialer for BookNode {
@@ -2805,6 +2852,7 @@ mod tests {
                 let (client, mut node) = tokio::io::duplex(64 * 1024);
                 let (books, spends) = (Arc::clone(&self.books), Arc::clone(&self.spends));
                 let refuse = Arc::clone(&self.refuse);
+                let (group, dials) = (self.group, Arc::clone(&self.dials));
                 tokio::spawn(async move {
                     let mut line = Vec::new();
                     let mut byte = [0_u8; 1];
@@ -2814,6 +2862,12 @@ mod tests {
                     let Ok(envelope) = serde_json::from_slice::<serde_json::Value>(&line) else {
                         return;
                     };
+                    let book = envelope
+                        .pointer("/session/ticketBookDigest")
+                        .or_else(|| envelope.pointer("/ticket/book"))
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default();
+                    dials.lock().unwrap().push((group, book.to_string()));
                     let reply = match envelope.get("session") {
                         Some(_)
                             if refuse
@@ -2855,12 +2909,16 @@ mod tests {
         }
 
         fn isolated(&self) -> Arc<dyn transport::Dialer> {
-            Arc::new(Self {
-                dial: self.dial,
-                books: Arc::clone(&self.books),
-                spends: Arc::clone(&self.spends),
-                refuse: Arc::clone(&self.refuse),
-            })
+            self.in_group(Group::Tunnel(
+                self.tunnel_groups.fetch_add(1, Ordering::SeqCst),
+            ))
+        }
+
+        fn isolated_with(
+            &self,
+            isolation: crate::isolation::CircuitIsolation,
+        ) -> Arc<dyn transport::Dialer> {
+            self.in_group(Group::Book(isolation))
         }
 
         fn successful_bootstraps(&self) -> usize {
@@ -2878,6 +2936,7 @@ mod tests {
         books: Arc<AtomicUsize>,
         spends: Arc<AtomicUsize>,
         refuse: Arc<AtomicUsize>,
+        dials: Arc<StdMutex<Vec<(Group, String)>>>,
     }
 
     impl Rig {
@@ -2896,6 +2955,17 @@ mod tests {
             dial: Duration,
             clock: impl Fn() -> u64 + Send + Sync + 'static,
             limit: u64,
+        ) -> Self {
+            Self::with_circuits(name, queue_max_wait, dial, clock, limit, false)
+        }
+
+        fn with_circuits(
+            name: &str,
+            queue_max_wait: Option<Duration>,
+            dial: Duration,
+            clock: impl Fn() -> u64 + Send + Sync + 'static,
+            limit: u64,
+            circuit_per_tunnel: bool,
         ) -> Self {
             let dir =
                 std::env::temp_dir().join(format!("shadenet-queue-{name}-{}", std::process::id()));
@@ -2918,6 +2988,7 @@ mod tests {
                 .epoch_seconds(Some(60))
                 .session_tickets(true)
                 .queue_max_wait(queue_max_wait)
+                .circuit_per_tunnel(circuit_per_tunnel)
                 .build()
                 .unwrap();
             let proofs = Arc::new(StdMutex::new(Vec::new()));
@@ -2939,11 +3010,15 @@ mod tests {
                 })
             });
             let refuse = Arc::new(AtomicUsize::new(0));
+            let dials = Arc::new(StdMutex::new(Vec::new()));
             let dialer = BookNode {
                 dial,
                 books: Arc::clone(&books),
                 spends: Arc::clone(&spends),
                 refuse: Arc::clone(&refuse),
+                group: Group::Base,
+                tunnel_groups: Arc::new(AtomicUsize::new(0)),
+                dials: Arc::clone(&dials),
             };
             let mut client = Client::with_transport(
                 config,
@@ -2959,6 +3034,7 @@ mod tests {
                 books,
                 spends,
                 refuse,
+                dials,
             }
         }
 
@@ -3130,6 +3206,52 @@ mod tests {
         // A live book with tickets left: nothing to pre-open.
         assert_eq!(rig.client.preopen_book().await.unwrap(), None);
         assert_eq!(rig.proofs().len(), 1);
+    }
+
+    // ---- #380: one Tor circuit per book (ADR 0011) ----
+
+    /// Twelve requests in a row at one node: two books of six tickets. Returns every dial's
+    /// group and book digest, in order.
+    async fn twelve_requests(name: &str, circuit_per_tunnel: bool) -> Vec<(Group, String)> {
+        let (_now, clock) = hand_clock();
+        let rig = Rig::with_circuits(name, None, Duration::ZERO, clock, 8, circuit_per_tunnel);
+        for _ in 0..12 {
+            let tunnel = rig.client.connect(TARGET).await.unwrap();
+            assert!(tunnel.session.is_some());
+        }
+        assert_eq!(rig.books.load(Ordering::SeqCst), 2);
+        assert_eq!(rig.spends.load(Ordering::SeqCst), 12);
+        let dials = rig.dials.lock().unwrap().clone();
+        assert_eq!(dials.len(), 14, "two initializations and twelve spends");
+        dials
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_dial_of_a_book_shares_its_group_and_two_books_never_do() {
+        let dials = twelve_requests("circuit-per-book", false).await;
+        let mut books: Vec<(String, Group)> = Vec::new();
+        for (group, book) in &dials {
+            assert!(
+                matches!(group, Group::Book(_)),
+                "a book's dial in its own group: {group:?}"
+            );
+            match books.iter().find(|(digest, _)| digest == book) {
+                Some((_, first)) => assert_eq!(group, first, "one group for all of book {book}"),
+                None => books.push((book.clone(), *group)),
+            }
+        }
+        assert_eq!(books.len(), 2);
+        assert_ne!(books[0].1, books[1].1, "two books, two groups");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn circuit_per_tunnel_gives_every_dial_its_own_group() {
+        let dials = twelve_requests("circuit-per-tunnel", true).await;
+        let groups: Vec<Group> = dials.iter().map(|(group, _)| *group).collect();
+        assert!(groups.iter().all(|g| matches!(g, Group::Tunnel(_))));
+        for (i, a) in groups.iter().enumerate() {
+            assert!(!groups[i + 1..].contains(a), "{a:?} used twice");
+        }
     }
 
     #[tokio::test(start_paused = true)]

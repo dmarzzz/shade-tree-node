@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 use shadenet_proto::session::{self as st, ClassPolicy};
 use zeroize::Zeroizing;
 
+use crate::isolation::CircuitIsolation;
+
 /// The ticket the pool hands out for one spend.
 pub struct Ticket {
     pub onion: String,
@@ -21,6 +23,8 @@ pub struct Ticket {
     pub index: u16,
     pub secret: [u8; 32],
     pub request_nonce: String,
+    /// The book's circuit isolation group (ADR 0011).
+    pub isolation: CircuitIsolation,
 }
 
 /// One live book at one node.
@@ -30,6 +34,7 @@ pub struct LiveBook {
     pub nonce: String,
     pub commitments: Vec<String>,
     pub ticket_book_digest: String,
+    pub isolation: CircuitIsolation,
     secrets: Vec<Zeroizing<[u8; 32]>>,
     unused: Vec<u16>,
     opened_at: Instant,
@@ -57,6 +62,8 @@ pub struct PendingBook {
     pub nonce: String,
     pub commitments: Vec<String>,
     pub ticket_book_digest: String,
+    /// Drawn with the book; its initialization and every ticket spend dial with it.
+    pub isolation: CircuitIsolation,
     secrets: Vec<Zeroizing<[u8; 32]>>,
 }
 
@@ -83,6 +90,7 @@ impl PendingBook {
             nonce: hex::encode(n),
             commitments: book.commitments,
             ticket_book_digest: book.ticket_book_digest,
+            isolation: CircuitIsolation::new(),
             secrets,
         })
     }
@@ -119,6 +127,7 @@ impl SessionPool {
             nonce: pending.nonce,
             commitments: pending.commitments,
             ticket_book_digest: pending.ticket_book_digest,
+            isolation: pending.isolation,
             secrets: pending.secrets,
             unused,
             opened_at: now,
@@ -155,6 +164,7 @@ impl SessionPool {
                 index,
                 secret: *book.secrets[index as usize],
                 request_nonce: hex::encode(n),
+                isolation: book.isolation,
             });
         }
         None

@@ -65,6 +65,9 @@ pub struct NetArgs {
     /// Fixed 32-hex nonce (reproducible runs)
     #[arg(long, hide = true)]
     pub nonce: Option<String>,
+    /// A Tor circuit per tunnel, not per session book [env: SHADENET_CIRCUIT_PER_TUNNEL]
+    #[arg(long)]
+    pub circuit_per_tunnel: bool,
 
     /// Read the signed canopy from this file
     #[arg(long, value_name = "PATH", help_heading = "Discovery")]
@@ -352,6 +355,15 @@ impl NetArgs {
         if let Some(flag) = env("SESSION_TICKETS")?.as_deref().and_then(parse_bool) {
             builder = builder.session_tickets(flag);
         }
+        // One circuit per book is the default (ADR 0011); the flag, SHADENET_CIRCUIT_PER_TUNNEL or
+        // `circuit_per_tunnel` in config.toml (in that order) give every tunnel its own.
+        let circuit_per_tunnel = self.circuit_per_tunnel
+            || env("CIRCUIT_PER_TUNNEL")?
+                .as_deref()
+                .and_then(parse_bool)
+                .or(ctx.file.circuit_per_tunnel)
+                .unwrap_or(false);
+        builder = builder.circuit_per_tunnel(circuit_per_tunnel);
 
         // Caches.
         if self.no_cache {
@@ -428,9 +440,11 @@ mod tests {
             signer: Some("ab".into()),
             no_cache: true,
             rotation_spread: Some("0".into()),
+            circuit_per_tunnel: true,
             ..NetArgs::default()
         };
         let config = args.to_config(&ctx(), true).unwrap();
+        assert!(config.circuit_per_tunnel);
         assert_eq!(config.limit, Some(4));
         assert_eq!(config.members, shadenet::Members::File("m.json".into()));
         assert!(matches!(

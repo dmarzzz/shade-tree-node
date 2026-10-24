@@ -42,6 +42,7 @@ pub mod eth;
 pub mod health;
 pub mod identity;
 pub mod incidents;
+pub mod isolation;
 pub mod profile;
 pub mod scheduler;
 pub mod session;
