@@ -4,6 +4,16 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Docs: response-timing watermark recorded as in scope, not fixed (#369)
+
+- `docs/THREAT-MODEL.md` §5 now lists the active-destination response-timing watermark
+  (destination plus a colluding guard or ISP; destination plus the agent's unprotected model call;
+  response size; token-stream timing) as a residual risk that ShadeNet v0 does not defend.
+- New design note `docs/design/RESPONSE-TIMING-AND-COVER.md`: constant-rate shaped tunnels with
+  498-byte cells, rate classes fixed at open, doubling lifetimes, cover pipes that carry the real
+  traffic, costs in rate and monthly volume, and staging pass bars. Analysis only; an ADR follows
+  staging measurements.
+
 ### `register-member`: the leftover note reads the stake's block
 
 - The first live v0.7.5 stake (2026-10-20, funding wallet `0xa94f…8790`, stake tx `0xcf11…c3f8`,

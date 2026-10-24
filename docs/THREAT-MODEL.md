@@ -495,9 +495,40 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
   (`.github/workflows/bootstrap-e2e.yml`, T-TEST-8) but runs as root on a fresh box; read it before
   running it (`docs/AUDIT.md`, `SECURITY.md`).
 
+- **Active-destination response-timing watermark — in scope, NOT fixed today.** A destination
+  controls when its response bytes leave. If it delays them in a pattern, the pattern survives Tor
+  (jitter, same order, rough timing) and reaches the member's side as cell timing on one circuit.
+  ShadeNet v0 does nothing to stop this: the node forwards destination bytes as they arrive, and the
+  per-session token bucket (`packages/node/gateway/session.mjs:makeTokenBucket`) is a rate cap, not
+  a pacer, so timing below the cap passes through unchanged. Per-tunnel nullifiers (§4.3) bound one
+  hit to one request; they do not hide the link. The vectors, none of which needs a global
+  adversary (so the A3 exclusion below does not cover them):
+  - **destination + a colluding guard, ISP or uplink AS (A3 at one point):** the destination marks
+    its response and the observer reads the mark at the member's end, linking
+    `member IP ↔ tunnel ↔ destination`. A rogue gateway (A1) can inject the same mark itself
+    (`docs/FLEET.md` "A rogue gateway is a free both-ends vantage").
+  - **destination + the agent's unprotected model call, the "lit loop":** `shadenet run` keeps
+    model-API hosts off ShadeNet by default (ADR 0013, default bypass list). A destination that
+    delays a response delays the agent's next model call by the same amount, which the model
+    provider and the member's ISP see. The destination needs no guard at all.
+  - **response size as a watermark:** a destination can vary how many bytes it sends; over Tor that
+    becomes cell counts the guard sees.
+  - **token-stream timing:** a streamed LLM completion sends roughly one token per event, one Tor
+    cell each, so the guard sees token timing (Whisper Leak class topic inference), and the gateway,
+    which terminates the tunnel but not TLS, also sees record sizes.
+
+  The design under analysis (constant-rate shaped tunnels from the node, cover pipes that carry the
+  real traffic, local round delivery, an auditor in the client) and what each piece would and would
+  not fix are in [`docs/design/RESPONSE-TIMING-AND-COVER.md`](design/RESPONSE-TIMING-AND-COVER.md);
+  tracked in roadmap [#369](https://github.com/dmarzzz/shade-tree-node/issues/369). Until it ships
+  and is measured, a member whose threat includes a destination colluding with its network path, or
+  whose model calls bypass ShadeNet, should assume that destination can link it.
+
 **Explicitly out of scope (design boundaries, not bugs):**
 
-- **Global passive network adversary (A3).** Same posture as Tor itself; not defended here.
+- **Global passive network adversary (A3).** Same posture as Tor itself; not defended here. This
+  exclusion is for a *global* observer; one observer at the member's end working with an active
+  destination is the in-scope watermark above.
 - **Knowing your own exit.** A member knowing which gateway it egresses through is not the threat
   (`docs/ROADMAP.md` #3); multi-hop gateways are deliberately not the plan.
 - **Payments, sourcing clean egress IPs, rendezvous/onion DoS.** Operator responsibilities / out of
