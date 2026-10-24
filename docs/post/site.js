@@ -44,18 +44,34 @@ copyStatus.setAttribute("role", "status");
 copyStatus.setAttribute("aria-live", "polite");
 if (copyButtons.length) document.body.append(copyStatus);
 
+// WCAG 2.5.3 Label in Name: an aria-label must begin with the visible text, in every state.
+// Labels are written "<visible text>: <context>", so each state swaps only the leading words.
+function copyLabelContext(button) {
+  const label = button.getAttribute("aria-label") || "";
+  const visible = button.textContent.trim();
+  if (!label.toLowerCase().startsWith(visible.toLowerCase())) return "";
+  return label.slice(visible.length).replace(/^[\s:,-]+/, "");
+}
+
+function setCopyState(button, text, context) {
+  button.textContent = text;
+  if (context) button.setAttribute("aria-label", `${text.charAt(0).toUpperCase()}${text.slice(1)}: ${context}`);
+}
+
 for (const button of copyButtons) {
+  const labelContext = copyLabelContext(button);
   button.addEventListener("click", async () => {
     const command = button.dataset.copy;
     if (!command) return;
 
     const idleLabel = button.textContent;
+    const setState = (text) => setCopyState(button, text, labelContext);
     const copyNoun = button.dataset.copyNoun || "Command";
     let resetDelay = 1800;
     let restoreCodeTabIndex = null;
     try {
       await navigator.clipboard.writeText(command);
-      button.textContent = "copied";
+      setState("copied");
       copyStatus.textContent = `${copyNoun} copied to clipboard.`;
     } catch {
       const copyTarget = button.dataset.copyTarget
@@ -81,7 +97,7 @@ for (const button of copyButtons) {
       }
 
       if (legacyCopied) {
-        button.textContent = "copied";
+        setState("copied");
         copyStatus.textContent = `${copyNoun} copied to clipboard.`;
       } else if (visibleCode) {
         const wasHidden = visibleCode.hidden;
@@ -102,11 +118,11 @@ for (const button of copyButtons) {
           else visibleCode.setAttribute("tabindex", previousTabIndex);
           if (wasHidden) visibleCode.hidden = true;
         };
-        button.textContent = "selected";
+        setState("selected");
         copyStatus.textContent = `${copyNoun} selected. Press Control+C or Command+C to copy.`;
         resetDelay = 6000;
       } else {
-        button.textContent = "copy manually";
+        setState("copy manually");
         copyStatus.textContent = `Automatic copy failed. Select the ${copyNoun.toLowerCase()} and copy it.`;
         resetDelay = 6000;
       }
@@ -114,7 +130,7 @@ for (const button of copyButtons) {
 
     window.setTimeout(() => {
       restoreCodeTabIndex?.();
-      button.textContent = idleLabel;
+      setState(idleLabel);
       copyStatus.textContent = "";
     }, resetDelay);
   });
