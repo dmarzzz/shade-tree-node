@@ -262,6 +262,10 @@ impl Error {
                 format!("the canopy's nodes read a different admission set than this record: {detail}; every proof would be refused wrong-group-root"),
                 "run against the record those nodes serve (`--network <path to its deployment.json>`), or stake this identity in the set they read; `shadenet doctor` names which record has your leaf",
             ),
+            Self::NoEligibleNode(detail) if detail.starts_with(shadenet_proto::REASON_ONLY_OWN_NODES) => Explanation::new(
+                "every node the canopy offers runs on this machine or this connection, and exiting through one would show destinations your own IP",
+                "wait for the canopy to list other nodes; if a listed node is not on this connection, remove it from SHADENET_AVOID_NODES, `avoid_nodes` in config.toml or the avoid-nodes file",
+            ),
             Self::NoEligibleNode(detail) => Explanation::new(
                 format!("the canopy lists nodes but none fits this request: {detail}"),
                 "run `shadenet status` (eligible count) and `shadenet doctor` (artifact, rate policy and admission mismatches are named there); drop --region/--proto filters",

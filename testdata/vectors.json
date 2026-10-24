@@ -435,5 +435,71 @@
     },
     "canonicalCapsBytesHex": "536861646520547265652067617465776179206361706162696c69746965732076310a7b226f6e696f6e223a2275636e6b6c3564326d356d79616c377a6b78346e796c6a6b6373733474686a6478326c37717a617370373474716e637675747970703361642e6f6e696f6e222c2263617073223a7b22706f727473223a5b3434335d2c2273657473223a5b22307864656232393465366539616436613366636264656666643166363761633936373861633934626263222c22307866313137666465613833616335376431356439333934613262353638373363333264323237623765225d7d7d",
     "capsSig": "d8eea8c20cdd66a298507d43e41340713444e22b57fb4bda2b998949d5644f4079fc78bdfa861c9ba70f1b7eac7ec2d5abe4e02adc4d8692a672bcff72ff5d09"
+  },
+  "ownNodes": {
+    "_note": "Own-node exclusion (roadmap #369 M0). `normalize`: one user-supplied entry -> canonical `<56>.onion` or null (whitespace trimmed, lowercased, one trailing :port and the .onion suffix stripped, then the v3 checksum must hold). `avoidList`: env/file text (comma, space or newline separated, # comments) -> `avoidNodes` (normalized, first-seen order) and `junk` (dropped entries). Applying the rule to `gateways` keeps `kept` (in order) and drops `excluded`; if nothing is kept, selection fails closed with an error that starts with `reason` + \":\".",
+    "normalize": [
+      {
+        "in": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion",
+        "out": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion"
+      },
+      {
+        "in": "  GMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZUYGQD.ONION  ",
+        "out": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion"
+      },
+      {
+        "in": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd",
+        "out": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion"
+      },
+      {
+        "in": "irceirceirceirceirceirceirceirceirceirceirceirceircfzeid.onion:80",
+        "out": "irceirceirceirceirceirceirceirceirceirceirceirceircfzeid.onion"
+      },
+      {
+        "in": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd:443",
+        "out": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion"
+      },
+      {
+        "in": "",
+        "out": null
+      },
+      {
+        "in": "not-an-onion",
+        "out": null
+      },
+      {
+        "in": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuyaqd",
+        "out": null
+      },
+      {
+        "in": "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion:",
+        "out": null
+      },
+      {
+        "in": "http://gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion",
+        "out": null
+      }
+    ],
+    "avoidList": "# my nodes\nGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZTGMZUYGQD.ONION:80, junk\nkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkzz5qd.onion  # same connection\n",
+    "avoidNodes": [
+      "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion",
+      "kvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkzz5qd.onion"
+    ],
+    "junk": [
+      "junk"
+    ],
+    "gateways": [
+      "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion",
+      "irceirceirceirceirceirceirceirceirceirceirceirceircfzeid.onion",
+      "kvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkzz5qd.onion"
+    ],
+    "kept": [
+      "irceirceirceirceirceirceirceirceirceirceirceirceircfzeid.onion"
+    ],
+    "excluded": [
+      "gmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmztgmzuygqd.onion",
+      "kvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkzz5qd.onion"
+    ],
+    "reason": "only-own-nodes"
   }
 }

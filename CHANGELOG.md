@@ -4,6 +4,23 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Clients never exit through their own node (#369 M0)
+
+- A node exits from its own public IP, so a client that picked its own node, or a node on the same
+  home connection, showed destinations the user's own IP. This was seen live. Both clients now drop
+  "own nodes" from the canopy before any other filter, including from the failover tail, and fail
+  closed with `only-own-nodes` when no other node is left.
+- Own nodes come from local sources only: `SHADENET_AVOID_NODES` (also `SHADE_TREE_AVOID_NODES`),
+  the avoid-nodes file (`~/.config/shadenet/avoid-nodes`, or under `$XDG_CONFIG_HOME`), and
+  `$SHADENET_STATE/hs-gateway/hostname`. The Rust client also takes `--avoid-nodes` and
+  `avoid_nodes` in `config.toml`; the SDK has `Config::avoid_nodes` and `detect_own_nodes`.
+- `shadenet-node run` adds its onion to the avoid-nodes file, so a client on the same machine and
+  user account skips it with no setup (`SHADENET_REGISTER_OWN_NODE=0` turns this off).
+- Limit: a node on another machine behind the same connection is skipped only once its onion is in
+  the file. Detecting it automatically needs egress IPs, which the canopy does not publish on
+  purpose. `docs/THREAT-MODEL.md` §4.18 and §5 have the details.
+- The rule is pinned for both clients in `testdata/vectors.json` `ownNodes`.
+
 ### Dependencies: RUSTSEC-2026-0385, -0386, -0387
 
 - `tokio` 1.53.1 -> 1.54.1 (RUSTSEC-2026-0386, `AsyncFd` constructors; ShadeNet does not call them),

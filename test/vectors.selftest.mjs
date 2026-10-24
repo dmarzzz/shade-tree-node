@@ -22,6 +22,7 @@ import { canonicalReceiptBytes, buildReceipt, RECEIPT_DOMAIN } from "../packages
 import { acceptEnvelopeVersion } from "../packages/node/gateway/gateway.mjs";
 import { selectProtoVersion } from "../packages/node/client/shade-tree-client.mjs";
 import { artifactIdOf, selectArtifact, resolveArtifact, ARTIFACT_ID_RE, isArtifactId } from "../packages/node/lib/zk-artifacts.mjs";
+import { normalizeOwnNode, parseOwnNodeList, excludeOwnNodes, onlyOwnNodesMessage, REASON_ONLY_OWN_NODES } from "../packages/node/lib/own-nodes.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const V = JSON.parse(readFileSync(join(HERE, "..", "testdata", "vectors.json"), "utf8"));
@@ -180,6 +181,15 @@ async function main() {
   ok(ad.junk.admits.every((j) => canonicalCaps({ admits: j }).admits === undefined), "junk admits lists canonicalize to NO admits");
   ok(ad.junk.pay.every((j) => canonicalCaps({ pay: j }).pay === undefined), "junk / oversized / half pay adverts canonicalize to NO pay");
   ok(canonicalCapsBytes(V.onion, cwa.caps).toString("hex") === cwa.canonicalCapsBytesHex && canonicalCapsBytes(V.onion, cap.caps).toString("hex") === cap.canonicalCapsBytesHex, "caps WITHOUT admits/pay still serialize byte-identically to the pre-T-FEAT-9 vectors");
+
+  console.log("\nown-node exclusion (roadmap #369 M0; the Rust client reproduces it in shadenet-proto):");
+  const own = V.ownNodes;
+  ok(own.normalize.every(({ in: raw, out }) => normalizeOwnNode(raw) === out), "normalizeOwnNode maps every pinned entry to its pinned canonical onion (or null)");
+  const parsed = parseOwnNodeList(own.avoidList);
+  ok(JSON.stringify(parsed.nodes) === JSON.stringify(own.avoidNodes) && JSON.stringify(parsed.junk) === JSON.stringify(own.junk), "parseOwnNodeList yields the pinned avoid set and junk");
+  const ex = excludeOwnNodes(own.gateways.map((onion) => ({ onion })), new Set(own.avoidNodes));
+  ok(JSON.stringify(ex.gateways.map((g) => g.onion)) === JSON.stringify(own.kept) && JSON.stringify(ex.excluded) === JSON.stringify(own.excluded), "excludeOwnNodes keeps and drops exactly the pinned gateways");
+  ok(REASON_ONLY_OWN_NODES === own.reason && onlyOwnNodesMessage(3).startsWith(own.reason + ":"), "the all-own refusal starts with the pinned reason literal");
 
   console.log(`\n${failures === 0 ? "PASS" : "FAIL"}: vectors selftest (${failures} failure${failures === 1 ? "" : "s"})`);
   process.exit(failures === 0 ? 0 : 1);

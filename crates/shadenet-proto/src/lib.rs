@@ -2284,6 +2284,78 @@ pub fn spread_selection_order<'a>(
 }
 
 // --------------------------------------------------------------------------
+// Own-node exclusion (roadmap #369 M0; `lib/own-nodes.mjs`)
+// --------------------------------------------------------------------------
+
+/// Prefix of the fail-closed refusal when every canopy node is an own node.
+pub const REASON_ONLY_OWN_NODES: &str = "only-own-nodes";
+
+/// One user-supplied onion (env, the avoid-nodes file, a node's `hostname`) to its canonical
+/// `<56 base32>.onion`, or `None` when it is not a checksummed v3 onion. Surrounding whitespace,
+/// any case, a missing `.onion` suffix and one trailing `:port` are accepted
+/// (`normalizeOwnNode`, pinned in `testdata/vectors.json` `ownNodes.normalize`).
+pub fn normalize_own_node(raw: &str) -> Option<String> {
+    let lower = raw.trim().to_lowercase();
+    let mut s = lower.as_str();
+    if let Some((host, port)) = s.rsplit_once(':') {
+        if (1..=5).contains(&port.len()) && port.bytes().all(|b| b.is_ascii_digit()) {
+            s = host;
+        }
+    }
+    let s = s.strip_suffix(".onion").unwrap_or(s);
+    if s.len() != 56 || onion_to_pubkey(s).is_err() {
+        return None;
+    }
+    Some(format!("{s}.onion"))
+}
+
+/// Split an avoid list (env value or file text: comma, space or newline separated, `#` comments)
+/// into normalized onions (first-seen order, deduplicated) and the entries that are not onions
+/// (`parseOwnNodeList`).
+pub fn parse_own_node_list(text: &str) -> (Vec<String>, Vec<String>) {
+    let mut nodes = Vec::new();
+    let mut junk = Vec::new();
+    for line in text.lines() {
+        let line = line.split('#').next().unwrap_or("");
+        for item in line.split(|c: char| c.is_whitespace() || c == ',') {
+            if item.is_empty() {
+                continue;
+            }
+            match normalize_own_node(item) {
+                Some(onion) => {
+                    if !nodes.contains(&onion) {
+                        nodes.push(onion);
+                    }
+                }
+                None => junk.push(item.to_string()),
+            }
+        }
+    }
+    (nodes, junk)
+}
+
+/// THE RULE: drop every gateway whose onion is an own node (a node that exits from this
+/// connection's public IP). Order is kept; entries whose onion does not parse are kept, since they
+/// are not known to be ours. Returns the dropped onions, normalized (`excludeOwnNodes`).
+pub fn exclude_own_nodes(
+    gateways: &mut Vec<GatewayEntry>,
+    own: &std::collections::BTreeSet<String>,
+) -> Vec<String> {
+    let mut excluded = Vec::new();
+    if own.is_empty() {
+        return excluded;
+    }
+    gateways.retain(|g| match normalize_own_node(&g.onion) {
+        Some(onion) if own.contains(&onion) => {
+            excluded.push(onion);
+            false
+        }
+        _ => true,
+    });
+    excluded
+}
+
+// --------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------
 

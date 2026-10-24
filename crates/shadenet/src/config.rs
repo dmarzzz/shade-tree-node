@@ -142,6 +142,12 @@ pub struct Config {
     /// After a node refuses a tunnel for an `upstream:*` reason, try once more on another node
     /// when the budget allows (ADR 0013).
     pub retry_other_node: bool,
+    /// Nodes this client never selects from the canopy because they exit from this connection's
+    /// public IP (roadmap #369 M0): onions, any case, `.onion` and `:port` optional.
+    pub avoid_nodes: Vec<String>,
+    /// Also read own nodes from `SHADENET_AVOID_NODES`, the avoid-nodes file and
+    /// `$SHADENET_STATE/hs-gateway/hostname` ([`crate::own_nodes`]). On by default.
+    pub detect_own_nodes: bool,
 }
 
 impl std::fmt::Debug for Config {
@@ -315,6 +321,8 @@ impl Default for ConfigBuilder {
                 passphrase: None,
                 queue_max_wait: None,
                 retry_other_node: true,
+                avoid_nodes: Vec::new(),
+                detect_own_nodes: true,
             },
             network_error,
         }
@@ -396,6 +404,14 @@ impl ConfigBuilder {
         /// Retry once on another node after an `upstream:*` refusal.
         retry_other_node: bool
     );
+    setter!(
+        /// Nodes on this machine or connection that canopy selection must skip.
+        avoid_nodes: Vec<String>
+    );
+    setter!(
+        /// Read own nodes from the environment and the avoid-nodes file (default on).
+        detect_own_nodes: bool
+    );
 
     /// Validate and finish.
     pub fn build(self) -> Result<Config, Error> {
@@ -433,6 +449,15 @@ impl ConfigBuilder {
             if list.is_empty() {
                 return Err(Error::Config("no dial targets given".into()));
             }
+        }
+        if let Some(bad) = config
+            .avoid_nodes
+            .iter()
+            .find(|e| shadenet_proto::normalize_own_node(e).is_none())
+        {
+            return Err(Error::Config(format!(
+                "avoid_nodes entry {bad:?} is not a v3 onion"
+            )));
         }
         if let Some(nonce) = &config.nonce {
             if nonce.len() != 32 || hex::decode(nonce).is_err() {

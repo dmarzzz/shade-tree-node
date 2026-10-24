@@ -46,6 +46,8 @@ pub struct ConfigFile {
     pub circuit_per_tunnel: Option<bool>,
     /// Destination allow-list for the proxy (names or `.suffix`); empty allows every host.
     pub targets: Option<Vec<String>>,
+    /// Nodes on this machine or connection that are never selected (roadmap #369 M0): onions.
+    pub avoid_nodes: Option<Vec<String>>,
     /// Where this file was read from, for relative paths and `doctor`.
     #[serde(skip)]
     pub path: Option<PathBuf>,
@@ -206,7 +208,8 @@ mod tests {
              warm_nodes = 0\r\n\
              preopen_books = true\r\n\
              circuit_per_tunnel = true\r\n\
-             targets = [\r\n  \".wikipedia.org\",\r\n  \"api.ipify.org\", # trailing comma next\r\n]\r\n",
+             targets = [\r\n  \".wikipedia.org\",\r\n  \"api.ipify.org\", # trailing comma next\r\n]\r\n\
+             avoid_nodes = [\"a.onion\"]\r\n",
             base,
         )
         .unwrap();
@@ -239,6 +242,7 @@ mod tests {
                 preopen_books: Some(true),
                 circuit_per_tunnel: Some(true),
                 targets: Some(vec![".wikipedia.org".into(), "api.ipify.org".into()]),
+                avoid_nodes: Some(vec!["a.onion".into()]),
                 path: None,
             }
         );

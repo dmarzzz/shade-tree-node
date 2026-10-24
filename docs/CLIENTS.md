@@ -75,6 +75,29 @@ periodic Canopy refresh adds and removes onions without a restart while carrying
 unchanged nodes. The Rust Proxy also refreshes the signed canopy directory in the background (about every five
 minutes, jittered).
 
+### Own nodes are never an exit
+
+A node exits from its own public IP. If that is your IP (your own node, or a node on the same home
+connection), the destination sees your address and the tunnel hides nothing. Both clients
+therefore drop "own nodes" from the canopy before any other filter, including from the failover
+tail, and fail closed with `only-own-nodes` when nothing else is left (roadmap #369 M0). Own nodes
+come from local sources only, never from the network:
+
+- `SHADENET_AVOID_NODES` (comma or space separated onions); the Rust client also takes
+  `--avoid-nodes` and `avoid_nodes = [...]` in `config.toml`;
+- the avoid-nodes file, `$XDG_CONFIG_HOME/shadenet/avoid-nodes` or
+  `~/.config/shadenet/avoid-nodes` (one onion per line, `#` comments). `shadenet-node run` adds its
+  own onion there, so a client run by the same user on the same machine skips that node with no
+  setup;
+- `$SHADENET_STATE/hs-gateway/hostname` when `SHADENET_STATE` is set.
+
+A node on another machine behind the same connection, or a node in a container whose home
+directory is not yours, is only skipped once you add its onion (`shadenet-node identity` prints it) to
+the file. The client cannot detect it on its own: canopy records carry no egress IP (publishing
+them would hand blocklisters the fleet, `docs/ROADMAP.md` §3.1), and the client does not ask an
+IP-echo service for its own address. An explicitly pinned onion (`--onion`) is honored as given,
+so an operator can still test their own node on purpose. See `docs/THREAT-MODEL.md` §4.18.
+
 ## Leaf source + admission filtering + `--max-anon` (T-FEAT-9, both options)
 
 Your leaf lives in one set: `members.json` (**invited**), a `StakedReputationSet` (**staked**), or

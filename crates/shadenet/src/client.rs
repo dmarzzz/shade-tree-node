@@ -360,6 +360,8 @@ pub struct Client {
     last_failed_gateway: StdMutex<Option<String>>,
     /// Unix seconds, for the epoch and its boundary. The system clock outside tests.
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
+    /// Nodes on this machine or connection, never selected from the canopy (#369 M0).
+    own_nodes: crate::own_nodes::OwnNodes,
 }
 
 #[derive(Default)]
@@ -453,6 +455,8 @@ impl Client {
             .transpose()?;
         let health_path = health_path(&config);
         let cache = health::load(health_path.as_deref());
+        let own_nodes =
+            crate::own_nodes::OwnNodes::new(&config.avoid_nodes, config.detect_own_nodes);
         Ok(Self {
             config,
             profile,
@@ -475,6 +479,7 @@ impl Client {
             queue: QueueCounters::default(),
             last_failed_gateway: StdMutex::new(None),
             clock: Arc::new(now_secs),
+            own_nodes,
         })
     }
 
@@ -1127,6 +1132,11 @@ impl Client {
             let (cache, _) = &mut *health;
             health::seed(&mut dir, cache, now_ms());
         }
+        // Own-node exclusion first (#369 M0): a node that exits from this connection's IP is
+        // never a candidate, not even in the failover tail; all-own fails closed.
+        self.own_nodes
+            .filter(&mut dir.gateways)
+            .map_err(Error::NoEligibleNode)?;
         let fleet = dir.gateways.clone();
         let admission = self.admission();
         if admission.is_active() {
@@ -2681,6 +2691,54 @@ mod tests {
             .cache_dir(None)
             .discovery(Discovery::Onions(vec!["a".repeat(56)]));
         Client::new(configure(builder).build().unwrap()).unwrap()
+    }
+
+    /// #369 M0: a node this machine runs (or the user lists) exits from the user's own IP, so
+    /// canopy selection never offers it, and an all-own canopy fails closed.
+    #[tokio::test]
+    async fn canopy_selection_skips_own_nodes_and_fails_closed_when_only_own_remain() {
+        let path = PathBuf::from(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/testdata/lkg_dir_100.json"
+        ));
+        let signers = include_str!("testdata/lkg_signer.txt").trim().to_string();
+        let canopy: serde_json::Value =
+            serde_json::from_str(include_str!("testdata/lkg_dir_100.json")).unwrap();
+        let onions: Vec<String> = canopy["gateways"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| g["onion"].as_str().unwrap().to_string())
+            .collect();
+        let client = |avoid: Vec<String>| {
+            let config = Config::builder()
+                .cache_dir(None)
+                .discovery(Discovery::CanopyFile {
+                    path: path.clone(),
+                    signers: signers.clone(),
+                })
+                .members(Members::File(PathBuf::from("members.json")))
+                .detect_own_nodes(false)
+                .avoid_nodes(avoid)
+                .build()
+                .unwrap();
+            Client::new(config).unwrap()
+        };
+        let all = client(Vec::new()).candidates(443).await.unwrap().0;
+        assert_eq!(all.len(), onions.len());
+        let (picked, _, _) = client(vec![onions[0].to_uppercase()])
+            .candidates(443)
+            .await
+            .unwrap();
+        assert_eq!(picked.len(), onions.len() - 1);
+        assert!(picked
+            .iter()
+            .all(|g| Client::onion_of(g).as_deref() != Some(onions[0].trim_end_matches(".onion"))));
+        let refusal = client(onions.clone()).candidates(443).await.unwrap_err();
+        assert!(
+            matches!(&refusal, Error::NoEligibleNode(d) if d.starts_with(shadenet_proto::REASON_ONLY_OWN_NODES)),
+            "{refusal}"
+        );
     }
 
     #[test]

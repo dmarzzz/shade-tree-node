@@ -1967,3 +1967,46 @@ fn unknown_caps_canonicalize_independent_of_sender_key_order() {
 fn canonical_unknown_caps_is_none(caps: &Caps) -> bool {
     shadenet_proto::canonical_unknown_caps(caps).is_none()
 }
+
+/// Own-node exclusion (roadmap #369 M0): the same normalization, list parsing and rule as
+/// `packages/node/lib/own-nodes.mjs`, pinned in `vectors.json` `ownNodes`.
+#[test]
+fn own_node_exclusion_matches_vector() {
+    let v = vectors();
+    let own = &v["ownNodes"];
+    for case in own["normalize"].as_array().unwrap() {
+        let raw = case["in"].as_str().unwrap();
+        assert_eq!(
+            shadenet_proto::normalize_own_node(raw).as_deref(),
+            case["out"].as_str(),
+            "normalize {raw:?}"
+        );
+    }
+    let (nodes, junk) = shadenet_proto::parse_own_node_list(s(own, "avoidList"));
+    assert_eq!(nodes, str_vec(&own["avoidNodes"]));
+    assert_eq!(junk, str_vec(&own["junk"]));
+    let set: std::collections::BTreeSet<String> = nodes.into_iter().collect();
+    let mut gateways: Vec<GatewayEntry> = str_vec(&own["gateways"])
+        .into_iter()
+        .map(|onion| GatewayEntry {
+            pubkey: hex::encode(onion_to_pubkey(&onion).unwrap()),
+            onion,
+            weight: 100,
+            health: "up".to_string(),
+            operator: None,
+            staked: None,
+            caps: None,
+            caps_sig: None,
+        })
+        .collect();
+    let excluded = shadenet_proto::exclude_own_nodes(&mut gateways, &set);
+    assert_eq!(excluded, str_vec(&own["excluded"]));
+    assert_eq!(
+        gateways.iter().map(|g| g.onion.clone()).collect::<Vec<_>>(),
+        str_vec(&own["kept"])
+    );
+    assert_eq!(shadenet_proto::REASON_ONLY_OWN_NODES, s(own, "reason"));
+    let mut untouched = gateways.clone();
+    assert!(shadenet_proto::exclude_own_nodes(&mut untouched, &Default::default()).is_empty());
+    assert_eq!(untouched.len(), gateways.len());
+}
