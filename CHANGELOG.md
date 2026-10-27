@@ -51,6 +51,13 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   deleted next.
 - `shadenet::eth::Wallet::sign_message` (EIP-191 `personal_sign`, pinned to the operator vector)
   and `shadenet_proto::canonical_caps_json_text` are new.
+- Systemd socket activation (`LISTEN_FDS=1` addressed to the node's pid: the node serves the
+  socket systemd hands over instead of binding, so a `SHADE_TREE_SOCKET_ACTIVATION=1` restart
+  keeps queueing Tor's connects) and the paid set's anonymity-set floor
+  (`SHADE_TREE_PAID_MIN_LEAVES`: the warning below K on startup and on every refresh that
+  crosses it) are ported. With these every setting the JavaScript gateway and heartbeat read is
+  read by the Rust node; `SHADE_TREE_NETWORK` is the one exception, replaced by
+  `SHADENET_RECORD`.
 
 ### The node moves to Rust: foundations (ADR 0014)
 

@@ -33,6 +33,8 @@ pub enum Error {
     NoAdmissionRoot(String),
     #[error("slash: {0}")]
     Slash(String),
+    #[error("failed to adopt the listening socket systemd handed over (LISTEN_FDS)")]
+    Inherited(#[source] std::io::Error),
     #[error("failed to bind {addr}")]
     Bind {
         addr: SocketAddr,
@@ -69,6 +71,7 @@ impl Error {
             Self::NoAdmissionRoot(_)
             | Self::Operator(_)
             | Self::Slash(_)
+            | Self::Inherited(_)
             | Self::Bind { .. }
             | Self::LocalAddr { .. }
             | Self::Signal { .. }

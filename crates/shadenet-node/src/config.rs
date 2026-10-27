@@ -47,6 +47,7 @@ const DEFAULT_REPLAY_WINDOW_MS: u64 = 5_000;
 const DEFAULT_EPOCH_SECONDS: u64 = 120;
 const DEFAULT_SLOTS: u64 = 8;
 const DEFAULT_LOGS_CHUNK: u64 = 10_000;
+const DEFAULT_PAID_MIN_LEAVES: usize = 8;
 const DEFAULT_RPC_URL: &str = "http://127.0.0.1:8545";
 const MAX_LIMIT: u64 = 65_535;
 const DEFAULT_EGRESS_ALLOW: &str = "*:443";
@@ -128,6 +129,7 @@ pub(crate) struct ChainConfig {
     pub(crate) root_freshness: Duration,
     pub(crate) confirmations: u64,
     pub(crate) logs_chunk: u64,
+    pub(crate) paid_min_leaves: usize,
 }
 
 /// Session tickets (`SHADE_TREE_SESSION_TICKETS=1`).
@@ -496,6 +498,8 @@ impl Config {
                 root_freshness: Duration::from_secs(root_freshness),
                 confirmations: env_int("CONFIRMATIONS", 0)?,
                 logs_chunk: env_int("LOGS_CHUNK", DEFAULT_LOGS_CHUNK)?,
+                paid_min_leaves: count(env_int("PAID_MIN_LEAVES", DEFAULT_PAID_MIN_LEAVES as u64)?)
+                    .unwrap_or(DEFAULT_PAID_MIN_LEAVES),
             })
         };
         let artifacts_raw = env_str("ZK_ARTIFACTS")?.filter(|s| !s.trim().is_empty());

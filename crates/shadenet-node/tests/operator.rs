@@ -107,6 +107,93 @@ impl Drop for Node {
     }
 }
 
+/// Systemd socket activation: the test binds the socket, hands it to the node as fd 3 with
+/// `LISTEN_FDS=1` addressed to the node's pid (the shell's `$$` survives `exec`), and the node
+/// serves that socket instead of binding its own port.
+#[test]
+fn the_node_serves_the_listening_socket_systemd_hands_over() {
+    use std::os::unix::io::AsRawFd as _;
+    use std::os::unix::process::CommandExt as _;
+
+    let socket = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = socket.local_addr().unwrap().port();
+    let dir = std::env::temp_dir().join(format!(
+        "shadenet-node-activation-{}-{port}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let members = dir.join("members.json");
+    std::fs::write(&members, json!({"members": ["1"]}).to_string()).unwrap();
+    let fd = socket.as_raw_fd();
+    let mut command = Command::new("sh");
+    command
+        .arg("-c")
+        .arg("LISTEN_PID=$$ exec \"$0\" run")
+        .arg(env!("CARGO_BIN_EXE_shadenet-node"))
+        .env_remove("SHADENET_LOG")
+        .env("LISTEN_FDS", "1")
+        .env("SHADE_TREE_GATEWAY_PORT", "0")
+        .env("SHADE_TREE_LOG_FORMAT", "text")
+        .env("SHADE_TREE_MEMBERS_FILE", &members)
+        .env("SHADE_TREE_ADMIT", "invited")
+        .env("SHADE_TREE_EGRESS_ALLOW", "*:443")
+        .env("SHADE_TREE_DRAIN_FILE", dir.join("draining"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    // SAFETY: the hook only duplicates one descriptor onto fd 3 (or clears its close-on-exec
+    // flag when it already is fd 3), both async-signal-safe calls.
+    unsafe {
+        command.pre_exec(move || {
+            let rc = if fd == 3 {
+                libc::fcntl(3, libc::F_SETFD, 0)
+            } else {
+                libc::dup2(fd, 3)
+            };
+            if rc < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().expect("spawn shadenet-node through sh");
+    drop(socket);
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let mut log = String::new();
+    let mut bound = None;
+    for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+        log.push_str(&line);
+        log.push('\n');
+        if let Some(rest) = line.split("gateway up on 127.0.0.1:").nth(1) {
+            bound = rest.trim().parse::<u16>().ok();
+            break;
+        }
+    }
+    let result = std::panic::catch_unwind(|| {
+        assert_eq!(
+            bound,
+            Some(port),
+            "the node reports the inherited socket's port:\n{log}"
+        );
+        assert!(log.contains("socket activation"), "{log}");
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream.write_all(b"{\"v\":4}\n").unwrap();
+        let mut reply = String::new();
+        BufReader::new(stream).read_line(&mut reply).unwrap();
+        let reply: Value = serde_json::from_str(&reply).expect("a refusal line");
+        assert!(reply["err"].is_string(), "{reply}");
+    });
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 /// `GET path` on the loopback metrics port with a chosen Host header.
 fn http_get(port: u16, path: &str, host: &str) -> (u16, String) {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();

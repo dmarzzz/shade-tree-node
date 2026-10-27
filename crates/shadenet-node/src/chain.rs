@@ -96,6 +96,7 @@ pub(crate) enum Provider {
 
 struct Source {
     contract: Contract,
+    paid_warned: bool,
     ring: Ring,
     scanned: Option<(u64, Vec<Value>)>,
     last_success: Option<Instant>,
@@ -116,6 +117,7 @@ pub(crate) struct ChainSource {
     chunk: u64,
     rln_identifier: u64,
     provider: Provider,
+    paid_floor: usize,
     sources: Mutex<Vec<Source>>,
     registry: Option<Arc<Registry>>,
 }
@@ -139,6 +141,7 @@ impl ChainSource {
         chunk: u64,
         rln_identifier: u64,
         provider: Provider,
+        paid_floor: usize,
         registry: Option<Arc<Registry>>,
     ) -> Self {
         Self {
@@ -148,12 +151,14 @@ impl ChainSource {
             chunk: chunk.max(MIN_CHUNK),
             rln_identifier,
             provider,
+            paid_floor,
             registry,
             sources: Mutex::new(
                 contracts
                     .into_iter()
                     .map(|contract| Source {
                         contract,
+                        paid_warned: false,
                         ring: Ring::new(),
                         scanned: None,
                         last_success: None,
@@ -319,6 +324,40 @@ impl ChainSource {
             leaves: read.leaves,
         });
         source.scanned = read.scanned;
+        if source.contract.kind == Kind::Paid {
+            let first = source.last_success.is_none();
+            match read.leaves {
+                None if first => tracing::warn!(
+                    contract = %source.contract.address,
+                    "paid-access anonymity set: leafCount() unreadable"
+                ),
+                None => {}
+                Some(leaves) if leaves < self.paid_floor => {
+                    if first || !source.paid_warned {
+                        tracing::warn!(
+                            contract = %source.contract.address,
+                            leaves,
+                            floor = self.paid_floor,
+                            "paid-access anonymity set: {leaves} leaves (floor K={}) -- BELOW the floor: paid members are thinly hidden among each other (still admitted; the floor is a warning, not a gate)",
+                            self.paid_floor
+                        );
+                    }
+                    source.paid_warned = true;
+                }
+                Some(leaves) => {
+                    if first || source.paid_warned {
+                        tracing::info!(
+                            contract = %source.contract.address,
+                            leaves,
+                            floor = self.paid_floor,
+                            "paid-access anonymity set: {leaves} leaves (floor K={})",
+                            self.paid_floor
+                        );
+                    }
+                    source.paid_warned = false;
+                }
+            }
+        }
         source.last_success = Some(now);
         if source.stale {
             tracing::info!(
@@ -586,5 +625,47 @@ mod tests {
             ["c", "b"],
             "an empty set retires the current root but names no new one"
         );
+    }
+
+    #[test]
+    fn the_paid_floor_warns_while_the_set_is_thin_and_clears_once_it_grows() {
+        let rpc = Rpc::new(
+            vec!["http://127.0.0.1:1".into()],
+            Duration::from_secs(1),
+            0,
+            None,
+        )
+        .expect("one url");
+        let source = ChainSource::new(
+            Arc::new(rpc),
+            vec![Contract {
+                address: "0x00000000000000000000000000000000000000aa".into(),
+                kind: Kind::Paid,
+                from_block: 0,
+            }],
+            Duration::from_secs(60),
+            0,
+            1_000,
+            1,
+            Provider::Node,
+            8,
+            None,
+        );
+        let read = |leaves| Read {
+            root: Some("1".into()),
+            transitions: Vec::new(),
+            block: 1,
+            leaves,
+            finalized: true,
+            incremental: false,
+            scanned: None,
+        };
+        let warned = || source.sources.lock().unwrap()[0].paid_warned;
+        source.record(0, read(Some(3)), Instant::now());
+        assert!(warned(), "three leaves are below the floor of eight");
+        source.record(0, read(Some(8)), Instant::now());
+        assert!(!warned(), "eight leaves meet the floor");
+        source.record(0, read(None), Instant::now());
+        assert!(!warned(), "an unreadable count neither warns nor clears");
     }
 }

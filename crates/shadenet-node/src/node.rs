@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::io::IsTerminal as _;
+use std::os::unix::io::FromRawFd as _;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -235,6 +236,7 @@ impl ShadeNode {
                     chain_config.logs_chunk,
                     rln_id,
                     provider,
+                    chain_config.paid_min_leaves,
                     Some(Arc::clone(&registry)),
                 ));
                 let healthy = source.refresh().await;
@@ -396,9 +398,17 @@ impl ShadeNode {
         };
 
         let addr = config.listen();
-        let listener = TcpListener::bind(addr)
-            .await
-            .map_err(|source| Error::Bind { addr, source })?;
+        let inherited = inherited_listener();
+        let activated = inherited.is_some();
+        let listener = match inherited {
+            Some(socket) => socket
+                .set_nonblocking(true)
+                .and_then(|()| TcpListener::from_std(socket))
+                .map_err(Error::Inherited)?,
+            None => TcpListener::bind(addr)
+                .await
+                .map_err(|source| Error::Bind { addr, source })?,
+        };
         let bound = listener
             .local_addr()
             .map_err(|source| Error::LocalAddr { addr, source })?;
@@ -498,13 +508,17 @@ impl ShadeNode {
             }
             tracing::info!("node and heartbeat started; `heartbeat accepted` in the log means an Elder lists this node, `heartbeat rejected` says why one does not");
         }
-        banner(&shared, &bound, &drain_flag, alerts.is_some());
+        banner(&shared, &bound, activated, &drain_flag, alerts.is_some());
+        if activated {
+            tracing::info!("serving the listening socket systemd handed over (socket activation); restarts keep queueing connects");
+        }
         // the exact "gateway up on <addr>" line: the interop harness and the tests wait for it
         tracing::info!("gateway up on {bound}");
         tracing::debug!(
             epoch = shared.verifier.current_epoch(),
             epoch_seconds = shared.config.epoch_seconds(),
             metrics_port = shared.config.metrics_port(),
+            socket_activation = activated,
             "service ready"
         );
         if drain_flag.is_set() {
@@ -640,7 +654,28 @@ async fn watch_record(source: String, started: serde_json::Value, status: Arc<St
 }
 
 /// The startup tree the JavaScript node printed on a terminal (`printOperatorBanner`).
-fn banner(shared: &Shared, bound: &std::net::SocketAddr, drain_flag: &drain::Flag, alerts: bool) {
+/// The listening socket systemd hands over (`LISTEN_FDS=1` addressed to this pid, fd 3): the
+/// node serves it instead of binding, so the socket outlives a restart and Tor's local connects
+/// queue in the kernel backlog instead of being refused (docs/OPERATOR.md "Restart without
+/// dropping a connection"). A socket addressed to another pid is never taken.
+fn inherited_listener() -> Option<std::net::TcpListener> {
+    let fds: u32 = std::env::var("LISTEN_FDS").ok()?.parse().ok()?;
+    let pid: u32 = std::env::var("LISTEN_PID").ok()?.parse().ok()?;
+    if fds < 1 || pid != std::process::id() {
+        return None;
+    }
+    // SAFETY: systemd opened fd 3 as a listening socket for this process alone (LISTEN_PID is
+    // ours), and nothing else in the node refers to that descriptor.
+    Some(unsafe { std::net::TcpListener::from_raw_fd(3) })
+}
+
+fn banner(
+    shared: &Shared,
+    bound: &std::net::SocketAddr,
+    activated: bool,
+    drain_flag: &drain::Flag,
+    alerts: bool,
+) {
     let summary = shared.config.summary();
     let mode = summary.banner.to_ascii_lowercase();
     let format = summary.log_format.to_ascii_lowercase();
@@ -657,7 +692,17 @@ fn banner(shared: &Shared, bound: &std::net::SocketAddr, drain_flag: &drain::Fla
         return;
     }
     let rows: Vec<(&str, String)> = vec![
-        ("listen", bound.to_string()),
+        (
+            "listen",
+            format!(
+                "{bound}{}",
+                if activated {
+                    " (socket activation)"
+                } else {
+                    ""
+                }
+            ),
+        ),
         ("drain flag", drain_flag.path().display().to_string()),
         (
             "alerts",
