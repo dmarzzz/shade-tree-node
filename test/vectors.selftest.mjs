@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createPublicKey } from "node:crypto";
 import { ed25519Sign, ed25519PrivateKey, pubkeyToOnion, onionToPubkey, canonicalDirectoryBytes, signDirectory, signDirectoryThreshold, verifyDirectory, CAPS_DOMAIN, canonicalCaps, canonicalCapsBytes, signCaps, verifyCapsSig, ADMIT_PATHS, PAY_PROTOCOLS, MAX_CAPS_PAY_TIERS } from "../packages/node/lib/directory.mjs";
-import { canonicalAnnounceBytes, operatorAuthMessage, verifyOperatorSig, buildAnnounce, verifyAnnounce } from "../packages/node/bootnode/announce.mjs";
+import { canonicalAnnounceBytes, operatorAuthMessage, verifyOperatorSig, buildAnnounce, verifyAnnounce, verifyListedEntry, MAX_ENTRY_AGE, FUTURE_SKEW, MAX_ENTRY_WEIGHT } from "../packages/node/bootnode/announce.mjs";
 import { calculateSignalHash, requestSignal } from "../packages/node/lib/rln.mjs";
 import { canonicalReceiptBytes, buildReceipt, RECEIPT_DOMAIN } from "../packages/node/lib/receipt.mjs";
 import { acceptEnvelopeVersion } from "../packages/node/gateway/gateway.mjs";
@@ -210,6 +210,15 @@ async function main() {
   ok(svAnn.ts + sv.maxEntryAge > sv.nowAccept && svAnn.ts <= sv.nowAccept + sv.futureSkew, "nowAccept is inside the freshness window");
   ok(!(svAnn.ts + sv.maxEntryAge > sv.nowExpired), "nowExpired is at the expiry boundary");
   ok(svAnn.ts > sv.nowFuture + sv.futureSkew, "nowFuture puts ts past the future skew");
+  ok(MAX_ENTRY_AGE === sv.maxEntryAge && FUTURE_SKEW === sv.futureSkew && MAX_ENTRY_WEIGHT === sv.maxEntryWeight, "verifyListedEntry uses the pinned constants");
+  const svShort = `${svEntry.onion.slice(0, 12)}..`;
+  const listedOk = await verifyListedEntry(svEntry, { now: sv.nowAccept });
+  ok(listedOk.ok && listedOk.ts === svAnn.ts && Object.entries({ ...sv.derivedEntry, health: svEntry.health, staked: svEntry.staked }).every(([k, want]) => JSON.stringify(listedOk.entry[k]) === JSON.stringify(want)), "verifyListedEntry rebuilds the pinned derived entry");
+  ok((await verifyListedEntry(svEntry, { now: sv.nowExpired })).reason === `announce-expired:${svShort}`, "verifyListedEntry: nowExpired -> announce-expired");
+  ok((await verifyListedEntry(svEntry, { now: sv.nowFuture })).reason === `announce-future:${svShort}`, "verifyListedEntry: nowFuture -> announce-future");
+  ok((await verifyListedEntry({ ...svEntry, announce: { ...svAnn, weight: sv.derivedEntry.weight } }, { now: sv.nowAccept })).reason === `bad-announce:${svShort}:${sv.tamperedWeightReason}`, "verifyListedEntry: a rewritten weight -> bad-announce:..:bad-onion-sig");
+  ok((await verifyListedEntry(svEntry, { now: null })).ok, "verifyListedEntry: no clock skips the freshness rows");
+  ok((await verifyListedEntry(svListed, { now: sv.nowExpired })).entry === svListed, "verifyListedEntry: an entry without announce is returned as listed");
 
   console.log(`\n${failures === 0 ? "PASS" : "FAIL"}: vectors selftest (${failures} failure${failures === 1 ? "" : "s"})`);
   process.exit(failures === 0 ? 0 : 1);

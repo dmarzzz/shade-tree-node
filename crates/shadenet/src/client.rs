@@ -9,7 +9,7 @@
 //!
 //! Every failure is a typed [`Error`] with a stable code.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -133,21 +133,35 @@ impl CanopySource {
 }
 
 /// Union of verified canopies: every node listed by any verified directory, once. When two
-/// directories list the same node, the entry from the more recently issued directory wins. The
-/// result carries the newest `issued`; it is never re-verified as a whole (each part already was).
+/// directories list the same node, the entry rebuilt from the newer announce wins (WIRE-SPEC
+/// 4.5); an entry without one loses to one with, and otherwise the more recently issued
+/// directory wins. The result carries the newest `issued`; it is never re-verified as a whole
+/// (each part already was).
 fn merge_canopies(mut outcomes: Vec<dircache::LoadOutcome>) -> (Directory, Option<DemoAdvert>) {
     outcomes.sort_by_key(|outcome| std::cmp::Reverse(outcome.dir.issued));
     let mut iter = outcomes.into_iter();
     let first = iter.next().expect("at least one verified canopy");
     let mut dir = first.dir;
     let mut demo = first.demo;
-    let mut seen: HashSet<String> = dir.gateways.iter().map(|g| g.onion.clone()).collect();
+    let mut known: HashMap<String, (usize, Option<u64>)> = dir
+        .gateways
+        .iter()
+        .enumerate()
+        .map(|(i, g)| (g.onion.clone(), (i, first.announced.get(&g.onion).copied())))
+        .collect();
     for outcome in iter {
         if demo.is_none() {
             demo = outcome.demo;
         }
         for gateway in outcome.dir.gateways {
-            if seen.insert(gateway.onion.clone()) {
+            let ts = outcome.announced.get(&gateway.onion).copied();
+            if let Some((i, held)) = known.get_mut(&gateway.onion) {
+                if ts > *held {
+                    *held = ts;
+                    dir.gateways[*i] = gateway;
+                }
+            } else {
+                known.insert(gateway.onion.clone(), (dir.gateways.len(), ts));
                 dir.gateways.push(gateway);
             }
         }
@@ -809,6 +823,14 @@ impl Client {
                             continue;
                         }
                         floors.insert(signers, outcome.dir.issued);
+                        if !outcome.dropped.is_empty() {
+                            tracing::warn!(
+                                source = %label,
+                                dropped = outcome.dropped.len(),
+                                reasons = %outcome.dropped.join("; "),
+                                "canopy entries failed their announce check"
+                            );
+                        }
                         if outcome.source == dircache::Source::Cache {
                             errors.push(format!(
                                 "{label}: {}",
@@ -2670,7 +2692,44 @@ mod tests {
             demo: None,
             source: dircache::Source::Fresh,
             fresh_error: None,
+            announced: HashMap::new(),
+            dropped: Vec::new(),
         }
+    }
+
+    fn announced(mut outcome: dircache::LoadOutcome, ts: &[(&str, u64)]) -> dircache::LoadOutcome {
+        outcome.announced = ts
+            .iter()
+            .map(|(onion, ts)| ((*onion).to_string(), *ts))
+            .collect();
+        outcome
+    }
+
+    #[test]
+    fn canopies_merge_keeps_the_newest_announce() {
+        let (dir, _) = merge_canopies(vec![
+            announced(
+                outcome(100, &["a.onion", "b.onion"]),
+                &[("a.onion", 50), ("b.onion", 60)],
+            ),
+            announced(
+                outcome(200, &["a.onion", "b.onion", "c.onion"]),
+                &[("a.onion", 40)],
+            ),
+        ]);
+        let weight = |onion: &str| {
+            dir.gateways
+                .iter()
+                .find(|g| g.onion == onion)
+                .map(|g| g.weight)
+        };
+        assert_eq!(dir.gateways.len(), 3);
+        // a: the older directory carries the newer announce.
+        assert_eq!(weight("a.onion"), Some(1));
+        // b: an entry with an announce beats one without, even from an older directory.
+        assert_eq!(weight("b.onion"), Some(1));
+        assert_eq!(weight("c.onion"), Some(7));
+        assert_eq!(dir.issued, 200);
     }
 
     #[test]

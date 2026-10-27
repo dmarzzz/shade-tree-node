@@ -1596,6 +1596,69 @@ pub fn verify_announce(
     Ok(())
 }
 
+/// A self-verifying entry is fresh while `now < announce.ts + MAX_ENTRY_AGE` (spec 4.5).
+pub const MAX_ENTRY_AGE: u64 = 900;
+/// A self-verifying entry is refused when `announce.ts > now + FUTURE_SKEW` (spec 4.5).
+pub const FUTURE_SKEW: u64 = 120;
+/// The weight clamp applied to an entry rebuilt from its announce (spec 4.5).
+pub const MAX_ENTRY_WEIGHT: u64 = 1000;
+
+/// Check a directory entry against the announce it carries and rebuild the entry from that
+/// announce alone (spec 4.5, rows 2 to 5).
+///
+/// `now` is unix seconds. `None` skips the freshness rows, which a client does for its
+/// last-known-good copy. The stake check (row 6) is the caller's I/O, like the Elder's.
+/// `health` stays the source's hint, and `staked` is kept only while the rebuilt entry still
+/// names a verified operator.
+///
+/// # Errors
+///
+/// The first failing row's reason: `announce-onion-mismatch:<onion[:12]>..`,
+/// `announce-expired:..`, `announce-future:..`, or `bad-announce:<onion[:12]>..:<reason>` with
+/// the [`verify_announce`] reason.
+pub fn verify_listed_entry(
+    entry: &GatewayEntry,
+    ann: &Announce,
+    now: Option<u64>,
+) -> Result<GatewayEntry> {
+    let short: String = entry.onion.chars().take(12).collect();
+    if ann.onion != entry.onion {
+        return Err(Error::Reason(format!("announce-onion-mismatch:{short}..")));
+    }
+    if let Some(now) = now {
+        if now >= ann.ts.saturating_add(MAX_ENTRY_AGE) {
+            return Err(Error::Reason(format!("announce-expired:{short}..")));
+        }
+        if ann.ts > now.saturating_add(FUTURE_SKEW) {
+            return Err(Error::Reason(format!("announce-future:{short}..")));
+        }
+    }
+    verify_announce(ann, ann.ts, u64::MAX, None)
+        .map_err(|e| Error::Reason(format!("bad-announce:{short}..:{e}")))?;
+    let pubkey = onion_to_pubkey(&ann.onion)
+        .map_err(|e| Error::Reason(format!("bad-announce:{short}..:bad-onion:{e}")))?;
+    let operator = match (&ann.operator, &ann.operator_sig) {
+        (Some(operator), Some(_)) => Some(operator.to_ascii_lowercase()),
+        _ => None,
+    };
+    let (caps, caps_sig) = match (&ann.caps, &ann.caps_sig) {
+        (Some(caps), Some(caps_sig)) if has_caps(caps) => {
+            (Some(caps.clone()), Some(caps_sig.clone()))
+        }
+        _ => (None, None),
+    };
+    Ok(GatewayEntry {
+        onion: ann.onion.clone(),
+        pubkey: hex::encode(pubkey),
+        weight: ann.weight.min(MAX_ENTRY_WEIGHT),
+        health: entry.health.clone(),
+        staked: operator.as_ref().and(entry.staked),
+        operator,
+        caps,
+        caps_sig,
+    })
+}
+
 // --------------------------------------------------------------------------
 // 3.2 operator authorization message (EIP-191 personal_sign target)
 // --------------------------------------------------------------------------
