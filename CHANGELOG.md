@@ -4,6 +4,16 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Spec: self-verifying canopy entries (discovery v1, step 1)
+
+- `docs/WIRE-SPEC.md` section 4.5 specifies an optional `announce` field on a canopy entry: the
+  node's own signed announce, copied verbatim and kept outside the signed directory bytes. A
+  client can check such an entry without trusting the directory signer, which is what lets
+  unsigned mirrors serve the canopy later. Nothing emits or enforces the field yet; the wire bytes
+  and every existing vector are unchanged.
+- New golden vector `selfVerifyingEntry`. The JS vector test re-derives it, and a Rust test
+  confirms today's parser accepts a directory carrying the field.
+
 ### RPC: a rate-limited endpoint is waited on, not failed (roadmap #369 M0)
 
 - HTTP 429, and 503 with `Retry-After`, are resent with bounded exponential backoff and jitter
