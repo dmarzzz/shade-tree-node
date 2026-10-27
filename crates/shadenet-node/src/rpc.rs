@@ -128,6 +128,11 @@ impl Rpc {
         })
     }
 
+    /// The origin of the endpoint currently in use, for error text (paths often hold keys).
+    pub(crate) fn primary_origin(&self) -> String {
+        origin(&self.urls[self.sticky.load(Ordering::Relaxed) % self.urls.len()])
+    }
+
     pub(crate) async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         let count = self.urls.len();
         let start = self.sticky.load(Ordering::Relaxed) % count;

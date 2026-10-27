@@ -12,6 +12,7 @@ use shadenet_rln::replay::{
     is_incomplete, range_error, reconstruct, ACTIVE_COUNT_SELECTOR, ALL_TOPICS, NEXT_INDEX_SELECTOR,
 };
 
+use crate::light::Light;
 use crate::metrics::Registry;
 use crate::rpc::{Rpc, RpcError};
 
@@ -81,7 +82,16 @@ impl Ring {
 struct Snapshot {
     roots: Vec<String>,
     block: u64,
-    leaves: usize,
+    /// Live leaves; unknown to the light provider, which proves the root alone.
+    leaves: Option<usize>,
+}
+
+/// How a source reads its roots.
+pub(crate) enum Provider {
+    /// Replay the member events into the tree (`SHADE_TREE_ROOT_PROVIDER=node`).
+    Node,
+    /// Prove the root slot against the state root (`SHADE_TREE_ROOT_PROVIDER=light`).
+    Light(Light),
 }
 
 struct Source {
@@ -105,6 +115,7 @@ pub(crate) struct ChainSource {
     confirmations: u64,
     chunk: u64,
     rln_identifier: u64,
+    provider: Provider,
     sources: Mutex<Vec<Source>>,
     registry: Option<Arc<Registry>>,
 }
@@ -119,6 +130,7 @@ fn parse_hex(value: &Value) -> Option<u64> {
 }
 
 impl ChainSource {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         rpc: Arc<Rpc>,
         contracts: Vec<Contract>,
@@ -126,6 +138,7 @@ impl ChainSource {
         confirmations: u64,
         chunk: u64,
         rln_identifier: u64,
+        provider: Provider,
         registry: Option<Arc<Registry>>,
     ) -> Self {
         Self {
@@ -134,6 +147,7 @@ impl ChainSource {
             confirmations,
             chunk: chunk.max(MIN_CHUNK),
             rln_identifier,
+            provider,
             registry,
             sources: Mutex::new(
                 contracts
@@ -191,8 +205,7 @@ impl ChainSource {
                 if let Some(leaves) = of_kind
                     .iter()
                     .filter_map(|s| s.snapshot.as_ref())
-                    .map(|s| s.leaves)
-                    .next()
+                    .find_map(|s| s.leaves)
                 {
                     registry.gauge("shade_tree_gateway_paid_access_leaves", &[], leaves as f64);
                 }
@@ -231,7 +244,7 @@ impl ChainSource {
         match sources.first().and_then(|s| s.snapshot.as_ref()) {
             Some(snapshot) => Advert {
                 block: Some(snapshot.block),
-                leaves: Some(snapshot.leaves),
+                leaves: snapshot.leaves,
             },
             None => Advert {
                 block: None,
@@ -295,7 +308,7 @@ impl ChainSource {
             tracing::info!(
                 source = source.contract.kind.label(),
                 block = read.block,
-                leaves = read.leaves,
+                leaves = read.leaves.map_or("unknown".to_string(), |n| n.to_string()),
                 roots = roots.len(),
                 "admission roots refreshed"
             );
@@ -364,6 +377,18 @@ impl ChainSource {
     ) -> Result<Read, RpcError> {
         let tag = self.block_tag().await?;
         let finalized = tag == "finalized";
+        if let Provider::Light(light) = &self.provider {
+            let proven = light.read(&self.rpc, &contract.address, &tag).await?;
+            return Ok(Read {
+                root: proven.root,
+                transitions: Vec::new(),
+                block: proven.block,
+                leaves: None,
+                finalized,
+                incremental: false,
+                scanned: None,
+            });
+        }
         let block = self
             .rpc
             .call("eth_getBlockByNumber", json!([tag, false]))
@@ -428,7 +453,7 @@ impl ChainSource {
                         root,
                         transitions,
                         block: observed,
-                        leaves: set.live_count,
+                        leaves: Some(set.live_count),
                         finalized,
                         incremental: old_count != usize::MAX,
                         scanned: finalized.then_some((observed, logs)),
@@ -526,7 +551,7 @@ struct Read {
     root: Option<String>,
     transitions: Vec<Option<String>>,
     block: u64,
-    leaves: usize,
+    leaves: Option<usize>,
     finalized: bool,
     incremental: bool,
     scanned: Option<(u64, Vec<Value>)>,

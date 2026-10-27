@@ -27,6 +27,7 @@ use crate::egress;
 use crate::error::Error;
 use crate::heartbeat::{self, CapsInputs, EgressCheck, OperatorAuth};
 use crate::knobs::{self, Knobs, KNOBS};
+use crate::light;
 use crate::record::{self, Record};
 use crate::rpc;
 use crate::session;
@@ -107,8 +108,19 @@ fn credential(name: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&bytes).trim().to_string())
 }
 
+/// `SHADE_TREE_ROOT_PROVIDER`: how roots are read from the chain.
+pub(crate) enum ProviderConfig {
+    Node,
+    Light {
+        mode: light::Mode,
+        /// `SHADE_TREE_HELIOS_RPC_URL` and `SHADE_TREE_HELIOS_CHAIN_ID`.
+        helios: Option<(String, Option<u64>)>,
+    },
+}
+
 /// Everything an on-chain root source needs (`SHADE_TREE_ADMIT` names `staked` or `paid`).
 pub(crate) struct ChainConfig {
+    pub(crate) provider: ProviderConfig,
     pub(crate) contracts: Vec<Contract>,
     pub(crate) rpc_urls: Vec<String>,
     pub(crate) rpc_timeout: Duration,
@@ -350,16 +362,55 @@ impl Config {
                 message: "names `paid` but SHADE_TREE_PAID_ACCESS_CONTRACT is not set".into(),
             });
         }
-        let provider = env_str("ROOT_PROVIDER")?.unwrap_or_else(|| "node".into());
-        if provider.trim() != "node" {
-            return Err(Error::Setting {
-                name: "SHADE_TREE_ROOT_PROVIDER",
-                message: format!(
-                    "{:?} is not supported by this build; only `node` is",
-                    provider.trim()
-                ),
-            });
-        }
+        let helios_url = non_empty_text(env_str("HELIOS_RPC_URL")?);
+        let provider = match env_str("ROOT_PROVIDER")?
+            .map(|p| p.trim().to_string())
+            .as_deref()
+        {
+            None | Some("") | Some("node") => {
+                if helios_url.is_some() {
+                    return Err(Error::Setting {
+                        name: "SHADE_TREE_HELIOS_RPC_URL",
+                        message: "is set but SHADE_TREE_ROOT_PROVIDER=node; the Helios stateRoot anchor needs SHADE_TREE_ROOT_PROVIDER=light (or point SHADE_TREE_RPC_URL at Helios instead)".into(),
+                    });
+                }
+                ProviderConfig::Node
+            }
+            Some("light") => {
+                let mode = match env_str("LIGHT_MODE")?
+                    .map(|m| m.trim().to_string())
+                    .as_deref()
+                {
+                    None | Some("") | Some("proof") => light::Mode::Proof,
+                    Some("storageat") => light::Mode::StorageAt,
+                    Some(other) => {
+                        return Err(Error::Setting {
+                            name: "SHADE_TREE_LIGHT_MODE",
+                            message: format!("{other:?} is not `proof` or `storageat`"),
+                        })
+                    }
+                };
+                let chain_id = match non_empty_text(env_str("HELIOS_CHAIN_ID")?) {
+                    Some(raw) => Some(raw.parse::<u64>().ok().filter(|id| *id > 0).ok_or_else(
+                        || Error::Setting {
+                            name: "SHADE_TREE_HELIOS_CHAIN_ID",
+                            message: format!("{raw:?} is not a positive chain id"),
+                        },
+                    )?),
+                    None => None,
+                };
+                ProviderConfig::Light {
+                    mode,
+                    helios: helios_url.map(|url| (url, chain_id)),
+                }
+            }
+            Some(other) => {
+                return Err(Error::Setting {
+                    name: "SHADE_TREE_ROOT_PROVIDER",
+                    message: format!("unknown provider {other:?} (expected node|light)"),
+                })
+            }
+        };
         let mut contracts: Vec<Contract> = Vec::new();
         if admit.staked {
             for address in &group_contracts {
@@ -431,6 +482,7 @@ impl Config {
                 seconds => seconds,
             };
             Some(ChainConfig {
+                provider,
                 contracts,
                 rpc_urls: if rpc_urls.is_empty() {
                     vec![DEFAULT_RPC_URL.into()]
@@ -809,6 +861,12 @@ impl Config {
     pub(crate) fn operator(&self) -> Option<&Operator> {
         self.operator.as_ref()
     }
+}
+
+fn non_empty_text(value: Option<String>) -> Option<String> {
+    value
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Is any admission source named? Without one and without a record there is nothing to run.
@@ -1330,6 +1388,67 @@ mod tests {
             Err(e) => e.to_string(),
         };
         assert!(error.contains("must be set together"), "{error}");
+    }
+
+    #[test]
+    fn the_root_provider_is_node_or_light_and_helios_needs_light() {
+        let members = concat!(env!("CARGO_MANIFEST_DIR"), "/../../group/members.json");
+        let base = |provider: &str, extra: &[(&str, &str)]| {
+            let mut vars = BTreeMap::new();
+            vars.insert("SHADE_TREE_MEMBERS_FILE".to_string(), members.to_string());
+            vars.insert("SHADE_TREE_ADMIT".to_string(), "invited,staked".to_string());
+            vars.insert(
+                "SHADE_TREE_GROUP_CONTRACT".to_string(),
+                format!("0x{}", "ab".repeat(20)),
+            );
+            vars.insert("SHADE_TREE_ROOT_PROVIDER".to_string(), provider.to_string());
+            for (k, v) in extra {
+                vars.insert((*k).to_string(), (*v).to_string());
+            }
+            Config::resolve(&Vars::Derived(vars))
+        };
+        assert!(matches!(
+            base("node", &[])
+                .ok()
+                .and_then(|c| c.chain.map(|c| c.provider)),
+            Some(ProviderConfig::Node)
+        ));
+        let light = base(
+            "light",
+            &[
+                ("SHADE_TREE_HELIOS_RPC_URL", "http://127.0.0.1:8546"),
+                ("SHADE_TREE_HELIOS_CHAIN_ID", "11155111"),
+            ],
+        )
+        .ok()
+        .and_then(|c| c.chain.map(|c| c.provider));
+        assert!(
+            matches!(light, Some(ProviderConfig::Light { mode: light::Mode::Proof, helios: Some((url, Some(11_155_111))) }) if url == "http://127.0.0.1:8546")
+        );
+        let storage = base("light", &[("SHADE_TREE_LIGHT_MODE", "storageat")])
+            .ok()
+            .and_then(|c| c.chain.map(|c| c.provider));
+        assert!(matches!(
+            storage,
+            Some(ProviderConfig::Light {
+                mode: light::Mode::StorageAt,
+                helios: None
+            })
+        ));
+        let text = |r: Result<Config, Error>| r.err().map(|e| e.to_string()).unwrap_or_default();
+        assert!(
+            text(base("node", &[("SHADE_TREE_HELIOS_RPC_URL", "http://x")]))
+                .contains("needs SHADE_TREE_ROOT_PROVIDER=light")
+        );
+        assert!(text(base("magic", &[])).contains("expected node|light"));
+        assert!(
+            text(base("light", &[("SHADE_TREE_LIGHT_MODE", "trust-me")]))
+                .contains("not `proof` or `storageat`")
+        );
+        assert!(
+            text(base("light", &[("SHADE_TREE_HELIOS_CHAIN_ID", "zero")]))
+                .contains("not a positive chain id")
+        );
     }
 
     #[test]

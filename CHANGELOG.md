@@ -41,9 +41,14 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   cargo-zigbuild, Tor from Debian); `docker exec shadenet-node shadenet-node status` replaces the
   `node packages/node/bin/...` spelling. The release workflow packages `shadenet-node` for the
   Linux and macOS targets.
-- Not ported: the light-client root provider (`SHADE_TREE_ROOT_PROVIDER=light` is still refused;
-  the node reads roots from the record's RPC list). The JavaScript node, supervisor and heartbeat
-  are still in the tree for one release and are deleted next.
+- The light-client root provider (`SHADE_TREE_ROOT_PROVIDER=light`): the contract's `currentRoot`
+  storage slot proven with `eth_getProof` against the block's state root by an in-crate EIP-1186
+  verifier (RLP, keccak, secure-trie walk), with `SHADE_TREE_LIGHT_MODE=storageat` as the
+  documented weaker fallback, and `SHADE_TREE_HELIOS_RPC_URL` (`SHADE_TREE_HELIOS_CHAIN_ID`)
+  anchoring the state root to a local Helios sidecar with the RPC's header cross-checked by name.
+  `testdata/light-root-proof.json` pins a real Sepolia proof of the staked set's root slot.
+  The JavaScript node, supervisor and heartbeat are still in the tree for one release and are
+  deleted next.
 - `shadenet::eth::Wallet::sign_message` (EIP-191 `personal_sign`, pinned to the operator vector)
   and `shadenet_proto::canonical_caps_json_text` are new.
 
@@ -79,7 +84,7 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   (`SHADE_TREE_SESSION_MAX`, `SHADE_TREE_SESSION_STREAM_MAX_MS`). The lifetime ends spends, not
   streams. Unlike the JavaScript node, a session initialization refused at verification carries
   the same `gate:` prefix as a tunnel; clients already strip it.
-  Not yet: the light-client root provider (`SHADE_TREE_ROOT_PROVIDER=light` is refused).
+  The light-client root provider landed with the operator process.
 - `shadenet-rln` gains `replay`, the pure member-event replay the SDK's `leaves` module now
   re-exports, so the node and the client rebuild the same tree from the same code.
 - The interop harness (`crates/shadenet-rln/interop/*.sh`) takes `SHADE_TREE_GATEWAY_CMD` and

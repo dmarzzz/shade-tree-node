@@ -18,13 +18,14 @@ use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
 
 use crate::alerts::Alerts;
-use crate::chain::ChainSource;
-use crate::config::{self, Config};
+use crate::chain::{ChainSource, Provider};
+use crate::config::{self, Config, ProviderConfig};
 use crate::drain;
 use crate::egress;
 use crate::envelope::{self, read_envelope, refusal, refuse, write_line};
 use crate::error::Error;
 use crate::heartbeat::Heartbeat;
+use crate::light::{self, Light};
 use crate::members::MemberSet;
 use crate::metrics::{self, Readiness, Registry};
 use crate::operator;
@@ -192,6 +193,40 @@ impl ShadeNode {
                     })?,
                 );
                 rpc = Some(Arc::clone(&client));
+                let provider = match &chain_config.provider {
+                    ProviderConfig::Node => Provider::Node,
+                    ProviderConfig::Light { mode, helios } => {
+                        let anchor = match helios {
+                            Some((url, chain_id)) => Some(Arc::new(
+                                light::Anchor::new(url.clone(), *chain_id).map_err(|message| {
+                                    Error::Setting {
+                                        name: "SHADE_TREE_HELIOS_RPC_URL",
+                                        message,
+                                    }
+                                })?,
+                            )),
+                            None => None,
+                        };
+                        Provider::Light(Light::new(*mode, anchor))
+                    }
+                };
+                match &provider {
+                    Provider::Node => tracing::info!(
+                        provider = "node",
+                        contracts = chain_config.contracts.len(),
+                        state_root_source =
+                            "trusted node (RPC trusted by design; solo-staker path)",
+                        "root source: on-chain RootProvider"
+                    ),
+                    Provider::Light(light) => tracing::info!(
+                        provider = "light",
+                        mode = light.mode().label(),
+                        contracts = chain_config.contracts.len(),
+                        state_root_source = light.state_root_source(),
+                        state_root_verified = light.state_root_verified(),
+                        "root source: on-chain RootProvider"
+                    ),
+                }
                 let source = Arc::new(ChainSource::new(
                     client,
                     chain_config.contracts.clone(),
@@ -199,6 +234,7 @@ impl ShadeNode {
                     chain_config.confirmations,
                     chain_config.logs_chunk,
                     rln_id,
+                    provider,
                     Some(Arc::clone(&registry)),
                 ));
                 let healthy = source.refresh().await;
