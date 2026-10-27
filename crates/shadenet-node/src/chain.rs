@@ -12,6 +12,7 @@ use shadenet_rln::replay::{
     is_incomplete, range_error, reconstruct, ACTIVE_COUNT_SELECTOR, ALL_TOPICS, NEXT_INDEX_SELECTOR,
 };
 
+use crate::metrics::Registry;
 use crate::rpc::{Rpc, RpcError};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(12);
@@ -105,6 +106,7 @@ pub(crate) struct ChainSource {
     chunk: u64,
     rln_identifier: u64,
     sources: Mutex<Vec<Source>>,
+    registry: Option<Arc<Registry>>,
 }
 
 fn hex_block(value: u64) -> String {
@@ -124,6 +126,7 @@ impl ChainSource {
         confirmations: u64,
         chunk: u64,
         rln_identifier: u64,
+        registry: Option<Arc<Registry>>,
     ) -> Self {
         Self {
             rpc,
@@ -131,6 +134,7 @@ impl ChainSource {
             confirmations,
             chunk: chunk.max(MIN_CHUNK),
             rln_identifier,
+            registry,
             sources: Mutex::new(
                 contracts
                     .into_iter()
@@ -144,6 +148,55 @@ impl ChainSource {
                     })
                     .collect(),
             ),
+        }
+    }
+
+    /// The per-source gauges: distinct trusted roots and the degraded flag per kind, and the
+    /// paid set's live leaf count (its anonymity set).
+    fn publish(&self, sources: &[Source]) {
+        let Some(registry) = &self.registry else {
+            return;
+        };
+        let now = Instant::now();
+        for kind in [Kind::Staked, Kind::Paid] {
+            let of_kind: Vec<&Source> =
+                sources.iter().filter(|s| s.contract.kind == kind).collect();
+            if of_kind.is_empty() {
+                continue;
+            }
+            let roots: HashSet<&String> = of_kind
+                .iter()
+                .filter(|s| {
+                    s.last_success
+                        .is_some_and(|at| now.duration_since(at) <= self.freshness)
+                })
+                .filter_map(|s| s.snapshot.as_ref())
+                .flat_map(|snapshot| snapshot.roots.iter())
+                .collect();
+            registry.gauge(
+                "shade_tree_gateway_trusted_roots",
+                &[("source", kind.label())],
+                roots.len() as f64,
+            );
+            registry.gauge(
+                "shade_tree_gateway_root_source_degraded",
+                &[("source", kind.label())],
+                if of_kind.iter().any(|s| s.stale) {
+                    1.0
+                } else {
+                    0.0
+                },
+            );
+            if kind == Kind::Paid {
+                if let Some(leaves) = of_kind
+                    .iter()
+                    .filter_map(|s| s.snapshot.as_ref())
+                    .map(|s| s.leaves)
+                    .next()
+                {
+                    registry.gauge("shade_tree_gateway_paid_access_leaves", &[], leaves as f64);
+                }
+            }
         }
     }
 
@@ -261,6 +314,7 @@ impl ChainSource {
             );
         }
         source.stale = false;
+        self.publish(&sources);
     }
 
     fn fail(&self, index: usize, error: &RpcError, started: Instant) {
@@ -287,6 +341,7 @@ impl ChainSource {
             );
         }
         source.stale = true;
+        self.publish(&sources);
     }
 
     async fn block_tag(&self) -> Result<String, RpcError> {

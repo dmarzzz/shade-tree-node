@@ -87,6 +87,15 @@ impl SpentSet {
         set
     }
 
+    /// Has this node seen the nullifier already (its first share is held here)?
+    pub(crate) fn is_known(&self, nullifier: &str) -> bool {
+        self.inner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .seen
+            .contains_key(nullifier)
+    }
+
     pub(crate) fn admit(&self, nullifier: &str, share: Share, nonce: Option<&str>) -> Admission {
         let envelope_key = format!("{nullifier}|{}|{}", share.x, nonce.unwrap_or(""));
         let now = now_ms();

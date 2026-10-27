@@ -13,6 +13,8 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::task::JoinSet;
 
+use crate::telemetry::{self, Traffic};
+
 const CHUNK: usize = 16 * 1024;
 
 struct Allowance {
@@ -234,6 +236,7 @@ impl Activity {
 
 /// Relay until a side ends, the idle timer fires, or the allowance runs out. `early` is the
 /// client data that arrived with the envelope and goes to the destination first.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn relay(
     client: TcpStream,
     upstream: TcpStream,
@@ -242,6 +245,7 @@ pub(crate) async fn relay(
     idle_timeout: Option<Duration>,
     shaping: Option<Arc<Shaping>>,
     cancel: Option<Arc<tokio::sync::Notify>>,
+    traffic: Arc<Traffic>,
 ) -> Close {
     let budget = Arc::clone(&hold.budget);
     let key = Arc::new(hold.key.clone());
@@ -258,6 +262,7 @@ pub(crate) async fn relay(
         Arc::clone(&key),
         Arc::clone(&activity),
         shaping.clone(),
+        Arc::clone(&traffic),
     ));
     pumps.spawn(pump(
         Direction::DestinationToAgent,
@@ -268,6 +273,7 @@ pub(crate) async fn relay(
         key,
         Arc::clone(&activity),
         shaping,
+        traffic,
     ));
     let idle = async {
         match idle_timeout {
@@ -313,7 +319,12 @@ async fn pump(
     key: Arc<String>,
     activity: Arc<Activity>,
     shaping: Option<Arc<Shaping>>,
+    traffic: Arc<Traffic>,
 ) -> (Direction, Pump) {
+    let counted = match direction {
+        Direction::AgentToDestination => telemetry::Direction::AgentToDestination,
+        Direction::DestinationToAgent => telemetry::Direction::DestinationToAgent,
+    };
     let mut chunk = vec![0_u8; CHUNK];
     let mut pending = early;
     loop {
@@ -329,6 +340,7 @@ async fn pump(
                 if writer.write_all(&pending[..allowed]).await.is_err() {
                     return (direction, Pump::Failed);
                 }
+                traffic.add(counted, allowed);
                 activity.touch();
                 if let Some(shaping) = &shaping {
                     shaping.touch();
@@ -428,6 +440,8 @@ mod tests {
         let upstream = TcpStream::connect(sink_addr).await.unwrap();
         let budget = Arc::new(Budget::new(12, 60));
         let hold = budget.acquire(Budget::key("e", "n")).unwrap();
+        let registry = Arc::new(crate::metrics::Registry::new("node", "0", "0"));
+        let traffic = Arc::new(Traffic::new(Arc::clone(&registry), None));
         let relay = tokio::spawn(relay(
             client,
             upstream,
@@ -436,6 +450,7 @@ mod tests {
             None,
             None,
             None,
+            traffic,
         ));
         let mut reply = [0_u8; 4];
         agent.read_exact(&mut reply).await.unwrap();
@@ -444,5 +459,14 @@ mod tests {
         assert_eq!(relay.await.unwrap(), Close::PayloadLimit);
         let got = sink.await.unwrap();
         assert_eq!(got, b"earlymor", "5 early + 4 pong + 3 more = 12 bytes");
+        let text = registry.render();
+        assert!(
+            text.contains("shade_tree_gateway_agent_to_destination_payload_bytes_total 8\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("shade_tree_gateway_destination_to_agent_payload_bytes_total 4\n"),
+            "{text}"
+        );
     }
 }

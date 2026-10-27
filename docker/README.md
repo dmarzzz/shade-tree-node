@@ -2,9 +2,11 @@
 
 ## Shade Tree node, from the record
 
-`docker/shadenet-node.Dockerfile` is the operator front door: Tor + the node + its heartbeat, run
-from a deployment record alone. Published by the release workflow as
-`ghcr.io/dmarzzz/shadenet-node:<version>` (multi-arch). See docs/OPERATOR.md section 2.
+`docker/shadenet-node.Dockerfile` is the operator front door: Tor + the Rust `shadenet-node`
+binary (ADR 0014; one process serves tunnels, announces and exposes metrics), run from a deployment
+record alone. Published by the release workflow as `ghcr.io/dmarzzz/shadenet-node:<version>`
+(multi-arch; the binary is cross-compiled with cargo-zigbuild, only the Tor stage runs under
+QEMU). See docs/OPERATOR.md section 2.
 
 ```sh
 docker run -d --name shadenet-node --restart unless-stopped \

@@ -1,10 +1,15 @@
-//! `shadenet-node`: resolve the configuration, then hand the process to `ShadeNode`.
+//! `shadenet-node`: the one-command front door for running a Shade Tree node.
+//!
+//! `run` resolves the configuration (the deployment record and the knobs, or the advanced
+//! `SHADE_TREE_*` layer) and hands the process to `ShadeNode`; the other commands never start
+//! a node and go through `Operator`.
 
 use std::io::IsTerminal;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
-use shadenet_node::{Config, ShadeNode};
+use shadenet_node::{Config, Operator, ShadeNode};
 
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -14,7 +19,13 @@ const LONG_VERSION: &str = concat!(
 );
 
 #[derive(Parser)]
-#[command(name = "shadenet-node", version = LONG_VERSION, about = "Run a ShadeNet node")]
+#[command(
+    name = "shadenet-node",
+    version = LONG_VERSION,
+    about = "Run a Shade Tree node from a deployment record",
+    disable_help_subcommand = true,
+    after_help = "Knobs: `shadenet-node help` lists the SHADENET_* variables and node.toml keys."
+)]
 struct Cli {
     /// Log level [env: SHADENET_LOG_LEVEL]
     #[arg(long, global = true, value_enum)]
@@ -28,8 +39,38 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Serve tunnels (the default)
+    /// Tor + node + heartbeat from the record alone (the default)
     Run,
+    /// Validate the record, RPCs, Tor, disk and ports; print the plan
+    Check {
+        /// Reach each Elder Tree over a temporary Tor
+        #[arg(long)]
+        probe: bool,
+        /// Print the report as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Mint (or show) this node's onion identity without starting
+    Identity,
+    /// Sign the onion with the staked operator key, where the key lives
+    Authorize {
+        /// The onion to authorize (56 chars, `.onion` optional)
+        #[arg(long)]
+        onion: Option<String>,
+        /// Owner-only file holding the operator key
+        #[arg(long)]
+        key_file: Option<PathBuf>,
+    },
+    /// What a running node is doing (reads <state>/status.json)
+    Status {
+        /// Print nothing; the exit code says whether the node runs
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// Stop announcing; the node leaves every Elder Tree within the TTL
+    Retire,
+    /// The knobs and commands
+    Help,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -49,9 +90,72 @@ enum LogFormat {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    init_logging(cli.log_level, cli.log_format);
-    let (Some(Command::Run) | None) = cli.command;
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            // an unknown command is a usage error with the front door's exit code
+            if e.kind() == clap::error::ErrorKind::InvalidSubcommand
+                || e.kind() == clap::error::ErrorKind::UnknownArgument
+            {
+                eprintln!(
+                    "[shadenet-node] {}",
+                    e.to_string().lines().next().unwrap_or("unknown command")
+                );
+                eprint!("{}", Operator::usage());
+                return ExitCode::from(2);
+            }
+            let _ = e.print();
+            return if e.use_stderr() {
+                ExitCode::from(2)
+            } else {
+                ExitCode::SUCCESS
+            };
+        }
+    };
+    let command = cli.command.unwrap_or(Command::Run);
+    if matches!(command, Command::Help) {
+        print!("{}", Operator::usage());
+        return ExitCode::SUCCESS;
+    }
+    let hint = Config::log_hint();
+    init_logging(cli.log_level, cli.log_format, hint);
+    match command {
+        Command::Run => run(),
+        Command::Check { probe, json } => report(Operator::check(probe, json).map(|ready| !ready)),
+        Command::Identity => report(Operator::identity().map(|()| false)),
+        Command::Authorize { onion, key_file } => {
+            let onion = onion
+                .map(|o| o.trim().to_string())
+                .filter(|o| !o.is_empty());
+            match (onion, key_file) {
+                (Some(onion), Some(key_file)) => {
+                    report(Operator::authorize(&onion, &key_file).map(|()| false))
+                }
+                _ => {
+                    eprintln!("[shadenet-node] usage: shadenet-node authorize --onion <56-char>.onion --key-file <owner-only file with the operator key>");
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Command::Status { quiet } => report(Operator::status(quiet).map(|running| !running)),
+        Command::Retire => report(Operator::retire().map(|()| false)),
+        Command::Help => ExitCode::SUCCESS,
+    }
+}
+
+/// `Ok(false)` exits 0, `Ok(true)` exits 1, an error prints and exits with its code.
+fn report(outcome: Result<bool, shadenet_node::Error>) -> ExitCode {
+    match outcome {
+        Ok(false) => ExitCode::SUCCESS,
+        Ok(true) => ExitCode::from(1),
+        Err(e) => {
+            eprintln!("[shadenet-node] {}", chain(&e));
+            ExitCode::from(e.exit_code())
+        }
+    }
+}
+
+fn run() -> ExitCode {
     let config = match Config::from_env() {
         Ok(config) => config,
         Err(e) => {
@@ -89,17 +193,30 @@ fn chain(error: &dyn std::error::Error) -> String {
     text
 }
 
-fn init_logging(level: Option<LogLevel>, format: Option<LogFormat>) {
+/// Flags win, then `SHADENET_LOG_*` / `SHADE_TREE_LOG_*`, then the front door's `log` knob.
+fn init_logging(
+    level: Option<LogLevel>,
+    format: Option<LogFormat>,
+    hint: Option<(String, String)>,
+) {
     use tracing_subscriber::EnvFilter;
     let level = level
         .or_else(|| {
             shadenet::env::var_lenient("LOG_LEVEL").and_then(|v| LogLevel::from_str(&v, true).ok())
+        })
+        .or_else(|| {
+            hint.as_ref()
+                .and_then(|(_, level)| LogLevel::from_str(level, true).ok())
         })
         .unwrap_or(LogLevel::Info);
     let format = format
         .or_else(|| {
             shadenet::env::var_lenient("LOG_FORMAT")
                 .and_then(|v| LogFormat::from_str(&v, true).ok())
+        })
+        .or_else(|| {
+            hint.as_ref()
+                .and_then(|(format, _)| LogFormat::from_str(format, true).ok())
         })
         .unwrap_or(LogFormat::Auto);
     let ours = match level {
@@ -108,7 +225,11 @@ fn init_logging(level: Option<LogLevel>, format: Option<LogFormat>) {
         LogLevel::Warn => "warn",
         LogLevel::Error => "error",
     };
-    let filter = shadenet::env::var_lenient("LOG")
+    // through the front door SHADENET_LOG is the `format:level` knob, not a filter directive
+    let filter = hint
+        .is_none()
+        .then(|| shadenet::env::var_lenient("LOG"))
+        .flatten()
         .and_then(|spec| EnvFilter::try_new(spec).ok())
         .unwrap_or_else(|| EnvFilter::new(format!("warn,shadenet_node={ours}")));
     let terminal = std::io::stderr().is_terminal();

@@ -8,6 +8,13 @@ pub enum Error {
     Environment(String),
     #[error("{name}: {message}")]
     Setting { name: &'static str, message: String },
+    /// The front door knobs, every problem at once.
+    #[error("{}\nrun `shadenet-node check` for the full picture", .0.iter().map(|e| format!("config: {e}")).collect::<Vec<_>>().join("\n"))]
+    Knobs(Vec<String>),
+    #[error("{0}")]
+    Record(String),
+    #[error("{0}")]
+    Operator(String),
     #[error("failed to read {path}")]
     ReadFile {
         path: PathBuf,
@@ -54,10 +61,13 @@ impl Error {
         match self {
             Self::Environment(_)
             | Self::Setting { .. }
+            | Self::Knobs(_)
+            | Self::Record(_)
             | Self::ReadFile { .. }
             | Self::ParseJson { .. }
             | Self::FileContent { .. } => 2,
             Self::NoAdmissionRoot(_)
+            | Self::Operator(_)
             | Self::Slash(_)
             | Self::Bind { .. }
             | Self::LocalAddr { .. }

@@ -4,9 +4,12 @@
 //! HTTP 429 (or 503 with `Retry-After`) waited on only when no other endpoint is left to try.
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
+
+use crate::metrics::Registry;
 
 pub(crate) const MAX_URLS: usize = 5;
 pub(crate) const DEFAULT_TIMEOUT_MS: u64 = 15_000;
@@ -50,6 +53,7 @@ pub(crate) struct Rpc {
     retries: u64,
     sticky: AtomicUsize,
     next_id: AtomicU64,
+    registry: Option<Arc<Registry>>,
 }
 
 /// The origin of an RPC URL for logs; paths often hold API keys.
@@ -101,7 +105,12 @@ fn retry_delay(attempt: u32, retry_after: Option<u64>) -> Duration {
 }
 
 impl Rpc {
-    pub(crate) fn new(urls: Vec<String>, timeout: Duration, retries: u64) -> Result<Self, String> {
+    pub(crate) fn new(
+        urls: Vec<String>,
+        timeout: Duration,
+        retries: u64,
+        registry: Option<Arc<Registry>>,
+    ) -> Result<Self, String> {
         if urls.is_empty() {
             return Err("no RPC URL".into());
         }
@@ -115,6 +124,7 @@ impl Rpc {
             retries: retries.min(MAX_RETRIES),
             sticky: AtomicUsize::new(0),
             next_id: AtomicU64::new(1),
+            registry,
         })
     }
 
@@ -147,6 +157,12 @@ impl Rpc {
                 Err(e) => {
                     if count > 1 {
                         tracing::debug!(endpoint = index, "RPC failover: {e}");
+                    }
+                    if let Some(registry) = &self.registry {
+                        registry.counter(
+                            "shade_tree_rpc_failovers_total",
+                            &[("endpoint", &index.to_string())],
+                        );
                     }
                     last = e.to_string();
                 }
@@ -206,6 +222,12 @@ impl Rpc {
                 if waited + delay_ms <= RETRY_BUDGET_MS {
                     waited += delay_ms;
                     attempt += 1;
+                    if let Some(registry) = &self.registry {
+                        registry.counter(
+                            "shade_tree_rpc_throttle_retries_total",
+                            &[("status", &status.as_u16().to_string())],
+                        );
+                    }
                     tokio::time::sleep(delay).await;
                     continue;
                 }
@@ -304,7 +326,13 @@ mod tests {
         )
         .await;
 
-        let rpc = Rpc::new(vec![down.clone(), ok.clone()], Duration::from_secs(5), 0).unwrap();
+        let rpc = Rpc::new(
+            vec![down.clone(), ok.clone()],
+            Duration::from_secs(5),
+            0,
+            None,
+        )
+        .unwrap();
         assert_eq!(
             rpc.call("eth_chainId", json!([])).await.unwrap(),
             json!("0x1")
@@ -315,11 +343,11 @@ mod tests {
             "the working endpoint is remembered"
         );
 
-        let rpc = Rpc::new(vec![revert, ok], Duration::from_secs(5), 0).unwrap();
+        let rpc = Rpc::new(vec![revert, ok], Duration::from_secs(5), 0, None).unwrap();
         let error = rpc.call("eth_call", json!([])).await.unwrap_err();
         assert!(error.is_revert(), "{error}");
 
-        let rpc = Rpc::new(vec![down], Duration::from_secs(5), 0).unwrap();
+        let rpc = Rpc::new(vec![down], Duration::from_secs(5), 0, None).unwrap();
         assert!(matches!(
             rpc.call("eth_chainId", json!([])).await,
             Err(RpcError::AllFailed { count: 1, .. })

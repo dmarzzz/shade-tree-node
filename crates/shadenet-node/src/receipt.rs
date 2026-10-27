@@ -37,6 +37,20 @@ impl Signer {
         })
     }
 
+    /// A signer over a known seed, for the tests.
+    #[cfg(test)]
+    pub(crate) fn from_seed(seed: [u8; 32]) -> Self {
+        Self {
+            onion: shadenet_proto::pubkey_to_onion(&shadenet_proto::ed25519_public_key(&seed)),
+            seed,
+        }
+    }
+
+    /// The ed25519 seed behind the onion: it signs announces and telemetry reports too.
+    pub(crate) fn seed(&self) -> &[u8; 32] {
+        &self.seed
+    }
+
     /// This node's onion, lowercase with its suffix: what a session initialization must name.
     pub(crate) fn onion(&self) -> String {
         shadenet_proto::session::normalize_onion(&self.onion)

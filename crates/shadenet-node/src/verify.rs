@@ -29,7 +29,15 @@ const LOCK: &str = include_str!(concat!(
     "/../../testdata/zk-artifacts.lock.json"
 ));
 const CIRCUIT: &str = "rln";
+/// The path spelling that names the verification key compiled into this binary, so a
+/// deployment record's artifact can be selected without a checkout on disk.
+pub(crate) const BUILTIN_PATH: &str = "builtin";
 const TARGET_MAX_LEN: usize = 256;
+
+/// The artifact id of the verification key compiled into this binary.
+pub(crate) fn builtin_artifact_id() -> String {
+    artifact_id_of(CIRCUIT, BUILTIN_VKEY)
+}
 const NONCE_MAX_LEN: usize = 128;
 
 /// The verification keys this node accepts, by artifact id.
@@ -77,10 +85,14 @@ impl ArtifactSet {
                         }
                     }
                     let path = PathBuf::from(path);
-                    let bytes = std::fs::read(&path).map_err(|source| Error::ReadFile {
-                        path: path.clone(),
-                        source,
-                    })?;
+                    let bytes = if path == Path::new(BUILTIN_PATH) {
+                        BUILTIN_VKEY.to_vec()
+                    } else {
+                        std::fs::read(&path).map_err(|source| Error::ReadFile {
+                            path: path.clone(),
+                            source,
+                        })?
+                    };
                     let key = parse_key(&bytes, &path)?;
                     let derived = artifact_id_of(CIRCUIT, &bytes);
                     if declared.is_some_and(|id| id != derived) {

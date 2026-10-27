@@ -4,6 +4,49 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### The node moves to Rust: the operator process (ADR 0014)
+
+- `shadenet-node` is now the whole node: the JavaScript supervisor, gateway and heartbeat became
+  one Rust process. `shadenet-node run` takes `SHADENET_RECORD` (or `record` in
+  `<state>/node.toml`) and the same knobs as before (`SHADENET_STATE`, `ADMIT`, `SETS`,
+  `MEMBERS_FILE`, `ALLOW`, `DENY`, `WEIGHT`, `REGION`, `METRICS`, `LOG`, `OPERATOR_KEY_FILE`,
+  `OPERATOR` + `OPERATOR_SIG`, `POW`), fetches and checks the record, derives the `SHADE_TREE_*`
+  settings from both (an explicit `SHADE_TREE_*` still wins), mints the onion identity on first
+  start (`hs-gateway/`, the same key files Tor and the JavaScript node used, so an existing node
+  keeps its onion), adds its onion to the clients' avoid-nodes file, writes the same `torrc` and
+  runs C Tor as a child until `Bootstrapped 100%`, then serves. A Tor that exits ends the node
+  so the container restarts both. `status.json`, the record re-check every 15 minutes with the
+  `recordDrift` warning, and the `check` (with `--probe` and `--json`), `identity`, `authorize`,
+  `status` and `retire` commands behave as the JavaScript ones did; `retire` sends the running
+  node SIGUSR1, which stops its heartbeat while open tunnels finish.
+- The heartbeat announces to every Elder Tree of the record each interval over Tor's SOCKS port,
+  gated on the local egress check, with the same signed capabilities (`ports`, `region`,
+  `artifacts`, `admits`, `pay`, `rate`, `session`, `draining`, `sets`, `proto`) and the same
+  operator authorization (a pre-computed pair verified at startup, or the key signing
+  `operatorAuthMessage` once). Refusals carry the operator's fix (`not-staked`,
+  `bad-operator-sig`); the announce bytes are pinned to `testdata/vectors.json`.
+- Prometheus metrics on the loopback port (`SHADE_TREE_METRICS_PORT`, the `SHADENET_METRICS`
+  knob): every `shade_tree_gateway_*`, `shade_tree_heartbeat_*`, `shade_tree_rpc_*`,
+  `shade_tree_alert_webhook_total` and process series the JavaScript node and heartbeat exposed,
+  with the same help text, bounded reason labels and exposition format, plus `/livez` and
+  `/readyz` (503 while the drain flag is set). One port serves the node's and the heartbeat's
+  series; `SHADE_TREE_HEARTBEAT_METRICS_PORT` is no longer listened on.
+- The drain flag (`SHADE_TREE_DRAIN_FILE`, `<state>/draining` through the front door), webhook
+  alerts (`SHADE_TREE_ALERT_WEBHOOK` with the generic, Slack, Discord and Matrix payloads and
+  the gateway and heartbeat rules), the fleet tally (`SHADE_TREE_FLEET_TALLY_PEERS` with its
+  bearer token: the authenticated one-hop push of `(nullifier, epoch)` between peers, fail-open),
+  private relay telemetry (`SHADE_TREE_RELAY_TELEMETRY=1`: the counter file and the onion-signed
+  report after an accepted announce) and systemd credentials (`CREDENTIALS_DIRECTORY`) are ported.
+- `docker/shadenet-node.Dockerfile` builds the image from the Rust binary (cross-compiled with
+  cargo-zigbuild, Tor from Debian); `docker exec shadenet-node shadenet-node status` replaces the
+  `node packages/node/bin/...` spelling. The release workflow packages `shadenet-node` for the
+  Linux and macOS targets.
+- Not ported: the light-client root provider (`SHADE_TREE_ROOT_PROVIDER=light` is still refused;
+  the node reads roots from the record's RPC list). The JavaScript node, supervisor and heartbeat
+  are still in the tree for one release and are deleted next.
+- `shadenet::eth::Wallet::sign_message` (EIP-191 `personal_sign`, pinned to the operator vector)
+  and `shadenet_proto::canonical_caps_json_text` are new.
+
 ### The node moves to Rust: foundations (ADR 0014)
 
 - New crate `crates/shadenet-node` and binary `shadenet-node`. One entrypoint: `main.rs` resolves
@@ -36,8 +79,7 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   (`SHADE_TREE_SESSION_MAX`, `SHADE_TREE_SESSION_STREAM_MAX_MS`). The lifetime ends spends, not
   streams. Unlike the JavaScript node, a session initialization refused at verification carries
   the same `gate:` prefix as a tunnel; clients already strip it.
-  Not yet: the light-client root provider (`SHADE_TREE_ROOT_PROVIDER=light` is refused),
-  metrics, the heartbeat and the Tor supervisor.
+  Not yet: the light-client root provider (`SHADE_TREE_ROOT_PROVIDER=light` is refused).
 - `shadenet-rln` gains `replay`, the pure member-event replay the SDK's `leaves` module now
   re-exports, so the node and the client rebuild the same tree from the same code.
 - The interop harness (`crates/shadenet-rln/interop/*.sh`) takes `SHADE_TREE_GATEWAY_CMD` and
