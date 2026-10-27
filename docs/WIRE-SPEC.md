@@ -355,12 +355,16 @@ the Elder's copies of these fields:
 | `pubkey` | `onionToPubkey(announce.onion)` |
 | `weight` | `clamp(announce.weight, 0, MAX_ENTRY_WEIGHT)`; `100` when `announce.weight` is not a finite number |
 | `operator` | `announce.operator` when the operator authorization verified, else absent |
-| `caps`, `capsSig` | `canonicalCaps(announce.caps)` and `announce.capsSig`, when present |
+| `caps`, `capsSig` | `canonicalCaps(announce.caps)` and `announce.capsSig`, when the announce has both (an Elder lists a caps-free entry the same way) |
 
 `health` stays the source's hint (an Elder's prober may mark an entry `down`); it is unsigned
 and only orders failover.
 
-**Entries without `announce`.** An entry with no `announce` is a legacy entry. It is accepted
+**Last-known-good copy.** A client that falls back to its saved copy because no source answered
+skips rows 3 and 4 for that copy: its announces expire long before it does, and a stale but
+verified canopy is better than none (sections 4.2 to 4.4). Every other row applies.
+
+**Entries without `announce`.** An entry with no `announce` (absent or `null`) is a legacy entry. It is accepted
 only on the strength of a pinned signer (sections 4.2 to 4.4), exactly as before, and a source
 without a pinned signer contributes no legacy entries.
 

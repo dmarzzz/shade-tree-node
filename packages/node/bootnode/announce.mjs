@@ -154,6 +154,39 @@ export async function verifyAnnounce(rec, { now = Math.floor(Date.now() / 1000),
   return { ok: true, onion: rec.onion, pubkey, operator, staked, caps };
 }
 
+// WIRE-SPEC 4.5 constants for an entry that carries the node's own announce.
+export const MAX_ENTRY_AGE = 900;
+export const FUTURE_SKEW = DEFAULT_ANNOUNCE_SKEW;
+export const MAX_ENTRY_WEIGHT = 1000;
+
+// Check a directory entry against the announce it carries and rebuild it from that announce
+// alone (WIRE-SPEC 4.5, rows 1 to 5; the stake check is the caller's). `now` is unix seconds, or
+// null to skip the freshness rows, which a client does for its last-known-good copy. An entry
+// with no announce is returned as listed with ts null: only the pinned signer vouches for it.
+// Returns { ok: true, entry, ts } or { ok: false, reason }.
+export async function verifyListedEntry(g, { now = null } = {}) {
+  const ann = g?.announce;
+  if (ann === undefined || ann === null) return { ok: true, entry: g, ts: null };
+  const short = `${String(g.onion).slice(0, 12)}..`;
+  if (typeof ann !== "object" || Array.isArray(ann)) return { ok: false, reason: `bad-announce:${short}:no-announce` };
+  if (ann.onion !== g.onion) return { ok: false, reason: `announce-onion-mismatch:${short}` };
+  if (now !== null) {
+    if (typeof ann.ts !== "number" || now >= ann.ts + MAX_ENTRY_AGE) return { ok: false, reason: `announce-expired:${short}` };
+    if (ann.ts > now + FUTURE_SKEW) return { ok: false, reason: `announce-future:${short}` };
+  }
+  const v = await verifyAnnounce(ann, { skew: Infinity });
+  if (!v.ok) return { ok: false, reason: `bad-announce:${short}:${v.reason}` };
+  const entry = {
+    onion: ann.onion,
+    pubkey: v.pubkey,
+    weight: Number.isFinite(ann.weight) ? Math.max(0, Math.min(MAX_ENTRY_WEIGHT, ann.weight)) : 100,
+    health: g.health,
+    ...(v.operator ? { operator: v.operator, ...(g.staked !== undefined ? { staked: g.staked } : {}) } : {}),
+    ...(v.caps && typeof ann.capsSig === "string" ? { caps: v.caps, capsSig: ann.capsSig } : {}),
+  };
+  return { ok: true, entry, ts: ann.ts };
+}
+
 // Recover the operator address from a personal_sign over operatorAuthMessage and confirm
 // it equals the claimed operator. ethers is imported lazily so the onion-only path (and
 // the offline selftest) never require it.

@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadDirectory, selectionOrder, reportHealth, verifyDirectory, MAX_WEIGHT, canonicalCaps, setsOf, DEFAULT_EGRESS_PORT, DEFAULT_PROTO_VERSION, isDraining } from "../lib/directory.mjs";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
-import { verifyAnnounce } from "../bootnode/announce.mjs";
+import { verifyAnnounce, verifyListedEntry } from "../bootnode/announce.mjs";
 import { makeStakeVerifier } from "../lib/gateway-registry.mjs";
 import { applyClientNetworkEnv } from "../lib/network-record.mjs";
 import { createLogger } from "../lib/log.mjs";
@@ -44,8 +44,8 @@ applyClientNetworkEnv(process.env);
 // Bootnode wins if both are set. Either way, verifyDirectory + last-known-good caching apply.
 // ADR 0012: every Elder Tree of the canopy, in order. SHADE_TREE_BOOTNODE_ONION (the primary) comes
 // first; SHADE_TREE_BOOTNODE_ONIONS (filled from the record's elders[]) adds the rest. A live fetch
-// tries them in order and the first verifiable directory wins, so one dead Elder never costs the
-// canopy. Single-Elder configurations are unchanged.
+// asks all of them and unions every verifiable directory (WIRE-SPEC 4.5), so one dead Elder never
+// costs the canopy. Single-Elder configurations are unchanged.
 function parseOnionList(primary, listed) {
   const out = [];
   for (const onion of [primary, ...String(listed || "").split(",")]) {
@@ -567,25 +567,57 @@ export function _setCanopyFetch(fetchFn) { _fetchCanopy = fetchFn || fetchOverTo
 // the previously-cached good fleet, never to nothing and never to an unverified list.
 // Events fire only when this function performs a real refresh. A selection served from the
 // in-memory refresh window emits nothing.
-// ADR 0012: the live directory from the first Elder Tree that answers with a VERIFIABLE canopy,
-// in record order. An unreachable Elder or an unverifiable answer moves on to the next; only when
+// ADR 0012 + WIRE-SPEC 4.5: every Elder Tree is asked at once, and each answer that verifies under
+// the pinned signer, keeps that Elder's `issued` monotonic and passes the optional max-age bound is
+// kept for the union. The floor is per Elder because Elders sign on their own clocks. Only when
 // every Elder fails does the caller fall back to the last-known-good cache. Logs and errors name
 // positions, never addresses (canopy events stay address-free).
-async function fetchCanopyFromElders(path) {
+const elderFloors = new Map();
+async function fetchCanopiesFromElders(path) {
+  const now = Date.now();
+  const answers = await Promise.allSettled(BOOTNODE_ONIONS.map((elder) => _fetchCanopy(elder, path, { torHost: TOR_HOST, torPort: TOR_PORT })));
+  const accepted = [];
   let lastErr = null;
-  for (let i = 0; i < BOOTNODE_ONIONS.length; i++) {
+  answers.forEach((answer, i) => {
     try {
-      const doc = await _fetchCanopy(BOOTNODE_ONIONS[i], path, { torHost: TOR_HOST, torPort: TOR_PORT });
+      if (answer.status === "rejected") throw answer.reason;
+      const doc = answer.value;
       const v = verifyDirectory(doc, PINNED_SIGNER);
       if (!v.ok) throw new Error(v.reason);
-      if (i > 0) clientLog.warn("Canopy served by a fallback Elder Tree", { elder: i + 1, of: BOOTNODE_ONIONS.length });
-      return doc;
+      const issued = Number(doc.issued) || 0;
+      const floor = elderFloors.get(i) || 0;
+      if (issued < floor) throw new Error(`directory rollback rejected: issued ${issued} < last accepted ${floor}`);
+      const stale = staleReason(issued, now);
+      if (stale) throw new Error(stale);
+      accepted.push({ i, doc });
     } catch (e) {
       lastErr = e;
-      if (i + 1 < BOOTNODE_ONIONS.length) clientLog.warn("Elder Tree unavailable; trying the next", { elder: i + 1, of: BOOTNODE_ONIONS.length, reason: "unavailable-or-invalid" });
+      if (BOOTNODE_ONIONS.length > 1) clientLog.warn("Elder Tree unavailable", { elder: i + 1, of: BOOTNODE_ONIONS.length, reason: "unavailable-or-invalid" });
+    }
+  });
+  if (!accepted.length) throw lastErr || new Error("no Elder Tree configured");
+  for (const { i, doc } of accepted) elderFloors.set(i, Number(doc.issued) || 0);
+  return accepted.map(({ doc }) => doc);
+}
+
+// WIRE-SPEC 4.5: rebuild every entry that carries an announce from it, drop the ones that fail, and
+// union the verified canopies. A node listed more than once keeps its newest announce; an entry
+// without one loses to one with, and otherwise the more recently issued canopy wins. `now` is unix
+// seconds, or null to skip the freshness rows (the last-known-good copy outlives its announces).
+async function mergeVerifiedCanopies(docs, { now }) {
+  const sorted = [...docs].sort((a, b) => (Number(b.issued) || 0) - (Number(a.issued) || 0));
+  const byOnion = new Map();
+  const dropped = [];
+  for (const doc of sorted) {
+    const checked = await Promise.all((doc.gateways || []).map((g) => verifyListedEntry(g, { now })));
+    for (const r of checked) {
+      if (!r.ok) { dropped.push(r.reason); continue; }
+      const held = byOnion.get(r.entry.onion);
+      if (!held || (r.ts ?? -1) > (held.ts ?? -1)) byOnion.set(r.entry.onion, r);
     }
   }
-  throw lastErr || new Error("no Elder Tree configured");
+  if (dropped.length) clientLog.warn("Canopy entries failed their announce check", { dropped: dropped.length, reason: dropped[0].split(":", 1)[0] });
+  return { version: 1, issued: Number(sorted[0]?.issued) || 0, gateways: [...byOnion.values()].map((r) => r.entry) };
 }
 
 export function _elderCount() { return BOOTNODE_ONIONS.length; }
@@ -593,18 +625,21 @@ export function _elderCount() { return BOOTNODE_ONIONS.length; }
 async function loadFromBootnode(onEvent) {
   emitCanopy(onEvent, "query");
   try {
-    const fresh = await fetchCanopyFromElders("/directory");
+    const fresh = await fetchCanopiesFromElders("/directory");
     if (CACHE_PATH) {
-      try { await mkdir(dirname(CACHE_PATH), { recursive: true }); await writeFile(CACHE_PATH, JSON.stringify(fresh, null, 2) + "\n"); } catch {}
+      try { await mkdir(dirname(CACHE_PATH), { recursive: true }); await writeFile(CACHE_PATH, JSON.stringify({ canopies: fresh }, null, 2) + "\n"); } catch {}
     }
-    return { dir: fresh, source: "bootnode" };
+    return { dir: await mergeVerifiedCanopies(fresh, { now: Math.floor(Date.now() / 1000) }), source: "bootnode" };
   } catch (freshErr) {
     if (CACHE_PATH) {
       try {
+        // { canopies: [...] } since WIRE-SPEC 4.5; a bare directory before it.
         const cached = JSON.parse(await readFile(CACHE_PATH, "utf8"));
-        if (verifyDirectory(cached, PINNED_SIGNER).ok) {
-          emitCanopy(onEvent, "cache", canopyFields(cached));
-          return { dir: cached, source: "cache", freshError: freshErr.message };
+        const docs = (Array.isArray(cached?.canopies) ? cached.canopies : [cached]).filter((doc) => verifyDirectory(doc, PINNED_SIGNER).ok);
+        if (docs.length) {
+          const dir = await mergeVerifiedCanopies(docs, { now: null });
+          emitCanopy(onEvent, "cache", canopyFields(dir));
+          return { dir, source: "cache", freshError: freshErr.message };
         }
       } catch {}
     }
@@ -651,6 +686,13 @@ const DIRECTORY_MAX_AGE_MS = parseMaxAgeMs(process.env.SHADE_TREE_DIRECTORY_MAX_
 // Clock-skew grace added on top of the bound so a client whose clock lags the signer's doesn't
 // spuriously reject a just-issued directory. Only consulted when the bound is armed.
 const DIRECTORY_MAX_AGE_SKEW_MS = Math.max(0, Number(process.env.SHADE_TREE_DIRECTORY_MAX_AGE_SKEW_MS || 5 * 60 * 1000));
+function staleReason(issued, now) {
+  if (DIRECTORY_MAX_AGE_MS == null) return null;
+  const ageMs = now - issued * 1000;
+  if (ageMs <= DIRECTORY_MAX_AGE_MS + DIRECTORY_MAX_AGE_SKEW_MS) return null;
+  return `directory too stale: issued ${issued}s is ${Math.round(ageMs / 1000)}s old > max-age ` +
+    `${Math.round((DIRECTORY_MAX_AGE_MS + DIRECTORY_MAX_AGE_SKEW_MS) / 1000)}s (bound + skew)`;
+}
 
 let refreshInFlight = null;
 async function ensureLoaded(onEvent, { force = false } = {}) {
@@ -659,7 +701,7 @@ async function ensureLoaded(onEvent, { force = false } = {}) {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     try {
-      const next = BOOTNODE_ONION
+      let next = BOOTNODE_ONION
         ? await loadFromBootnode(onEvent)
         : await loadDirectory({ path: DIRECTORY_PATH, pinnedSigner: PINNED_SIGNER, cachePath: CACHE_PATH });
     // Rollback / stale-directory replay guard (audit loop-15 F2): a directory's `issued` must
@@ -672,22 +714,20 @@ async function ensureLoaded(onEvent, { force = false } = {}) {
     // so a subsequent fresh fetch can't roll us back behind the cache. A thrown rejection is
     // caught below and we keep the good in-memory fleet — fail-closed.
     const nextIssued = Number(next.dir && next.dir.issued) || 0;
-    if (next.source !== "cache" && nextIssued < lastAcceptedIssued) {
+    // Live discovery applies both guards per Elder (fetchCanopiesFromElders): the union's
+    // `issued` is the newest Elder's, which drops whenever that Elder is down.
+    const guarded = !BOOTNODE_ONION && next.source !== "cache";
+    if (guarded && nextIssued < lastAcceptedIssued) {
       throw new Error(`directory rollback rejected: issued ${nextIssued} < last accepted ${lastAcceptedIssued}`);
     }
     // Absolute freshness bound (T-FEAT-21): reject a FRESH directory whose issued is beyond the
-    // configured max age + skew grace. `issued` is in SECONDS, the bound in MS, so scale × 1000.
-    // OFF unless SHADE_TREE_DIRECTORY_MAX_AGE_MS is set; cache source is exempt. Thrown => caught below =>
-    // keep the last-good in-memory fleet (fail-closed), same as the rollback guard.
-    if (DIRECTORY_MAX_AGE_MS != null && next.source !== "cache") {
-      const ageMs = now - nextIssued * 1000;
-      if (ageMs > DIRECTORY_MAX_AGE_MS + DIRECTORY_MAX_AGE_SKEW_MS) {
-        throw new Error(
-          `directory too stale: issued ${nextIssued}s is ${Math.round(ageMs / 1000)}s old > max-age ` +
-          `${Math.round((DIRECTORY_MAX_AGE_MS + DIRECTORY_MAX_AGE_SKEW_MS) / 1000)}s (bound + skew)`
-        );
-      }
-    }
+    // configured max age + skew grace. OFF unless SHADE_TREE_DIRECTORY_MAX_AGE_MS is set; cache
+    // source is exempt. Thrown => caught below => keep the last-good in-memory fleet (fail-closed),
+    // same as the rollback guard.
+    const stale = guarded ? staleReason(nextIssued, now) : null;
+    if (stale) throw new Error(stale);
+    // A static file is long-lived, so its announces are checked without the freshness rows.
+    if (!BOOTNODE_ONION) next = { ...next, dir: await mergeVerifiedCanopies([next.dir], { now: null }) };
     if (nextIssued > lastAcceptedIssued) lastAcceptedIssued = nextIssued;
     // Carry forward live health across a refresh so a reload doesn't forget which
     // gateways just failed.

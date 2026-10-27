@@ -4,6 +4,23 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Clients check every canopy entry and union every Elder (discovery v1, step 3)
+
+- The Rust client and the JS Proxy client check each entry that carries the node's announce
+  (WIRE-SPEC 4.5) and rebuild its weight, capabilities and operator from it. An entry that fails,
+  or whose announce is older than 900 s, is dropped and the rest of the list is kept. Entries
+  without `announce` are still accepted from a pinned signer.
+- When several Elders list the same node, both clients keep the entry with the newest announce.
+- The JS client asks every Elder at once and unions every directory that verifies, instead of
+  taking the first. The rollback floor and the optional max-age bound now apply per Elder, so a
+  newer Elder going down is no longer read as a rollback. Its last-known-good file holds every
+  Elder's directory (`{ "canopies": [...] }`); a file in the old single-directory shape still
+  loads.
+- A last-known-good copy skips the freshness check, so a client whose Elders are all down keeps
+  its saved fleet as before.
+- New `shadenet_proto::verify_listed_entry` and JS `verifyListedEntry`, both pinned to the
+  `selfVerifyingEntry` vector.
+
 ### Spec: self-verifying canopy entries (discovery v1, step 1)
 
 - `docs/WIRE-SPEC.md` section 4.5 specifies an optional `announce` field on a canopy entry: the
