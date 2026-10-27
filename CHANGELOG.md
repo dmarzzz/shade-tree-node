@@ -14,6 +14,18 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 - New golden vector `selfVerifyingEntry`. The JS vector test re-derives it, and a Rust test
   confirms today's parser accepts a directory carrying the field.
 
+### Elder Tree: canopy entries carry the node's signed announce (discovery v1, step 2)
+
+- `/directory` and `/directory/delta` now list each node's accepted announce under `announce`
+  (WIRE-SPEC 4.5). The signed bytes are unchanged, so every client accepts the list as before;
+  clients do not check the field yet.
+- An announce over 4096 bytes is listed without its copy. Its signed `nonce` and `caps.ports` are
+  unbounded, and a few padded announces would otherwise push the list past the 2 MiB response
+  limit of the Rust client and the Elder's federation fetch.
+- A node's re-announce now changes its entry, so `/directory/delta` re-ships it every heartbeat.
+- Federation reads the listed announce instead of one `GET /gateway/<onion>` per node over Tor,
+  and still re-verifies it through `admitGossip`.
+
 ### RPC: a rate-limited endpoint is waited on, not failed (roadmap #369 M0)
 
 - HTTP 429, and 503 with `Retry-After`, are resent with bounded exponential backoff and jitter

@@ -309,7 +309,13 @@ sources.
 verbatim with every field it arrived with (`onionSig`, `capsSig`, `operator`, `operatorSig`).
 `announce` is outside `canonicalDirectoryBytes` (section 1.2), so an Elder that adds it signs
 the same bytes as before and a verifier that does not know the field accepts the directory
-unchanged. `GET /directory/delta` carries `announce` on entries in `added` the same way.
+unchanged. `GET /directory/delta` carries `announce` on entries in `added` the same way, so a
+node's re-announce changes its entry and re-ships it in the next delta.
+
+An Elder lists `announce` only when `JSON.stringify(announce)` is at most
+`MAX_LISTED_ANNOUNCE_BYTES` UTF-8 bytes, and otherwise serves the entry without it (a legacy
+entry, below). The signed `nonce` and `caps.ports` have no length bound, so without the cap a
+few padded announces could push a directory past a client's 2 MiB response limit.
 
 **Constants.**
 
@@ -318,6 +324,7 @@ unchanged. `GET /directory/delta` carries `announce` on entries in `added` the s
 | `MAX_ENTRY_AGE` | `900` seconds | an entry is fresh while `now < announce.ts + MAX_ENTRY_AGE` (the Elder's default TTL) |
 | `FUTURE_SKEW` | `120` seconds | an entry is refused when `announce.ts > now + FUTURE_SKEW` (`DEFAULT_ANNOUNCE_SKEW`) |
 | `MAX_ENTRY_WEIGHT` | `1000` | the weight clamp the Elder already applies (`packages/node/bootnode/server.mjs` `MAX_WEIGHT`) |
+| `MAX_LISTED_ANNOUNCE_BYTES` | `4096` | the largest announce an Elder copies into an entry |
 
 `MAX_ENTRY_AGE` is a protocol constant, not the Elder's `--ttl`: an Elder configured with a
 longer TTL lists entries that clients drop once they pass `MAX_ENTRY_AGE`.
