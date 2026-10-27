@@ -229,9 +229,13 @@ async function main() {
     clock = 9_000_000;
     // Drive an identical announce sequence into two registries; the ONLY difference is that one
     // has an (empty-peer) federation constructed + started. The served directory bytes must match.
+    // The same records go to both: each carries a random nonce, and the listed announce includes it.
+    const recs = [
+      buildAnnounce({ onion: g1.onion, weight: 100, onionSeedHex: g1.seed, ts: clock }),
+      buildAnnounce({ onion: g2.onion, weight: 250, onionSeedHex: g2.seed, ts: clock }),
+    ];
     const seq = async (reg) => {
-      await reg.announce(buildAnnounce({ onion: g1.onion, weight: 100, onionSeedHex: g1.seed, ts: clock }));
-      await reg.announce(buildAnnounce({ onion: g2.onion, weight: 250, onionSeedHex: g2.seed, ts: clock }));
+      for (const rec of recs) await reg.announce(rec);
     };
     const plain = makeRegistry({ signer, stake: MockStakeVerifier({}), admission: "open", ttlSec: 900, minReannounceSec: 0, now: () => clock });
     const withFed = makeRegistry({ signer, stake: MockStakeVerifier({}), admission: "open", ttlSec: 900, minReannounceSec: 0, now: () => clock });
@@ -243,6 +247,44 @@ async function main() {
     await emptyFed.pullAll(); // even if called, iterates zero peers
     ok(dialed === 0, "no-peer federation never dials");
     ok(JSON.stringify(plain.directory()) === JSON.stringify(withFed.directory()), "no-peer registry directory is byte-identical to a federation-free one");
+
+    // ---- listed announce (WIRE-SPEC 4.5) --------------------------------------
+    console.log("\nlisted announce (WIRE-SPEC 4.5):");
+    clock = 10_000_000;
+    const origin = makeRegistry({ signer, stake: MockStakeVerifier({}), admission: "open", ttlSec: 900, minReannounceSec: 0, now: () => clock });
+    const recG3 = buildAnnounce({ onion: g3.onion, weight: 5000, onionSeedHex: g3.seed, ts: clock, caps: { ports: [443], region: "eu" } });
+    await origin.announce(recG3);
+    const padded = buildAnnounce({ onion: g4.onion, weight: 100, onionSeedHex: g4.seed, ts: clock, nonce: "a".repeat(5000) });
+    ok((await origin.announce(padded)).ok, "an announce with an oversized signed nonce is still admitted");
+    const listedDir = origin.directory();
+    const listedG3 = listedDir.gateways.find((g) => g.onion === g3.onion);
+    const listedG4 = listedDir.gateways.find((g) => g.onion === g4.onion);
+    ok(JSON.stringify(listedG3.announce) === JSON.stringify(recG3), "the directory entry carries the accepted announce verbatim");
+    ok(listedG3.weight === 1000 && listedG3.announce.weight === 5000, "the Elder's clamped weight and the node's signed weight both survive");
+    ok(listedG4 && listedG4.announce === undefined, "an announce over 4096 bytes is listed without its copy (a legacy entry)");
+    ok(verifyDirectory(listedDir, signer.pub).ok, "a directory carrying announce copies verifies under the existing rule");
+    const stripped = { ...listedDir, gateways: listedDir.gateways.map(({ announce: _a, ...g }) => g) };
+    ok(verifyDirectory(stripped, signer.pub).ok, "the same signature covers the directory with the copies removed");
+
+    let gatewayFetches = 0;
+    const countingFetch = async () => { gatewayFetches++; throw new Error("bootnode HTTP 404: not-found"); };
+    const listedReg = makeRegistry({ signer, stake: MockStakeVerifier({}), admission: "open", ttlSec: 900, minReannounceSec: 0, now: () => clock });
+    const listedFed = makeFederation({ registry: listedReg, peers: [g1.onion], fetchDir: async () => ({ gateways: [listedG3] }), fetchGateway: countingFetch });
+    const sl = await listedFed.pullAll();
+    ok(sl.merged === 1 && gatewayFetches === 0, "federation merges a listed announce without a per-gateway fetch");
+    ok(JSON.stringify(listedReg.record(g3.onion)) === JSON.stringify(recG3), "the merged record is the listed announce");
+
+    const tamperedListed = { ...listedG3, announce: { ...listedG3.announce, weight: 1000 } };
+    const tamperedReg = makeRegistry({ signer, stake: MockStakeVerifier({}), admission: "open", ttlSec: 900, minReannounceSec: 0, now: () => clock });
+    const tamperedFed = makeFederation({ registry: tamperedReg, peers: [g1.onion], fetchDir: async () => ({ gateways: [tamperedListed] }), fetchGateway: countingFetch });
+    const st = await tamperedFed.pullAll();
+    ok(st.rejected === 1 && tamperedReg.size() === 0 && gatewayFetches === 0, "a tampered listed announce is re-verified and rejected");
+
+    const misfiled = { ...listedG3, onion: g2.onion };
+    const misfiledReg = makeRegistry({ signer, stake: MockStakeVerifier({}), admission: "open", ttlSec: 900, minReannounceSec: 0, now: () => clock });
+    const misfiledFed = makeFederation({ registry: misfiledReg, peers: [g1.onion], fetchDir: async () => ({ gateways: [misfiled] }), fetchGateway: countingFetch });
+    await misfiledFed.pullAll();
+    ok(gatewayFetches === 1 && misfiledReg.size() === 0, "an announce listed under another onion is ignored and the entry is fetched instead");
   } finally {
     await rm(work, { recursive: true, force: true });
   }
