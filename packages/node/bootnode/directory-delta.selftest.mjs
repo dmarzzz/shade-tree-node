@@ -104,9 +104,10 @@ async function main() {
     const delta = await getJSON(base, `/directory/delta?since=${encodeURIComponent(E1)}`);
     ok(!delta.full, "delta since E1 is served as a delta (E1 still in history)");
     ok(delta.base === E2, "delta base == E2 (current)");
-    ok(delta.added.length === 1 && delta.added[0].onion === g3.onion, "delta reports g3 added (full entry)");
+    ok(delta.added.length === 2 && delta.added.some((g) => g.onion === g3.onion), "delta reports g3 added (full entry)");
+    ok(delta.added.some((g) => g.onion === g1.onion && g.announce?.ts === clock), "delta re-ships g1 with its re-announce (WIRE-SPEC 4.5 announce changed in place)");
     ok(delta.removed.length === 1 && delta.removed[0] === g2.onion, "delta reports g2 removed (onion only)");
-    ok(delta.unchanged === 1, "delta reports 1 unchanged (g1)");
+    ok(delta.unchanged === 0, "delta reports 0 unchanged (g1's listed announce moved on)");
 
     // --- CRITICAL: reconstruct from cached base + delta, verify under the pin ---
     console.log("\nreconstruct + verify (the delta cannot smuggle a forged gateway):");
@@ -127,7 +128,7 @@ async function main() {
     console.log("\nadversarial delta (forged added) is rejected on reconstruction:");
     const forgedEntry = { onion: g2.onion, pubkey: "00".repeat(32), weight: 1000, health: "up" }; // wrong pubkey for g2's onion
     const forgedDelta = {
-      base: E2, since: E1, added: [delta.added[0], forgedEntry], removed: [], unchanged: 1,
+      base: E2, since: E1, added: [...delta.added, forgedEntry], removed: [], unchanged: 0,
       directory: { ...delta.directory, order: [...delta.directory.order, g2.onion] },
     };
     const forgedRebuilt = reconstruct(dirE1, forgedDelta);
