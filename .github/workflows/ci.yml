@@ -164,7 +164,7 @@ jobs:
           toolchain: 1.98.0
 
       - name: Install cargo-deny and cargo-audit
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-deny,cargo-audit
 
@@ -196,7 +196,7 @@ jobs:
           shared-key: llvm-cov
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
           tool: cargo-llvm-cov
 
