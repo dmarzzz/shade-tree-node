@@ -36,7 +36,8 @@ wrapper-side default; the SDKs and the site only saw `rpcUrl`.
    signer set; only when every Elder fails does it use the last-known-good cache. The pinned
    signer set (`SHADE_TREE_DIR_SIGNER`) becomes the union of the Elders' canopy signers, primary
    first. This covers the Lab runner and `@shadenet/sdk/node`, which wrap this client. The Rust
-   SDK and the browser SDK already did this (#182).
+   SDK and the browser SDK already did this (#182). Since discovery v1 (`docs/WIRE-SPEC.md` 4.5)
+   the JS client asks every Elder at once and unions every directory that verifies.
 3. **The record carries the RPC list.** `admission.roots.staked.rpcUrls` is the failover order
    (one to five HTTPS endpoints, no duplicates); `rpcUrl` stays and must equal `rpcUrls[0]`.
    Every reader takes the list: `SHADE_TREE_NETWORK` fills `SHADE_TREE_RPC_URL` with it, the v4

@@ -101,21 +101,24 @@ export function makeFederation({
     }
     // Enumerate onion STRINGS only -- the peer's labels + signature are not trusted.
     const gateways = Array.isArray(dir?.gateways) ? dir.gateways : [];
-    const onions = [];
+    const listed = [];
     for (const g of gateways) {
       const o = typeof g?.onion === "string" ? g.onion : null;
-      if (o) onions.push(o);
-      if (onions.length >= maxPullPerPeer) break; // bound a hostile over-large directory
+      if (o) listed.push({ onion: o, announce: g.announce?.onion === o ? g.announce : null });
+      if (listed.length >= maxPullPerPeer) break; // bound a hostile over-large directory
     }
-    stats.listed = onions.length;
-    for (const onion of onions) {
-      let rec;
-      try {
-        rec = await fetchGateway(peer, onion);
-      } catch {
-        // One gateway fetch failing (404 / truncated / down) doesn't abort the peer.
-        stats.errors++;
-        continue;
+    stats.listed = listed.length;
+    for (const { onion, announce } of listed) {
+      // A listed announce (WIRE-SPEC 4.5) saves one Tor request; admitGossip re-verifies it either way.
+      let rec = announce;
+      if (!rec) {
+        try {
+          rec = await fetchGateway(peer, onion);
+        } catch {
+          // One gateway fetch failing (404 / truncated / down) doesn't abort the peer.
+          stats.errors++;
+          continue;
+        }
       }
       let r;
       try {
