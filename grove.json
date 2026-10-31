@@ -1,0 +1,77 @@
+{
+  "schema": "shade-tree-public-grove-v1",
+  "network": "sepolia",
+  "observedAt": "2026-10-31T19:45:00.000Z",
+  "source": {
+    "bootnodeReachable": true,
+    "directoryVerified": true,
+    "definition": "announced-within-ttl",
+    "cadenceMinutes": 15
+  },
+  "nodes": {
+    "announced": 13
+  },
+  "growth": {
+    "windowHours": 24,
+    "announcedNodeHours": 32,
+    "samples": 11
+  },
+  "privacy": {
+    "identities": false,
+    "locations": false,
+    "traffic": false,
+    "stablePositions": false,
+    "futureSharedStatsMinReportingNodes": 5
+  },
+  "history": [
+    {
+      "at": "2026-10-29T19:45:00.000Z",
+      "announced": 18
+    },
+    {
+      "at": "2026-10-29T23:30:00.000Z",
+      "announced": 18
+    },
+    {
+      "at": "2026-10-30T02:45:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-30T09:15:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-30T16:00:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-30T20:30:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-31T00:00:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-31T05:30:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-31T11:00:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-31T16:00:00.000Z",
+      "announced": 13
+    },
+    {
+      "at": "2026-10-31T19:45:00.000Z",
+      "announced": 13
+    }
+  ],
+  "attestation": {
+    "algorithm": "Ed25519",
+    "keyId": "grove-2026-08",
+    "signature": "ECeOymF1GHnyj2n4UnjmYeP4UKs4kCrrcqSn0zKlSjObPpiLfuT/VVK5bypY8+bp7RPE3yFFqwwJdbP25CLcBQ=="
+  }
+}
