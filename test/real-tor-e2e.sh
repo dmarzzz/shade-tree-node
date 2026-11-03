@@ -3,8 +3,8 @@
 #
 # Proves the FULL member egress path end-to-end over REAL Tor: the JS REFERENCE client
 # (packages/node/client/shade-tree-client.mjs) mints a REAL per-request RLN membership proof, dials the
-# gateway's published v3 `.onion` over the system Tor SOCKS port, and the REAL JS gateway
-# (packages/node/gateway/gateway.mjs) ACCEPTS it and proxies the CONNECT to a LOCAL sink. We then assert
+# gateway's published v3 `.onion` over the system Tor SOCKS port, and the REAL Rust node
+# (shadenet-node, ADR 0014) ACCEPTS it and proxies the CONNECT to a LOCAL sink. We then assert
 # three independent facts: the client got an `ok` ack (ACCEPT), the node's local pass
 # counter advanced, and the sink actually received the tunneled connection.
 #
@@ -37,6 +37,8 @@ REPO="$(cd "$HERE/.." && pwd)"
 INTEROP="$REPO/crates/shadenet-rln/interop"     # reuse egress-derive.mjs + wait-log.mjs
 WORK="$(mktemp -d)"
 TORBIN="${SHADE_TREE_TOR_BIN:-tor}"
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 
 SECRET="${SHADE_TREE_SECRET:-12345678901234567890}"
 GW_PORT="${SHADE_TREE_GATEWAY_PORT:-8443}"
@@ -49,11 +51,11 @@ TOR_DATA="$WORK/tordata"
 RUN_ATTEMPTS="${SHADE_TREE_TOR_RUN_ATTEMPTS:-4}"
 BOOTSTRAP_TIMEOUT_MS="${SHADE_TREE_TOR_BOOTSTRAP_TIMEOUT_MS:-180000}"
 
-# ---- SIGPIPE-robust cleanup: kill every child we start, restore the repo -----------
+# ---- SIGPIPE-robust cleanup: kill every child we start -----------------------------
 # PIDs tracked in vars AND mirrored to a pidfile so a reap works even if a var is lost. We
 # trap PIPE (and HUP) too so a `... | head` that closes the pipe still runs cleanup and
 # leaves ZERO leftover tor/gateway/sink processes.
-GW_PID="" ; SINK_PID="" ; TOR_PID="" ; MEMBERS_BAK=""
+GW_PID="" ; SINK_PID="" ; TOR_PID=""
 PIDFILE="$WORK/pids"
 : > "$PIDFILE"
 track() { echo "$1" >> "$PIDFILE"; }
@@ -71,7 +73,6 @@ cleanup() {
   for p in "$GW_PID" "$SINK_PID" "$TOR_PID"; do
     [ -n "$p" ] && kill -0 "$p" 2>/dev/null && { sleep 1; kill -9 "$p" 2>/dev/null || true; }
   done
-  [ -n "$MEMBERS_BAK" ] && [ -f "$MEMBERS_BAK" ] && mv -f "$MEMBERS_BAK" "$REPO/group/members.json" 2>/dev/null || true
   rm -rf "$WORK" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM HUP PIPE
@@ -83,22 +84,17 @@ echo "== deriving member identity + single-member group (packages/node/lib/rln.m
 node "$INTEROP/egress-derive.mjs" "$WORK" "$SECRET"
 MEMBERS="$WORK/members.json"
 
-# Point the gateway's PoC root source at our derived member set (backup + restore in trap),
-# so the gateway's membership root == the root the client's proof is generated against.
-MEMBERS_BAK="$WORK/members.json.repo-bak"
-cp "$REPO/group/members.json" "$MEMBERS_BAK"
-cp "$MEMBERS" "$REPO/group/members.json"
-
 echo "== starting local egress sink (:${SINK_PORT}) =="
 node -e 'const net=require("net"); let n=0; net.createServer(s=>{n++;console.error("[sink] connection #"+n+" from gateway");s.resume();}).listen('"$SINK_PORT"',"127.0.0.1",()=>console.error("[sink] up on 127.0.0.1:'"$SINK_PORT"'"));' > "$WORK/sink.log" 2>&1 &
 SINK_PID=$! ; track "$SINK_PID" ; disown "$SINK_PID" 2>/dev/null || true
 node "$INTEROP/wait-log.mjs" "$WORK/sink.log" "[sink] up" 15000
 
-echo "== starting real JS gateway (127.0.0.1:${GW_PORT}) =="
-SHADE_TREE_EGRESS_ALLOW="$TARGET" \
+echo "== starting the real node (127.0.0.1:${GW_PORT}) =="
+SHADE_TREE_MEMBERS_FILE="$MEMBERS" \
+  SHADE_TREE_EGRESS_ALLOW="$TARGET" \
   SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
   SHADE_TREE_METRICS_PORT="$METRICS_PORT" \
-  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
+  $GATEWAY_CMD > "$WORK/gw.log" 2>&1 &
 GW_PID=$! ; track "$GW_PID" ; disown "$GW_PID" 2>/dev/null || true
 node "$INTEROP/wait-log.mjs" "$WORK/gw.log" "gateway up on" 20000
 
@@ -151,7 +147,7 @@ SINK_OK=0; grep -q "\[sink\] connection"        "$WORK/sink.log" && SINK_OK=1
 
 if [ "$ACCEPT" = "1" ] && [ "$GW_OK" = "1" ] && [ "$SINK_OK" = "1" ]; then
   echo
-  echo "== T-TEST-1 OVER-TOR EGRESS OK: JS client -> published .onion -> JS gateway ACCEPT -> sink =="
+  echo "== T-TEST-1 OVER-TOR EGRESS OK: JS client -> published .onion -> Rust node ACCEPT -> sink =="
   echo "   (client ack=ACCEPT, node pass counter advanced, sink received the tunneled connection)"
   exit 0
 fi

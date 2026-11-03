@@ -189,6 +189,8 @@ else
     -p shadenet-cli --features live
   RUST_SHADE_TREE="$REPO/target/debug/shade-tree"
 fi
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 if [ -z "${HERMES_E2E_SSH_TARGET:-}" ]; then
   command -v "${HERMES_E2E_HERMES_BIN:-hermes}" >/dev/null 2>&1 || fail "Hermes not found; set HERMES_E2E_HERMES_BIN or HERMES_E2E_SSH_TARGET"
 else
@@ -206,7 +208,7 @@ SHADE_TREE_GATEWAY_PORT="$GW_PORT" \
 SHADE_TREE_METRICS_PORT="$METRICS_PORT" \
 SHADE_TREE_LOG_LEVEL=info \
 SHADE_TREE_BANNER=never \
-  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
+  $GATEWAY_CMD > "$WORK/gateway.log" 2>&1 &
 GW_PID=$!
 track "$GW_PID"
 node "$INTEROP/wait-log.mjs" "$WORK/gateway.log" "gateway up on" 30000 || {

@@ -47,11 +47,10 @@
   ],
   "scripts": {
     "enroll": "node group/enroll.mjs",
-    "gateway": "node packages/node/gateway/gateway.mjs",
+    "gateway": "node packages/node/bin/shade-tree.mjs node",
     "shim": "node packages/node/client/shim.mjs",
     "bootnode": "node packages/node/bootnode/server.mjs",
     "keygen": "node packages/node/bootnode/keygen.mjs",
-    "heartbeat": "node packages/node/bootnode/heartbeat.mjs",
     "doctor": "node scripts/doctor.mjs",
     "demo": "node demo/server.mjs",
     "test": "node scripts/test-all.mjs",

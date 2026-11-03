@@ -86,7 +86,7 @@ cargo build --release -p shadenet-cli                   # deterministic commands
 cargo build --release -p shadenet-cli --features live   # the full client
 cargo test --workspace --all-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-bash shadenet-rln/interop/proxy-concurrency-run.sh      # 8 tunnels at once through the real JS node
+bash shadenet-rln/interop/proxy-concurrency-run.sh      # 8 tunnels at once through the real Rust node
 ```
 
 The binaries are `target/release/shadenet` and `target/release/shade-tree`.

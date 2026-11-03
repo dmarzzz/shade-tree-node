@@ -49,7 +49,9 @@ Notes
 
 The full local path: one `tor` service publishing two onion services (bootnode
 and gateway) plus a SOCKS port, with `bootnode`, `gateway`, and `client` sharing
-tor's loopback via `network_mode: service:tor`.
+tor's loopback via `network_mode: service:tor`. The `gateway` service is the Rust
+`shadenet-node` image (`docker/shadenet-node.Dockerfile`) admitting the invited set in
+`group/members.json`; the other two roles still run from this JavaScript image.
 
 ```sh
 docker compose -p shade-tree up --build

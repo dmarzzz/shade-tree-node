@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # T-RUST-2d integration harness: the Rust `shade-tree egress` (feature build) mints a REAL RLN
 # envelope (native depth-20 Poseidon tree + Groth16 proof over the repo's circom-rln
-# artifacts) and sends it over a PLAIN TCP socket to a running JS reference. Two layers:
+# artifacts) and sends it over a PLAIN TCP socket to a running node. Two layers:
 #
 #   Layer 2 (framing + verify): a minimal socket server (verify-socket.mjs) reads the
 #     envelope and runs the REAL packages/node/lib/rln.mjs verifyEnvelope. Isolates wire framing +
 #     target-binding ACCEPT from the gateway's proxy path.
 #
-#   Layer 3 (full gateway proxy): the REAL packages/node/gateway/gateway.mjs, with the derived member set
+#   Layer 3 (full node): the REAL Rust shadenet-node (ADR 0014), with the derived member set
 #     as its PoC root source and a local :port egress sink, ACCEPTS the Rust envelope end to
 #     end (version gate -> verifyEnvelope Groth16 -> target policy -> spent-set -> upstream
 #     connect -> `{ ok: true }`). No Tor here: the client uses the `--plain-tcp` escape hatch
@@ -20,13 +20,14 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
-# The node under test: the JavaScript gateway by default, or a Rust shadenet-node binary
-# (ADR 0014) when SHADE_TREE_GATEWAY_CMD names it. Both read the same SHADE_TREE_* variables.
-GATEWAY_CMD="${SHADE_TREE_GATEWAY_CMD:-node $REPO/packages/node/gateway/gateway.mjs}"
+# The node under test: the Rust shadenet-node built from this checkout (ADR 0014), or whatever
+# SHADE_TREE_GATEWAY_CMD names. Both read the same SHADE_TREE_* variables.
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 CIRCUITS="$REPO/circuits/rln"
 WORK="$(mktemp -d)"
 
-# Ports: gateway is HARDCODED to 127.0.0.1:8443 (gateway.mjs LISTEN_PORT). The layer-2
+# Ports: the node listens on 127.0.0.1:8443 (the SHADE_TREE_GATEWAY_PORT default). The layer-2
 # verify server + the egress sink use fixed loopback ports.
 GW_PORT=8443
 VS_PORT=8571
@@ -74,7 +75,7 @@ fi
 echo "LAYER 2 OK"
 
 echo
-echo "== LAYER 3: full gateway proxy ACCEPT (packages/node/gateway/gateway.mjs) =="
+echo "== LAYER 3: full node ACCEPT (shadenet-node) =="
 # A local echo sink proves that Rust keeps the accepted socket and relays actual
 # application payload bytes after the acknowledgement (issue #76), not merely the ack.
 node -e 'const net=require("net"); net.createServer(s=>s.once("data",d=>{console.error("[sink] payload="+d);s.end("shade-tree-payload-ok:"+d)})).listen('"$SINK_PORT"',"127.0.0.1",()=>console.error("[sink] up on 127.0.0.1:'"$SINK_PORT"'"));' > "$WORK/sink.log" 2>&1 &
@@ -111,4 +112,4 @@ fi
 echo "LAYER 3 OK"
 
 echo
-echo "== T-RUST-2d EGRESS OK: JS gateway ACCEPTED the Rust shade-tree egress envelope end-to-end =="
+echo "== T-RUST-2d EGRESS OK: the node ACCEPTED the Rust shade-tree egress envelope end-to-end =="

@@ -58,6 +58,16 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   crosses it) are ported. With these every setting the JavaScript gateway and heartbeat read is
   read by the Rust node; `SHADE_TREE_NETWORK` is the one exception, replaced by
   `SHADENET_RECORD`.
+- Everything that starts a node now starts the Rust one: the interop harnesses
+  (`crates/shadenet-rln/interop/*.sh`, which build it from the checkout unless
+  `SHADE_TREE_GATEWAY_CMD` names a binary) and the CI jobs that run them, the local real-Tor
+  and Hermes end-to-end suites, `npm run dev:offline`, the `run-gateway.sh` / `run-all.sh` /
+  `stop.sh` demo scripts, the compose fleet's `gateway` service (the `shadenet-node` image,
+  admitting `group/members.json`), and `shade-tree-node node` (which runs a checkout build or
+  the `shadenet-node` on `PATH`). `shade-tree-node heartbeat` and `npm run heartbeat` are
+  retired: the node announces itself. The systemd fleet (`bootstrap.sh`, the golden units, the
+  Ansible role) and the JavaScript-internal selftests still use the JavaScript node until it
+  is deleted.
 
 ### The node moves to Rust: foundations (ADR 0014)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # T-RUST-3 integration harness: prove the Rust client's RESILIENT operational loop
 # (packages/node/client/shade-tree-client.mjs parity) — GATEWAY FAILOVER and LAST-KNOWN-GOOD directory
-# caching — against the REAL JS gateway, with NO Tor (plain-TCP, always-green like
+# caching — against the REAL Rust node, with NO Tor (plain-TCP, always-green like
 # egress-run.sh). Two layers:
 #
 #   LAYER A (FAILOVER): `shade-tree egress` is given an ORDERED candidate list whose FIRST
@@ -27,14 +27,15 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
-# The node under test: the JavaScript gateway by default, or a Rust shadenet-node binary
-# (ADR 0014) when SHADE_TREE_GATEWAY_CMD names it. Both read the same SHADE_TREE_* variables.
-GATEWAY_CMD="${SHADE_TREE_GATEWAY_CMD:-node $REPO/packages/node/gateway/gateway.mjs}"
+# The node under test: the Rust shadenet-node built from this checkout (ADR 0014), or whatever
+# SHADE_TREE_GATEWAY_CMD names. Both read the same SHADE_TREE_* variables.
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 CIRCUITS="$REPO/circuits/rln"
 TESTDATA="$REPO/crates/shadenet/src/testdata"
 WORK="$(mktemp -d)"
 
-# Ports: the real gateway is HARDCODED to 127.0.0.1:8443 (gateway.mjs LISTEN_PORT).
+# Ports: the node listens on 127.0.0.1:8443 (the SHADE_TREE_GATEWAY_PORT default).
 # The DEAD candidate is a port with nothing listening (connection refused fast).
 GW_PORT=8443
 DEAD_PORT=1

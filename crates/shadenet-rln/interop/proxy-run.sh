@@ -3,7 +3,7 @@
 # remove Tor/hidden-service propagation from this blocking CI layer; the recurring
 # Hermes E2E separately proves this same Proxy over embedded Arti.
 #
-#   CONNECT clients -> Rust Proxy/shared egress client -> JS gateway -> echo sink
+#   CONNECT clients -> Rust Proxy/shared egress client -> Rust node -> echo sink
 #
 # The real RLN prover, gateway verification, CONNECT acceptance, early client data,
 # and bidirectional relay all remain in path.
@@ -11,9 +11,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
-# The node under test: the JavaScript gateway by default, or a Rust shadenet-node binary
-# (ADR 0014) when SHADE_TREE_GATEWAY_CMD names it. Both read the same SHADE_TREE_* variables.
-GATEWAY_CMD="${SHADE_TREE_GATEWAY_CMD:-node $REPO/packages/node/gateway/gateway.mjs}"
+# The node under test: the Rust shadenet-node built from this checkout (ADR 0014), or whatever
+# SHADE_TREE_GATEWAY_CMD names. Both read the same SHADE_TREE_* variables.
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 WORK="$(mktemp -d)"
 
 GW_PORT="${SHADE_TREE_PROXY_TEST_GATEWAY_PORT:-18444}"
@@ -56,7 +57,7 @@ node -e 'const net=require("net"); net.createServer(s=>s.once("data",d=>s.end("s
 SINK_PID=$!
 node "$HERE/wait-log.mjs" "$WORK/sink.log" "sink ready" 15000
 
-echo "== start the real JavaScript gateway =="
+echo "== start the real node =="
 SHADE_TREE_MEMBERS_FILE="$MEMBERS" \
 SHADE_TREE_GATEWAY_PORT="$GW_PORT" \
 SHADE_TREE_EGRESS_ALLOW="$TARGET" \

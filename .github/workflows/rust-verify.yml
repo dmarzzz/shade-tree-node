@@ -99,40 +99,18 @@ jobs:
       - name: Rust proof -> JavaScript verifier interop (blocking)
         run: bash crates/shadenet-rln/interop/run.sh
 
-      - name: Rust client -> JavaScript gateway + payload relay (blocking)
+      # The harnesses build and start the Rust node from this checkout (ADR 0014).
+      - name: Rust client -> Rust node + payload relay (blocking)
         run: bash crates/shadenet-rln/interop/egress-run.sh
 
-      - name: Rust CONNECT Proxy -> JavaScript gateway + early payload (blocking)
+      - name: Rust CONNECT Proxy -> Rust node + early payload (blocking)
         run: bash crates/shadenet-rln/interop/proxy-run.sh
 
-      - name: Rust failover + last-known-good canopy (blocking)
+      - name: Rust failover + last-known-good canopy against the Rust node (blocking)
         run: bash crates/shadenet-rln/interop/failover-lkg-run.sh
 
       - name: Rust Proxy 8 concurrent tunnels + structured 429 + status endpoint (blocking)
         run: bash crates/shadenet-rln/interop/proxy-concurrency-run.sh
-
-      - name: Build the Rust node (ADR 0014)
-        run: cargo build --locked -p shadenet-node
-
-      - name: Rust client -> Rust node + payload relay (blocking)
-        run: bash crates/shadenet-rln/interop/egress-run.sh
-        env:
-          SHADE_TREE_GATEWAY_CMD: ${{ github.workspace }}/target/debug/shadenet-node
-
-      - name: Rust CONNECT Proxy -> Rust node + early payload (blocking)
-        run: bash crates/shadenet-rln/interop/proxy-run.sh
-        env:
-          SHADE_TREE_GATEWAY_CMD: ${{ github.workspace }}/target/debug/shadenet-node
-
-      - name: Rust failover + last-known-good canopy against the Rust node (blocking)
-        run: bash crates/shadenet-rln/interop/failover-lkg-run.sh
-        env:
-          SHADE_TREE_GATEWAY_CMD: ${{ github.workspace }}/target/debug/shadenet-node
-
-      - name: Rust Proxy 8 concurrent tunnels against the Rust node (blocking)
-        run: bash crates/shadenet-rln/interop/proxy-concurrency-run.sh
-        env:
-          SHADE_TREE_GATEWAY_CMD: ${{ github.workspace }}/target/debug/shadenet-node
 
       - name: Rust member lifecycle on the real contracts (register, exit, withdraw) (blocking)
         run: bash crates/shadenet-rln/interop/member-lifecycle-run.sh
