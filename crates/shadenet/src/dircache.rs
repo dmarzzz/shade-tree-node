@@ -22,11 +22,13 @@
 //! The last-known-good CACHE is EXEMPT from both guards: a stale-but-verified cache
 //! is still better than going dark, exactly as `selection.mjs` treats it.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Deserialize;
 use shadenet_proto::{
-    verify_directory_with_signers, Caps, Directory, GatewayEntry, ProtoCaps, RateCaps,
+    verify_directory_with_signers, verify_listed_entry, Announce, Caps, Directory, GatewayEntry,
+    ProtoCaps, RateCaps,
 };
 
 // --------------------------------------------------------------------------
@@ -54,6 +56,64 @@ pub struct DirEntryDto {
     pub caps: Option<CapsDto>,
     #[serde(rename = "capsSig", default)]
     pub caps_sig: Option<String>,
+    // WIRE-SPEC 4.5: the node's own signed announce, outside the signed bytes. Kept raw so a
+    // malformed one drops only this entry, not the whole directory.
+    #[serde(default)]
+    pub announce: Option<serde_json::Value>,
+}
+
+/// Untrusted announce copied into a directory entry (WIRE-SPEC 4.5).
+#[derive(Deserialize)]
+struct AnnounceDto {
+    v: u64,
+    onion: String,
+    weight: u64,
+    ts: u64,
+    nonce: String,
+    #[serde(rename = "onionSig", default)]
+    onion_sig: Option<String>,
+    #[serde(default)]
+    operator: Option<String>,
+    #[serde(rename = "operatorSig", default)]
+    operator_sig: Option<String>,
+    #[serde(default)]
+    caps: Option<CapsDto>,
+    #[serde(rename = "capsSig", default)]
+    caps_sig: Option<String>,
+}
+
+/// What a directory entry carries under `announce`.
+#[derive(Debug)]
+enum Listed {
+    Absent,
+    Malformed(String),
+    Announce(Box<Announce>),
+}
+
+impl Listed {
+    fn parse(value: Option<serde_json::Value>) -> Self {
+        let Some(value) = value else {
+            return Self::Absent;
+        };
+        if !value.is_object() {
+            return Self::Malformed("no-announce".into());
+        }
+        match serde_json::from_value::<AnnounceDto>(value) {
+            Ok(dto) => Self::Announce(Box::new(Announce {
+                v: dto.v,
+                onion: dto.onion,
+                weight: dto.weight,
+                ts: dto.ts,
+                nonce: dto.nonce,
+                onion_sig: dto.onion_sig,
+                operator: dto.operator,
+                operator_sig: dto.operator_sig,
+                caps: dto.caps.map(CapsDto::into_proto),
+                caps_sig: dto.caps_sig,
+            })),
+            Err(e) => Self::Malformed(format!("malformed:{e}")),
+        }
+    }
 }
 
 /// Untrusted caps object on a directory entry (`g.caps`). Deserialized leniently, then
@@ -94,6 +154,46 @@ pub struct CapsDto {
     // to before. Mirrors the JS `canonicalUnknownCaps` capture in `lib/directory.mjs`.
     #[serde(flatten)]
     pub unknown: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl CapsDto {
+    fn into_proto(self) -> Caps {
+        Caps {
+            ports: self.ports,
+            region: self.region,
+            proto: self.proto.map(|p| ProtoCaps {
+                min: p.min,
+                max: p.max,
+            }),
+            artifacts: self.artifacts,
+            admits: self.admits,
+            pay: self.pay.map(PayCapsDto::into_proto),
+            rate: self.rate.map(|rate| RateCaps {
+                scope: rate.scope,
+                window: rate.window,
+                epoch_seconds: rate.epoch_seconds,
+                previous_epochs_accepted: rate.previous_epochs_accepted,
+                root_freshness_seconds: rate.root_freshness_seconds,
+                payload_bytes_per_slot: rate.payload_bytes_per_slot,
+            }),
+            session: self.session.map(|session| shadenet_proto::SessionCaps {
+                version: session.version,
+                classes: session.classes,
+            }),
+            draining: self.draining,
+            sets: self.sets,
+            unknown: if self.unknown.is_empty() {
+                None
+            } else {
+                Some(
+                    self.unknown
+                        .into_iter()
+                        .map(|(k, v)| (k, json_to_caps_value(v)))
+                        .collect(),
+                )
+            },
+        }
+    }
 }
 
 /// Map an untrusted `serde_json::Value` into the serde-free `shadenet_proto::CapsValue` so the
@@ -301,41 +401,7 @@ impl DirectoryDto {
                     health: g.health,
                     operator: g.operator,
                     staked: g.staked,
-                    caps: g.caps.map(|c| Caps {
-                        ports: c.ports,
-                        region: c.region,
-                        proto: c.proto.map(|p| ProtoCaps {
-                            min: p.min,
-                            max: p.max,
-                        }),
-                        artifacts: c.artifacts,
-                        admits: c.admits,
-                        pay: c.pay.map(|p| p.into_proto()),
-                        rate: c.rate.map(|rate| RateCaps {
-                            scope: rate.scope,
-                            window: rate.window,
-                            epoch_seconds: rate.epoch_seconds,
-                            previous_epochs_accepted: rate.previous_epochs_accepted,
-                            root_freshness_seconds: rate.root_freshness_seconds,
-                            payload_bytes_per_slot: rate.payload_bytes_per_slot,
-                        }),
-                        session: c.session.map(|session| shadenet_proto::SessionCaps {
-                            version: session.version,
-                            classes: session.classes,
-                        }),
-                        draining: c.draining,
-                        sets: c.sets,
-                        unknown: if c.unknown.is_empty() {
-                            None
-                        } else {
-                            Some(
-                                c.unknown
-                                    .into_iter()
-                                    .map(|(k, v)| (k, json_to_caps_value(v)))
-                                    .collect(),
-                            )
-                        },
-                    }),
+                    caps: g.caps.map(CapsDto::into_proto),
                     caps_sig: g.caps_sig,
                 })
                 .collect(),
@@ -347,11 +413,17 @@ impl DirectoryDto {
         }
     }
 
-    fn into_document(self) -> DirectoryDocument {
+    fn into_document(mut self) -> DirectoryDocument {
         let demo = parse_demo(self.demo.as_ref());
+        let listed = self
+            .gateways
+            .iter_mut()
+            .map(|g| Listed::parse(g.announce.take()))
+            .collect();
         DirectoryDocument {
             dir: self.into_proto(),
             demo,
+            listed,
         }
     }
 }
@@ -360,6 +432,50 @@ impl DirectoryDto {
 pub struct DirectoryDocument {
     pub dir: Directory,
     pub demo: Option<DemoAdvert>,
+    /// One per `dir.gateways` entry, in the same order.
+    listed: Vec<Listed>,
+}
+
+/// A verified directory whose self-verifying entries were rebuilt from their announces.
+struct Checked {
+    dir: Directory,
+    demo: Option<DemoAdvert>,
+    announced: HashMap<String, u64>,
+    dropped: Vec<String>,
+}
+
+impl DirectoryDocument {
+    /// Rebuild every entry that carries an announce from that announce and drop the ones that
+    /// fail (WIRE-SPEC 4.5). Entries without one stay as the pinned signer listed them. `now`
+    /// is unix seconds, or `None` to skip the freshness rows.
+    fn check_listed(self, now: Option<u64>) -> Checked {
+        let mut dir = self.dir;
+        let mut announced = HashMap::new();
+        let mut dropped = Vec::new();
+        let gateways = std::mem::take(&mut dir.gateways);
+        for (entry, listed) in gateways.into_iter().zip(self.listed) {
+            match listed {
+                Listed::Absent => dir.gateways.push(entry),
+                Listed::Malformed(reason) => {
+                    let short: String = entry.onion.chars().take(12).collect();
+                    dropped.push(format!("bad-announce:{short}..:{reason}"));
+                }
+                Listed::Announce(ann) => match verify_listed_entry(&entry, &ann, now) {
+                    Ok(derived) => {
+                        announced.insert(derived.onion.clone(), ann.ts);
+                        dir.gateways.push(derived);
+                    }
+                    Err(e) => dropped.push(e.to_string()),
+                },
+            }
+        }
+        Checked {
+            dir,
+            demo: self.demo,
+            announced,
+            dropped,
+        }
+    }
 }
 
 pub fn parse_document(raw: &str) -> Result<DirectoryDocument, String> {
@@ -397,6 +513,23 @@ pub struct LoadOutcome {
     pub source: Source,
     /// Why the fresh path was not used, when `source == Cache`.
     pub fresh_error: Option<String>,
+    /// `announce.ts` of every entry rebuilt from its announce, by onion (WIRE-SPEC 4.5).
+    pub announced: HashMap<String, u64>,
+    /// Why each dropped entry failed its announce check.
+    pub dropped: Vec<String>,
+}
+
+impl LoadOutcome {
+    fn new(checked: Checked, source: Source, fresh_error: Option<String>) -> Self {
+        Self {
+            dir: checked.dir,
+            demo: checked.demo,
+            source,
+            fresh_error,
+            announced: checked.announced,
+            dropped: checked.dropped,
+        }
+    }
 }
 
 /// Optional absolute-freshness bound (T-FEAT-21). Both in milliseconds.
@@ -451,42 +584,27 @@ pub fn resolve_directory(
     let fresh_reject: String = match fresh {
         Ok(raw) => match parse_and_verify_document(&raw, signer) {
             Ok(document) => {
-                let dir = document.dir;
+                let issued = document.dir.issued;
+                let age_ms = now_ms.saturating_sub(issued.saturating_mul(1000));
                 // Rollback guard: a fresh directory must not move `issued` BACKWARD
                 // relative to the last-known-good we already accepted.
-                if dir.issued < floor {
-                    format!(
-                        "directory rollback rejected: issued {} < cached {floor}",
-                        dir.issued
-                    )
-                } else if let Some(max) = max_age.max_age_ms {
+                if issued < floor {
+                    format!("directory rollback rejected: issued {issued} < cached {floor}")
+                } else if let Some(max) = max_age
+                    .max_age_ms
+                    .filter(|max| age_ms > max + max_age.skew_ms)
+                {
                     // Absolute max-age guard (fresh only; cache is exempt).
-                    let age_ms = now_ms.saturating_sub(dir.issued.saturating_mul(1000));
-                    if age_ms > max + max_age.skew_ms {
-                        format!(
-                            "directory too stale: issued {}s is {}s old > max-age {}s (bound+skew)",
-                            dir.issued,
-                            age_ms / 1000,
-                            (max + max_age.skew_ms) / 1000
-                        )
-                    } else {
-                        // Accept: overwrite the LKG cache (raising the floor).
-                        write_cache(cache_path, &raw);
-                        return Ok(LoadOutcome {
-                            dir,
-                            demo: document.demo,
-                            source: Source::Fresh,
-                            fresh_error: None,
-                        });
-                    }
+                    format!(
+                        "directory too stale: issued {issued}s is {}s old > max-age {}s (bound+skew)",
+                        age_ms / 1000,
+                        (max + max_age.skew_ms) / 1000
+                    )
                 } else {
+                    // Accept: overwrite the LKG cache (raising the floor).
                     write_cache(cache_path, &raw);
-                    return Ok(LoadOutcome {
-                        dir,
-                        demo: document.demo,
-                        source: Source::Fresh,
-                        fresh_error: None,
-                    });
+                    let checked = document.check_listed(Some(now_ms / 1000));
+                    return Ok(LoadOutcome::new(checked, Source::Fresh, None));
                 }
             }
             Err(e) => e,
@@ -496,12 +614,13 @@ pub fn resolve_directory(
 
     // Fresh path unusable -> fall back to the last-known-good cache (verified above).
     match cached {
-        Some(document) => Ok(LoadOutcome {
-            dir: document.dir,
-            demo: document.demo,
-            source: Source::Cache,
-            fresh_error: Some(fresh_reject),
-        }),
+        // The last-known-good copy outlives its announces when every source is down, so only
+        // the signature rows apply to it (WIRE-SPEC 4.5).
+        Some(document) => Ok(LoadOutcome::new(
+            document.check_listed(None),
+            Source::Cache,
+            Some(fresh_reject),
+        )),
         None => Err(format!(
             "no verifiable directory (fresh: {fresh_reject}; no valid cache)"
         )),
@@ -679,6 +798,111 @@ mod tests {
         let bytes =
             String::from_utf8(shadenet_proto::canonical_directory_bytes(&document.dir)).unwrap();
         assert!(bytes.contains("canopyWindow") && bytes.contains("futureFlag"));
+    }
+
+    #[test]
+    fn directory_with_embedded_announce_still_verifies() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/vectors.json"
+        )))
+        .unwrap();
+        let raw = vectors["selfVerifyingEntry"]["directory"].to_string();
+        let signer = vectors["signerPub"].as_str().unwrap();
+        let document = parse_and_verify_document(&raw, signer).unwrap();
+        assert_eq!(document.dir.gateways[0].weight, 1000);
+    }
+
+    fn self_verifying() -> (serde_json::Value, String) {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/vectors.json"
+        )))
+        .unwrap();
+        let signer = vectors["signerPub"].as_str().unwrap().to_string();
+        (vectors["selfVerifyingEntry"].clone(), signer)
+    }
+
+    fn resolve_at(
+        raw: String,
+        cache: Option<&Path>,
+        signer: &str,
+        now: &serde_json::Value,
+    ) -> LoadOutcome {
+        let now_ms = now.as_u64().unwrap() * 1000;
+        resolve_directory(Ok(raw), cache, signer, MaxAge::default(), now_ms).unwrap()
+    }
+
+    #[test]
+    fn fresh_entries_are_rebuilt_from_their_announce() {
+        let (sv, signer) = self_verifying();
+        let out = resolve_at(sv["directory"].to_string(), None, &signer, &sv["nowAccept"]);
+        let onion = sv["announce"]["onion"].as_str().unwrap();
+        assert_eq!(out.dir.gateways.len(), 1);
+        assert_eq!(
+            out.announced.get(onion).copied(),
+            sv["announce"]["ts"].as_u64()
+        );
+        assert_eq!(
+            out.dir.gateways[0].operator.as_deref(),
+            sv["derivedEntry"]["operator"].as_str()
+        );
+        assert!(out.dropped.is_empty());
+    }
+
+    #[test]
+    fn expired_fresh_entry_is_dropped_but_the_cached_copy_keeps_it() {
+        let (sv, signer) = self_verifying();
+        let d = workdir("listed-expired");
+        let cache = d.join("dir.lkg");
+        let raw = sv["directory"].to_string();
+        resolve_at(raw.clone(), Some(&cache), &signer, &sv["nowAccept"]);
+
+        let fresh = resolve_at(raw, Some(&cache), &signer, &sv["nowExpired"]);
+        assert_eq!(fresh.source, Source::Fresh);
+        assert!(fresh.dir.gateways.is_empty());
+        assert!(fresh.dropped[0].starts_with("announce-expired:"));
+
+        let now_ms = sv["nowExpired"].as_u64().unwrap() * 1000;
+        let cached = resolve_directory(
+            Err("all Elders down".into()),
+            Some(&cache),
+            &signer,
+            MaxAge::default(),
+            now_ms,
+        )
+        .unwrap();
+        assert_eq!(cached.source, Source::Cache);
+        assert_eq!(cached.dir.gateways.len(), 1);
+        assert!(cached.dropped.is_empty());
+    }
+
+    #[test]
+    fn a_bad_announce_drops_only_its_entry() {
+        let (sv, signer) = self_verifying();
+        let mut tampered = sv["directory"].clone();
+        tampered["gateways"][0]["announce"]["weight"] = serde_json::json!(1000);
+        let out = resolve_at(tampered.to_string(), None, &signer, &sv["nowAccept"]);
+        assert!(out.dir.gateways.is_empty());
+        assert!(
+            out.dropped[0].ends_with(":bad-onion-sig"),
+            "{:?}",
+            out.dropped
+        );
+
+        let mut not_object = sv["directory"].clone();
+        not_object["gateways"][0]["announce"] = serde_json::json!("x");
+        let out = resolve_at(not_object.to_string(), None, &signer, &sv["nowAccept"]);
+        assert!(
+            out.dropped[0].ends_with(":no-announce"),
+            "{:?}",
+            out.dropped
+        );
+
+        let mut wrong_type = sv["directory"].clone();
+        wrong_type["gateways"][0]["announce"]["ts"] = serde_json::json!("soon");
+        let out = resolve_at(wrong_type.to_string(), None, &signer, &sv["nowAccept"]);
+        assert!(out.dropped[0].contains(":malformed:"), "{:?}", out.dropped);
     }
 
     #[test]

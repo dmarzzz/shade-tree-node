@@ -37,9 +37,13 @@ The bootnode verifies onion control before accepting a direct or gossiped announ
 In stake mode it also verifies the operator authorization and live bond. Those checks protect
 the service's registry.
 
-The directory consumed by a Proxy is a smaller object. It does not include the announcement's
-`onionSig`, so `verifyDirectory` authenticates the list with the pinned signer and checks that
-each onion matches its listed public key. It does not prove live onion control. A compromised
+The directory consumed by a Proxy is a smaller object. `verifyDirectory` authenticates the list
+with the pinned signer and checks that each onion matches its listed public key. Each entry also
+carries the node's signed announcement under `announce` (`docs/WIRE-SPEC.md` 4.5, at most 4096
+bytes). Clients check it, drop the entry when it fails or is older than 900 seconds, and rebuild
+the entry's weight, capabilities and operator from it. Clients still accept entries without
+`announce` from a pinned signer, so a compromised signer can strip the announcement and list the
+entry on its own word. For those entries `verifyDirectory` does not prove live onion control. A compromised
 signer can omit, reorder, or add an internally consistent entry, including a malicious onion
 it controls. It cannot make an existing onion terminate at a different key. When capabilities
 are present, their onion-key signature remains independently verifiable.
@@ -147,16 +151,16 @@ SHADE_TREE_BOOTNODE_FED_INTERVAL=60 \
 ### Gossip re-verifies announcements
 
 A pull loop (`packages/node/bootnode/federation.mjs`, a self-unref'd timer) periodically fetches each peer's
-`GET /directory` over Tor, and for **each listed onion** pulls that gateway's stored signed announce
-from the peer's `GET /gateway/<onion>`. Every pulled announce is then re-run through the **same real
+`GET /directory` over Tor, and for **each listed onion** takes the signed announce the entry carries
+(`announce`, `docs/WIRE-SPEC.md` 4.5) or, when the entry has none, pulls it from the peer's
+`GET /gateway/<onion>`. Every pulled announce is then re-run through the **same real
 `verifyAnnounce` path a direct announce takes** (`registry.admitGossip`) before it is merged:
 
 - **The peer's directory signature is never trusted as authority over entries.** The peer's
   `/directory` is used only as a *hint list of onion strings*; its signer, pubkey, weight, health and
   operator/staked labels carry no admission weight. Admission comes entirely from re-verifying the
-  per-gateway announce. That is why federation pulls `/gateway/<onion>` rather than trusting
-  `/directory` alone (the directory shape omits the `onionSig`/`ts`/`nonce`/`operatorSig` needed to
-  re-verify an entry, so it is not independently re-verifiable per entry).
+  per-gateway announce, whether it came listed in `announce` or from `/gateway/<onion>`. A listed
+  announce whose `onion` differs from the entry's is ignored and the entry is fetched instead.
 - **A forged / tampered / unstaked gossiped gateway is rejected exactly as a direct announce would
   be**: the v3 `.onion` *is* its ed25519 key, so a swapped onion or a flipped signed field breaks the
   onion signature (`bad-onion-sig`); in stake mode the operator sig is re-checked and `isStaked` is

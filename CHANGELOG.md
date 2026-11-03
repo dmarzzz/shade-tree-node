@@ -4,6 +4,55 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Clients check every canopy entry and union every Elder (discovery v1, step 3)
+
+- The Rust client and the JS Proxy client check each entry that carries the node's announce
+  (WIRE-SPEC 4.5) and rebuild its weight, capabilities and operator from it. An entry that fails,
+  or whose announce is older than 900 s, is dropped and the rest of the list is kept. Entries
+  without `announce` are still accepted from a pinned signer.
+- When several Elders list the same node, both clients keep the entry with the newest announce.
+- The JS client asks every Elder at once and unions every directory that verifies, instead of
+  taking the first. The rollback floor and the optional max-age bound now apply per Elder, so a
+  newer Elder going down is no longer read as a rollback. Its last-known-good file holds every
+  Elder's directory (`{ "canopies": [...] }`); a file in the old single-directory shape still
+  loads.
+- A last-known-good copy skips the freshness check, so a client whose Elders are all down keeps
+  its saved fleet as before.
+- New `shadenet_proto::verify_listed_entry` and JS `verifyListedEntry`, both pinned to the
+  `selfVerifyingEntry` vector.
+- Once one Elder's canopy verifies, the JS client waits at most 3 s for the others before it
+  builds the union; an Elder that misses the deadline is logged as unavailable and its late
+  answer is dropped. Without the deadline one unreachable Elder held every fresh load for the
+  whole Tor retry budget (about 86 s).
+- `FUTURE_SKEW` is 600 s, no longer the Elder's 120 s admission skew: a client whose clock runs
+  a couple of minutes slow kept dropping every fresh entry. A forward-dated announce now lives at
+  most 1500 s on such a client instead of 1020 s.
+- WIRE-SPEC 4.5 row 6 (the client-side stake read) is marked deferred to step 5 (mirrors):
+  neither client does it yet, and every source is still a pinned Elder that checks stake at
+  admission.
+
+### Spec: self-verifying canopy entries (discovery v1, step 1)
+
+- `docs/WIRE-SPEC.md` section 4.5 specifies an optional `announce` field on a canopy entry: the
+  node's own signed announce, copied verbatim and kept outside the signed directory bytes. A
+  client can check such an entry without trusting the directory signer, which is what lets
+  unsigned mirrors serve the canopy later. Nothing emits or enforces the field yet; the wire bytes
+  and every existing vector are unchanged.
+- New golden vector `selfVerifyingEntry`. The JS vector test re-derives it, and a Rust test
+  confirms today's parser accepts a directory carrying the field.
+
+### Elder Tree: canopy entries carry the node's signed announce (discovery v1, step 2)
+
+- `/directory` and `/directory/delta` now list each node's accepted announce under `announce`
+  (WIRE-SPEC 4.5). The signed bytes are unchanged, so every client accepts the list as before;
+  clients do not check the field yet.
+- An announce over 4096 bytes is listed without its copy. Its signed `nonce` and `caps.ports` are
+  unbounded, and a few padded announces would otherwise push the list past the 2 MiB response
+  limit of the Rust client and the Elder's federation fetch.
+- A node's re-announce now changes its entry, so `/directory/delta` re-ships it every heartbeat.
+- Federation reads the listed announce instead of one `GET /gateway/<onion>` per node over Tor,
+  and still re-verifies it through `admitGossip`.
+
 ### RPC: a rate-limited endpoint is waited on, not failed (roadmap #369 M0)
 
 - HTTP 429, and 503 with `Retry-After`, are resent with bounded exponential backoff and jitter
