@@ -57,6 +57,7 @@ import {
   chainLabel,
   defaultFundingKeyPath,
   formatEth,
+  leftoverAtBlock,
   loadOrCreateFundingWallet,
   quoteFunding,
   waitForFunding,
@@ -193,9 +194,10 @@ async function main() {
   const rcpt = await waitForTransactionReceipt(tx, { operation: "member registration" });
   console.log(`  mined in block ${rcpt.blockNumber}; member staked. Public admission begins after this block reaches finality.`);
   if (funding) {
-    // What is left is the unspent gas reserve; it is tied to the stake on chain.
-    const left = await provider.getBalance(wallet.address).catch(() => 0n);
-    if (left > 0n) {
+    // What is left is the unspent gas reserve; it is tied to the stake on chain. Read it at the
+    // stake's block, never `latest`: a lagging replica answers `latest` with the pre-stake balance.
+    const left = await leftoverAtBlock({ getBalance: (tag) => provider.getBalance(wallet.address, tag), block: rcpt.blockNumber });
+    if (left !== null && left > 0n) {
       const chainId = Number((await provider.getNetwork()).chainId);
       console.log(`  leftover: ${formatEth(left, chainId)} stays in ${FUNDING_KEY_PATH} (the unspent gas reserve).`);
       console.log("            It is tied to this stake on chain: keep it for a later top-up, or send it to a");
