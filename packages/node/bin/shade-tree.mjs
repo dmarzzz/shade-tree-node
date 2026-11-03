@@ -12,8 +12,8 @@
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { readFileSync } from "node:fs";
+import { delimiter, dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { validateConfig, formatErrors } from "../lib/config.mjs";
 import { applyClientNetworkEnv, applyNetworkEnv, DEFAULT_CLIENT_NETWORK } from "../lib/network-record.mjs";
 
@@ -86,7 +86,7 @@ const COMMANDS = {
   keygen:            { script: "packages/node/bootnode/keygen.mjs",       help: "mint an onion identity (refuses overwrite): shade-tree-node keygen <hsDir> [--label name] [--force]" },
   elder:             { script: "packages/node/bootnode/server.mjs",       help: "run the Elder Tree, which signs the canopy directory", long: true },
   bootnode:          { script: "packages/node/bootnode/server.mjs",       help: "legacy alias for `elder`", long: true },
-  heartbeat:         { script: "packages/node/bootnode/heartbeat.mjs",    help: "keep this node announced to the Elder Tree", long: true },
+  heartbeat:         { retired: "the Rust node announces itself to every Elder Tree from inside `shade-tree-node node` (`shadenet-node run`, ADR 0014); set SHADE_TREE_BOOTNODE_ONIONS on the node", help: "retired: the node announces itself (see `node`)" },
   join:              { script: "group/join.mjs",            help: "guided front door: `shade-tree-node join [member]` or `shade-tree-node join node`; make an identity + print the next commands (`gateway` remains an alias)" },
   enroll:            { script: "group/enroll.mjs",          help: "generate a member identity + print its secret/commitment" },
   identity:          { script: "group/identity.mjs",         help: "export the Rust client's --identity file {identitySecret, leaf} from your secret: shade-tree identity [--out <path>] [--secret-file <path>] (secret: --secret-file | SHADE_TREE_SECRET | ./.secret)" },
@@ -99,8 +99,8 @@ const COMMANDS = {
   "withdraw-gateway":{ script: "group/exit-gateway.mjs", prepend: ["withdraw"], help: "after UNBONDING, reclaim the gateway bond: shade-tree-node withdraw-gateway [--recipient 0x..] [--dry-run]" },
   "gateway-status":  { script: "group/exit-gateway.mjs", prepend: ["status"],   help: "read-only: this operator's GatewayRegistry stake state (staked / exiting / withdrawableAt): shade-tree-node gateway-status [--operator 0x..]" },
   "sign-directory":  { script: "group/sign-directory.mjs",  help: "sign a static fleet directory (offline discovery)" },
-  node:              { script: "packages/node/gateway/gateway.mjs",       help: "run a proof-gated Shade Tree egress node", long: true },
-  gateway:           { script: "packages/node/gateway/gateway.mjs",       help: "legacy alias for `node`", long: true },
+  node:              { binary: "run",                                     help: "run a proof-gated Shade Tree egress node (the Rust shadenet-node)", long: true },
+  gateway:           { binary: "run",                                     help: "legacy alias for `node`", long: true },
   proxy:             { script: "packages/node/client/shim.mjs",           help: "run the local HTTP-CONNECT proxy", long: true },
   client:            { script: "packages/node/client/shim.mjs",           help: "legacy alias for `proxy`", long: true },
   shim:              { script: "packages/node/client/shim.mjs",           help: "legacy alias for `proxy`", long: true },
@@ -115,7 +115,6 @@ const COMMANDS = {
 // command -> config ROLE (packages/node/lib/config.mjs). Before spawning a service we validate the effective
 // SHADE_TREE_* env for its role and fail fast on a misconfig, instead of surfacing an opaque crash deep
 // inside Tor/RPC/crypto. Only commands whose role's required vars genuinely apply are listed:
-//   - heartbeat is gateway-SIDE, so it shares the gateway role.
 //   - client/shim share the client role (SHADE_TREE_SECRET + a discovery source are the real needs).
 //   - register-member maps to member-enroll (the on-chain member registration vars).
 // Deliberately NOT validated (skipped): keygen/enroll/join/sign-directory/doctor read no service
@@ -126,7 +125,6 @@ const COMMAND_ROLE = {
   bootnode: "bootnode",
   node: "gateway",
   gateway: "gateway",
-  heartbeat: "gateway",
   proxy: "client",
   client: "client",
   shim: "client",
@@ -199,6 +197,8 @@ function proxyHelp(command = "proxy") {
 function nodeHelp(command = "node") {
   console.log(`shade-tree ${command}: run the proof-gated destination-facing Shade Tree node\n`);
   console.log("usage: shade-tree-node node --admit invited[,staked][,paid] [operator flags]\n");
+  console.log("The node is the Rust `shadenet-node` binary (ADR 0014): a build in this checkout, else the one on PATH.");
+  console.log("Every flag becomes its SHADE_TREE_* variable; the heartbeat to the Elder Trees runs inside the node.\n");
   console.log("A node verifies one RLN proof before each CONNECT tunnel and publishes no direct listener;");
   console.log("Tor maps its onion service to the loopback gateway. Keep private services unreachable.");
   console.log("Public rollout remains blocked by the deployment gates and development ZK setup.\n");
@@ -346,10 +346,10 @@ async function runScoped(argv) {
 }
 
 // Operator drain (packages/node/lib/drain.mjs, docs/OPERATOR.md "Drain for maintenance"):
-//   on      create the flag; the heartbeat announces `draining: true` within SHADE_TREE_DRAIN_POLL_MS
-//           (2 s) and the gateway's /readyz turns 503. With --wait, block until the heartbeat's
-//           metrics show the drain announced (needs SHADE_TREE_HEARTBEAT_METRICS_PORT) and then
-//           one directory refresh (60 s) so clients have seen it.
+//   on      create the flag; the node announces `draining: true` within SHADE_TREE_DRAIN_POLL_MS
+//           (2 s) and its /readyz turns 503. With --wait, block until the node's metrics
+//           (SHADE_TREE_METRICS_PORT) show the drain announced and then one directory refresh
+//           (60 s) so clients have seen it.
 //   off     remove the flag (announced on the next poll).
 //   status  print the flag state and age; exit 0 when draining, 1 when not.
 async function drainCommand(argv) {
@@ -377,8 +377,8 @@ async function drainCommand(argv) {
   setDraining(true, process.env, path);
   console.log(`drain flag set (${path}); the heartbeat announces draining within ${drainPollMs()} ms`);
   if (!("wait" in flags)) return;
-  const port = Number(flags["metrics-port"] || process.env.SHADE_TREE_HEARTBEAT_METRICS_PORT || 0);
-  if (!(port > 0)) { console.log("--wait: no heartbeat metrics port known (set SHADE_TREE_HEARTBEAT_METRICS_PORT or --metrics-port); waiting 60 s blind"); await new Promise((r) => setTimeout(r, 60_000)); return; }
+  const port = Number(flags["metrics-port"] || process.env.SHADE_TREE_METRICS_PORT || 0);
+  if (!(port > 0)) { console.log("--wait: no node metrics port known (set SHADE_TREE_METRICS_PORT or --metrics-port); waiting 60 s blind"); await new Promise((r) => setTimeout(r, 60_000)); return; }
   const deadline = Date.now() + 120_000;
   let announced = false;
   while (Date.now() < deadline) {
@@ -403,6 +403,7 @@ async function main() {
   if (!entry) { console.error(`unknown command: ${cmd}\n`); topHelp(); process.exit(1); }
   if (cmd === "run") { await runScoped(rest); return; }
   if (cmd === "drain") { await drainCommand(rest); return; }
+  if (entry.retired) { console.error(`shade-tree ${cmd}: ${entry.retired}`); process.exit(2); }
 
   const { flags, positionals } = parse(rest);
   if (flags.help) {
@@ -442,11 +443,7 @@ async function main() {
     if (Object.hasOwn(flags, "secret")) delete env.SHADE_TREE_IDENTITY;
   }
   for (const [flag, val] of Object.entries(flags)) {
-    // Heartbeat owns a dedicated metrics variable because it runs beside the node. Keep the
-    // common --metrics-port interface useful by routing it to that variable for this command.
-    const envKey = cmd === "heartbeat" && flag === "metrics-port"
-      ? "SHADE_TREE_HEARTBEAT_METRICS_PORT"
-      : (COMMAND_ROLE[cmd] === "client" && CLIENT_FLAG_ENV[flag]) || FLAG_ENV[flag];
+    const envKey = (COMMAND_ROLE[cmd] === "client" && CLIENT_FLAG_ENV[flag]) || FLAG_ENV[flag];
     if (envKey) env[envKey] = val;
     else { passthrough.push(`--${flag}`); if (val !== "true") passthrough.push(val); }
   }
@@ -482,8 +479,24 @@ async function main() {
     }
   }
 
-  const child = spawn(process.execPath, [join(ROOT, entry.script), ...(entry.prepend || []), ...positionals, ...passthrough], { stdio: "inherit", env });
+  const [program, ...prefix] = entry.binary
+    ? [nodeBinary(cmd), entry.binary]
+    : [process.execPath, join(ROOT, entry.script), ...(entry.prepend || [])];
+  const child = spawn(program, [...prefix, ...positionals, ...passthrough], { stdio: "inherit", env });
   forwardChild(child, `shade-tree ${cmd}`);
+}
+
+// The node is the Rust `shadenet-node` binary (ADR 0014): a build in this checkout first, then
+// the one on PATH, so a developer runs what they just built and an installed CLI runs the release.
+function nodeBinary(cmd) {
+  const built = ["release", "debug"]
+    .map((profile) => join(ROOT, "target", profile, "shadenet-node"))
+    .find((path) => existsSync(path));
+  if (built) return built;
+  const onPath = (process.env.PATH || "").split(delimiter).some((dir) => dir && existsSync(join(dir, "shadenet-node")));
+  if (onPath) return "shadenet-node";
+  console.error(`shade-tree ${cmd}: the node is the Rust \`shadenet-node\` binary (ADR 0014) and none was found: put a release build on PATH or run \`cargo build --release -p shadenet-node\` in this checkout`);
+  process.exit(127);
 }
 
 main().catch((error) => { console.error(`shade-tree: ${error.message}`); process.exit(1); });

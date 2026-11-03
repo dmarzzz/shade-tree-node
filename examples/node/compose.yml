@@ -1,7 +1,7 @@
 # A Shade Tree node, the compose way. Same image and knobs as `docker run`; see docs/OPERATOR.md.
 #
 #   docker compose up -d
-#   docker compose exec shadenet-node node packages/node/bin/shadenet-node.mjs status
+#   docker compose exec shadenet-node shadenet-node status
 #   docker compose stop                 # retire: the node leaves every Elder within 15 minutes
 services:
   shadenet-node:

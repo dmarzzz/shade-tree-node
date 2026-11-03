@@ -3,7 +3,7 @@
 #
 # Proves the FULL Gate-2 path: the Rust `shade-tree egress` (feature build) mints a REAL RLN
 # envelope and dials the gateway's v3 `.onion` over EMBEDDED TOR (arti — no system tor
-# daemon in the client, no SOCKS), and the REAL JS gateway ACCEPTS it end to end over Tor.
+# daemon in the client, no SOCKS), and the REAL Rust node ACCEPTS it end to end over Tor.
 #
 # It stands up a LOCAL hidden service (using the system `tor` ONLY as the HS host — the
 # CLIENT still dials via embedded arti) pointing at the gateway's loopback :8443, waits for
@@ -31,6 +31,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 CIRCUITS="$REPO/circuits/rln"
 WORK="$(mktemp -d)"
+# The node under test: the Rust shadenet-node built from this checkout (ADR 0014), or whatever
+# SHADE_TREE_GATEWAY_CMD names. Both read the same SHADE_TREE_* variables.
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 TORBIN="${SHADE_TREE_TOR_BIN:-tor}"
 
 GW_PORT="${SHADE_TREE_GATEWAY_PORT:-8443}"
@@ -40,12 +44,11 @@ HS_DIR="$WORK/hs"
 TOR_DATA="$WORK/tordata"
 DIAL_ATTEMPTS="${SHADE_TREE_TOR_DIAL_ATTEMPTS:-3}"
 
-GW_PID="" ; SINK_PID="" ; TOR_PID="" ; MEMBERS_BAK=""
+GW_PID="" ; SINK_PID="" ; TOR_PID=""
 cleanup() {
   [ -n "$GW_PID" ]   && kill "$GW_PID"   2>/dev/null || true
   [ -n "$SINK_PID" ] && kill "$SINK_PID" 2>/dev/null || true
   [ -n "$TOR_PID" ]  && kill "$TOR_PID"  2>/dev/null || true
-  [ -n "$MEMBERS_BAK" ] && [ -f "$MEMBERS_BAK" ] && mv -f "$MEMBERS_BAK" "$REPO/group/members.json" 2>/dev/null || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -61,20 +64,15 @@ node "$HERE/egress-derive.mjs" "$WORK"
 IDENTITY="$WORK/identity.json"
 MEMBERS="$WORK/members.json"
 
-# Point the gateway's PoC root source at our derived member set (backup + restore in trap).
-MEMBERS_BAK="$WORK/members.json.repo-bak"
-cp "$REPO/group/members.json" "$MEMBERS_BAK"
-cp "$MEMBERS" "$REPO/group/members.json"
-
 echo "== starting local egress sink (:${SINK_PORT}) =="
 node -e 'const net=require("net"); net.createServer(s=>{console.error("[sink] accepted");s.resume()}).listen('"$SINK_PORT"',"127.0.0.1",()=>console.error("[sink] up on 127.0.0.1:'"$SINK_PORT"'"));' > "$WORK/sink.log" 2>&1 &
 SINK_PID=$!
 disown "$SINK_PID" 2>/dev/null || true
 node "$HERE/wait-log.mjs" "$WORK/sink.log" "[sink] up" 15000
 
-echo "== starting real gateway (:${GW_PORT}) =="
-SHADE_TREE_EGRESS_ALLOW="$TARGET" SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 SHADE_TREE_EPOCH_SECONDS=120 \
-  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
+echo "== starting the real node (:${GW_PORT}) =="
+SHADE_TREE_MEMBERS_FILE="$MEMBERS" SHADE_TREE_EGRESS_ALLOW="$TARGET" SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 SHADE_TREE_EPOCH_SECONDS=120 \
+  $GATEWAY_CMD > "$WORK/gw.log" 2>&1 &
 GW_PID=$!
 disown "$GW_PID" 2>/dev/null || true
 node "$HERE/wait-log.mjs" "$WORK/gw.log" "gateway up on" 20000
@@ -134,4 +132,4 @@ if ! grep -Fq "[sink] accepted" "$WORK/sink.log"; then
 fi
 
 echo
-echo "== T-RUST-2e OVER-TOR EGRESS OK: JS gateway ACCEPTED the Rust shade-tree envelope OVER TOR =="
+echo "== T-RUST-2e OVER-TOR EGRESS OK: the node ACCEPTED the Rust shade-tree envelope OVER TOR =="

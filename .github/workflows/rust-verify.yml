@@ -79,6 +79,11 @@ jobs:
       - name: Check workspace (all targets and features)
         run: cargo check --workspace --all-targets --all-features --locked
 
+      - name: Install Foundry (Anvil, forge and cast for the on-chain tests)
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: stable
+
       - name: Test workspace (all features)
         run: cargo test --workspace --all-features --locked
 
@@ -94,22 +99,18 @@ jobs:
       - name: Rust proof -> JavaScript verifier interop (blocking)
         run: bash crates/shadenet-rln/interop/run.sh
 
-      - name: Rust client -> JavaScript gateway + payload relay (blocking)
+      # The harnesses build and start the Rust node from this checkout (ADR 0014).
+      - name: Rust client -> Rust node + payload relay (blocking)
         run: bash crates/shadenet-rln/interop/egress-run.sh
 
-      - name: Rust CONNECT Proxy -> JavaScript gateway + early payload (blocking)
+      - name: Rust CONNECT Proxy -> Rust node + early payload (blocking)
         run: bash crates/shadenet-rln/interop/proxy-run.sh
 
-      - name: Rust failover + last-known-good canopy (blocking)
+      - name: Rust failover + last-known-good canopy against the Rust node (blocking)
         run: bash crates/shadenet-rln/interop/failover-lkg-run.sh
 
       - name: Rust Proxy 8 concurrent tunnels + structured 429 + status endpoint (blocking)
         run: bash crates/shadenet-rln/interop/proxy-concurrency-run.sh
-
-      - name: Install Foundry (Anvil + forge for the member lifecycle)
-        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
-        with:
-          version: stable
 
       - name: Rust member lifecycle on the real contracts (register, exit, withdraw) (blocking)
         run: bash crates/shadenet-rln/interop/member-lifecycle-run.sh

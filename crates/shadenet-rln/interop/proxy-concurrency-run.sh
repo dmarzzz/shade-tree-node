@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Proxy concurrency and structured-error contract (ShadeNet M2/M3 exit checks).
 #
-#   8 CONNECT clients at once -> one Rust Proxy -> JS gateway -> a sink that holds each tunnel
+#   8 CONNECT clients at once -> one Rust Proxy -> Rust node -> a sink that holds each tunnel
 #
 # 1. Eight tunnels are open at the same time: the sink answers nobody until all eight have
 #    arrived, so a proxy that pinned tunnels to prover workers (the old design held at most two)
@@ -20,6 +20,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
+# The node under test: the Rust shadenet-node built from this checkout (ADR 0014), or whatever
+# SHADE_TREE_GATEWAY_CMD names. Both read the same SHADE_TREE_* variables.
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 WORK="$(mktemp -d)"
 
 GW_PORT="${SHADENET_CONCURRENCY_GATEWAY_PORT:-18544}"
@@ -75,7 +79,7 @@ SHADE_TREE_EGRESS_ALLOW="$TARGET" \
 SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
 SHADE_TREE_BANNER=never \
 SHADE_TREE_EPOCH_SECONDS="$EPOCH_SECONDS" \
-  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gateway.log" 2>&1 &
+  $GATEWAY_CMD > "$WORK/gateway.log" 2>&1 &
 PIDS+=($!)
 node "$HERE/wait-log.mjs" "$WORK/gateway.log" "gateway up on" 30000
 
@@ -194,7 +198,7 @@ SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 \
 SHADE_TREE_BANNER=never \
 SHADE_TREE_EPOCH_SECONDS="$QUEUE_EPOCH_SECONDS" \
 SHADE_TREE_SLOTS="$QUEUE_TIER" \
-  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/queue-gateway.log" 2>&1 &
+  $GATEWAY_CMD > "$WORK/queue-gateway.log" 2>&1 &
 PIDS+=($!)
 node "$HERE/wait-log.mjs" "$WORK/queue-gateway.log" "gateway up on" 30000
 

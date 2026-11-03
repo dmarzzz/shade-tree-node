@@ -71,9 +71,10 @@ Wait ~30s for descriptor propagation, then verify (see day-2 below).
 
 ### One container, one record URL
 
-The node image bundles Tor, the node and its heartbeat, and takes everything it needs from the
-deployment record. It mints an onion identity on first start, announces to every Elder Tree in the
-record, and keeps the identity, Tor state and spent set in the `/state` volume.
+The node image bundles Tor and the Rust `shadenet-node` binary (ADR 0014): one process serves
+tunnels, announces to every Elder Tree in the record and exposes metrics, and takes everything it
+needs from the deployment record. It mints an onion identity on first start and keeps the
+identity, Tor state, spent set and `status.json` in the `/state` volume.
 
 ```bash
 docker run -d --name shadenet-node --restart unless-stopped \
@@ -119,7 +120,7 @@ docker run -d --name shadenet-node --restart unless-stopped \
   --memory 1g --log-opt max-size=20m \
   -e SHADENET_RECORD=... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… \
   -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.5
-docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status   # "listed": Elders that accepted
+docker exec shadenet-node shadenet-node status   # "listed": Elders that accepted
 ```
 
 The hardening flags are the ones `examples/node/compose.yml` sets: no privilege escalation, no
@@ -146,10 +147,13 @@ or the status changed, it logs `warning: the record at … changed since this no
 `status` shows `recordDrift`. Restart the container to follow the record, or point
 `SHADENET_RECORD` at a copy you control if you do not want to follow `main`.
 
-Day two: `docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status` (onion, pins,
+Day two: `docker exec shadenet-node shadenet-node status` (onion, pins,
 readiness, Elder listing), `docker exec shadenet-node curl -s 127.0.0.1:9101/metrics`, `docker stop shadenet-node`
 to retire (the node leaves every Elder's directory within the 15-minute TTL; the identity stays in
-the volume, `docker volume rm shadenet-node` forgets it). Compose recipe: `examples/node/compose.yml`.
+the volume, `docker volume rm shadenet-node` forgets it). `docker exec shadenet-node shadenet-node retire`
+stops announcing while open tunnels finish; `touch /state/draining` (the drain flag) announces
+`draining: true` and turns `/readyz` to 503 until the file is removed. The heartbeat's series
+(`shade_tree_heartbeat_*`) are on the node's own metrics port. Compose recipe: `examples/node/compose.yml`.
 
 ### Fresh box, one command (systemd, no container)
 

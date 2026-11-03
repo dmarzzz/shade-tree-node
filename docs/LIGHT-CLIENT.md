@@ -1,5 +1,10 @@
 # Light-client integration: trust-minimized reads of the reputation root
 
+> The Rust node (`crates/shadenet-node`, ADR 0014) carries the same provider: `SHADE_TREE_ROOT_PROVIDER=light`,
+> `SHADE_TREE_LIGHT_MODE=proof|storageat`, `SHADE_TREE_HELIOS_RPC_URL`, `SHADE_TREE_HELIOS_CHAIN_ID`, with the
+> EIP-1186 verifier in `src/mpt.rs` and the provider in `src/light.rs`, pinned to a real Sepolia proof in
+> `testdata/light-root-proof.json`. The file-level references below describe the JavaScript original.
+
 **Status: built (option A, sidecar), opt-in.** `LightClientRootProvider`
 (`packages/node/lib/root-provider.mjs`, `SHADE_TREE_ROOT_PROVIDER=light`) verifies the contract's `currentRoot`
 storage slot against a block header's `stateRoot` via an EIP-1186 `eth_getProof` MPT proof
