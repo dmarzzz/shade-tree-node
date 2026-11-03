@@ -78,7 +78,8 @@ export function buildReport({ rows = [], dials = [], metas = [] } = {}, { showIp
   const ts = rows.map((r) => r.ts).filter(Boolean).sort();
   p(`${rows.length} cells: ${exits.length} exit(s) x ${clients.length} client(s) x ${siteKeys.length} site(s), ${passes} pass(es)` +
     (ts.length ? `, ${ts[0]} to ${ts[ts.length - 1]}` : "") + ".");
-  p("Cells are ok/n. chl = blocked-challenge, cap = captcha, 403 = blocked-403, 429 = blocked-429, to = timeout, err = error, unv = unverified; ':2' is a count.");
+  p("Cells are ok/n. chl = blocked-challenge, cap = captcha, 403 = blocked-403, 429 = blocked-429, to = timeout, can = cancelled, err = error, unv = unverified; ':2' is a count.");
+  if (rows.some(r => r.outcome === "cancelled")) p("WARNING: Cancelled cells are operator interruptions, not network timeouts or site failures. They remain in the displayed all-cell denominator; this interrupted run is not a complete benchmark.");
   p();
 
   if (rows.length) {

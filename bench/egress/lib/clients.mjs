@@ -141,6 +141,7 @@ export class Browsers {
 
   async startMode(requestedMode, signal) {
     const chromium = this.chromium || (await loadChromium());
+    if (signal?.aborted) return this;
     for (const mode of this.modes.filter(mode => mode === requestedMode)) {
       if (!chromium) { this.unavailable.set(mode, "playwright-missing"); continue; }
       if (mode === "headed" && process.platform === "linux" && !process.env.DISPLAY) {
@@ -176,18 +177,25 @@ export class Browsers {
 
   async run(mode, site, options = {}) {
     const controller = new AbortController();
-    const abort = () => controller.abort();
-    options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted) abort();
     let timer;
+    let abort;
     const started = Date.now();
     try {
+      const stopped = new Promise(resolve => {
+        abort = () => {
+          controller.abort("cancelled");
+          resolve(fail(site.url, "error:cancelled"));
+        };
+        options.signal?.addEventListener("abort", abort, { once: true });
+        if (options.signal?.aborted) abort();
+        timer = setTimeout(() => {
+          controller.abort("timeout");
+          resolve(fail(site.url, "timeout"));
+        }, this.navTimeoutMs);
+      });
       const result = await Promise.race([
+        stopped,
         this.runCell(mode, site, { ...options, signal: controller.signal }),
-        new Promise(resolve => { timer = setTimeout(() => {
-          controller.abort();
-          resolve(fail(site.url, "timeout", this.navTimeoutMs / 1000));
-        }, this.navTimeoutMs); }),
       ]);
       return { ...result, t: (Date.now() - started) / 1000, browserVersion: this.browsers.get(mode)?.version?.() || null };
     } finally {
@@ -198,13 +206,14 @@ export class Browsers {
 
   async runCell(mode, site, { screenshot = null, localOnly = false, signal } = {}) {
     if (!this.browsers.has(mode) && this.started && !signal?.aborted) await this.startMode(mode, signal);
+    if (signal?.aborted) return fail(site.url, signal.reason === "timeout" ? "timeout" : "error:cancelled");
     const b = this.browsers.get(mode);
     if (!b) return fail(site.url, `error:client-unavailable:${this.unavailable.get(mode) || "not-started"}`);
     const t0 = Date.now();
     let ctx;
     if (signal?.aborted) return fail(site.url, "error:cancelled");
     let expired = false;
-    const abort = () => { expired = true; if (ctx) void ctx.close().catch(() => {}); };
+    const abort = () => { expired = true; clearTimeout(timer); if (ctx) void ctx.close().catch(() => {}); };
     signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(() => { expired = true; if (ctx) void ctx.close().catch(() => {}); }, this.navTimeoutMs);
     try {
@@ -238,14 +247,14 @@ export class Browsers {
         title = await page.title().catch(() => "");
       } catch (e) {
         const msg = String(e && e.message || e).split("\n")[0];
-        transport = limited ? "error:body-limit" : expired || /timeout/i.test(msg) ? "timeout" : "error:" + msg.slice(0, 160);
+        transport = signal?.aborted ? (signal.reason === "timeout" ? "timeout" : "error:cancelled") : limited ? "error:body-limit" : expired || /timeout/i.test(msg) ? "timeout" : "error:" + msg.slice(0, 160);
       }
       let shot = null;
       if (screenshot && classify({ site, code, headers, body, title, transport }).outcome !== "ok") { try { await page.screenshot({ path: screenshot }); shot = screenshot; } catch { /* page gone */ } }
       return { code, headers, body, title, finalUrl: page.url(), t: (Date.now() - t0) / 1000, transport,
         connectCode: null, failedRequests: failed, screenshot: shot };
     } catch (e) {
-      return fail(site.url, expired ? "timeout" : "error:" + String(e && e.message || e).split("\n")[0].slice(0, 160), (Date.now() - t0) / 1000);
+      return fail(site.url, signal?.aborted ? (signal.reason === "timeout" ? "timeout" : "error:cancelled") : expired ? "timeout" : "error:" + String(e && e.message || e).split("\n")[0].slice(0, 160), (Date.now() - t0) / 1000);
     } finally {
       signal?.removeEventListener("abort", abort);
       clearTimeout(timer);

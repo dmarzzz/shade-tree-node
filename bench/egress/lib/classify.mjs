@@ -12,6 +12,7 @@
 //   blocked-challenge  a JS / managed interstitial the client may pass by running code
 //   captcha            an interactive human test
 //   blocked-403        403/451 or a deny page with no challenge offered
+//   cancelled          operator interruption, not a network or site failure
 //   timeout            transport timeout
 //   error              transport or proxy error, no status, or 5xx
 //   unverified         a status with neither a positive nor a block marker (needs a human look)
@@ -30,13 +31,13 @@
 // the first 400 KB.
 
 export const OUTCOMES = Object.freeze([
-  "ok", "blocked-429", "blocked-challenge", "captcha", "blocked-403", "timeout", "error", "unverified",
+  "ok", "blocked-429", "blocked-challenge", "captcha", "blocked-403", "timeout", "cancelled", "error", "unverified",
 ]);
 
 // Short forms for report cells (same as the November 2026 results tables).
 export const ABBR = Object.freeze({
   ok: "ok", "blocked-challenge": "chl", captcha: "cap", "blocked-403": "403", "blocked-429": "429",
-  timeout: "to", error: "err", unverified: "unv",
+  timeout: "to", cancelled: "can", error: "err", unverified: "unv",
 });
 
 // Block markers are matched on at most this many characters of the lowercased body. Every
@@ -158,6 +159,7 @@ export function classify(input) {
   const { site: rawSite, code: rawCode = null, headers = {}, body: rawBody = "", title: rawTitle = "",
     finalUrl = "", transport = null } = input && typeof input === "object" ? input : {};
   const site = rawSite && typeof rawSite === "object" ? rawSite : {};
+  if (transport === "error:cancelled") return { outcome: "cancelled", marker: "error:cancelled" };
   if (transport === "timeout") return { outcome: "timeout", marker: null };
   if (transport) return { outcome: "error", marker: str(transport).slice(0, 160) };
 

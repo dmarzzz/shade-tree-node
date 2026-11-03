@@ -117,13 +117,35 @@ function socksReason(e) {
 function tag(e, code) { e.code = code; return e; }
 
 // TLS on top of an open tunnel. -> Promise<{ tls, tTlsMs }>
-export function startTls(socket, servername, { timeoutMs = 45_000, rejectUnauthorized = true, ca } = {}) {
+export function startTls(socket, servername, { timeoutMs = 45_000, rejectUnauthorized = true, ca, signal } = {}) {
   const t0 = now();
   return new Promise((resolve, reject) => {
     const s = tls.connect({ socket, servername: net.isIP(servername) ? undefined : servername, rejectUnauthorized, ca, ALPNProtocols: ["http/1.1"] });
-    const timer = setTimeout(() => { s.destroy(); reject(tag(new Error("tls timeout"), "timeout")); }, timeoutMs);
-    s.once("secureConnect", () => { clearTimeout(timer); resolve({ tls: s, tTlsMs: now() - t0 }); });
-    s.once("error", (e) => { clearTimeout(timer); reject(tag(e, e.code || "tls-error")); });
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      s.off("secureConnect", ready);
+      s.off("close", closed);
+      s.off("error", failed);
+    };
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) { s.destroy(); socket.destroy(); reject(error); }
+      else resolve({ tls: s, tTlsMs: now() - t0 });
+    };
+    const abort = () => finish(tag(new Error("cancelled"), "cancelled"));
+    const ready = () => finish();
+    const closed = () => finish(tag(new Error("TLS closed during handshake"), signal?.aborted ? "cancelled" : "tls-closed"));
+    const failed = e => finish(tag(e, signal?.aborted ? "cancelled" : e.code || "tls-error"));
+    const timer = setTimeout(() => finish(tag(new Error("tls timeout"), "timeout")), timeoutMs);
+    s.once("secureConnect", ready);
+    s.once("error", failed);
+    s.once("close", closed);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
   });
 }
 
@@ -159,13 +181,9 @@ export async function fetchVia(exit, url, { headers = {}, timeoutMs = 45_000, ca
       const tun = await openTunnel(exit, u.hostname.replace(/^\[|\]$/g, ""), port, { timeoutMs: left(), signal });
       tunnels++;
       connectCode = tun.connectCode ?? connectCode;
-      const abort = () => tun.socket.destroy();
-      signal?.addEventListener("abort", abort, { once: true });
-      tun.socket.once("close", () => signal?.removeEventListener("abort", abort));
-      if (signal?.aborted) { abort(); return res(null, {}, "", current, "error:cancelled"); }
       let stream = tun.socket;
-      if (u.protocol === "https:") stream = (await startTls(stream, u.hostname, { timeoutMs: left(), ca })).tls;
-      r = await requestOver(stream, u, headers, left(), maxBytes);
+      if (u.protocol === "https:") stream = (await startTls(stream, u.hostname, { timeoutMs: left(), ca, signal })).tls;
+      r = await requestOver(stream, u, headers, left(), maxBytes, signal);
     } catch (e) {
       return res(null, {}, "", current, e.code === "timeout" ? "timeout" : `error:${e.code || "error"}`);
     }
@@ -184,8 +202,16 @@ export async function fetchVia(exit, url, { headers = {}, timeoutMs = 45_000, ca
   }
 }
 
-function requestOver(stream, u, headers, timeoutMs, maxBytes) {
+function requestOver(stream, u, headers, timeoutMs, maxBytes, signal) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); };
+    const fail = e => {
+      if (settled) return;
+      settled = true; cleanup(); req.destroy(); stream.destroy();
+      reject(tag(e, signal?.aborted ? "cancelled" : e.code || "request-error"));
+    };
+    const abort = () => fail(tag(new Error("cancelled"), "cancelled"));
     // Plain http over the stream: TLS (if any) is already done by startTls, so https.request
     // would wrap a second TLS layer (and ignore our pinned CA).
     const req = http.request({
@@ -208,18 +234,21 @@ function requestOver(stream, u, headers, timeoutMs, maxBytes) {
         chunks.push(d);
       });
       resp.on("end", finish);
-      resp.on("error", (e) => { if (!truncated) { clearTimeout(timer); reject(tag(e, e.code || "read-error")); } });
+      resp.on("error", (e) => { if (!truncated) fail(e); });
+      resp.on("close", () => { if (!resp.complete && !truncated) fail(tag(new Error("response closed"), "read-closed")); });
       let done = false;
       function finish() {
-        if (done) return; done = true;
-        clearTimeout(timer);
+        if (done || settled) return; done = true; settled = true;
+        cleanup();
         const h = {};
         for (const [k, v] of Object.entries(resp.headers)) h[k.toLowerCase()] = Array.isArray(v) ? v.join(", ") : String(v);
         resolve({ code: resp.statusCode, headers: h, body: Buffer.concat(chunks), truncated });
       }
     });
-    const timer = setTimeout(() => { req.destroy(tag(new Error("timeout"), "timeout")); }, timeoutMs);
-    req.on("error", (e) => { clearTimeout(timer); reject(tag(e, e.code || "request-error")); });
+    const timer = setTimeout(() => fail(tag(new Error("timeout"), "timeout")), timeoutMs);
+    req.on("error", fail);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) { abort(); return; }
     req.end();
   });
 }

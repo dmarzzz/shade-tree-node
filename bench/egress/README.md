@@ -122,6 +122,7 @@ Exactly one per cell, in this order of precedence (`lib/classify.mjs` explains e
 | `captcha` | an interactive test: reCAPTCHA, hCaptcha, PerimeterX press-and-hold, DataDome, DuckDuckGo ducks, Yandex SmartCaptcha |
 | `blocked-403` | 403/451 or a deny page with no challenge offered |
 | `timeout` / `error` | transport timeout; proxy or transport error, no status, or 5xx |
+| `cancelled` | operator interruption (`error:cancelled` transport), not a timeout or site refusal. Report abbreviation `can`; retained in the all-cell denominator with an interrupted-run warning. |
 | `unverified` | a status with neither a positive nor a block marker; look at it by hand (`--shots DIR` saves a screenshot of every non-ok browser cell) |
 
 No retries: a block is the measurement.
