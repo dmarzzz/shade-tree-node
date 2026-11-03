@@ -9,13 +9,14 @@
 // Without --real the harness only runs against loopback sites (that is how the selftest
 // drives it). Under CI it refuses non-loopback sites even with --real.
 
+import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseSites, selectSites } from "./lib/sites.mjs";
-import { parseExit, EXIT_KINDS } from "./lib/exits.mjs";
-import { CLIENTS, loadChromium } from "./lib/clients.mjs";
+import { parseSites, selectSites, isLoopbackHost } from "./lib/sites.mjs";
+import { parseExit, EXIT_KINDS, parseHostPort } from "./lib/exits.mjs";
+import { CLIENTS } from "./lib/clients.mjs";
 import { buildMeta, exitLookup } from "./lib/meta.mjs";
 import { checkPlan, runMatrix } from "./lib/runner.mjs";
 
@@ -34,7 +35,9 @@ const USAGE = `usage: node bench/egress/run.mjs --label L --kind K --out FILE.js
   --seed N             shuffle seed (default 7)
   --ua chrome|polite   curl/node user agent (default chrome; polite names the benchmark)
   --tor-control H:P    send NEWNYM before each site (null-auth control port only)
-  --timeout S          per-cell timeout (default 45)
+  --timeout S          per-cell timeout including browser setup (default 45)
+  --settle-ms MS       browser settling inside the cell deadline (default 6000)
+  --lookup-url URL     sampled exit lookup endpoint (real mode only)
   --shots DIR          screenshot every non-ok browser cell into DIR
   --no-exit-lookup     do not look up the exit IP/ASN through the exit
   --real               allow non-loopback sites (a real measurement)`;
@@ -77,37 +80,46 @@ if (!sel.ok) die(sel.error);
 const clients = a.clients.split(",").map((s) => s.trim()).filter(Boolean);
 const plan = checkPlan({ sites: sel.sites, clients, gapS, real: a.real });
 if (!plan.ok) die(plan.error);
+const localOnly = !a.real || !!process.env.CI;
+if (localOnly && ex.exit.type !== "direct" && !isLoopbackHost(ex.exit.host)) die("local mode requires loopback proxy");
+if (localOnly && a["tor-control"] && !isLoopbackHost(parseHostPort(a["tor-control"])?.host || "")) die("local mode requires loopback control");
+if (!Number.isInteger(passes) || !Number.isInteger(seed)) die("passes and seed must be integers");
+process.umask(0o077);
 
 await mkdir(dirname(resolve(a.out)), { recursive: true });
 if (a.shots) await mkdir(a.shots, { recursive: true });
 const startedAt = new Date().toISOString();
-const runId = `${a.label}-${startedAt.replace(/[-:]/g, "").slice(0, 13)}`;
+const runId = `${a.label}-${randomUUID()}`;
 const write = (row) => appendFile(a.out, JSON.stringify(row) + "\n");
 
 const versions = {};
 if (clients.some((c) => c === "headless" || c === "headed")) {
-  const chromium = await loadChromium();
   try { versions.playwright = JSON.parse(await readFile(join(ROOT, "node_modules/@playwright/test/package.json"), "utf8")).version; } catch { /* not installed */ }
-  if (chromium) {
-    try { const b = await chromium.launch(); versions.chromium = b.version(); await b.close(); } catch { versions.chromium = "unavailable"; }
-  }
+  versions.chromium = "not separately probed; see installed Playwright version";
 }
 let exitInfo = null;
-if (!a["no-exit-lookup"]) {
+if (!localOnly && !a["no-exit-lookup"]) {
   exitInfo = await exitLookup(ex.exit, { url: a["lookup-url"] });
   // Through the member Proxy every CONNECT may pick a different node, so this lookup names one
   // exit the canopy used at the start, not the exit of every cell.
   if (a.kind === "shadenet") exitInfo.note = "one sample; each CONNECT may exit from a different node";
 }
 await write(buildMeta({ runId, label: a.label, kind: a.kind, exit: ex.exit, clients, passes, sitesPath: a.sites,
-  siteCount: sel.sites.length, args: process.argv.slice(2), versions, root: ROOT, startedAt, exitInfo }));
+  siteCount: sel.sites.length, args: process.argv.slice(2), versions, root: ROOT, startedAt, exitInfo, selectedSites: sel.sites }));
 
-// Tor with NEWNYM: tag every site's cells with the exit it actually used.
-const exitTag = a["tor-control"] && !a["no-exit-lookup"]
+// A separate lookup samples an exit; it does not attribute these cells or subresources.
+const exitTag = !localOnly && a["tor-control"] && !a["no-exit-lookup"]
   ? async () => { const x = await exitLookup(ex.exit, { url: a["lookup-url"] }); return { exit_ip: x.ip, exit_org: x.org, exit_cc: x.country }; }
   : () => ({});
 
+const controller = new AbortController();
+const cancel = () => controller.abort();
+process.once("SIGINT", cancel);
+process.once("SIGTERM", cancel);
 const counts = await runMatrix({ exit: ex.exit, label: a.label, kind: a.kind, clients, sites: sel.sites, passes, gapS, passGapS,
   seed, uaMode: a.ua, torControl: a["tor-control"] || null, timeoutS, shotsDir: a.shots || null, runId, write,
-  log: (l) => console.log(l), settleMs, exitTag });
+  log: (l) => console.log(l), settleMs, exitTag, localOnly, signal: controller.signal });
+process.removeListener("SIGINT", cancel);
+process.removeListener("SIGTERM", cancel);
+if (controller.signal.aborted) process.exitCode = 130;
 console.log(`done ${runId}: ${Object.entries(counts).map(([k, v]) => `${k}=${v}`).join(" ")}`);

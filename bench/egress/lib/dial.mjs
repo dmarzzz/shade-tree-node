@@ -13,6 +13,7 @@
 // to 3.2 s (n=19) through the member Proxy.
 
 import { openTunnel, startTls } from "./net.mjs";
+import { isIP } from "node:net";
 import http from "node:http";
 
 export const MAX_PROBE_BODY = 4096;
@@ -26,6 +27,7 @@ export async function probe(exit, url, { phase = "warm", timeoutMs = 150_000, ca
   const out = { type: "dial", phase, tTunnelMs: null, tTlsMs: null, tTotalMs: null, code: null, connectCode: null, body: null, error: null };
   let u;
   try { u = new URL(url); } catch { out.error = "bad-url"; return out; }
+  if (!["http:", "https:"].includes(u.protocol)) { out.error = "bad-scheme"; return out; }
   const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
   try {
     const tun = await openTunnel(exit, u.hostname.replace(/^\[|\]$/g, ""), port, { timeoutMs });
@@ -43,7 +45,7 @@ export async function probe(exit, url, { phase = "warm", timeoutMs = 150_000, ca
         createConnection: () => stream }, (resp) => {
         let body = "";
         resp.setEncoding("latin1");
-        resp.on("data", (d) => { if (body.length < MAX_PROBE_BODY) body += d; });
+        resp.on("data", (d) => { if (body.length + d.length > MAX_PROBE_BODY) { req.destroy(Object.assign(new Error("body-limit"), { code: "body-limit" })); return; } body += d; });
         resp.on("end", () => resolve({ code: resp.statusCode, body }));
         resp.on("error", reject);
       });
@@ -53,7 +55,11 @@ export async function probe(exit, url, { phase = "warm", timeoutMs = 150_000, ca
       req.end();
     });
     out.code = r.code;
-    out.body = r.body.slice(0, 64).replace(/[^0-9a-fA-F.:]/g, "") || null;
+    let ip = r.body.trim();
+    try { ip = JSON.parse(ip).ip; } catch { /* plain IP endpoint */ }
+    if (r.code < 200 || r.code >= 300) out.error = `http-${r.code}`;
+    else if (typeof ip !== "string" || !isIP(ip)) out.error = "invalid-exit-ip";
+    else out.body = ip;
   } catch (e) {
     out.error = String(e.code || "error").slice(0, 60);
   }

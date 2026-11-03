@@ -15,6 +15,8 @@
 //   { code, headers, body, title, finalUrl, t, transport, connectCode, failedRequests }
 // and never throws: a client that cannot run returns transport "error:client-unavailable".
 
+import { isLoopbackHost } from "./sites.mjs";
+import { classify } from "./classify.mjs";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -56,33 +58,48 @@ export function parseCurlHeaders(text) {
 // curl exit codes that mean "the tunnel or the network failed", named for the report.
 const CURL_RC = { 5: "proxy-resolve", 6: "resolve", 7: "connect", 35: "tls", 52: "empty-reply", 56: "recv", 97: "proxy-handshake" };
 
-export function runCurl(exit, site, { timeoutS = 45, ua = UA_CHROME, curlBin = "curl", extraArgs = [] } = {}) {
+export function runCurl(exit, site, { timeoutS = 45, ua = UA_CHROME, curlBin = "curl", extraArgs = [], localOnly = false, signal } = {}) {
   return (async () => {
+    if (signal?.aborted) return fail(site.url, "error:cancelled");
+    const t0 = Date.now();
     let dir;
     try { dir = await mkdtemp(join(tmpdir(), "egress-curl-")); } catch { return fail(site.url, "error:tmpdir"); }
     const hf = join(dir, "h");
-    const bf = join(dir, "b");
-    const args = ["-s", "-L", "--max-redirs", "5", "--compressed", "-m", String(timeoutS), "-A", ua,
+    const args = ["-q", "--max-filesize", "12582912", "-s", "-L", "--max-redirs", "5", "--compressed", "-m", String(timeoutS), "-A", ua,
       "-H", `Accept: ${ACCEPT}`, "-H", `Accept-Language: ${ACCEPT_LANGUAGE}`,
-      "-D", hf, "-o", bf, "-w", "%{json}", ...curlArgs(exit), ...extraArgs, site.url];
-    const t0 = Date.now();
+      "-D", hf, "-o", "-", "-w", "%{stderr}%{json}", ...curlArgs(exit), ...extraArgs, ...(localOnly ? ["--max-redirs", "0"] : []), site.url];
+    const chunks = [];
+    let bytes = 0;
+    let limited = false;
     const r = await new Promise((resolve) => {
       let out = "";
       let child;
-      try { child = spawn(curlBin, args, { stdio: ["ignore", "pipe", "ignore"] }); } catch { resolve({ rc: -1, out: "" }); return; }
-      const killer = setTimeout(() => child.kill("SIGKILL"), (timeoutS + 15) * 1000);
-      child.stdout.on("data", (d) => { if (out.length < 65536) out += d; });
+      try { child = spawn(curlBin, args, { stdio: ["ignore", "pipe", "pipe"] }); } catch { resolve({ rc: -1, out: "" }); return; }
+      const abort = () => child.kill("SIGKILL");
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
+      child.once("close", () => signal?.removeEventListener("abort", abort));
+      const killer = setTimeout(() => child.kill("SIGKILL"), Math.max(1, timeoutS * 1000 - (Date.now() - t0)));
+      child.stderr.on("data", (d) => { if (out.length < 65536) out += d; });
+      child.stdout.on("data", d => {
+        bytes += d.length;
+        if (bytes > 12 * 1024 * 1024) { limited = true; child.kill("SIGKILL"); return; }
+        chunks.push(d);
+      });
       child.on("error", () => { clearTimeout(killer); resolve({ rc: -1, out: "" }); });
       child.on("close", (rc) => { clearTimeout(killer); resolve({ rc, out }); });
     });
     const t = (Date.now() - t0) / 1000;
     let w = {};
     try { w = JSON.parse(r.out); } catch { /* curl too old for %{json}, or killed */ }
-    const [hdr, body] = await Promise.all([readFile(hf, "latin1").catch(() => ""), readFile(bf, "utf8").catch(() => "")]);
+    const hdr = await readFile(hf, "latin1").catch(() => "");
+    const body = limited ? "" : Buffer.concat(chunks).toString("utf8");
     await rm(dir, { recursive: true, force: true });
     let transport = null;
-    if (r.rc === -1) transport = "error:client-unavailable";
-    else if (r.rc === 28) transport = "timeout";
+    if (limited || r.rc === 63) transport = "error:body-limit";
+    else if (signal?.aborted) transport = "error:cancelled";
+    else if (r.rc === -1) transport = "error:client-unavailable";
+    else if (r.rc === 28 || r.rc === null) transport = "timeout";
     // rc 7 with a proxy configured and no CONNECT reply means curl never reached the proxy.
     else if (r.rc === 7 && exit && exit.type !== "direct" && !w.http_connect) transport = "error:curl-proxy-connect";
     else if (r.rc !== 0) transport = `error:curl-${CURL_RC[r.rc] || "rc" + r.rc}${w.http_connect ? `-connect${w.http_connect}` : ""}`;
@@ -92,10 +109,10 @@ export function runCurl(exit, site, { timeoutS = 45, ua = UA_CHROME, curlBin = "
   })();
 }
 
-export async function runNode(exit, site, { timeoutS = 45, ua = UA_CHROME, ca } = {}) {
+export async function runNode(exit, site, { timeoutS = 45, ua = UA_CHROME, ca, localOnly = false, signal } = {}) {
   const r = await fetchVia(exit, site.url, {
     headers: { "user-agent": ua, accept: ACCEPT, "accept-language": ACCEPT_LANGUAGE },
-    timeoutMs: timeoutS * 1000, ca,
+    timeoutMs: timeoutS * 1000, ca, localOnly, signal,
   });
   return { code: r.code, headers: r.headers, body: r.body, title: "", finalUrl: r.finalUrl, t: r.t,
     transport: r.transport, connectCode: r.connectCode, failedRequests: null };
@@ -118,8 +135,13 @@ export class Browsers {
   }
 
   async start() {
+    this.started = true;
+    return this;
+  }
+
+  async startMode(requestedMode, signal) {
     const chromium = this.chromium || (await loadChromium());
-    for (const mode of this.modes) {
+    for (const mode of this.modes.filter(mode => mode === requestedMode)) {
       if (!chromium) { this.unavailable.set(mode, "playwright-missing"); continue; }
       if (mode === "headed" && process.platform === "linux" && !process.env.DISPLAY) {
         // Refuse rather than fall back to headless: a silently-headless "headed" column would
@@ -128,12 +150,15 @@ export class Browsers {
         continue;
       }
       const args = ["--disable-dev-shm-usage"];
+      if (!this.exit || this.exit.type === "direct") args.push("--no-proxy-server");
       // Chromium bypasses any proxy for loopback by default. Route loopback through the exit
       // too, so the selftest's loopback fixtures exercise the same path a real site takes.
       if (this.exit && this.exit.type !== "direct") args.push("--proxy-bypass-list=<-loopback>");
       if (mode === "headed") args.push("--disable-blink-features=AutomationControlled");
       try {
-        this.browsers.set(mode, await chromium.launch({ headless: mode !== "headed", args, proxy: chromiumProxy(this.exit) }));
+        const browser = await chromium.launch({ headless: mode !== "headed", timeout: this.navTimeoutMs, args, proxy: chromiumProxy(this.exit) });
+        if (signal?.aborted) { await browser.close().catch(() => {}); return this; }
+        this.browsers.set(mode, browser);
       } catch (e) {
         this.unavailable.set(mode, "launch-failed: " + String(e.message || e).split("\n")[0].slice(0, 120));
       }
@@ -142,21 +167,62 @@ export class Browsers {
   }
 
   contextOptions(mode) {
-    const base = { ignoreHTTPSErrors: this.ignoreHTTPSErrors };
+    const base = { ignoreHTTPSErrors: this.ignoreHTTPSErrors, serviceWorkers: "block" };
     if (mode === "headless") return base; // the default an agent stack ships with
     const p = this.profile;
     return { ...base, viewport: { width: 1920, height: 1080 }, locale: p.locale, timezoneId: p.timezoneId,
       extraHTTPHeaders: { "Accept-Language": p.acceptLanguage }, colorScheme: "light" };
   }
 
-  async run(mode, site, { screenshot = null } = {}) {
+  async run(mode, site, options = {}) {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) abort();
+    let timer;
+    const started = Date.now();
+    try {
+      const result = await Promise.race([
+        this.runCell(mode, site, { ...options, signal: controller.signal }),
+        new Promise(resolve => { timer = setTimeout(() => {
+          controller.abort();
+          resolve(fail(site.url, "timeout", this.navTimeoutMs / 1000));
+        }, this.navTimeoutMs); }),
+      ]);
+      return { ...result, t: (Date.now() - started) / 1000, browserVersion: this.browsers.get(mode)?.version?.() || null };
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", abort);
+    }
+  }
+
+  async runCell(mode, site, { screenshot = null, localOnly = false, signal } = {}) {
+    if (!this.browsers.has(mode) && this.started && !signal?.aborted) await this.startMode(mode, signal);
     const b = this.browsers.get(mode);
     if (!b) return fail(site.url, `error:client-unavailable:${this.unavailable.get(mode) || "not-started"}`);
     const t0 = Date.now();
     let ctx;
+    if (signal?.aborted) return fail(site.url, "error:cancelled");
+    let expired = false;
+    const abort = () => { expired = true; if (ctx) void ctx.close().catch(() => {}); };
+    signal?.addEventListener("abort", abort, { once: true });
+    const timer = setTimeout(() => { expired = true; if (ctx) void ctx.close().catch(() => {}); }, this.navTimeoutMs);
     try {
       ctx = await b.newContext(this.contextOptions(mode));
+      if (expired) throw new Error("timeout");
+      if (localOnly) await ctx.route("**/*", route => {
+        const u = new URL(route.request().url());
+        return isLoopbackHost(u.hostname) ? route.continue() : route.abort();
+      });
       const page = await ctx.newPage();
+      const cdp = await ctx.newCDPSession(page);
+      await cdp.send("Network.enable");
+      let received = 0;
+      let limited = false;
+      cdp.on("Network.dataReceived", event => {
+        received += event.dataLength;
+        if (received > 12 * 1024 * 1024) { limited = true; void ctx.close().catch(() => {}); }
+      });
       let lastNav = null;
       let failed = 0;
       page.on("response", (r) => { try { if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) lastNav = r; } catch { /* detached */ } });
@@ -168,18 +234,21 @@ export class Browsers {
         const r = lastNav || resp;
         if (r) { code = r.status(); try { headers = await r.allHeaders(); } catch { headers = r.headers(); } }
         body = await page.content().catch(() => "");
+        if (Buffer.byteLength(body) > 12 * 1024 * 1024) { body = ""; transport = "error:body-limit"; }
         title = await page.title().catch(() => "");
       } catch (e) {
         const msg = String(e && e.message || e).split("\n")[0];
-        transport = /timeout/i.test(msg) ? "timeout" : "error:" + msg.slice(0, 160);
+        transport = limited ? "error:body-limit" : expired || /timeout/i.test(msg) ? "timeout" : "error:" + msg.slice(0, 160);
       }
       let shot = null;
-      if (screenshot) { try { await page.screenshot({ path: screenshot }); shot = screenshot; } catch { /* page gone */ } }
+      if (screenshot && classify({ site, code, headers, body, title, transport }).outcome !== "ok") { try { await page.screenshot({ path: screenshot }); shot = screenshot; } catch { /* page gone */ } }
       return { code, headers, body, title, finalUrl: page.url(), t: (Date.now() - t0) / 1000, transport,
         connectCode: null, failedRequests: failed, screenshot: shot };
     } catch (e) {
-      return fail(site.url, "error:" + String(e && e.message || e).split("\n")[0].slice(0, 160), (Date.now() - t0) / 1000);
+      return fail(site.url, expired ? "timeout" : "error:" + String(e && e.message || e).split("\n")[0].slice(0, 160), (Date.now() - t0) / 1000);
     } finally {
+      signal?.removeEventListener("abort", abort);
+      clearTimeout(timer);
       if (ctx) await ctx.close().catch(() => {});
     }
   }

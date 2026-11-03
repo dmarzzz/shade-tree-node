@@ -40,10 +40,10 @@ export function describeExit(exit) {
 }
 
 export function curlArgs(exit) {
-  if (!exit || exit.type === "direct") return [];
+  if (!exit || exit.type === "direct") return ["--proxy", ""];
   const hp = `${exit.host.includes(":") ? `[${exit.host}]` : exit.host}:${exit.port}`;
-  if (exit.type === "socks5") return ["--socks5-hostname", hp];
-  return ["--proxytunnel", "-x", `http://${hp}`];
+  if (exit.type === "socks5") return ["--noproxy", "", "--socks5-hostname", hp];
+  return ["--noproxy", "", "--proxytunnel", "-x", `http://${hp}`];
 }
 
 export function chromiumProxy(exit) {

@@ -1,8 +1,10 @@
 # Sample run
 
-A small real run made with this exact code on 2026-11-03 between 05:14 and 05:25 UTC, to show
-the output format and to prove the harness works against real sites through a real member
-Proxy. It is a smoke test, not a result: 5 sites, 2 passes, one machine, ten minutes.
+An older exploratory smoke run recorded on 2026-11-03 between 05:14 and 05:25 UTC.
+Its provenance is a base commit plus dirty flag, not a digest of the executable
+source. It does not certify the current harness or causal exit/client differences:
+5 sites, 2 passes, one machine, different gaps, shared mutable canopy budgets and
+unpinned exits. This repair did not rerun these public sites.
 
 - `datacenter.jsonl`: `--exit direct` from a datacenter host (AS24940, DE).
 - `shadenet.jsonl`: the same host, through a member Proxy (`shadenet connect`,
@@ -29,11 +31,11 @@ How to read it:
   curl and Node) behave as in the November 2026 matrix.
 - The ShadeNet errors are `ERR_TUNNEL_CONNECTION_FAILED` and `connect-refused-502`: the
   member Proxy refused the tunnel. Its log over the window shows 587 `epoch-budget` refusals.
-  That is the Proxy's own per-epoch slot budget (each CONNECT spends a slot, and a browser
-  page opens many), not the site. This is the effect the README's Politeness section warns
-  about, and it is why `--gap` exists.
-- The Proxy had restarted a few minutes before the run, which is why the cold dial (1.2 s
-  tunnel) is far faster than the 5.9 to 30.1 s seen after ten minutes idle.
+  That aggregate count is not per-cell attribution. Direct-proof/session-init costs
+  and session-ticket redemptions differ; not every CONNECT necessarily spends a new
+  RLN slot. These observations do not establish a causal pacing improvement.
+- The Proxy reportedly restarted a few minutes before the run. The 1.2 s first
+  tunnel is not directly comparable to the historical ten-minute-idle measurements.
 - Two cells are worth a look by hand, which is what the labels are for: headed amazon pass 1
   through ShadeNet is `unverified` (a 35 KB page with an empty title and no marker, neither the
   real 580 KB homepage of pass 2 nor a known interstitial), and headed hn pass 1 direct is an

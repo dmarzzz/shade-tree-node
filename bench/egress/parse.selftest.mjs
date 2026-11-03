@@ -116,9 +116,9 @@ t("describeExit never names a non-loopback proxy host", () => {
 });
 
 t("curl and chromium proxy args match the exit", () => {
-  assert.deepEqual(curlArgs(parseExit("direct").exit), []);
-  assert.deepEqual(curlArgs(parseExit("socks5://127.0.0.1:9050").exit), ["--socks5-hostname", "127.0.0.1:9050"]);
-  assert.deepEqual(curlArgs(parseExit("http://[::1]:8888").exit), ["--proxytunnel", "-x", "http://[::1]:8888"]);
+  assert.deepEqual(curlArgs(parseExit("direct").exit), ["--proxy", ""]);
+  assert.deepEqual(curlArgs(parseExit("socks5://127.0.0.1:9050").exit), ["--noproxy", "", "--socks5-hostname", "127.0.0.1:9050"]);
+  assert.deepEqual(curlArgs(parseExit("http://[::1]:8888").exit), ["--noproxy", "", "--proxytunnel", "-x", "http://[::1]:8888"]);
   assert.equal(chromiumProxy(parseExit("direct").exit), undefined);
   assert.deepEqual(chromiumProxy(parseExit("http://127.0.0.1:8888").exit), { server: "http://127.0.0.1:8888" });
   assert.deepEqual(chromiumProxy(parseExit("socks5://[::1]:9050").exit), { server: "socks5://[::1]:9050" });

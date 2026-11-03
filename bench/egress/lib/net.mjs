@@ -10,6 +10,7 @@
 // a CONNECT response head is capped, a body is capped, redirects are capped, and every phase
 // has a timeout. A hostile peer gets an error result, never a hang or a throw.
 
+import { isLoopbackHost } from "./sites.mjs";
 import net from "node:net";
 import tls from "node:tls";
 import http from "node:http";
@@ -26,19 +27,30 @@ function hp(host, port) { return `${host.includes(":") ? `[${host}]` : host}:${p
 
 // -> Promise<{ socket, tTcpMs, tTunnelMs, connectCode }>; rejects with Error{code} on failure.
 //    code: timeout | connect-refused-<status> | bad-proxy-reply | proxy-closed | socks-<reason> | E*
-export function openTunnel(exit, host, port, { timeoutMs = 45_000 } = {}) {
+export function openTunnel(exit, host, port, { timeoutMs = 45_000, signal } = {}) {
   const t0 = now();
   const type = exit ? exit.type : "direct";
   if (type === "socks5") {
-    return SocksClient.createConnection({
+    return (async () => {
+      const tun = await openTunnel({ type: "direct" }, exit.host, exit.port, { timeoutMs, signal }).catch(e => {
+        if (e.code === "timeout" || e.code === "cancelled") throw e;
+        throw tag(e, "socks-" + socksReason(e));
+      });
+      const abort = () => tun.socket.destroy();
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) { abort(); throw tag(new Error("cancelled"), "cancelled"); }
+      try { return await SocksClient.createConnection({
+      existing_socket: tun.socket,
       proxy: { host: exit.host, port: exit.port, type: 5 },
       command: "connect",
       destination: { host, port },
-      timeout: timeoutMs,
+      timeout: Math.max(1, timeoutMs - (now() - t0)),
     }).then(({ socket }) => {
       const t = now() - t0;
       return { socket, tTcpMs: null, tTunnelMs: t, connectCode: null };
-    }, (e) => { throw tag(new Error(String(e.message || e).slice(0, 160)), "socks-" + socksReason(e)); });
+    }, (e) => { throw tag(new Error(String(e.message || e).slice(0, 160)), signal?.aborted ? "cancelled" : socksReason(e) === "timeout" ? "timeout" : "socks-" + socksReason(e)); });
+      } finally { signal?.removeEventListener("abort", abort); }
+    })();
   }
   return new Promise((resolve, reject) => {
     const target = type === "http" ? { host: exit.host, port: exit.port } : { host, port };
@@ -47,6 +59,11 @@ export function openTunnel(exit, host, port, { timeoutMs = 45_000 } = {}) {
     let settled = false;
     const fail = (code, msg) => { if (settled) return; settled = true; sock.destroy(); reject(tag(new Error(msg || code), code)); };
     const timer = setTimeout(() => fail("timeout", "tunnel timeout"), timeoutMs);
+    const abort = () => { clearTimeout(timer); fail("cancelled", "cancelled"); };
+    signal?.addEventListener("abort", abort, { once: true });
+    sock.once("close", () => signal?.removeEventListener("abort", abort));
+    sock.once("connect", () => { if (type !== "http") signal?.removeEventListener("abort", abort); });
+    if (signal?.aborted) { abort(); return; }
     // Before "connect" an error is about reaching the proxy itself, not the site: name it so a
     // report row says "the member Proxy was down", not a bare ECONNREFUSED.
     sock.once("error", (e) => { clearTimeout(timer); fail((type === "http" && tTcp === null ? "proxy-" : "") + (e.code || "error"), e.message); });
@@ -62,6 +79,7 @@ export function openTunnel(exit, host, port, { timeoutMs = 45_000 } = {}) {
       const onData = (d) => {
         head = Buffer.concat([head, d]);
         const end = head.indexOf("\r\n\r\n");
+        if (end > MAX_CONNECT_HEAD) { clearTimeout(timer); fail("bad-proxy-reply", "CONNECT reply head too large"); return; }
         if (end === -1) {
           if (head.length > MAX_CONNECT_HEAD) { clearTimeout(timer); fail("bad-proxy-reply", "CONNECT reply head too large"); }
           return;
@@ -78,6 +96,7 @@ export function openTunnel(exit, host, port, { timeoutMs = 45_000 } = {}) {
         const extra = head.subarray(end + 4);
         if (extra.length) sock.unshift(extra);
         settled = true;
+        signal?.removeEventListener("abort", abort);
         sock.removeAllListeners("error");
         resolve({ socket: sock, tTcpMs: tTcp, tTunnelMs: now() - t0, connectCode: code });
       };
@@ -121,23 +140,29 @@ function decode(buf, enc) {
 // One GET over an exit, following up to MAX_REDIRECTS redirects (each hop is a new tunnel,
 // as a browser would open). Never throws.
 // -> { code, headers, body, finalUrl, t (s), transport, connectCode, tunnels }
-export async function fetchVia(exit, url, { headers = {}, timeoutMs = 45_000, ca, maxBytes = MAX_BODY } = {}) {
+export async function fetchVia(exit, url, { headers = {}, timeoutMs = 45_000, ca, maxBytes = MAX_BODY, localOnly = false, signal } = {}) {
   const t0 = now();
   let current = url;
   let tunnels = 0;
   let connectCode = null;
   const deadline = t0 + timeoutMs;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (signal?.aborted) return res(null, {}, "", current, "error:cancelled");
     let u;
     try { u = new URL(current); } catch { return res(null, {}, "", current, "error:bad-redirect"); }
     if (u.protocol !== "http:" && u.protocol !== "https:") return res(null, {}, "", current, "error:bad-scheme");
+    if (localOnly && !isLoopbackHost(u.hostname)) return res(null, {}, "", current, "error:non-loopback");
     const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
     const left = () => Math.max(1, deadline - now());
     let r;
     try {
-      const tun = await openTunnel(exit, u.hostname.replace(/^\[|\]$/g, ""), port, { timeoutMs: left() });
+      const tun = await openTunnel(exit, u.hostname.replace(/^\[|\]$/g, ""), port, { timeoutMs: left(), signal });
       tunnels++;
       connectCode = tun.connectCode ?? connectCode;
+      const abort = () => tun.socket.destroy();
+      signal?.addEventListener("abort", abort, { once: true });
+      tun.socket.once("close", () => signal?.removeEventListener("abort", abort));
+      if (signal?.aborted) { abort(); return res(null, {}, "", current, "error:cancelled"); }
       let stream = tun.socket;
       if (u.protocol === "https:") stream = (await startTls(stream, u.hostname, { timeoutMs: left(), ca })).tls;
       r = await requestOver(stream, u, headers, left(), maxBytes);
@@ -150,7 +175,7 @@ export async function fetchVia(exit, url, { headers = {}, timeoutMs = 45_000, ca
     }
     const body = decode(r.body, r.headers["content-encoding"]);
     if (body === null) return res(r.code, r.headers, "", current, "error:bad-encoding");
-    return res(r.code, r.headers, body.toString("utf8"), current, null, r.truncated);
+    return res(r.code, r.headers, body.toString("utf8"), current, r.truncated ? "error:body-limit" : null, r.truncated);
   }
   return res(null, {}, "", current, "error:too-many-redirects");
 

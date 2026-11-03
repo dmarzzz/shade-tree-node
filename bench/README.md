@@ -36,8 +36,9 @@ it. Use what is already in `package.json`; a new dependency needs a note on why.
 
 `bench/rln/prove-verify.mjs` builds an in-memory RLN group of ephemeral members (as
 `test/timing.selftest.mjs` does), then times `proveForSlot` and `verifyEnvelope`. The first
-call of each is reported as cold (artifact load and snarkjs worker start, paid once per
-process); the rest are warm. Every envelope it times must verify, or the run fails.
+prover call is reported as cold; the first verifier call occurs after proving in the
+same process and is not a fresh-process cold start. Subsequent calls are warm.
+Every envelope it times must verify, or the run fails.
 
 ```bash
 node bench/rln/prove-verify.mjs --label laptop --prove 20 --verify 200 --out bench/rln/runs/laptop.json
@@ -50,3 +51,9 @@ This is one piece of [#63](https://github.com/dmarzzz/shade-tree-node/issues/63)
 proof and verify rows. Still open there: the Rust prover (`crates/shadenet-rln`), paired
 direct-Tor vs ShadeNet request latency to one target, gateway saturation under a controlled
 ramp, and the published table. Crypto timing is not throughput and not Tor latency.
+
+### Cold terminology correction
+The prover first call is in a fresh process. The verifier `coldMs` compatibility
+field means **first verifier call after proving in the same process**, not fresh
+verifier worker/process cold-start latency. The markdown column labels this
+explicitly. Synthetic proof timing is not live gateway or session throughput.

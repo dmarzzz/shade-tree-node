@@ -8,7 +8,12 @@ tables; `dial.mjs` times the first and following tunnels through an exit.
 It generalizes the Tor-only [exit-blocking benchmark](../../docs/exit-blocking-benchmark.md)
 to any exit and any client, because both turn out to matter per site.
 
-## What it found the first time (November 2026, n=3)
+## Historical prototype observations (November 2026, n=3)
+
+These are exploratory observations from a separate Python prototype, not a
+controlled comparison or a reproduction from this published harness. The full
+1,404-cell raw dataset is not included here. Bundled browser profiles, mutable
+budgets and sampled (not pinned) exits confound causal conclusions.
 
 A run on 2026-11-03 (6 exits: four Hetzner datacenter IPs in three ASNs, Tor, and the
 research canopy through a member Proxy; 3 clients; 26 sites; 3 passes; 1,404 cells) showed:
@@ -26,11 +31,12 @@ research canopy through a member Proxy; 3 clients; 26 sites; 3 passes; 1,404 cel
   columns are the open question.
 - **Cold start through the member Proxy.** The first dial after an idle Proxy took 5.9 to 30.1 s
   (median 13.7 s, n=5); warm dials took 0.9 to 3.2 s (n=19). A 30 s tool timeout would have lost
-  one of five cold dials. A browser page opens many CONNECTs, and each spends an RLN slot, so the
+  one of five cold dials. A browser page opens many CONNECTs, and direct-proof/session-init can spend RLN slots (session redemptions differ), so the
   Proxy's own per-epoch budget (`epoch-budget`) refused tunnels during browser cells.
 
 These are one night's numbers on one site list; bot scores drift. Re-run before quoting.
-`sample/` has a small scrubbed run made with this exact code.
+`sample/` has an older scrubbed smoke run with a dirty-tree provenance stamp, not
+a digest establishing this exact executable source.
 
 ## Run it
 
@@ -69,7 +75,7 @@ node bench/egress/report.mjs runs/dial.jsonl
 |---|---|---|
 | `direct` | this machine's address | the datacenter, residential or mobile column, depending on where you run it |
 | `http://HOST:PORT` | any HTTP CONNECT proxy | the member Proxy is one. It re-picks a node per CONNECT, so its cells belong to "the canopy", not one exit |
-| `socks5://HOST:PORT` | any SOCKS5 proxy, remote DNS | Tor's SocksPort. `--tor-control` sends NEWNYM before each site and tags each site's cells with the exit it used |
+| `socks5://HOST:PORT` | any SOCKS5 proxy, remote DNS | Tor's SocksPort. `--tor-control` sends NEWNYM before each site and tags cells with a separate sampled exit lookup, not stream attribution |
 
 `--kind` (datacenter, tor, shadenet, residential, mobile, other) and `--label` are free labels
 that become the report's columns. Credentials in an exit spec are refused.
@@ -100,7 +106,9 @@ running headless.
   "continue shopping" page, reddit's JS proof-of-work page), so it is a challenge.
 
 The parser fails closed with a line number on any malformed line, a bad regex, or a marker with
-a nested quantifier. Use `--sites FILE` for your own list and `--only a,b` for a subset.
+an obvious nested quantifier. This heuristic is not a hostile-regex execution bound;
+use trusted operator-supplied markers only. Use `--sites FILE` for your own list and
+`--only a,b` for a subset.
 
 ### Outcomes
 
@@ -123,7 +131,7 @@ No retries: a block is the measurement.
 Each `run.mjs` invocation appends to `--out`: one `{"type":"meta"}` row (harness commit, Node,
 Playwright, Chromium and curl versions, host, sites file hash, exit spec, exit ASN/country, the
 arguments), then one row per cell (exit, client, pass, site, wall, status, outcome, marker,
-title, vendor, bytes, time, failed subresources, evidence headers). `dial.mjs` rows are
+title, vendor, bytes, time, failed requests including main-document failures, evidence headers). `dial.mjs` rows are
 `{"type":"dial"}` with tunnel, TLS and total time per phase.
 
 ## Politeness
@@ -135,8 +143,8 @@ title, vendor, bytes, time, failed subresources, evidence headers). `dial.mjs` r
   what it is. The default is a stock Chrome UA, because the question is what an agent faking a
   browser gets; say which one you used.
 - If a site asks you to stop, take it out of your sites file.
-- Through the member Proxy, every CONNECT spends one of your RLN slots. Raise `--gap` if the
-  report shows `epoch-budget` errors, or you measure your own budget instead of the site.
+- Through the member Proxy, direct-proof/session-init requests spend RLN slots; session-ticket redemptions may reuse them. Raise `--gap` if the
+  external proxy logs show `epoch-budget` errors (rows do not preserve that typed reason), or you measure your own budget instead of the site.
 
 ## What CI runs
 
@@ -146,10 +154,51 @@ CONNECT proxy, a SOCKS5 server, hostile proxies (garbage reply, endless header, 
 silence) and a fake Tor control port, then drive every client and the CLIs through them. A host
 name that only resolves inside the fixture proxies proves that "via proxy" traffic really went
 through the proxy. Browser cases run when Chromium is installed and are reported as skipped
-otherwise. Nothing leaves 127.0.0.1.
+otherwise. Fixture servers bind loopback and fixture proxies reject external targets.
+This is not proof of browser background/DNS isolation; use an OS sandbox for that.
 
 ## Not covered yet
 
 Residential and mobile exits (run `direct` from such a connection; the columns appear in the
 report by label), pinning the member Proxy to one node for per-exit attribution, stealth browser
 builds, and IPv6-only runs.
+
+## Measurement and repair limitations
+
+Exit lookups are **samples**, including after Tor NEWNYM, not attribution of a
+site, stream, or browser subresource to that exit. Headed vs headless is a bundled
+profile comparison: binary mode, viewport, locale, timezone and automation flags
+change together. Historical samples are exploratory smoke tests with different
+gaps and shared mutable budgets, not controlled scheduling or exit-quality evidence.
+The historical dirty-tree stamp is not a digest of the executable source.
+
+Without `--real`, and under CI, exit lookup is disabled, proxy/control hosts must
+be loopback, Node rejects off-loopback redirect hops, curl refuses redirects, and
+browser request routing blocks off-loopback URLs and service workers. This is NOT
+an OS network sandbox: browser background traffic, DNS and WebRTC are not certified
+isolated. For strict offline execution use an OS network namespace/firewall; never
+run untrusted pages relying on the initial URL check as a sandbox.
+
+Browser cell deadlines include lazy process launch on the first cell of each mode,
+context/page setup, settling and screenshots, with context cancellation. Later cells
+reuse the process, so their timings are not fresh-process cold starts. Cleanup may
+finish after a timeout result. SIGINT/SIGTERM cancel active clients and pacing;
+control-port waits retain their bounded timeout. SIGKILL cannot guarantee cleanup.
+Playwright launch cancellation closes a late-arriving process; launch's own timeout
+also bounds startup. This is not an OS-level process-tree containment guarantee.
+
+Node oversized bodies are errors, not successful truncated content. Curl requests
+have a 12 MiB max-filesize plus a bounded stdout collector for decoded content (no
+body downloads to disk); browser CDP counts 12 MiB across received subresources
+and closes the context. These are application limits, not a hard OS memory/disk
+quota. Browser DOM expansion and in-flight bytes can exceed the threshold. Do not
+run hostile resource-exhaustion fixtures without OS resource limits.
+
+Screenshots are attempted only for non-ok browser cells, best effort within the
+cell deadline. Timeout cells may have no screenshot. Browser failed_reqs includes
+main-document failures, not solely subresources. Raw files remain private research
+artifacts: argv URL values and remote proxy specs are redacted, but page titles,
+headers, URLs and screenshots can still contain identifying content. Review and
+scrub before publication; do not publish arbitrary output automatically. New CLI
+files use a private umask. Report warnings identify incomplete/unverified cohorts;
+duplicates and mixed runs under the same label are rejected.

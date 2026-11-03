@@ -7,10 +7,10 @@
 //
 // What it measures, with no network in the path:
 //   prove   packages/node/lib/rln.mjs proveForSlot: the member's cost, once per RLN slot
-//           (each CONNECT through the member Proxy spends one slot; K slots per epoch)
+//           (direct-proof/session-init spends slots; session redemption differs)
 //   verify  verifyEnvelope: the node's cost, on every tunnel, after its cheap checks
-// The FIRST call of each is reported separately as "cold": it loads the wasm/zkey or the
-// vkey and warms the snarkjs workers, which a long-running Proxy or node pays once.
+// The first prover call is a fresh-process cold call. The verifier first call runs AFTER
+// proving in the same process, so its legacy coldMs field is not a fresh-worker cold start.
 //
 // It uses the same in-memory group construction as test/timing.selftest.mjs: N ephemeral
 // identities at the default tier, one fixed target. Proof cost depends on the circuit and tree
@@ -43,7 +43,7 @@ export function stats(xs) {
 
 const fmt = (x) => (x == null ? "-" : `${Math.round(x)} ms`);
 export function markdownRows(results) {
-  const out = ["| label | host | prove cold | prove p50 | prove p95 | verify cold | verify p50 | verify p95 | n prove / verify | commit | artifact |",
+  const out = ["| label | host | prove cold | prove p50 | prove p95 | verify first after proving | verify p50 | verify p95 | n prove / verify | commit | artifact |",
     "|---|---|---|---|---|---|---|---|---|---|---|"];
   for (const r of results) {
     const h = r.host || {};
@@ -111,7 +111,7 @@ async function main() {
       node: process.version,
       prove: { coldMs: Math.round(proveCold * 100) / 100, warm: stats(proveTimes) },
       verify: { coldMs: Math.round(verifyCold * 100) / 100, warm: stats(verifyTimes) },
-      notes: "cold = first call in a fresh process (artifact load + worker spin-up). JS path only; see bench/README.md for what this does not measure.",
+      notes: "prove cold = first call in a fresh process. verify coldMs is the first verifier call AFTER proving in that same process, not a fresh-process verifier cold start. JS path only; see bench/README.md for what this does not measure.",
     };
     const json = JSON.stringify(result, null, 2);
     if (a.out) { await mkdir(dirname(resolve(a.out)), { recursive: true }); await writeFile(a.out, json + "\n"); }

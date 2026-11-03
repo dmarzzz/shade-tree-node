@@ -306,10 +306,27 @@ try {
           const shotDir = mkdtempSync(join(tmpdir(), "egress-shot-"));
           const r = await b.run("headless", site("/deny"), { screenshot: join(shotDir, "s.png") });
           assert.ok(existsSync(r.screenshot));
+          const okShot = join(shotDir, "ok.png");
+          const okResult = await b.run("headless", site("/ok"), { screenshot: okShot });
+          assert.equal(okResult.screenshot, null);
+          assert.equal(existsSync(okShot), false);
           rmSync(shotDir, { recursive: true, force: true });
           const slow = await new Browsers({ exit, modes: ["headless"], settleMs: 0, navTimeoutMs: 300 }).start();
           assert.equal((await slow.run("headless", site("/slow"))).transport, "timeout");
           await slow.close();
+        } finally { await b.close(); }
+      }
+    });
+    if (tlsOrigin) await t("browser HTTPS via CONNECT and SOCKS, including headed with DISPLAY", async () => {
+      const modes = process.env.DISPLAY ? ["headless", "headed"] : ["headless"];
+      for (const exit of [EXITS.http, EXITS.socks5]) {
+        const b = await new Browsers({ exit, modes, settleMs: 0, navTimeoutMs: 10_000, ignoreHTTPSErrors: true }).start();
+        try {
+          for (const mode of modes) {
+            const target = { ...site("/ok"), url: tlsOrigin.url("/ok") };
+            const result = await b.run(mode, target);
+            assert.equal(classify({ site: target, ...result }).outcome, "ok", `${exit.type} ${mode} ${result.transport}`);
+          }
         } finally { await b.close(); }
       }
     });
@@ -335,8 +352,8 @@ try {
   await t("a browser client that was never started reports client-unavailable", async () => {
     const fake = { launch: async () => { throw new Error("nope\nstack"); } };
     const b = await new Browsers({ exit: EXITS.direct, modes: ["headless"], chromium: fake }).start();
-    assert.match(b.unavailable.get("headless"), /^launch-failed: nope$/);
     assert.match((await b.run("headless", site("/ok"))).transport, /client-unavailable:launch-failed/);
+    assert.match(b.unavailable.get("headless"), /^launch-failed: nope$/);
     assert.match((await b.run("headed", site("/ok"))).transport, /client-unavailable:not-started/);
     await b.close();
   });

@@ -12,13 +12,14 @@
 // name an exit by ASN and country, not by address.
 
 import { execFileSync } from "node:child_process";
+import { isIP } from "node:net";
 import os from "node:os";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describeExit } from "./exits.mjs";
 import { fetchVia } from "./net.mjs";
 
-export const HARNESS_VERSION = 1;
+export const HARNESS_VERSION = 2;
 
 function safe(fn, dflt = null) { try { return fn(); } catch { return dflt; } }
 
@@ -48,7 +49,7 @@ export function parseIpInfo(text) {
   try { j = JSON.parse(String(text)); } catch { return { ip: null, org: null, country: null }; }
   if (!j || typeof j !== "object") return { ip: null, org: null, country: null };
   const s = (v, n) => (typeof v === "string" ? v.slice(0, n) : null);
-  return { ip: s(j.ip, 64), org: s(j.org, 120), country: s(j.country, 8) };
+  return { ip: typeof j.ip === "string" && isIP(j.ip) ? j.ip : null, org: s(j.org, 120), country: s(j.country, 8) };
 }
 
 // Ask an IP-info endpoint through the exit. Default ipinfo.io (no key, rate limited, fine for a
@@ -59,7 +60,7 @@ export async function exitLookup(exit, { url = "https://ipinfo.io/json", timeout
   return parseIpInfo(r.body);
 }
 
-export function buildMeta({ runId, label, kind, exit, clients, passes, sitesPath, siteCount, args, versions = {}, root, startedAt, exitInfo = null }) {
+export function buildMeta({ runId, label, kind, exit, clients, passes, sitesPath, siteCount, args, versions = {}, root, startedAt, exitInfo = null, selectedSites = [] }) {
   return {
     type: "meta",
     harness: "bench/egress",
@@ -69,13 +70,20 @@ export function buildMeta({ runId, label, kind, exit, clients, passes, sitesPath
     exitKind: kind,
     exitSpec: describeExit(exit),
     exitInfo,
+    exitAttribution: "sampled lookup only; not per-stream attribution",
     clients,
     passes,
+    plannedSites: selectedSites.map(s => ({ tier: s.tier, site: s.site, urlHash: createHash("sha256").update(s.url).digest("hex") })),
+
     sites: { path: sitesPath, sha256: sitesPath ? sha256File(sitesPath) : null, count: siteCount },
     git: root ? gitInfo(root) : null,
     versions: { node: process.version, curl: curlVersion(), ...versions },
     host: hostClass(),
     startedAt,
-    args,
+    args: (args || []).map((v, i, xs) => {
+      if (xs[i - 1] === "--exit" || v.startsWith("--exit=")) return "<redacted-exit>";
+      if (v.includes("://")) return "<redacted-url>";
+      return v;
+    }),
   };
 }

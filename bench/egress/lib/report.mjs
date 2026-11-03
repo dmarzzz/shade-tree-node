@@ -55,6 +55,7 @@ const esc = (s) => String(s ?? "").replace(/\|/g, "\\|").replace(/[\r\n]+/g, " "
 function uniq(xs) { return [...new Set(xs)]; }
 
 export function buildReport({ rows = [], dials = [], metas = [] } = {}, { showIps = false, exitOrder = null, clientOrder = null, title = "Egress benchmark report" } = {}) {
+  const warnings = validateCohorts(rows, metas);
   const out = [];
   const p = (s = "") => out.push(s);
   const exits = exitOrder ? exitOrder.filter((e) => rows.some((r) => r.exit === e)) : uniq(rows.map((r) => r.exit));
@@ -71,6 +72,7 @@ export function buildReport({ rows = [], dials = [], metas = [] } = {}, { showIp
   const get = (e, c, s) => cell.get(`${e}\u0000${c}\u0000${s}`) || [];
 
   p(`# ${esc(title)}`);
+  for (const warning of warnings) p(`WARNING: ${warning}`);
   p();
   const passes = uniq(rows.map((r) => r.pass)).length;
   const ts = rows.map((r) => r.ts).filter(Boolean).sort();
@@ -158,7 +160,7 @@ export function buildReport({ rows = [], dials = [], metas = [] } = {}, { showIp
       const ip = showIps && x.ip ? ` ${x.ip}` : "";
       const git = m.git && m.git.commit ? `${String(m.git.commit).slice(0, 12)}${m.git.dirty ? "+dirty" : ""}` : "unknown";
       const v = m.versions || {};
-      p(`- \`${esc(m.run)}\`: exit \`${esc(m.exit)}\` (${esc(m.exitKind)}, ${esc(m.exitSpec)}): ${esc(where)}${esc(ip)}. ` +
+      p(`- \`${esc(m.run)}\`: exit \`${esc(m.exit)}\` (${esc(m.exitKind)}, ${esc(m.exitSpec)}): sampled lookup ${esc(where)}${esc(ip)} (not stream attribution). ` +
         `clients ${esc((m.clients || []).join(","))}, passes ${esc(m.passes)}, started ${esc(m.startedAt)}. ` +
         `harness ${esc(git)}, node ${esc(v.node)}, chromium ${esc(v.chromium || "-")}, ${esc(v.curl || "curl ?")}. ` +
         `host ${esc(m.host && m.host.cpus)} x ${esc(m.host && m.host.cpu)}, ${esc(m.host && m.host.os)}.`);
@@ -166,4 +168,41 @@ export function buildReport({ rows = [], dials = [], metas = [] } = {}, { showIp
     p();
   }
   return out.join("\n");
+}
+
+// Missing legacy metadata is explicitly unverified, never a certified comparison.
+export function validateCohorts(rows, metas) {
+  const warnings = [];
+  const seen = new Set();
+  const labels = new Map();
+  const urls = new Map();
+  const tiers = new Map();
+  for (const r of rows) {
+    const key = JSON.stringify([r.run, r.exit, r.client, r.tier, r.site, r.pass]);
+    if (seen.has(key)) throw new Error("duplicate benchmark cell");
+    seen.add(key);
+    if (labels.has(r.exit) && labels.get(r.exit) !== r.run) throw new Error("mixed runs under one exit label");
+    labels.set(r.exit, r.run);
+    if (tiers.has(r.site) && tiers.get(r.site) !== r.tier) throw new Error("ambiguous site name across tiers");
+    tiers.set(r.site, r.tier);
+    const sk = JSON.stringify([r.tier, r.site]);
+    if (urls.has(sk) && urls.get(sk) !== r.url) throw new Error("changed site URL in cohort");
+    urls.set(sk, r.url);
+  }
+  for (const [label, run] of labels) {
+    const ms = metas.filter(m => m.run === run && m.exit === label);
+    if (ms.length > 1) throw new Error("duplicate run metadata");
+    if (!run || ms.length !== 1) { warnings.push(`Unverified metadata for ${label}`); continue; }
+    const m = ms[0];
+    const expected = m.passes * m.clients?.length * m.sites?.count;
+    const actual = rows.filter(r => r.run === run && r.exit === label);
+    if (actual.some(r => !m.clients.includes(r.client) || !Number.isInteger(r.pass) || r.pass < 1 || r.pass > m.passes)) throw new Error("cell outside planned cohort");
+    if (m.plannedSites?.length) {
+      const planned = new Set(m.plannedSites.map(s => JSON.stringify([s.tier, s.site, s.urlHash])));
+      if (actual.some(r => !planned.has(JSON.stringify([r.tier, r.site, r.url_sha256])))) throw new Error("cell site or URL outside planned cohort");
+    } else warnings.push(`Unverified site manifest for ${label}`);
+    if (expected !== actual.length) warnings.push(`Incomplete ${label}: observed ${actual.length}, expected ${expected}`);
+  }
+  if (new Set(metas.map(m => JSON.stringify([m.sites?.sha256, m.versions, m.args?.filter(x => !String(x).includes("redacted"))]))).size > 1) warnings.push("Cohort metadata/policies differ; descriptive results only, not a controlled comparison");
+  return warnings;
 }
