@@ -682,6 +682,19 @@ mod tests {
     }
 
     #[test]
+    fn directory_with_embedded_announce_still_verifies() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../testdata/vectors.json"
+        )))
+        .unwrap();
+        let raw = vectors["selfVerifyingEntry"]["directory"].to_string();
+        let signer = vectors["signerPub"].as_str().unwrap();
+        let document = parse_and_verify_document(&raw, signer).unwrap();
+        assert_eq!(document.dir.gateways[0].weight, 1000);
+    }
+
+    #[test]
     fn fresh_verifies_and_writes_cache() {
         let d = workdir("fresh");
         let cache = d.join("dir.lkg");
