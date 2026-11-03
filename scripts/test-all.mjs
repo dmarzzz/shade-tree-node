@@ -30,6 +30,7 @@ const SLOW_SUITES = new Set([
   "onchain-tiers.selftest.mjs",      // anvil + forge broadcast + real gateway + real proofs (T-FEAT-8b / T-DEV-9c)
   "paid-access.selftest.mjs",        // anvil + forge + real gateway + real proofs: union roots + slasher routing (T-FEAT-7)
   "registrar.selftest.mjs",          // anvil + forge create + the 402 registrar + shade-tree pay, both rails (T-FEAT-7)
+  "prove-verify.selftest.mjs",       // bench/rln: a real proof + verify through the benchmark CLI
 ]);
 
 // Recursively find *.selftest.mjs, skipping node_modules / out / build dirs.

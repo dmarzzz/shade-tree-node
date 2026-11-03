@@ -1,0 +1,40 @@
+# Default site list for bench/egress. Format (see lib/sites.mjs):
+#   tier  name  wall  url  [min=<bytes>]  [ok-marker regex, rest of line, case-insensitive]
+#
+# Sources: the search and web sites on the Tor exit-blocking benchmark chart
+# (docs/exit-blocking-benchmark.md) plus a contrast set of open sites and two APIs.
+# wall = the anti-bot vendor or policy seen in front of the site in the November 2026 run
+#        (from response headers and the challenge pages themselves). Re-check when adding.
+# ok-marker = positive evidence that the real page rendered. A 2xx without it is `unverified`.
+# min=N     = the real page is far bigger than N bytes; a marker match under N is an
+#             interstitial wearing the site's title (amazon "continue shopping", reddit JS PoW).
+#
+# Landing pages and one fixed query only. Do not add pages behind a login, and do not add a
+# site whose terms forbid automated access to its landing page.
+
+search google       own          https://www.google.com/search?q=weather+today        id="search"|id="rso"|class="g "
+search ddg          own          https://html.duckduckgo.com/html/?q=weather+today    class="result__a"|result__snippet
+search bing         own          https://www.bing.com/search?q=weather+today          id="b_results"
+search brave        own          https://search.brave.com/search?q=weather+today      data-type="web"|class="snippet
+search startpage    own-pow      https://www.startpage.com/do/search?q=weather+today  class="result|w-gl
+search mojeek       own          https://www.mojeek.com/search?q=weather+today        class="results-standard"|class="ob"
+search yandex       smartcaptcha https://yandex.com/search/?text=weather+today        class="serp-item|data-cid=
+search mwmbl        none         https://mwmbl.org/?q=weather+today                   mwmbl
+search wiby         none         https://wiby.me/?q=weather+today                     wiby
+search searchmysite cloudflare   https://searchmysite.net/search/?q=weather+today     search my site|searchmysite
+web    nike         akamai       https://www.nike.com/                                nike\. just do it|<title>nike
+web    indeed       cloudflare   https://www.indeed.com/                              <title>[^<]*job|indeed\.com</title>|text-input-what
+web    g2           datadome     https://www.g2.com/                                  business software reviews|<title>g2 
+web    expedia      akamai+datadome https://www.expedia.com/                          <title>expedia|expedia travel
+web    zillow       perimeterx   https://www.zillow.com/                              <title>zillow|real estate, apartments
+web    nytimes      datadome     https://www.nytimes.com/                             <title>the new york times|breaking news
+web    medium       cloudflare   https://medium.com/                                  <title>medium|human stories
+web    cloudflare   cloudflare   https://www.cloudflare.com/                          <title>cloudflare
+web    x            cloudflare   https://x.com/                                       <title>x\.|what.s happening
+web    amazon       aws-waf      https://www.amazon.com/       min=10000              id="nav-logo|spend less\. smile more|id="navbar
+web    reddit       own-asn      https://www.reddit.com/       min=60000              heart of the internet|<shreddit-app
+web    wikipedia    none         https://en.wikipedia.org/wiki/Tor_(network)          <title>tor \(network\)
+web    github       none         https://github.com/                                  <title>github
+web    hn           none         https://news.ycombinator.com/                        hacker news
+api    openai       cloudflare   https://api.openai.com/v1/models                     invalid_api_key|missing bearer|you didn't provide an api key|"error"
+api    anthropic    cloudflare   https://api.anthropic.com/v1/models                  authentication_error|x-api-key|"error"

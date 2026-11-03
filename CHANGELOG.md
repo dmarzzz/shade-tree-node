@@ -4,6 +4,21 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Benchmarks: an egress harness and RLN proof/verify timing (`bench/`)
+
+- `bench/egress/` measures which sites an exit lets each client reach. Exits: direct, any HTTP
+  CONNECT proxy (the member Proxy included) and SOCKS5 (Tor included, with NEWNYM per site).
+  Clients: curl, Node, headless and headed Chromium (the existing Playwright devDependency).
+  Every cell gets one outcome (`ok`, `blocked-challenge`, `captcha`, `blocked-403`,
+  `blocked-429`, `timeout`, `error`, `unverified`) from a classifier that needs a positive page
+  marker for `ok`. Raw JSONL carries a provenance row; `report.mjs` writes per-wall and per-site
+  tables; `dial.mjs` times cold and warm tunnels.
+- Real runs are manual: the CLIs refuse non-loopback targets without `--real`, and always under
+  `CI`. The selftests use loopback fixtures only.
+- `bench/rln/prove-verify.mjs` times `proveForSlot` and `verifyEnvelope`, cold and warm, stamped
+  with the commit and artifact id. This is the JS part of #63; the rest of #63 stays open.
+- No new dependencies.
+
 ### RPC: a rate-limited endpoint is waited on, not failed (roadmap #369 M0)
 
 - HTTP 429, and 503 with `Retry-After`, are resent with bounded exponential backoff and jitter

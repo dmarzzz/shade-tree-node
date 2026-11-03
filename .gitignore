@@ -61,3 +61,6 @@ Cargo.lock.orig
 
 # gateway spent-set snapshot (OPS-17; runtime state)
 deploy-state/
+
+# benchmark raw output (bench/*/runs); publish scrubbed samples deliberately, not by accident
+bench/**/runs/
