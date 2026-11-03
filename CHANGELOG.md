@@ -106,7 +106,7 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   re-exports, so the node and the client rebuild the same tree from the same code.
 - The interop harness (`crates/shadenet-rln/interop/*.sh`) takes `SHADE_TREE_GATEWAY_CMD` and
   passes the member set through `SHADE_TREE_MEMBERS_FILE` instead of overwriting
-  `group/members.json`; CI runs the four plain-TCP scripts against both nodes.
+  `group/members.json`; CI runs the four plain-TCP scripts against the Rust node.
 - `shadenet-rln` gains a `verify` module (snarkjs key and proof parsing with curve and subgroup
   checks, Groth16 pairing check) that the prover and the withdraw builder now use for their
   self-checks, and a default-on `prove` feature. With `--no-default-features` the crate is the
