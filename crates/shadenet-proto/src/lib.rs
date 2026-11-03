@@ -1599,7 +1599,7 @@ pub fn verify_announce(
 /// A self-verifying entry is fresh while `now < announce.ts + MAX_ENTRY_AGE` (spec 4.5).
 pub const MAX_ENTRY_AGE: u64 = 900;
 /// A self-verifying entry is refused when `announce.ts > now + FUTURE_SKEW` (spec 4.5).
-pub const FUTURE_SKEW: u64 = 120;
+pub const FUTURE_SKEW: u64 = 600;
 /// The weight clamp applied to an entry rebuilt from its announce (spec 4.5).
 pub const MAX_ENTRY_WEIGHT: u64 = 1000;
 

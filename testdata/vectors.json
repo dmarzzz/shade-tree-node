@@ -505,7 +505,7 @@
   "selfVerifyingEntry": {
     "_note": "Self-verifying canopy entry (WIRE-SPEC 4.5, discovery v1 step 1). The entry carries the node's own signed announce verbatim under `announce`, OUTSIDE canonicalDirectoryBytes (so canonicalDirectoryBytesHex is the same with or without it). A client rebuilds the entry from the announce alone: onion/pubkey from announce.onion, weight = clamp(announce.weight, 0, maxEntryWeight), operator from a valid operatorSig, caps/capsSig from the announce. Freshness: accepted while now < ts + maxEntryAge and ts <= now + futureSkew (nowAccept passes, nowExpired is announce-expired, nowFuture is announce-future). The announce weight 5000 is deliberately above the clamp; the Elder lists 1000. Same onion key, caps and operator as the onion/capabilities/operatorAnnounce vectors.",
     "maxEntryAge": 900,
-    "futureSkew": 120,
+    "futureSkew": 600,
     "maxEntryWeight": 1000,
     "announce": {
       "v": 1,
@@ -600,7 +600,7 @@
     },
     "nowAccept": 1000600,
     "nowExpired": 1000900,
-    "nowFuture": 999879,
+    "nowFuture": 999399,
     "tamperedWeightReason": "bad-onion-sig"
   }
 }

@@ -20,6 +20,16 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   its saved fleet as before.
 - New `shadenet_proto::verify_listed_entry` and JS `verifyListedEntry`, both pinned to the
   `selfVerifyingEntry` vector.
+- Once one Elder's canopy verifies, the JS client waits at most 3 s for the others before it
+  builds the union; an Elder that misses the deadline is logged as unavailable and its late
+  answer is dropped. Without the deadline one unreachable Elder held every fresh load for the
+  whole Tor retry budget (about 86 s).
+- `FUTURE_SKEW` is 600 s, no longer the Elder's 120 s admission skew: a client whose clock runs
+  a couple of minutes slow kept dropping every fresh entry. A forward-dated announce now lives at
+  most 1500 s on such a client instead of 1020 s.
+- WIRE-SPEC 4.5 row 6 (the client-side stake read) is marked deferred to step 5 (mirrors):
+  neither client does it yet, and every source is still a pinned Elder that checks stake at
+  admission.
 
 ### Spec: self-verifying canopy entries (discovery v1, step 1)
 

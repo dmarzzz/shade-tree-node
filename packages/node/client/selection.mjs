@@ -573,15 +573,30 @@ export function _setCanopyFetch(fetchFn) { _fetchCanopy = fetchFn || fetchOverTo
 // every Elder fails does the caller fall back to the last-known-good cache. Logs and errors name
 // positions, never addresses (canopy events stay address-free).
 const elderFloors = new Map();
+// once one elder's canopy verifies, the others get this long to answer before the union is
+// built from whatever has arrived. one unreachable elder would otherwise hold every fresh load
+// for the whole tor retry budget (fetchOverTor: 4 attempts x 20 s). an elder that misses the
+// deadline is logged as unavailable, and its late answer is dropped.
+const ELDER_DEADLINE_MS = 3000;
+let _elderDeadlineMs = ELDER_DEADLINE_MS;
+export function _setElderDeadlineMs(ms) { _elderDeadlineMs = Number.isFinite(ms) && ms >= 0 ? ms : ELDER_DEADLINE_MS; }
+
 async function fetchCanopiesFromElders(path) {
   const now = Date.now();
-  const answers = await Promise.allSettled(BOOTNODE_ONIONS.map((elder) => _fetchCanopy(elder, path, { torHost: TOR_HOST, torPort: TOR_PORT })));
+  const of = BOOTNODE_ONIONS.length;
   const accepted = [];
+  const pending = new Set(BOOTNODE_ONIONS.keys());
   let lastErr = null;
-  answers.forEach((answer, i) => {
+  let closed = false;
+  let firstAccepted;
+  const first = new Promise((resolve) => { firstAccepted = resolve; });
+  const unavailable = (i, reason) => {
+    if (of > 1) clientLog.warn("Elder Tree unavailable", { elder: i + 1, of, reason });
+  };
+  const answers = BOOTNODE_ONIONS.map(async (elder, i) => {
     try {
-      if (answer.status === "rejected") throw answer.reason;
-      const doc = answer.value;
+      const doc = await _fetchCanopy(elder, path, { torHost: TOR_HOST, torPort: TOR_PORT });
+      if (closed) return;
       const v = verifyDirectory(doc, PINNED_SIGNER);
       if (!v.ok) throw new Error(v.reason);
       const issued = Number(doc.issued) || 0;
@@ -590,11 +605,25 @@ async function fetchCanopiesFromElders(path) {
       const stale = staleReason(issued, now);
       if (stale) throw new Error(stale);
       accepted.push({ i, doc });
+      firstAccepted();
     } catch (e) {
+      if (closed) return;
       lastErr = e;
-      if (BOOTNODE_ONIONS.length > 1) clientLog.warn("Elder Tree unavailable", { elder: i + 1, of: BOOTNODE_ONIONS.length, reason: "unavailable-or-invalid" });
+      unavailable(i, "unavailable-or-invalid");
+    } finally {
+      pending.delete(i);
     }
   });
+  const all = Promise.all(answers);
+  await Promise.race([all, first]);
+  if (pending.size) {
+    let timer = null;
+    const deadline = new Promise((resolve) => { timer = setTimeout(resolve, _elderDeadlineMs); });
+    await Promise.race([all, deadline]);
+    clearTimeout(timer);
+    closed = true;
+    for (const i of pending) unavailable(i, "deadline");
+  }
   if (!accepted.length) throw lastErr || new Error("no Elder Tree configured");
   for (const { i, doc } of accepted) elderFloors.set(i, Number(doc.issued) || 0);
   return accepted.map(({ doc }) => doc);

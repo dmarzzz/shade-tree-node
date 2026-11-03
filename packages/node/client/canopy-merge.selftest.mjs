@@ -99,6 +99,26 @@ async function main() {
     const third = onions(await floors.selectCandidates());
     ok(!third.has(w.onion) && third.has(v.onion), "the same Elder moving its issued backward is refused");
 
+    console.log("\nstraggler deadline:");
+    const late = await loadSelection("late", work, pins);
+    late._setElderDeadlineMs(50);
+    let release = null;
+    const held = new Promise((resolve) => { release = resolve; });
+    late._setCanopyFetch(async (elder) => { if (elder === ELDERS[0]) return canopyA; await held; return canopyB; });
+    let started = Date.now();
+    const quick = onions(await late.selectCandidates());
+    ok(Date.now() - started < 1000, "a fresh load does not wait for an Elder that is still answering");
+    ok(quick.size === 2 && quick.has(x.onion) && quick.has(y.onion) && !quick.has(w.onion), "the union is built from the Elders that answered in time");
+    release();
+    late._setCanopyFetch(async (elder) => { if (elder === ELDERS[0]) return canopyA; await new Promise((r) => setTimeout(r, 5)); return canopyB; });
+    const both = onions(await late.selectCandidates({ region: "eu" }));
+    ok(both.size === 1 && both.has(x.onion), "an Elder that answers within the deadline joins the union");
+    late._setElderDeadlineMs(50);
+    late._setCanopyFetch(async (elder) => { if (elder === ELDERS[0]) throw new Error("socks: unreachable"); await new Promise((r) => setTimeout(r, 200)); return canopyB; });
+    started = Date.now();
+    const slowOnly = onions(await late.selectCandidates());
+    ok(Date.now() - started >= 200 && slowOnly.size === 1 && slowOnly.has(x.onion), "the deadline starts at the first verified canopy, so a slow lone Elder is still waited for");
+
     console.log("\nlast-known-good cache:");
     const cache = join(work, "cache.lkg.json");
     const writer = await loadSelection("cache-write", work, pins, cache);

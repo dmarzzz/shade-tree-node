@@ -156,7 +156,7 @@ export async function verifyAnnounce(rec, { now = Math.floor(Date.now() / 1000),
 
 // WIRE-SPEC 4.5 constants for an entry that carries the node's own announce.
 export const MAX_ENTRY_AGE = 900;
-export const FUTURE_SKEW = DEFAULT_ANNOUNCE_SKEW;
+export const FUTURE_SKEW = 600;
 export const MAX_ENTRY_WEIGHT = 1000;
 
 // Check a directory entry against the announce it carries and rebuild it from that announce
