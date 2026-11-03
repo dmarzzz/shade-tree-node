@@ -79,3 +79,10 @@ approximate (a bare "http error" with no code is flagged `ambiguous_block` and n
 counted as a block); a pilot is powered for the tier-level conclusion, not for
 ranking engines within a tier; and pilot caps do not transfer to a scaled run, the
 ethics change with the volume, not just the runtime.
+
+## Re-running it on other exits
+
+[`bench/egress/`](../bench/egress/README.md) generalizes this measurement to any exit
+(direct, an HTTP CONNECT proxy such as the member Proxy, or SOCKS5 such as Tor) and four
+clients (curl, Node, headless and headed Chromium), with the same outcome split (challenge,
+CAPTCHA, 403 and 429 kept apart) and a JSONL plus markdown report.

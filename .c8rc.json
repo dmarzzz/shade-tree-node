@@ -6,7 +6,9 @@
     "packages/node/client/**",
     "group/**",
     "packages/node/gateway/**",
-    "packages/node/bin/**"
+    "packages/node/bin/**",
+    "bench/egress/lib/**",
+    "bench/rln/prove-verify.mjs"
   ],
   "exclude": [
     "**/*.selftest.mjs",

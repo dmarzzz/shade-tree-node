@@ -97,6 +97,7 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 | [`adr/`](adr/README.md) | Decision records 0001 to 0013: context, decision, consequences, rejected alternatives |
 | [`design/SESSION-TICKETS.md`](design/SESSION-TICKETS.md) | Session tickets: one proof buys a bounded research session (implemented behind the `sessionTickets` switch; on in the live record) |
 | [`exit-blocking-benchmark.md`](exit-blocking-benchmark.md) | The motivating measurement: 51 Tor exits against web and search destinations |
+| [`../bench/README.md`](../bench/README.md) | Reproducible benchmarks: the egress harness (any exit x curl/Node/headless/headed x sites, cold vs warm dial) and RLN proof/verify timing |
 | [`ROADMAP.md`](ROADMAP.md) | The forward roadmap |
 
 ## History
