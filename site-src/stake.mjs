@@ -360,8 +360,8 @@ function mount() {
     if (el.tierRow) el.tierRow.hidden = staked || resume;
     el.terminal.hidden = staked || resume;
     el.terminalText.textContent = hasWallet()
-      ? "Without a browser wallet, stake from the terminal with a funded key."
-      : "No wallet in this browser. On a phone, open this page inside your wallet app. Or stake from the terminal with a funded key.";
+      ? "Without a browser wallet, stake from the terminal. It prints an address and an amount to send, then stakes once the ETH arrives."
+      : "No wallet in this browser. On a phone, open this page inside your wallet app. Or stake from the terminal. It prints an address and an amount to send, then stakes once the ETH arrives.";
     // One primary action per screen: once the stake is in, going on is the action.
     const onward = state.stage === "confirmed" || state.stage === "final";
     el.nextStart.className = onward ? "solid-action" : "line-action";

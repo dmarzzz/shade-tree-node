@@ -4,6 +4,14 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Get access page: the terminal path is the keyless command
+
+- The Get access page and the agent brief on the landing page now show
+  `shadenet register-member --identity ~/.config/shadenet/identity.json` with no `--key-file`: the
+  command prints an address and an amount, and stakes once the ETH arrives (the funding wallet from
+  0.7.5). Both still showed the older `--key-file funded.key` form.
+- The brief now says to keep `funding.key` private, next to `identity.json`.
+
 ### Clients check every canopy entry and union every Elder (discovery v1, step 3)
 
 - The Rust client and the JS Proxy client check each entry that carries the node's announce
