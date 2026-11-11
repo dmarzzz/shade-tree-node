@@ -57,12 +57,17 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   purpose. `docs/THREAT-MODEL.md` §4.18 and §5 have the details.
 - The rule is pinned for both clients in `testdata/vectors.json` `ownNodes`.
 
-### Dependencies: RUSTSEC-2026-0385, -0386, -0387
+### Dependencies: RUSTSEC-2026-0385, -0386, -0387, GHSA-mrwp-f3q8-3g9p
 
 - `tokio` 1.53.1 -> 1.54.1 (RUSTSEC-2026-0386, `AsyncFd` constructors; ShadeNet does not call them),
   `ctutils` 0.4.2 -> 0.4.5 (RUSTSEC-2026-0385), `crypto-bigint` 0.7.5 -> 0.7.6 (RUSTSEC-2026-0387).
 - The `crypto-bigint` 0.5.5 copy that ark-circom pulls in through ethers-core has no patched release;
   `deny.toml` ignores RUSTSEC-2026-0387 for it with the reason. ShadeNet's own signing is on 0.7.6.
+- follow-redirects 1.16.1 -> 1.16.2 (GHSA-mrwp-f3q8-3g9p, high; it arrives through rlnjs and axios) and
+  ip-address 10.7.2 -> 10.7.6 (GHSA-rxp7-6hxx-x8q5), `npm audit fix --omit=dev`, lock only. The high
+  advisory turned the scheduled supply-chain audit on main red from 2026-10-31 and failed every PR,
+  including #391. `npm audit --omit=dev --audit-level=high` is clean on the new lock; the six
+  moderate minimatch findings under snarkjs have no fix and stay below the gate.
 
 ### Rust proxy: a queued request whose client hangs up spends nothing
 
