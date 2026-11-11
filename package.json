@@ -90,7 +90,7 @@
     "@stryker-mutator/core": "^10.1.1",
     "c8": "^12.0.0",
     "esbuild": "^0.28.2",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "globals": "^17.14.0"
   },
   "overrides": {
