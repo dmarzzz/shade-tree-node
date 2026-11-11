@@ -50,7 +50,7 @@ bytes = utf8( JSON.stringify(payload) )
 ```
 
 Excluded from the signed bytes: top-level `signer`, `signature`; per-gateway `operator`,
-`staked`, and any other field. Only the four listed gateway fields are covered, in that order.
+`staked`, `announce` (section 4.5), and any other field. Only the four listed gateway fields are covered, in that order.
 
 ## 2. v3 onion <-> ed25519 identity key
 
@@ -195,7 +195,8 @@ verified by `:152` `verifyDirectory`.
       "operator": "<addr>",   // present only when the entry had an operator
       "staked":   <bool>,     // present only when the entry had an operator
       "caps":     { "ports": [...], "region": "eu", "proto": {...}, "artifacts": [...], "admits": ["invited","staked","paid"], "pay": {...} },  // T-FEAT-10/9: the gateway's SIGNED caps, passed through verbatim (present only when it advertised any)
-      "capsSig":  "<hex ed25519 over canonicalCapsBytes(onion, caps), by the gateway's onion key>"  // required whenever `caps` is present
+      "capsSig":  "<hex ed25519 over canonicalCapsBytes(onion, caps), by the gateway's onion key>",  // required whenever `caps` is present
+      "announce": { /* the node's own signed announce record, verbatim (section 3); OPTIONAL, section 4.5 */ }
     }
   ],
   "signer":    "<hex ed25519 pubkey of the pinned signer>",
@@ -229,7 +230,8 @@ not live onion control. A compromised signer can omit, reorder, or add an intern
 consistent onion/pubkey entry, including an onion it controls. Re-deriving `pubkey`
 prevents an existing onion from being paired with a different key. When capabilities
 are present, `capsSig` makes them independently verifiable. `verifyDirectory` does not
-verify the stored announce or prove liveness.
+verify the stored announce or prove liveness; an entry that carries its announce can be
+checked on its own (section 4.5).
 
 ### 4.3 `verifyDirectory` reason codes: `packages/node/lib/directory.mjs:152`
 
@@ -293,6 +295,82 @@ Golden vector: `testdata/vectors.json` `thresholdDirectory` (2-of-3, fixed seeds
 bytes equal `canonicalDirectoryBytesHex`). Rust parity: `crates/shadenet-proto`
 `verify_directory_threshold(dir, pinned_signers)` consumes this shape (T-FEAT-9b);
 `verify_directory` remains the single-signer path.
+
+### 4.5 Self-verifying entries (`announce`): discovery v1
+
+Sections 4.2 to 4.4 trust the directory signer to choose the candidate list. A self-verifying
+entry removes that trust for the entry itself: it carries the node's own signed announce
+(section 3), so a client can check it without trusting whoever served the list. This is what
+lets a directory come from a mirror that holds no pinned signing key (`docs/ROADMAP.md` 3.5,
+"Bootstrap v1"). A source can still omit entries; clients counter that by merging several
+sources.
+
+**Shape.** An entry MAY carry `announce`: the announce record the Elder accepted, copied
+verbatim with every field it arrived with (`onionSig`, `capsSig`, `operator`, `operatorSig`).
+`announce` is outside `canonicalDirectoryBytes` (section 1.2), so an Elder that adds it signs
+the same bytes as before and a verifier that does not know the field accepts the directory
+unchanged. `GET /directory/delta` carries `announce` on entries in `added` the same way, so a
+node's re-announce changes its entry and re-ships it in the next delta.
+
+An Elder lists `announce` only when `JSON.stringify(announce)` is at most
+`MAX_LISTED_ANNOUNCE_BYTES` UTF-8 bytes, and otherwise serves the entry without it (a legacy
+entry, below). The signed `nonce` and `caps.ports` have no length bound, so without the cap a
+few padded announces could push a directory past a client's 2 MiB response limit.
+
+**Constants.**
+
+| Name | Value | Meaning |
+| --- | --- | --- |
+| `MAX_ENTRY_AGE` | `900` seconds | an entry is fresh while `now < announce.ts + MAX_ENTRY_AGE` (the Elder's default TTL) |
+| `FUTURE_SKEW` | `120` seconds | an entry is refused when `announce.ts > now + FUTURE_SKEW` (`DEFAULT_ANNOUNCE_SKEW`) |
+| `MAX_ENTRY_WEIGHT` | `1000` | the weight clamp the Elder already applies (`packages/node/bootnode/server.mjs` `MAX_WEIGHT`) |
+| `MAX_LISTED_ANNOUNCE_BYTES` | `4096` | the largest announce an Elder copies into an entry |
+
+`MAX_ENTRY_AGE` is a protocol constant, not the Elder's `--ttl`: an Elder configured with a
+longer TTL lists entries that clients drop once they pass `MAX_ENTRY_AGE`.
+
+**Verify rule.** For each entry that carries `announce`, the client checks, in this order, and
+drops the entry (not the directory) on the first failure:
+
+| # | Reason | Condition |
+| --- | --- | --- |
+| 1 | `bad-announce:<onion[:12]>..:no-announce` | `announce` not an object |
+| 2 | `announce-onion-mismatch:<onion[:12]>..` | `announce.onion !== g.onion` |
+| 3 | `announce-expired:<onion[:12]>..` | `announce.ts` not a number, or `now >= announce.ts + MAX_ENTRY_AGE` |
+| 4 | `announce-future:<onion[:12]>..` | `announce.ts > now + FUTURE_SKEW` |
+| 5 | `bad-announce:<onion[:12]>..:<reason>` | `verifyAnnounce` (section 3.4) fails with the freshness window and the nonce guard turned off, exactly as an Elder re-checks a gossiped announce (`admitGossip`) |
+| 6 | `bad-announce:<onion[:12]>..:not-staked` | the network admits staked nodes only, and `isStaked(announce.operator)` is false or there is no valid operator authorization |
+
+Row 5 covers the onion signature (`bad-onion-sig`), the standalone caps signature
+(`bad-caps-sig`) and the operator authorization (`bad-operator-sig`). Row 6 needs a chain read,
+so it is the client's I/O, like the Elder's own stake check; what a client does when the chain
+is unreachable is left to the SDKs.
+
+**Derived entry.** A client that accepts an entry rebuilds it from `announce` alone and ignores
+the Elder's copies of these fields:
+
+| Field | Value |
+| --- | --- |
+| `onion` | `announce.onion` |
+| `pubkey` | `onionToPubkey(announce.onion)` |
+| `weight` | `clamp(announce.weight, 0, MAX_ENTRY_WEIGHT)`; `100` when `announce.weight` is not a finite number |
+| `operator` | `announce.operator` when the operator authorization verified, else absent |
+| `caps`, `capsSig` | `canonicalCaps(announce.caps)` and `announce.capsSig`, when present |
+
+`health` stays the source's hint (an Elder's prober may mark an entry `down`); it is unsigned
+and only orders failover.
+
+**Entries without `announce`.** An entry with no `announce` is a legacy entry. It is accepted
+only on the strength of a pinned signer (sections 4.2 to 4.4), exactly as before, and a source
+without a pinned signer contributes no legacy entries.
+
+**Merging.** When several sources list the same onion, the client keeps the accepted entry with
+the greatest `announce.ts`.
+
+Golden vector: `testdata/vectors.json` `selfVerifyingEntry` (an announce with caps, an
+operator and weight `5000`, listed by the Elder at `1000`; the directory carrying it and its
+unchanged canonical bytes; the derived entry; `nowAccept`, `nowExpired` and `nowFuture` for
+rows 3 and 4).
 
 ## 5. Bootnode HTTP API
 

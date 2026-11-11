@@ -41,7 +41,8 @@
 //   SHADE_TREE_BOOTNODE_PEERS      OPTIONAL comma-list of PEER bootnode onions to federate with
 //                            (default off/empty => today's standalone behavior, byte-identical).
 //                            When set, a pull loop periodically fetches each peer's /directory over
-//                            Tor, pulls each listed gateway's stored announce (GET /gateway/<onion>),
+//                            Tor, takes each listed gateway's announce (the entry's `announce`, else
+//                            GET /gateway/<onion>),
 //                            and re-verifies it through the SAME real announce path (onion control +
 //                            operator/stake) before MERGING it into this registry. The peer's own
 //                            directory signature is NEVER trusted as authority over entries -- a
@@ -323,7 +324,13 @@ export function makeProber({ probe = defaultProbe, health = makeProbeHealth(),
 //   minReannounceSec throttles per-onion re-announce so a single onion cannot spin the verify path.
 //   MAX_WEIGHT      clamps the gateway-attested selection weight so one gateway cannot self-assign
 //                   a huge weight and capture ~all client traffic (a concentration/deanon lever).
+//   MAX_LISTED_ANNOUNCE_BYTES  an announce larger than this is listed without its `announce` copy
+//                   (a legacy entry, WIRE-SPEC 4.5): its signed nonce and caps.ports are unbounded,
+//                   so a few padded announces could otherwise push /directory past every client's
+//                   2 MiB response cap.
 const MAX_WEIGHT = 1000;
+const MAX_LISTED_ANNOUNCE_BYTES = 4096;
+const listedAnnounce = (rec) => (Buffer.byteLength(JSON.stringify(rec), "utf8") <= MAX_LISTED_ANNOUNCE_BYTES ? rec : null);
 export function makeRegistry({ signer, stake, admission = "open", ttlSec = 900, now = () => Math.floor(Date.now() / 1000),
     maxEntries = Number(process.env.SHADE_TREE_BOOTNODE_MAX_ENTRIES || 10000),
     minReannounceSec = Number(process.env.SHADE_TREE_BOOTNODE_MIN_REANNOUNCE || 5),
@@ -442,6 +449,7 @@ export function makeRegistry({ signer, stake, admission = "open", ttlSec = 900, 
       staked: v.staked,
       caps: v.caps, capsSig: typeof rec.capsSig === "string" ? rec.capsSig : null, // T-FEAT-10/9: verified, bounded (canonicalCaps)
       rec,
+      listed: listedAnnounce(rec),
       // Preserve the original expiry across a restart (don't silently extend a gateway's TTL);
       // a live announce gets a fresh now()+ttlSec.
       expiresAt: fromStore ? fromStore.expiresAt : now() + ttlSec,
@@ -499,6 +507,7 @@ export function makeRegistry({ signer, stake, admission = "open", ttlSec = 900, 
       staked: v.staked,
       caps: v.caps, capsSig: typeof rec.capsSig === "string" ? rec.capsSig : null,
       rec,
+      listed: listedAnnounce(rec),
       expiresAt: gossipExpiry, // origin-bounded, never extended by gossip
       lastAt: now(),
     });
@@ -536,6 +545,9 @@ export function makeRegistry({ signer, stake, admission = "open", ttlSec = 900, 
       // widen them. An announce whose caps lack a standalone capsSig is listed cap-free (a
       // directory entry with caps but no capsSig would fail verification).
       ...(e.caps && e.capsSig ? { caps: e.caps, capsSig: e.capsSig } : {}),
+      // WIRE-SPEC 4.5: the verbatim signed announce, outside the signed bytes, so a client can
+      // check the entry without trusting this Elder.
+      ...(e.listed ? { announce: e.listed } : {}),
     }));
     const dir = { version: 1, issued: now(), gateways, signer: signer.pub };
     return signDirectory(dir, signer.priv);

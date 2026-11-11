@@ -501,5 +501,106 @@
       "kvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkvkzz5qd.onion"
     ],
     "reason": "only-own-nodes"
+  },
+  "selfVerifyingEntry": {
+    "_note": "Self-verifying canopy entry (WIRE-SPEC 4.5, discovery v1 step 1). The entry carries the node's own signed announce verbatim under `announce`, OUTSIDE canonicalDirectoryBytes (so canonicalDirectoryBytesHex is the same with or without it). A client rebuilds the entry from the announce alone: onion/pubkey from announce.onion, weight = clamp(announce.weight, 0, maxEntryWeight), operator from a valid operatorSig, caps/capsSig from the announce. Freshness: accepted while now < ts + maxEntryAge and ts <= now + futureSkew (nowAccept passes, nowExpired is announce-expired, nowFuture is announce-future). The announce weight 5000 is deliberately above the clamp; the Elder lists 1000. Same onion key, caps and operator as the onion/capabilities/operatorAnnounce vectors.",
+    "maxEntryAge": 900,
+    "futureSkew": 120,
+    "maxEntryWeight": 1000,
+    "announce": {
+      "v": 1,
+      "onion": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
+      "weight": 5000,
+      "ts": 1000000,
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "caps": {
+        "ports": [
+          80,
+          443
+        ],
+        "region": "eu",
+        "proto": {
+          "min": 4,
+          "max": 4
+        }
+      },
+      "capsSig": "05c57aa16efe3fa6271ab499d09975009bdb4f1a25b9fcd19c74ff9feb4fc49be6957c8ced69cb0c6d8ea68bba46255b27beffcd6531bf0a0d1cdd6472053006",
+      "onionSig": "e9d397482317c334e0315c9ca0a53b35e005ed280f3d1810d33ecf4fe4adece744c5eb91df24b83f8b22f1e08e9faa49a0c4ce6073930268ca9fed5d0048bf03",
+      "operator": "0x7564105e977516c53be337314c7e53838967bdac",
+      "operatorSig": "0x9e50686e4a58a1566a9fce04a78c9ab0071ac03dc0f93de15026107ec88ffad810b350a14b181f8697882bd79c556c50a619141f741391df1ed6e1fb7940b1851b"
+    },
+    "directory": {
+      "version": 1,
+      "issued": 1000300,
+      "gateways": [
+        {
+          "onion": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
+          "pubkey": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+          "weight": 1000,
+          "health": "up",
+          "operator": "0x7564105e977516c53be337314c7e53838967bdac",
+          "staked": true,
+          "caps": {
+            "ports": [
+              80,
+              443
+            ],
+            "region": "eu",
+            "proto": {
+              "min": 4,
+              "max": 4
+            }
+          },
+          "capsSig": "05c57aa16efe3fa6271ab499d09975009bdb4f1a25b9fcd19c74ff9feb4fc49be6957c8ced69cb0c6d8ea68bba46255b27beffcd6531bf0a0d1cdd6472053006",
+          "announce": {
+            "v": 1,
+            "onion": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
+            "weight": 5000,
+            "ts": 1000000,
+            "nonce": "0123456789abcdef0123456789abcdef",
+            "caps": {
+              "ports": [
+                80,
+                443
+              ],
+              "region": "eu",
+              "proto": {
+                "min": 4,
+                "max": 4
+              }
+            },
+            "capsSig": "05c57aa16efe3fa6271ab499d09975009bdb4f1a25b9fcd19c74ff9feb4fc49be6957c8ced69cb0c6d8ea68bba46255b27beffcd6531bf0a0d1cdd6472053006",
+            "onionSig": "e9d397482317c334e0315c9ca0a53b35e005ed280f3d1810d33ecf4fe4adece744c5eb91df24b83f8b22f1e08e9faa49a0c4ce6073930268ca9fed5d0048bf03",
+            "operator": "0x7564105e977516c53be337314c7e53838967bdac",
+            "operatorSig": "0x9e50686e4a58a1566a9fce04a78c9ab0071ac03dc0f93de15026107ec88ffad810b350a14b181f8697882bd79c556c50a619141f741391df1ed6e1fb7940b1851b"
+          }
+        }
+      ],
+      "signer": "d04ab232742bb4ab3a1368bd4615e4e6d0224ab71a016baf8520a332c9778737",
+      "signature": "fd48ae459040096996a52aa5ba53abd35644b98d458e9a48b124a7f2c8f5f432a54e13507e36869c64e2b9d4ef4e162b4e398c805ea07c7aecf9ee0dbd43a40c"
+    },
+    "canonicalDirectoryBytesHex": "7b2276657273696f6e223a312c22697373756564223a313030303330302c226761746577617973223a5b7b226f6e696f6e223a2275636e6b6c3564326d356d79616c377a6b78346e796c6a6b6373733474686a6478326c37717a617370373474716e637675747970703361642e6f6e696f6e222c227075626b6579223a2261303961613566343761363735393830326666393535663864633264326131346135633939643233626539376638363431323766663933383334353561346630222c22776569676874223a313030302c226865616c7468223a227570222c2263617073223a7b22706f727473223a5b38302c3434335d2c22726567696f6e223a226575222c2270726f746f223a7b226d696e223a342c226d6178223a347d7d2c2263617073536967223a223035633537616131366566653366613632373161623439396430393937353030396264623466316132356239666364313963373466663966656234666334396265363935376338636564363963623063366438656136386262613436323535623237626566666364363533316266306130643163646436343732303533303036227d5d7d",
+    "derivedEntry": {
+      "onion": "ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion",
+      "pubkey": "a09aa5f47a6759802ff955f8dc2d2a14a5c99d23be97f864127ff9383455a4f0",
+      "weight": 1000,
+      "operator": "0x7564105e977516c53be337314c7e53838967bdac",
+      "caps": {
+        "ports": [
+          80,
+          443
+        ],
+        "region": "eu",
+        "proto": {
+          "min": 4,
+          "max": 4
+        }
+      },
+      "capsSig": "05c57aa16efe3fa6271ab499d09975009bdb4f1a25b9fcd19c74ff9feb4fc49be6957c8ced69cb0c6d8ea68bba46255b27beffcd6531bf0a0d1cdd6472053006"
+    },
+    "nowAccept": 1000600,
+    "nowExpired": 1000900,
+    "nowFuture": 999879,
+    "tamperedWeightReason": "bad-onion-sig"
   }
 }

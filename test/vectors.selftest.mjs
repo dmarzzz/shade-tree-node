@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createPublicKey } from "node:crypto";
 import { ed25519Sign, ed25519PrivateKey, pubkeyToOnion, onionToPubkey, canonicalDirectoryBytes, signDirectory, signDirectoryThreshold, verifyDirectory, CAPS_DOMAIN, canonicalCaps, canonicalCapsBytes, signCaps, verifyCapsSig, ADMIT_PATHS, PAY_PROTOCOLS, MAX_CAPS_PAY_TIERS } from "../packages/node/lib/directory.mjs";
-import { canonicalAnnounceBytes, operatorAuthMessage, verifyOperatorSig } from "../packages/node/bootnode/announce.mjs";
+import { canonicalAnnounceBytes, operatorAuthMessage, verifyOperatorSig, buildAnnounce, verifyAnnounce } from "../packages/node/bootnode/announce.mjs";
 import { calculateSignalHash, requestSignal } from "../packages/node/lib/rln.mjs";
 import { canonicalReceiptBytes, buildReceipt, RECEIPT_DOMAIN } from "../packages/node/lib/receipt.mjs";
 import { acceptEnvelopeVersion } from "../packages/node/gateway/gateway.mjs";
@@ -190,6 +190,26 @@ async function main() {
   const ex = excludeOwnNodes(own.gateways.map((onion) => ({ onion })), new Set(own.avoidNodes));
   ok(JSON.stringify(ex.gateways.map((g) => g.onion)) === JSON.stringify(own.kept) && JSON.stringify(ex.excluded) === JSON.stringify(own.excluded), "excludeOwnNodes keeps and drops exactly the pinned gateways");
   ok(REASON_ONLY_OWN_NODES === own.reason && onlyOwnNodesMessage(3).startsWith(own.reason + ":"), "the all-own refusal starts with the pinned reason literal");
+
+  console.log("\nself-verifying canopy entry (WIRE-SPEC 4.5; additive — the directory vectors above are UNCHANGED):");
+  const sv = V.selfVerifyingEntry;
+  const svAnn = sv.announce;
+  const rebuilt = buildAnnounce({ onion: svAnn.onion, weight: svAnn.weight, onionSeedHex: V.onionSeed, operator: svAnn.operator, operatorSig: svAnn.operatorSig, ts: svAnn.ts, nonce: svAnn.nonce, caps: svAnn.caps });
+  ok(JSON.stringify(rebuilt) === JSON.stringify(svAnn), "the embedded announce re-derives byte-exactly from the onion seed (onionSig + capsSig pinned)");
+  const svV = await verifyAnnounce(svAnn, { now: sv.nowAccept, skew: Number.MAX_SAFE_INTEGER });
+  ok(svV.ok && svV.operator === sv.derivedEntry.operator, "the embedded announce verifies with the skew window bypassed and yields the operator");
+  ok((await verifyAnnounce({ ...svAnn, weight: sv.derivedEntry.weight }, { now: sv.nowAccept, skew: Number.MAX_SAFE_INTEGER })).reason === sv.tamperedWeightReason, "an announce whose weight was rewritten fails the onion signature");
+  const svEntry = sv.directory.gateways[0];
+  const { announce: _a, ...svListed } = svEntry;
+  ok(canonicalDirectoryBytes(sv.directory).toString("hex") === sv.canonicalDirectoryBytesHex, "directory-with-announce canonical bytes match the pinned vector");
+  ok(canonicalDirectoryBytes({ ...sv.directory, gateways: [svListed] }).toString("hex") === sv.canonicalDirectoryBytesHex, "the announce field is outside the signed bytes");
+  ok(signDirectory(sv.directory, V.signerSeed).signature === sv.directory.signature, "directory-with-announce signature matches the pinned vector");
+  ok(verifyDirectory(sv.directory, V.signerPub).ok, "a pre-v1 verifier still accepts the directory-with-announce");
+  const d = sv.derivedEntry;
+  ok(d.onion === svAnn.onion && d.pubkey === onionToPubkey(svAnn.onion) && d.weight === Math.min(sv.maxEntryWeight, Math.max(0, svAnn.weight)) && JSON.stringify(d.caps) === JSON.stringify(svAnn.caps) && d.capsSig === svAnn.capsSig, "the derived entry comes from the announce alone (weight clamped)");
+  ok(svAnn.ts + sv.maxEntryAge > sv.nowAccept && svAnn.ts <= sv.nowAccept + sv.futureSkew, "nowAccept is inside the freshness window");
+  ok(!(svAnn.ts + sv.maxEntryAge > sv.nowExpired), "nowExpired is at the expiry boundary");
+  ok(svAnn.ts > sv.nowFuture + sv.futureSkew, "nowFuture puts ts past the future skew");
 
   console.log(`\n${failures === 0 ? "PASS" : "FAIL"}: vectors selftest (${failures} failure${failures === 1 ? "" : "s"})`);
   process.exit(failures === 0 ? 0 : 1);
