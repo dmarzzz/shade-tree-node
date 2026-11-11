@@ -43,7 +43,7 @@ shadenet-proto = { path = "../shadenet-proto", version = "0.7.5" }
 # T-RUST-2c native merkle tree (rlnjs Semaphore-v3 parity):
 #   - light-poseidon: circomlib-compatible Poseidon (BN254, arity 2) == poseidon-lite.
 #   - sha3: Keccak256 for the Semaphore group zero value (keccak(be32(id)) >> 8).
-light-poseidon = "0.4"
+light-poseidon = "0.5"
 sha3 = "0.12"
 # T-HARD-8 runtime lock check (src/artifacts.rs): sha256 of the embedded wasm/zkey/vkey vs
 # testdata/zk-artifacts.lock.json. Both already in the tree (shadenet-proto/ed25519-dalek pull
