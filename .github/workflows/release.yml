@@ -426,7 +426,7 @@ jobs:
           persist-credentials: false
 
       - name: Download musl live binaries
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shade-tree-*-unknown-linux-musl-live
           path: dist
@@ -512,13 +512,13 @@ jobs:
       contents: write # attach assets to the tag's GitHub Release
     steps:
       - name: Download validated release notes
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-notes-${{ needs.set-version.outputs.version }}
           path: release-metadata
 
       - name: Download packaged artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shade-tree-*
           path: dist
