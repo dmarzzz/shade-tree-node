@@ -322,12 +322,17 @@ few padded announces could push a directory past a client's 2 MiB response limit
 | Name | Value | Meaning |
 | --- | --- | --- |
 | `MAX_ENTRY_AGE` | `900` seconds | an entry is fresh while `now < announce.ts + MAX_ENTRY_AGE` (the Elder's default TTL) |
-| `FUTURE_SKEW` | `120` seconds | an entry is refused when `announce.ts > now + FUTURE_SKEW` (`DEFAULT_ANNOUNCE_SKEW`) |
+| `FUTURE_SKEW` | `600` seconds | an entry is refused when `announce.ts > now + FUTURE_SKEW` |
 | `MAX_ENTRY_WEIGHT` | `1000` | the weight clamp the Elder already applies (`packages/node/bootnode/server.mjs` `MAX_WEIGHT`) |
 | `MAX_LISTED_ANNOUNCE_BYTES` | `4096` | the largest announce an Elder copies into an entry |
 
 `MAX_ENTRY_AGE` is a protocol constant, not the Elder's `--ttl`: an Elder configured with a
 longer TTL lists entries that clients drop once they pass `MAX_ENTRY_AGE`.
+
+`FUTURE_SKEW` is wider than the Elder's admission skew (`DEFAULT_ANNOUNCE_SKEW`, 120 s) on
+purpose: a client whose clock runs a few minutes slow would otherwise drop every fresh entry.
+The cost is bounded: a forward-dated announce lives at most `MAX_ENTRY_AGE + FUTURE_SKEW`
+(1500 s) on such a client, against 1020 s at the Elder's skew.
 
 **Verify rule.** For each entry that carries `announce`, the client checks, in this order, and
 drops the entry (not the directory) on the first failure:
@@ -339,12 +344,16 @@ drops the entry (not the directory) on the first failure:
 | 3 | `announce-expired:<onion[:12]>..` | `announce.ts` not a number, or `now >= announce.ts + MAX_ENTRY_AGE` |
 | 4 | `announce-future:<onion[:12]>..` | `announce.ts > now + FUTURE_SKEW` |
 | 5 | `bad-announce:<onion[:12]>..:<reason>` | `verifyAnnounce` (section 3.4) fails with the freshness window and the nonce guard turned off, exactly as an Elder re-checks a gossiped announce (`admitGossip`) |
-| 6 | `bad-announce:<onion[:12]>..:not-staked` | the network admits staked nodes only, and `isStaked(announce.operator)` is false or there is no valid operator authorization |
+| 6 | `bad-announce:<onion[:12]>..:not-staked` | **deferred to step 5 (mirrors)**: the network admits staked nodes only, and `isStaked(announce.operator)` is false or there is no valid operator authorization |
 
 Row 5 covers the onion signature (`bad-onion-sig`), the standalone caps signature
 (`bad-caps-sig`) and the operator authorization (`bad-operator-sig`). Row 6 needs a chain read,
 so it is the client's I/O, like the Elder's own stake check; what a client does when the chain
-is unreachable is left to the SDKs.
+is unreachable is left to the SDKs. Neither client implements row 6 yet: both keep the source's
+unsigned `staked` hint on an entry whose operator authorization verified. That is safe while
+every source is a pinned Elder, which re-checks stake at admission. A mirror (step 5) is not,
+so row 6 lands with mirrors. The JS Proxy client's optional `SHADE_TREE_VERIFY_STAKE=1` path
+still re-checks the live stake of every operator-labelled entry it selects, as before.
 
 **Derived entry.** A client that accepts an entry rebuilds it from `announce` alone and ignores
 the Elder's copies of these fields:
@@ -355,12 +364,16 @@ the Elder's copies of these fields:
 | `pubkey` | `onionToPubkey(announce.onion)` |
 | `weight` | `clamp(announce.weight, 0, MAX_ENTRY_WEIGHT)`; `100` when `announce.weight` is not a finite number |
 | `operator` | `announce.operator` when the operator authorization verified, else absent |
-| `caps`, `capsSig` | `canonicalCaps(announce.caps)` and `announce.capsSig`, when present |
+| `caps`, `capsSig` | `canonicalCaps(announce.caps)` and `announce.capsSig`, when the announce has both (an Elder lists a caps-free entry the same way) |
 
 `health` stays the source's hint (an Elder's prober may mark an entry `down`); it is unsigned
 and only orders failover.
 
-**Entries without `announce`.** An entry with no `announce` is a legacy entry. It is accepted
+**Last-known-good copy.** A client that falls back to its saved copy because no source answered
+skips rows 3 and 4 for that copy: its announces expire long before it does, and a stale but
+verified canopy is better than none (sections 4.2 to 4.4). Every other row applies.
+
+**Entries without `announce`.** An entry with no `announce` (absent or `null`) is a legacy entry. It is accepted
 only on the strength of a pinned signer (sections 4.2 to 4.4), exactly as before, and a source
 without a pinned signer contributes no legacy entries.
 

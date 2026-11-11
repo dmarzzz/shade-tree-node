@@ -37,10 +37,13 @@ The bootnode verifies onion control before accepting a direct or gossiped announ
 In stake mode it also verifies the operator authorization and live bond. Those checks protect
 the service's registry.
 
-The directory consumed by a Proxy is a smaller object. Each entry also carries the node's signed
-announcement under `announce` (`docs/WIRE-SPEC.md` 4.5, at most 4096 bytes), but clients do not
-check it yet, so `verifyDirectory` authenticates the list with the pinned signer and checks that
-each onion matches its listed public key. It does not prove live onion control. A compromised
+The directory consumed by a Proxy is a smaller object. `verifyDirectory` authenticates the list
+with the pinned signer and checks that each onion matches its listed public key. Each entry also
+carries the node's signed announcement under `announce` (`docs/WIRE-SPEC.md` 4.5, at most 4096
+bytes). Clients check it, drop the entry when it fails or is older than 900 seconds, and rebuild
+the entry's weight, capabilities and operator from it. Clients still accept entries without
+`announce` from a pinned signer, so a compromised signer can strip the announcement and list the
+entry on its own word. For those entries `verifyDirectory` does not prove live onion control. A compromised
 signer can omit, reorder, or add an internally consistent entry, including a malicious onion
 it controls. It cannot make an existing onion terminate at a different key. When capabilities
 are present, their onion-key signature remains independently verifiable.
