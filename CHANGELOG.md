@@ -46,6 +46,11 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   advisory turned the scheduled supply-chain audit on main red from 2026-10-31 and failed every PR,
   including #391. `npm audit --omit=dev --audit-level=high` is clean on the new lock; the six
   moderate minimatch findings under snarkjs have no fix and stay below the gate.
+- RUSTSEC-2026-0459 (`libsqlite3-sys` 0.37, bundled SQLite CVE-2026-119375, published 2026-10-30)
+  arrives through arti's directory cache (`tor-dirmgr` -> `rusqlite` 0.39). The bug needs a crafted
+  database and `-wal` pair in a file the process opens; arti's cache is in the node user's own state
+  directory and only arti writes it. The patched `rusqlite` 0.41 is not accepted by arti 0.46, so
+  `deny.toml` and `.cargo/audit.toml` ignore it with the reason until the arti bump (#410).
 
 ### Rust proxy: a queued request whose client hangs up spends nothing
 
