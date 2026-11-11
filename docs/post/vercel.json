@@ -158,6 +158,16 @@
       "permanent": false
     },
     {
+      "source": "/nodeinterest",
+      "destination": "https://form.theschool.nyc/f/nodeinterest",
+      "permanent": false
+    },
+    {
+      "source": "/nodeinterest/",
+      "destination": "https://form.theschool.nyc/f/nodeinterest",
+      "permanent": false
+    },
+    {
       "source": "/lab",
       "destination": "/",
       "permanent": false
