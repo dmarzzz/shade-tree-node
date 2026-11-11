@@ -103,7 +103,7 @@ const installLine = (release) => [
   "https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/scripts/install.sh",
   `| SHADENET_VERSION=${esc(release)} sh`,
 ].join(CONTINUE);
-const REGISTER_LINE = `shadenet register-member --identity ${IDENTITY_PATH} --key-file funded.key`;
+const REGISTER_LINE = `shadenet register-member --identity ${IDENTITY_PATH}`;
 
 // With one tier there is nothing to choose. With more, the tier is a property of the identity
 // the CLI made, so the choice sits with the commitment, as one row.
@@ -263,7 +263,7 @@ ${siteNav("stake", { indent: "  " })}
             </div>
             <p class="admitted" data-member-state hidden></p>
             <div class="quiet" data-terminal>
-              <p data-terminal-text>Without a browser wallet, stake from the terminal with a funded key.</p>
+              <p data-terminal-text>Without a browser wallet, stake from the terminal. It prints an address and an amount to send, then stakes once the ETH arrives.</p>
               ${command("Stake from the terminal", REGISTER_LINE)}
             </div>
           </div>
