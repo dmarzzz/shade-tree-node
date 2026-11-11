@@ -103,6 +103,10 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   The RPC answered `latest` from a replica one block behind. The note now reads the balance at the
   block the stake was mined in (`member::balance_at`), retrying for a few seconds while a lagging
   replica lacks that block, and prints nothing rather than a stale figure.
+- The JS `shade-tree register-member` had the same bug: it read `provider.getBalance(address)` at
+  `latest`, so a lagging replica could report the whole deposit there too. It now reads at the
+  receipt's block through `leftoverAtBlock` in `packages/node/lib/funding-wallet.mjs` (5 tries,
+  2 s apart, the same as the Rust client) and prints nothing when no read succeeds (#363).
 
 ### JS SDK fixes from the v0.7.5 live end-to-end test
 

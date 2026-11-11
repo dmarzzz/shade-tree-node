@@ -11,6 +11,7 @@ import {
   chainLabel,
   defaultFundingKeyPath,
   formatEth,
+  leftoverAtBlock,
   loadOrCreateFundingWallet,
   gasReserveFor,
   quoteFunding,
@@ -152,6 +153,49 @@ const GWEI = 1_000_000_000n;
 
   // the first quote failing is not retried
   await assert.rejects(waitForFunding({ getQuote: async () => { throw new Error("wrong chain"); }, timeoutMs: 60_000, now, sleep }), /wrong chain/);
+}
+
+// ---- leftover note: read at the stake's block, retry a lagging replica, print nothing on failure
+{
+  const slept = [];
+  const sleep = async (ms) => { slept.push(ms); };
+  const LEFT = 1_999_700_000_000_000n; // the live 2026-10-20 figure: 0.0019997 ETH
+
+  // The block is pinned (as a number ethers turns into a hex quantity), never `latest`.
+  const tags = [];
+  const left = await leftoverAtBlock({ getBalance: async (tag) => { tags.push(tag); return LEFT; }, block: 11959428n, sleep });
+  assert.equal(left, LEFT);
+  assert.deepEqual(tags, [11959428]);
+  assert.deepEqual(slept, [], "a first read that succeeds does not wait");
+
+  // A replica that lacks the block errors; the read is retried and the later answer wins.
+  slept.length = 0;
+  let calls = 0;
+  const retried = await leftoverAtBlock({
+    getBalance: async () => { calls++; if (calls < 3) throw new Error("header not found"); return LEFT; },
+    block: 42, delayMs: 7, sleep,
+  });
+  assert.equal(retried, LEFT);
+  assert.equal(calls, 3);
+  assert.deepEqual(slept, [7, 7]);
+
+  // Every read fails: null (the caller prints no figure), after exactly `attempts` reads.
+  slept.length = 0;
+  calls = 0;
+  const none = await leftoverAtBlock({ getBalance: async () => { calls++; throw new Error("down"); }, block: 42, attempts: 4, delayMs: 1, sleep });
+  assert.equal(none, null);
+  assert.equal(calls, 4);
+  assert.equal(slept.length, 3);
+
+  // A malformed balance is not a figure either.
+  assert.equal(await leftoverAtBlock({ getBalance: async () => "lots", block: 42, attempts: 2, sleep }), null);
+  assert.equal(await leftoverAtBlock({ getBalance: async () => -1n, block: 42, attempts: 2, sleep }), null);
+  // An empty wallet is a real zero, not a failure.
+  assert.equal(await leftoverAtBlock({ getBalance: async () => 0n, block: 42, sleep }), 0n);
+  // No usable block number: nothing is read, nothing is printed.
+  for (const block of [null, undefined, "latest", -1, 2n ** 64n]) {
+    assert.equal(await leftoverAtBlock({ getBalance: async () => assert.fail("must not read without a block"), block, sleep }), null, String(block));
+  }
 }
 
 console.log("PASS: funding-wallet selftest");
