@@ -360,7 +360,7 @@ export SHADE_TREE_GATEWAY_REGISTRY=0x<GatewayRegistry>
 export SHADE_TREE_BOOTNODE_ONION=<bootnode-onion>
 export SHADE_TREE_GW_IDENTITY=tor/hs/identity.local.json
 read -s SHADE_TREE_GW_OPERATOR_KEY && export SHADE_TREE_GW_OPERATOR_KEY
-# shade-tree-node heartbeat
+# shade-tree-node node (the node announces itself; there is no separate heartbeat command)
 
 # gateway — on-chain root + real slashing
 export SHADE_TREE_GROUP_CONTRACT=0x<StakedReputationSet>

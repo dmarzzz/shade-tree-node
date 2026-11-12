@@ -175,6 +175,7 @@ fn prove(
     target: &str,
     nonce: &str,
     message_id: u64,
+    epoch: u64,
 ) -> BuiltEnvelope {
     build_envelope(&EnvelopeInput {
         identity_secret: secret.into(),
@@ -183,7 +184,7 @@ fn prove(
         target: target.into(),
         nonce: nonce.into(),
         signal: None,
-        epoch: epoch_now(),
+        epoch,
         rln_identifier: "1".into(),
         user_message_limit: LIMIT,
         message_id,
@@ -319,6 +320,9 @@ fn staked_members_are_admitted_and_an_over_spender_is_slashed_on_chain() {
     let members = vec![leaf_a.clone(), leaf_b.clone()];
     let sink = echo_sink();
     let node = Node::spawn(&url, &set, &sink);
+    // one epoch for every proof: the two over-spend proofs must share a nullifier even when a
+    // 120 s boundary passes between them, and the node accepts the previous epoch
+    let epoch = epoch_now();
 
     let first = prove(
         "222",
@@ -326,6 +330,7 @@ fn staked_members_are_admitted_and_an_over_spender_is_slashed_on_chain() {
         &sink,
         "00112233445566778899aabbccddeeff",
         0,
+        epoch,
     );
     let (ack, mut stream) = node.open(&envelope(&first));
     assert_eq!(
@@ -343,6 +348,7 @@ fn staked_members_are_admitted_and_an_over_spender_is_slashed_on_chain() {
         &sink,
         "ffeeddccbbaa99887766554433221100",
         0,
+        epoch,
     );
     let before = balance(&url, RECEIVER);
     let (ack, _) = node.open(&envelope(&second));
@@ -375,6 +381,7 @@ fn staked_members_are_admitted_and_an_over_spender_is_slashed_on_chain() {
         &sink,
         "0123456789abcdef0123456789abcdef",
         1,
+        epoch,
     );
     let (ack, _) = node.open(&envelope(&old_root));
     assert_eq!(
@@ -387,6 +394,7 @@ fn staked_members_are_admitted_and_an_over_spender_is_slashed_on_chain() {
         &sink,
         "abababababababababababababababab",
         2,
+        epoch,
     );
     let started = Instant::now();
     loop {

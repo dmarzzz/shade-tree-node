@@ -403,13 +403,16 @@ mod tests {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut got = Vec::new();
             let mut buf = [0_u8; 64];
+            // the relay closes the upstream with "pong" bytes still unread, which a loopback
+            // peer may report as a reset rather than an orderly end
             loop {
-                let n = socket.read(&mut buf).await.unwrap();
-                if n == 0 {
+                match socket.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => got.extend_from_slice(&buf[..n]),
+                }
+                if socket.write_all(b"pong").await.is_err() {
                     break;
                 }
-                got.extend_from_slice(&buf[..n]);
-                socket.write_all(b"pong").await.unwrap();
             }
             got
         });

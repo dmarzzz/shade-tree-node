@@ -130,9 +130,9 @@ async function main() {
     ok(/SHADE_TREE_REGISTER_KEY="\$SHADE_TREE_REGISTER_KEY" shade-tree register-gateway/.test(g.stdout) && /unset SHADE_TREE_REGISTER_KEY/.test(g.stdout), "prints a process-scoped optional `shade-tree register-gateway` step");
     ok(!/--register-key\s+/.test(g.stdout), "the node guide keeps the operator key out of argv");
     ok(/shade-tree-node node/.test(g.stdout), "prints the `shade-tree node` command");
-    ok(/shade-tree-node heartbeat --bootnode <elder-onion>/.test(g.stdout), "prints the `shade-tree heartbeat --bootnode <onion>` command");
-    ok(new RegExp(`--identity ${join(hsDir, "identity.local.json").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(g.stdout),
-       "the heartbeat command points --identity at the minted identity file");
+    ok(/SHADE_TREE_BOOTNODE_ONION=<elder-onion>/.test(g.stdout), "the node command names the Elder to announce to");
+    ok(new RegExp(`SHADE_TREE_GW_IDENTITY=${join(hsDir, "identity.local.json").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(g.stdout),
+       "the node command points SHADE_TREE_GW_IDENTITY at the minted identity file");
 
     const rerun = shadeTree(["join", "node", hsDir], { timeout: 40_000 });
     const preserved = JSON.parse(await readFile(join(hsDir, "identity.local.json"), "utf8"));

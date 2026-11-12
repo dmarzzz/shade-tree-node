@@ -47,8 +47,15 @@ fn length(input: &[u8], offset: usize, len_of_len: usize) -> Result<usize, Strin
     Ok(out)
 }
 
+/// Nested lists deeper than this are refused: an RPC that answers with a proof node nested
+/// thousands deep would otherwise exhaust the stack, and no trie node nests past three.
+const MAX_DEPTH: usize = 64;
+
 /// Decode one item and return it with how many bytes it took.
-fn decode_at(input: &[u8]) -> Result<(Rlp, usize), String> {
+fn decode_at(input: &[u8], depth: usize) -> Result<(Rlp, usize), String> {
+    if depth > MAX_DEPTH {
+        return Err(format!("rlp: nested deeper than {MAX_DEPTH}"));
+    }
     let first = *input.first().ok_or("rlp: empty input")?;
     match first {
         0x00..=0x7f => Ok((Rlp::Bytes(vec![first]), 1)),
@@ -74,7 +81,7 @@ fn decode_at(input: &[u8]) -> Result<(Rlp, usize), String> {
         }
         0xc0..=0xf7 => {
             let len = usize::from(first - 0xc0);
-            let items = decode_list(input.get(1..1 + len).ok_or("rlp: truncated list")?)?;
+            let items = decode_list(input.get(1..1 + len).ok_or("rlp: truncated list")?, depth)?;
             Ok((Rlp::List(items), 1 + len))
         }
         0xf8..=0xff => {
@@ -84,16 +91,19 @@ fn decode_at(input: &[u8]) -> Result<(Rlp, usize), String> {
                 return Err("rlp: non-canonical long list".into());
             }
             let start = 1 + len_of_len;
-            let items = decode_list(input.get(start..start + len).ok_or("rlp: truncated list")?)?;
+            let items = decode_list(
+                input.get(start..start + len).ok_or("rlp: truncated list")?,
+                depth,
+            )?;
             Ok((Rlp::List(items), start + len))
         }
     }
 }
 
-fn decode_list(mut input: &[u8]) -> Result<Vec<Rlp>, String> {
+fn decode_list(mut input: &[u8], depth: usize) -> Result<Vec<Rlp>, String> {
     let mut items = Vec::new();
     while !input.is_empty() {
-        let (item, used) = decode_at(input)?;
+        let (item, used) = decode_at(input, depth + 1)?;
         items.push(item);
         input = &input[used..];
     }
@@ -102,7 +112,7 @@ fn decode_list(mut input: &[u8]) -> Result<Vec<Rlp>, String> {
 
 /// Decode exactly one RLP item from `input`.
 pub(crate) fn decode(input: &[u8]) -> Result<Rlp, String> {
-    let (item, used) = decode_at(input)?;
+    let (item, used) = decode_at(input, 0)?;
     if used != input.len() {
         return Err("rlp: trailing bytes".into());
     }
@@ -300,6 +310,19 @@ pub(crate) mod tests {
         assert!(decode(&[0x01, 0x02]).is_err(), "trailing bytes");
         let long = vec![7_u8; 60];
         assert_eq!(decode(&encode_bytes(&long)).unwrap(), Rlp::Bytes(long));
+    }
+
+    #[test]
+    fn a_list_nested_past_the_depth_cap_is_refused_not_overflowed() {
+        let nested =
+            |depth: usize| (0..depth).fold(encode_bytes(b"x"), |inner, _| encode_list(&[inner]));
+        assert!(decode(&nested(MAX_DEPTH)).is_ok(), "the cap itself decodes");
+        let err = decode(&nested(MAX_DEPTH + 1)).unwrap_err();
+        assert!(err.contains("nested deeper than"), "{err}");
+        let deep = nested(1000);
+        assert!(decode(&deep).is_err());
+        let missing = verify_proof(&keccak256(&deep), b"key", &[deep]).unwrap_err();
+        assert!(missing.contains("nested deeper than"), "{missing}");
     }
 
     #[test]

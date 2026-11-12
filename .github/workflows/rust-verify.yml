@@ -114,3 +114,13 @@ jobs:
 
       - name: Rust member lifecycle on the real contracts (register, exit, withdraw) (blocking)
         run: bash crates/shadenet-rln/interop/member-lifecycle-run.sh
+
+      # The ADR 0014 conformance guard: both clients talk to the Rust node, and the Rust client
+      # still talks to the JavaScript gateway for as long as that one ships.
+      - name: JavaScript client -> Rust node + payload relay (blocking)
+        run: bash crates/shadenet-rln/interop/js-client-run.sh
+
+      - name: Rust client -> JavaScript gateway + payload relay, until the JavaScript node is deleted (blocking)
+        env:
+          SHADE_TREE_GATEWAY_CMD: node ${{ github.workspace }}/packages/node/gateway/gateway.mjs
+        run: bash crates/shadenet-rln/interop/egress-run.sh

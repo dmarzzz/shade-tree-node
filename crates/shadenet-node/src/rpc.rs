@@ -18,6 +18,9 @@ pub(crate) const MAX_RETRIES: u64 = 10;
 const RETRY_BASE_MS: u64 = 400;
 const RETRY_DELAY_CAP_MS: u64 = 10_000;
 const RETRY_BUDGET_MS: u64 = 30_000;
+/// A reply larger than this is refused before it is buffered: a member-event page of the
+/// largest chunk is a few MiB, a proof a few KiB, so a bigger body is an RPC gone wrong.
+const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum RpcError {
@@ -195,7 +198,7 @@ impl Rpc {
         };
         let mut waited = 0_u64;
         let mut attempt: u32 = 0;
-        let response = loop {
+        let mut response = loop {
             let response = self
                 .client
                 .post(url)
@@ -243,9 +246,31 @@ impl Rpc {
                 format!("HTTP {status}")
             }));
         };
-        let json: Value = response
-            .json()
+        let too_large = || {
+            transport(format!(
+                "RPC response over {} MiB at {}",
+                MAX_RESPONSE_BYTES / (1024 * 1024),
+                origin(url)
+            ))
+        };
+        if response
+            .content_length()
+            .is_some_and(|len| len > MAX_RESPONSE_BYTES as u64)
+        {
+            return Err(too_large());
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
             .await
+            .map_err(|e| transport(format!("RPC response failed at {}: {e}", origin(url))))?
+        {
+            if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+                return Err(too_large());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let json: Value = serde_json::from_slice(&body)
             .map_err(|e| transport(format!("invalid RPC JSON: {e}")))?;
         if let Some(error) = json.get("error") {
             return Err(RpcError::Answer {
@@ -297,6 +322,32 @@ mod tests {
             "https://rpc.example"
         );
         assert_eq!(origin("not a url"), "[configured RPC]");
+    }
+
+    #[tokio::test]
+    async fn a_reply_announced_over_the_size_cap_is_refused_before_it_is_read() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0_u8; 4096];
+            let _ = socket.read(&mut buf).await;
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x1\"}}",
+                MAX_RESPONSE_BYTES + 1
+            );
+            let _ = socket.write_all(reply.as_bytes()).await;
+        });
+        let rpc = Rpc::new(
+            vec![format!("http://{addr}")],
+            Duration::from_secs(5),
+            0,
+            None,
+        )
+        .unwrap();
+        let err = rpc.call("eth_chainId", json!([])).await.unwrap_err();
+        assert!(err.to_string().contains("over 64 MiB"), "{err}");
     }
 
     #[tokio::test]

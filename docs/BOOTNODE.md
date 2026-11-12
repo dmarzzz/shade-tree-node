@@ -97,7 +97,7 @@ and "the key we sign with."
 ## Liveness
 
 A bootnode entry is soft state with a TTL (`--ttl`, default 900s). A gateway proves liveness
-by continuing to announce (`shade-tree heartbeat`, every `--interval` seconds); a dead gateway ages
+by continuing to announce (the node's own heartbeat, every `SHADE_TREE_BOOTNODE_HEARTBEAT` seconds); a dead gateway ages
 out without anyone deregistering it. Clients cache the last-known-good directory, so a dead or
 poisoned bootnode degrades to the previous good fleet, never to nothing.
 
