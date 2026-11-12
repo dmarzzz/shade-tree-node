@@ -121,6 +121,63 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   node links.
 - Known JavaScript node behaviours the port will not copy are listed in the ADR.
 
+### Get access page: the terminal path is the keyless command
+
+- The Get access page and the agent brief on the landing page now show
+  `shadenet register-member --identity ~/.config/shadenet/identity.json` with no `--key-file`: the
+  command prints an address and an amount, and stakes once the ETH arrives (the funding wallet from
+  0.7.5). Both still showed the older `--key-file funded.key` form.
+- The brief now says to keep `funding.key` private, next to `identity.json`.
+
+### Clients check every canopy entry and union every Elder (discovery v1, step 3)
+
+- The Rust client and the JS Proxy client check each entry that carries the node's announce
+  (WIRE-SPEC 4.5) and rebuild its weight, capabilities and operator from it. An entry that fails,
+  or whose announce is older than 900 s, is dropped and the rest of the list is kept. Entries
+  without `announce` are still accepted from a pinned signer.
+- When several Elders list the same node, both clients keep the entry with the newest announce.
+- The JS client asks every Elder at once and unions every directory that verifies, instead of
+  taking the first. The rollback floor and the optional max-age bound now apply per Elder, so a
+  newer Elder going down is no longer read as a rollback. Its last-known-good file holds every
+  Elder's directory (`{ "canopies": [...] }`); a file in the old single-directory shape still
+  loads.
+- A last-known-good copy skips the freshness check, so a client whose Elders are all down keeps
+  its saved fleet as before.
+- New `shadenet_proto::verify_listed_entry` and JS `verifyListedEntry`, both pinned to the
+  `selfVerifyingEntry` vector.
+- Once one Elder's canopy verifies, the JS client waits at most 3 s for the others before it
+  builds the union; an Elder that misses the deadline is logged as unavailable and its late
+  answer is dropped. Without the deadline one unreachable Elder held every fresh load for the
+  whole Tor retry budget (about 86 s).
+- `FUTURE_SKEW` is 600 s, no longer the Elder's 120 s admission skew: a client whose clock runs
+  a couple of minutes slow kept dropping every fresh entry. A forward-dated announce now lives at
+  most 1500 s on such a client instead of 1020 s.
+- WIRE-SPEC 4.5 row 6 (the client-side stake read) is marked deferred to step 5 (mirrors):
+  neither client does it yet, and every source is still a pinned Elder that checks stake at
+  admission.
+
+### Spec: self-verifying canopy entries (discovery v1, step 1)
+
+- `docs/WIRE-SPEC.md` section 4.5 specifies an optional `announce` field on a canopy entry: the
+  node's own signed announce, copied verbatim and kept outside the signed directory bytes. A
+  client can check such an entry without trusting the directory signer, which is what lets
+  unsigned mirrors serve the canopy later. Nothing emits or enforces the field yet; the wire bytes
+  and every existing vector are unchanged.
+- New golden vector `selfVerifyingEntry`. The JS vector test re-derives it, and a Rust test
+  confirms today's parser accepts a directory carrying the field.
+
+### Elder Tree: canopy entries carry the node's signed announce (discovery v1, step 2)
+
+- `/directory` and `/directory/delta` now list each node's accepted announce under `announce`
+  (WIRE-SPEC 4.5). The signed bytes are unchanged, so every client accepts the list as before;
+  clients do not check the field yet.
+- An announce over 4096 bytes is listed without its copy. Its signed `nonce` and `caps.ports` are
+  unbounded, and a few padded announces would otherwise push the list past the 2 MiB response
+  limit of the Rust client and the Elder's federation fetch.
+- A node's re-announce now changes its entry, so `/directory/delta` re-ships it every heartbeat.
+- Federation reads the listed announce instead of one `GET /gateway/<onion>` per node over Tor,
+  and still re-verifies it through `admitGossip`.
+
 ### RPC: a rate-limited endpoint is waited on, not failed (roadmap #369 M0)
 
 - HTTP 429, and 503 with `Retry-After`, are resent with bounded exponential backoff and jitter
@@ -152,12 +209,22 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   purpose. `docs/THREAT-MODEL.md` §4.18 and §5 have the details.
 - The rule is pinned for both clients in `testdata/vectors.json` `ownNodes`.
 
-### Dependencies: RUSTSEC-2026-0385, -0386, -0387
+### Dependencies: RUSTSEC-2026-0385, -0386, -0387, GHSA-mrwp-f3q8-3g9p
 
 - `tokio` 1.53.1 -> 1.54.1 (RUSTSEC-2026-0386, `AsyncFd` constructors; ShadeNet does not call them),
   `ctutils` 0.4.2 -> 0.4.5 (RUSTSEC-2026-0385), `crypto-bigint` 0.7.5 -> 0.7.6 (RUSTSEC-2026-0387).
 - The `crypto-bigint` 0.5.5 copy that ark-circom pulls in through ethers-core has no patched release;
   `deny.toml` ignores RUSTSEC-2026-0387 for it with the reason. ShadeNet's own signing is on 0.7.6.
+- follow-redirects 1.16.1 -> 1.16.2 (GHSA-mrwp-f3q8-3g9p, high; it arrives through rlnjs and axios) and
+  ip-address 10.7.2 -> 10.7.6 (GHSA-rxp7-6hxx-x8q5), `npm audit fix --omit=dev`, lock only. The high
+  advisory turned the scheduled supply-chain audit on main red from 2026-10-31 and failed every PR,
+  including #391. `npm audit --omit=dev --audit-level=high` is clean on the new lock; the six
+  moderate minimatch findings under snarkjs have no fix and stay below the gate.
+- RUSTSEC-2026-0459 (`libsqlite3-sys` 0.37, bundled SQLite CVE-2026-119375, published 2026-10-30)
+  arrives through arti's directory cache (`tor-dirmgr` -> `rusqlite` 0.39). The bug needs a crafted
+  database and `-wal` pair in a file the process opens; arti's cache is in the node user's own state
+  directory and only arti writes it. The patched `rusqlite` 0.41 is not accepted by arti 0.46, so
+  `deny.toml` and `.cargo/audit.toml` ignore it with the reason until the arti bump (#410).
 
 ### Rust proxy: a queued request whose client hangs up spends nothing
 
@@ -215,6 +282,10 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   The RPC answered `latest` from a replica one block behind. The note now reads the balance at the
   block the stake was mined in (`member::balance_at`), retrying for a few seconds while a lagging
   replica lacks that block, and prints nothing rather than a stale figure.
+- The JS `shade-tree register-member` had the same bug: it read `provider.getBalance(address)` at
+  `latest`, so a lagging replica could report the whole deposit there too. It now reads at the
+  receipt's block through `leftoverAtBlock` in `packages/node/lib/funding-wallet.mjs` (5 tries,
+  2 s apart, the same as the Rust client) and prints nothing when no read succeeds (#363).
 
 ### JS SDK fixes from the v0.7.5 live end-to-end test
 

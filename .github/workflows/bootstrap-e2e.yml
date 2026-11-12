@@ -61,6 +61,7 @@ jobs:
         env:
           E2E_MODE: ${{ matrix.mode }}
           # GitHub's Ubuntu runners reach Azure's Ubuntu mirror quickly; archive.ubuntu.com
-          # stalled apt inside the container for minutes on 2026-10-07.
-          E2E_APT_MIRROR: http://azure.archive.ubuntu.com/ubuntu/
+          # stalled apt inside the container for minutes on 2026-10-07, and Azure's did on
+          # 2026-10-27. Each failed apt attempt moves to the next mirror.
+          E2E_APT_MIRROR: http://azure.archive.ubuntu.com/ubuntu/ http://archive.ubuntu.com/ubuntu/ http://mirrors.edge.kernel.org/ubuntu/
         run: bash packages/node/bootnode/deploy/e2e-container.sh

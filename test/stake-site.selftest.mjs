@@ -146,7 +146,7 @@ check("the research preview statement is one constant, shown once, before the st
   && /research preview/.test(PREVIEW_STATEMENT) && /trusted setup/.test(PREVIEW_STATEMENT) && /motivated actor/.test(PREVIEW_STATEMENT));
 check("staking for someone else is the same step, and the terminal path is one quiet command", !/sponsor/i.test(html.replace(agentBriefHtml(), ""))
   && /To stake for someone else, paste theirs\./.test(html)
-  && /shadenet register-member --identity ~\/\.config\/shadenet\/identity\.json --key-file funded\.key/.test(html) && count(html, /register-member --identity/g) === 2);
+  && /shadenet register-member --identity ~\/\.config\/shadenet\/identity\.json<\/code>/.test(html) && !/--key-file funded\.key/.test(html) && /stake from the terminal\. It prints an address and an amount to send, then stakes once the ETH arrives\./.test(html) && count(html, /register-member --identity/g) === 2);
 check(TIERS.length === 1 ? "one tier in the record: the page offers no tier choice" : "several tiers in the record: one compact choice, every tier in it",
   count(html, /data-tier /g) === (TIERS.length === 1 ? 0 : TIERS.length)
   && TIERS.every((tier) => TIERS.length === 1 || html.includes(`value="${tier.limit}" data-tier data-bond-text="${formatEth(tier.bondWei)} Sepolia ETH"`)));

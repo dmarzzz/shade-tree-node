@@ -78,13 +78,19 @@ docker run -d --name "$CONTAINER" \
   -v "$SRC":/mnt/src:ro \
   "$IMAGE" \
   bash -c 'export DEBIAN_FRONTEND=noninteractive;
-           if [ -n "$APT_MIRROR" ]; then
-             sed -i -E "s#http://(archive|security)\.ubuntu\.com/ubuntu/?#${APT_MIRROR%/}/#g" /etc/apt/sources.list.d/ubuntu.sources;
-             echo "apt mirror: $APT_MIRROR";
-           fi;
+           sources=/etc/apt/sources.list.d/ubuntu.sources;
+           cp "$sources" /tmp/ubuntu.sources.orig;
+           read -r -a mirrors <<< "$APT_MIRROR";
            apt="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::http::Pipeline-Depth=0";
-           # A stalled download trickles past apt'"'"'s idle timeout; kill the attempt and retry instead.
+           # A stalled download trickles past apt'"'"'s idle timeout; kill the attempt and retry
+           # instead. A mirror that stalls once tends to stay stalled, so each retry moves to the
+           # next mirror in E2E_APT_MIRROR; the mirror that worked stays for bootstrap.sh.
            for attempt in 1 2 3; do
+             if [ "${#mirrors[@]}" -gt 0 ]; then
+               mirror="${mirrors[$(( (attempt - 1) % ${#mirrors[@]} ))]}";
+               sed -E "s#http://(archive|security)\.ubuntu\.com/ubuntu/?#${mirror%/}/#g" /tmp/ubuntu.sources.orig > "$sources";
+               echo "$(date -u +%T) apt attempt $attempt: mirror $mirror";
+             fi;
              echo "$(date -u +%T) apt attempt $attempt: update";
              timeout 90 apt-get $apt update -qq &&
                echo "$(date -u +%T) apt attempt $attempt: install systemd" &&

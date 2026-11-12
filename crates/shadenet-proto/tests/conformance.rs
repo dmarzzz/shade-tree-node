@@ -17,9 +17,10 @@ use shadenet_proto::{
     canonical_directory_bytes, canonical_receipt_bytes, ed25519_public_key, ed25519_sign,
     ed25519_verify, is_draining, onion_to_pubkey, operator_auth_message, pubkey_to_onion,
     request_signal, select_proto_version, sign_receipt, verify_announce, verify_caps_sig,
-    verify_directory, verify_directory_threshold, verify_operator_sig, verify_receipt, Announce,
-    Caps, CapsValue, Directory, EnvelopeVersion, GatewayEntry, PayCaps, ProtoCaps, RateCaps,
-    Receipt, REASON_BAD_VERSION, REASON_NO_MUTUAL_VERSION, REASON_UNSUPPORTED_VERSION,
+    verify_directory, verify_directory_threshold, verify_listed_entry, verify_operator_sig,
+    verify_receipt, Announce, Caps, CapsValue, Directory, EnvelopeVersion, GatewayEntry, PayCaps,
+    ProtoCaps, RateCaps, Receipt, MAX_ENTRY_WEIGHT, REASON_BAD_VERSION, REASON_NO_MUTUAL_VERSION,
+    REASON_UNSUPPORTED_VERSION,
 };
 
 /// Load `testdata/vectors.json` relative to this crate's manifest dir.
@@ -2009,4 +2010,88 @@ fn own_node_exclusion_matches_vector() {
     let mut untouched = gateways.clone();
     assert!(shadenet_proto::exclude_own_nodes(&mut untouched, &Default::default()).is_empty());
     assert_eq!(untouched.len(), gateways.len());
+}
+
+/// The entry and announce pinned in `selfVerifyingEntry` (WIRE-SPEC 4.5).
+fn self_verifying_entry(v: &Value) -> (GatewayEntry, Announce) {
+    let sv = &v["selfVerifyingEntry"];
+    let g = &sv["directory"]["gateways"][0];
+    let a = &sv["announce"];
+    let entry = GatewayEntry {
+        onion: s(g, "onion").to_string(),
+        pubkey: s(g, "pubkey").to_string(),
+        weight: g["weight"].as_u64().unwrap(),
+        health: s(g, "health").to_string(),
+        operator: Some(s(g, "operator").to_string()),
+        staked: g["staked"].as_bool(),
+        caps: Some(vector_caps(v)),
+        caps_sig: Some(s(g, "capsSig").to_string()),
+    };
+    let ann = Announce {
+        v: a["v"].as_u64().unwrap(),
+        onion: s(a, "onion").to_string(),
+        weight: a["weight"].as_u64().unwrap(),
+        ts: a["ts"].as_u64().unwrap(),
+        nonce: s(a, "nonce").to_string(),
+        onion_sig: Some(s(a, "onionSig").to_string()),
+        operator: Some(s(a, "operator").to_string()),
+        operator_sig: Some(s(a, "operatorSig").to_string()),
+        caps: Some(vector_caps(v)),
+        caps_sig: Some(s(a, "capsSig").to_string()),
+    };
+    (entry, ann)
+}
+
+#[test]
+fn listed_entry_rebuilds_from_its_announce() {
+    let v = vectors();
+    let sv = &v["selfVerifyingEntry"];
+    let d = &sv["derivedEntry"];
+    let (entry, ann) = self_verifying_entry(&v);
+    let derived = verify_listed_entry(&entry, &ann, sv["nowAccept"].as_u64()).expect("fresh entry");
+    assert_eq!(derived.onion, s(d, "onion"));
+    assert_eq!(derived.pubkey, s(d, "pubkey"));
+    assert_eq!(derived.weight, d["weight"].as_u64().unwrap());
+    assert_eq!(derived.weight, MAX_ENTRY_WEIGHT);
+    assert_eq!(derived.operator.as_deref(), Some(s(d, "operator")));
+    assert_eq!(derived.caps_sig.as_deref(), Some(s(d, "capsSig")));
+    assert_eq!(derived.caps, Some(vector_caps(&v)));
+    assert_eq!(derived.health, entry.health);
+}
+
+#[test]
+fn listed_entry_rejects_in_spec_order() {
+    let v = vectors();
+    let sv = &v["selfVerifyingEntry"];
+    let (entry, ann) = self_verifying_entry(&v);
+    let short: String = entry.onion.chars().take(12).collect();
+    let reason = |e: &GatewayEntry, a: &Announce, now: Option<u64>| {
+        verify_listed_entry(e, a, now).unwrap_err().to_string()
+    };
+
+    let mut moved = entry.clone();
+    moved.onion = v["ownNodes"]["kept"][0].as_str().unwrap().to_string();
+    let moved_short: String = moved.onion.chars().take(12).collect();
+    assert_eq!(
+        reason(&moved, &ann, sv["nowAccept"].as_u64()),
+        format!("announce-onion-mismatch:{moved_short}..")
+    );
+    assert_eq!(
+        reason(&entry, &ann, sv["nowExpired"].as_u64()),
+        format!("announce-expired:{short}..")
+    );
+    assert_eq!(
+        reason(&entry, &ann, sv["nowFuture"].as_u64()),
+        format!("announce-future:{short}..")
+    );
+    let mut reweighted = ann.clone();
+    reweighted.weight = sv["derivedEntry"]["weight"].as_u64().unwrap();
+    assert_eq!(
+        reason(&entry, &reweighted, sv["nowAccept"].as_u64()),
+        format!("bad-announce:{short}..:{}", s(sv, "tamperedWeightReason"))
+    );
+    assert!(
+        verify_listed_entry(&entry, &ann, None).is_ok(),
+        "without a clock the freshness rows are skipped"
+    );
 }

@@ -463,7 +463,7 @@ test("without a browser wallet the step says so and offers the terminal command"
   await primary(page).click();
   await expect(page.getByRole("alert")).toHaveText("No wallet was found in this browser.");
   await panel(page, "stake").getByRole("button", { name: "Copy: Stake from the terminal" }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("shadenet register-member --identity ~/.config/shadenet/identity.json --key-file funded.key");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("shadenet register-member --identity ~/.config/shadenet/identity.json");
   await expectFits(page, "step 2, no wallet");
 });
 

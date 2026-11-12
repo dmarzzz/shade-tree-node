@@ -89,7 +89,7 @@ jobs:
 
       - name: Install Node for the release policy check
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           package-manager-cache: false
@@ -108,7 +108,7 @@ jobs:
 
       - name: Stage validated release notes
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-notes-${{ steps.v.outputs.version }}
           path: release-notes.md
@@ -123,7 +123,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           package-manager-cache: false
@@ -172,7 +172,7 @@ jobs:
           use-cache: false
       - name: Install cargo-zigbuild (linux cross)
         if: ${{ matrix.cross }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-zigbuild
 
@@ -247,7 +247,7 @@ jobs:
           subject-path: ${{ steps.package-node.outputs.node_artifacts }}
 
       - name: Generate SPDX SBOM (shadenet)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           file: ${{ steps.package.outputs.shadenet }}
           format: spdx-json
@@ -256,7 +256,7 @@ jobs:
           upload-release-assets: false
 
       - name: Generate SPDX SBOM (shade-tree alias)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           file: ${{ steps.package.outputs.shade_tree }}
           format: spdx-json
@@ -282,7 +282,7 @@ jobs:
           sbom-path: ${{ steps.package.outputs.shade_tree }}.spdx.json
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shade-tree-${{ matrix.target }}
           path: dist/*
@@ -331,7 +331,7 @@ jobs:
           use-cache: false
       - name: Install cargo-zigbuild (live musl)
         if: ${{ matrix.builder == 'zig' }}
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-zigbuild
 
@@ -397,7 +397,7 @@ jobs:
         run: bash scripts/release/package.sh "$RELEASE_TARGET" "$RELEASE_VERSION" "-live" "$RELEASE_EXT"
 
       - name: Generate SPDX SBOM (shadenet)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           file: ${{ steps.package.outputs.shadenet }}
           format: spdx-json
@@ -406,7 +406,7 @@ jobs:
           upload-release-assets: false
 
       - name: Generate SPDX SBOM (shade-tree alias)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           file: ${{ steps.package.outputs.shade_tree }}
           format: spdx-json
@@ -432,7 +432,7 @@ jobs:
           sbom-path: ${{ steps.package.outputs.shade_tree }}.spdx.json
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shade-tree-${{ matrix.target }}-live
           path: dist/*
@@ -457,7 +457,7 @@ jobs:
           persist-credentials: false
 
       - name: Download musl live binaries
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shade-tree-*-unknown-linux-musl-live
           path: dist
@@ -543,13 +543,13 @@ jobs:
       contents: write # attach assets to the tag's GitHub Release
     steps:
       - name: Download validated release notes
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-notes-${{ needs.set-version.outputs.version }}
           path: release-metadata
 
       - name: Download packaged artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shade-tree-*
           path: dist

@@ -140,6 +140,31 @@ function defaultGenerate() {
   return `0x${randomBytes(32).toString("hex")}`;
 }
 
+/// The funding wallet's balance as of the block the stake was mined in, for the `leftover:` note.
+/// `getBalance(blockTag)` reads `eth_getBalance` at that block. Reading `latest` instead is wrong on a
+/// load-balanced RPC: on 2026-10-20 a replica one block behind answered with the balance from before
+/// the stake and the note reported the whole deposit as left over (#363, #366). A replica that lacks
+/// the block errors, so the read is retried `attempts` times `delayMs` apart. Resolves to the balance,
+/// or `null` when no read succeeded: the caller then prints nothing rather than a stale figure.
+export async function leftoverAtBlock({ getBalance, block, attempts = 5, delayMs = 2000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  let tag;
+  try {
+    tag = Number(toBigInt(block, "block"));
+  } catch {
+    return null;
+  }
+  if (!Number.isSafeInteger(tag)) return null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await sleep(delayMs);
+    try {
+      return toBigInt(await getBalance(tag), "balance");
+    } catch {
+      // a lagging replica, a transport error or a malformed answer: try again
+    }
+  }
+  return null;
+}
+
 /// Poll `getQuote()` (→ `null` when the leaf is already staked, else a quoteFunding() result)
 /// until it is funded or `timeoutMs` passes. `report(event)` receives `{ kind: "quote" | "progress" | "funded" | "rpc-error", ... }`.
 /// Resolves to the funded quote, `null` for an already-staked leaf, and throws `{ code: EXIT_NOT_FUNDED }`
