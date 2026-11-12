@@ -23,11 +23,17 @@ have set it. The tables below are that advanced layer.
 | `SHADENET_DENY` / `deny` | (empty) | Egress deny list; deny wins | `SHADE_TREE_EGRESS_DENY` |
 | `SHADENET_WEIGHT` / `weight` | `100` | Selection weight 1..1000; lower means less traffic lands here | `SHADE_TREE_GW_WEIGHT` |
 | `SHADENET_REGION` / `region` | (unset) | Advertised region bucket: `na sa eu af as oc aq unknown` | `SHADE_TREE_GATEWAY_REGION` |
-| `SHADENET_METRICS` / `metrics` | `9101` | Prometheus port on loopback (the heartbeat uses port + 2), or `off` | `SHADE_TREE_METRICS_PORT`, `SHADE_TREE_HEARTBEAT_METRICS_PORT` |
+| `SHADENET_METRICS` / `metrics` | `9101` | Prometheus port on loopback, or `off`. The Rust node serves its own and the heartbeat's series on this one port (`SHADE_TREE_HEARTBEAT_METRICS_PORT` is still derived for the JavaScript node) | `SHADE_TREE_METRICS_PORT`, `SHADE_TREE_HEARTBEAT_METRICS_PORT` |
 | `SHADENET_LOG` / `log` | `json:info` | `json`, `pretty` or `text`, with an optional `:debug|info|warn|error` | `SHADE_TREE_LOG_FORMAT`, `SHADE_TREE_LOG_LEVEL` |
 | `SHADENET_OPERATOR_KEY_FILE` / `operator_key_file` | (unset) | Owner-only file holding the staked operator key (stake-admission canopies) | `SHADE_TREE_GW_OPERATOR_KEY` |
 | `SHADENET_OPERATOR` + `SHADENET_OPERATOR_SIG` / `operator`, `operator_sig` | (unset) | The operator address and its signature over `operatorAuthMessage(onion, operator)`, made with `shadenet-node authorize` where the key lives; the key never reaches the node | `SHADE_TREE_GW_OPERATOR`, `SHADE_TREE_GW_OPERATOR_SIG` |
 | `SHADENET_POW` / `pow` | `false` | Onion proof-of-work defense; needs a Tor built with the `pow` module (the image's stock Debian Tor has none) | the torrc |
+| `SHADENET_TOR_LOG` | `notice` | `info` makes Tor's file log at `<state>/tor.log` verbose | the torrc |
+
+The Rust node also derives `SHADE_TREE_DRAIN_FILE=<state>/draining`: touch that file to announce
+`draining: true` and answer `/readyz` with 503; remove it to go back. `shadenet-node retire` stops
+the heartbeat of the running node (it sends it SIGUSR1) so the node ages out of every Elder Tree
+within the TTL while open tunnels finish.
 
 Fixed inside the image: the node listens on `127.0.0.1:8443`, Tor's SOCKS on `127.0.0.1:9050`,
 no inbound ports (the node is an onion service). `node.toml` is a flat file of `key = "value"`
@@ -354,7 +360,7 @@ export SHADE_TREE_GATEWAY_REGISTRY=0x<GatewayRegistry>
 export SHADE_TREE_BOOTNODE_ONION=<bootnode-onion>
 export SHADE_TREE_GW_IDENTITY=tor/hs/identity.local.json
 read -s SHADE_TREE_GW_OPERATOR_KEY && export SHADE_TREE_GW_OPERATOR_KEY
-# shade-tree-node heartbeat
+# shade-tree-node node (the node announces itself; there is no separate heartbeat command)
 
 # gateway — on-chain root + real slashing
 export SHADE_TREE_GROUP_CONTRACT=0x<StakedReputationSet>

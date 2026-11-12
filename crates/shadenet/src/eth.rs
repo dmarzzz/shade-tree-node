@@ -341,6 +341,20 @@ impl Wallet {
         Err("could not derive a valid secp256k1 key from operating-system randomness".into())
     }
 
+    /// EIP-191 `personal_sign` over `message`: the 65-byte `r || s || v` signature (`v` is
+    /// 27 or 28) as `0x`-hex, what `ethers.Wallet.signMessage` produces for the same key.
+    pub fn sign_message(&self, message: &str) -> String {
+        let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
+        let mut hasher = Keccak256::new();
+        hasher.update(prefix.as_bytes());
+        hasher.update(message.as_bytes());
+        let digest: [u8; 32] = hasher.finalize().into();
+        let (signature, recovery) = self.key.sign_prehash_recoverable(&digest);
+        let mut out = signature.to_bytes().to_vec();
+        out.push(27 + recovery.to_byte());
+        format!("0x{}", hex::encode(out))
+    }
+
     /// Sign and serialize: `0x02 || rlp(fields ++ [yParity, r, s])`. Returns the raw bytes.
     pub fn sign(&self, tx: &Eip1559) -> Result<Vec<u8>, String> {
         let (signature, recovery) = self.key.sign_prehash_recoverable(&tx.sighash());
@@ -365,6 +379,24 @@ mod tests {
 
     // Anvil's first account: a published test key.
     const ANVIL_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
+    #[test]
+    fn personal_sign_matches_the_operator_vector() {
+        // testdata/vectors.json `operatorAnnounce`: a fixed key signing the operator
+        // authorization message gives a byte-pinned signature that recovers the operator.
+        let wallet =
+            Wallet::from_hex("0x4444444444444444444444444444444444444444444444444444444444444444")
+                .unwrap();
+        assert_eq!(
+            wallet.address.to_string(),
+            "0x7564105E977516C53bE337314c7E53838967bDaC"
+        );
+        let message = "Shade Tree gateway operator authorization\nonion=ucnkl5d2m5myal7zkx4nyljkcss4thjdx2l7qzasp74tqncvutypp3ad.onion\noperator=0x7564105e977516c53be337314c7e53838967bdac";
+        assert_eq!(
+            wallet.sign_message(message),
+            "0x9e50686e4a58a1566a9fce04a78c9ab0071ac03dc0f93de15026107ec88ffad810b350a14b181f8697882bd79c556c50a619141f741391df1ed6e1fb7940b1851b"
+        );
+    }
 
     #[test]
     fn address_derivation_and_checksum_match_known_values() {

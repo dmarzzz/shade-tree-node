@@ -1,8 +1,8 @@
 # Local demo fleet for Shade Tree.
 #
 # Topology: one `tor` service fronts two v3 onion services and LENDS its network
-# namespace to the backend containers. The shade-tree processes (bootnode, gateway,
-# client shim) all bind loopback only — 127.0.0.1 — with no host-override in the
+# namespace to the backend containers. The shade-tree processes (bootnode, the Rust
+# node, client shim) all bind loopback only — 127.0.0.1 — with no host-override in the
 # source, so a plain bridge network can't reach them from a separate tor box.
 # `network_mode: "service:tor"` puts them on tor's loopback instead, which is
 # also exactly how the real single-host deploy works (tor + app share 127.0.0.1).
@@ -79,10 +79,12 @@ services:
     stop_grace_period: 20s
     restart: unless-stopped
 
-  # --- Gateway: Shade Tree tunnel, onion:80 -> 127.0.0.1:8443 -----------------
+  # --- Node: the Rust shadenet-node tunnel, onion:80 -> 127.0.0.1:8443 -------
   gateway:
-    build: .
-    image: shade-tree-node:local
+    build:
+      context: .
+      dockerfile: docker/shadenet-node.Dockerfile
+    image: shadenet-node:local
     init: true
     read_only: true
     tmpfs:
@@ -100,12 +102,26 @@ services:
         max-file: "3"
     depends_on: [tor, bootnode]
     network_mode: "service:tor"
+    volumes:
+      - nodestate:/state                         # the spent set across restarts
+      - ./group/members.json:/state/members.json:ro
     environment:
-      # No SHADE_TREE_GROUP_CONTRACT in the demo -> gateway falls back to its local
-      # members.json root source (see packages/node/gateway/gateway.mjs). Egress is direct
-      # clearnet from the gateway; it does not use Tor SOCKS itself.
-      SHADE_TREE_STAKE_MODE: "mock"
-    command: ["gateway"]
+      # No SHADENET_RECORD in the demo: the node admits the invited set in group/members.json
+      # and leaves Tor to the `tor` service (its onion maps to 127.0.0.1:8443). Egress is
+      # direct clearnet from the node; it does not use Tor SOCKS itself.
+      SHADE_TREE_ADMIT: "invited"
+      SHADE_TREE_MEMBERS_FILE: /state/members.json
+      SHADE_TREE_SPENT_STATE_FILE: /state/spent-set.local.json
+      SHADE_TREE_METRICS_PORT: "9101"
+      SHADE_TREE_LOG_FORMAT: json
+    command: ["run"]
+    # the image's own check reads status.json, which only a record-driven node writes
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9101/readyz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     stop_grace_period: 30s
     restart: unless-stopped
 
@@ -160,3 +176,4 @@ volumes:
   torstate:      # tor DataDirectory: HS private keys + descriptors (persist onions)
   onions:        # world-readable mirror of the generated onion hostnames
   bootnodedata:  # bootnode signer key
+  nodestate:     # the node's spent set

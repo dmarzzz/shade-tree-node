@@ -1116,6 +1116,12 @@ fn canonical_caps_for_bytes_json(caps: &Caps) -> String {
     s
 }
 
+/// The caps exactly as `JSON.stringify(canonicalCaps(caps))` renders them, for a producer that
+/// puts them on the wire (the node's announce, `bootnode/announce.mjs buildAnnounce`).
+pub fn canonical_caps_json_text(caps: &Caps) -> String {
+    canonical_caps_for_bytes_json(caps)
+}
+
 /// Domain-separated, onion-bound canonical bytes the ONION key signs to attest its caps
 /// (`lib/directory.mjs:183 canonicalCapsBytes`):
 /// `utf8(CAPS_DOMAIN) || utf8(JSON.stringify({ onion, caps: canonicalCapsForBytes(caps) }))`.

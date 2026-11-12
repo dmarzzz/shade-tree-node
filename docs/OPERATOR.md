@@ -71,9 +71,10 @@ Wait ~30s for descriptor propagation, then verify (see day-2 below).
 
 ### One container, one record URL
 
-The node image bundles Tor, the node and its heartbeat, and takes everything it needs from the
-deployment record. It mints an onion identity on first start, announces to every Elder Tree in the
-record, and keeps the identity, Tor state and spent set in the `/state` volume.
+The node image bundles Tor and the Rust `shadenet-node` binary (ADR 0014): one process serves
+tunnels, announces to every Elder Tree in the record and exposes metrics, and takes everything it
+needs from the deployment record. It mints an onion identity on first start and keeps the
+identity, Tor state, spent set and `status.json` in the `/state` volume.
 
 ```bash
 docker run -d --name shadenet-node --restart unless-stopped \
@@ -105,9 +106,10 @@ docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/s
 #   -> { "onion": "<56 chars>.onion", ... }
 
 # where the operator key lives (operator.key: one line, 64 hex, chmod 600)
-# once per operator: stake the bond (0.001 Sepolia ETH, `BOND()` on the registry), a no-op if already staked
-read -s KEY && SHADE_TREE_REGISTER_KEY="$KEY" docker run --rm -e SHADE_TREE_REGISTER_KEY \
-  --entrypoint node ghcr.io/dmarzzz/shadenet-node:0.7.5 packages/node/bin/shade-tree.mjs register-gateway \
+# once per operator: stake the bond (0.001 Sepolia ETH, `BOND()` on the registry), a no-op if already staked.
+# the staking command is the JavaScript CLI, run from a checkout (`git clone` + `npm install`);
+# the image carries only the node binary
+read -s KEY && SHADE_TREE_REGISTER_KEY="$KEY" node packages/node/bin/shade-tree.mjs register-gateway \
   --gateway-registry 0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868 --rpc-url https://rpc.sepolia.ethpandaops.io; unset KEY
 # per node: sign its onion
 docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.5 authorize --onion <onion> --key-file /k/operator.key
@@ -119,13 +121,13 @@ docker run -d --name shadenet-node --restart unless-stopped \
   --memory 1g --log-opt max-size=20m \
   -e SHADENET_RECORD=... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… \
   -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.5
-docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status   # "listed": Elders that accepted
+docker exec shadenet-node shadenet-node status   # "listed": Elders that accepted
 ```
 
 The hardening flags are the ones `examples/node/compose.yml` sets: no privilege escalation, no
 capabilities, a read-only root with `/tmp` in memory, a memory cap and bounded logs. The node needs
 none of what they take away. One bond backs every onion an operator signs; the key file is read
-inside the container only for `authorize` and `register-gateway`, which exit straight after.
+inside the container only for `authorize`, which exits straight after.
 
 Serving two canopies from one node (the staging set beside production, or a private set beside
 the public one): `SHADENET_SETS=0x<contract>@<deployBlock>` adds a staked set to the record's; the
@@ -146,10 +148,13 @@ or the status changed, it logs `warning: the record at … changed since this no
 `status` shows `recordDrift`. Restart the container to follow the record, or point
 `SHADENET_RECORD` at a copy you control if you do not want to follow `main`.
 
-Day two: `docker exec shadenet-node node packages/node/bin/shadenet-node.mjs status` (onion, pins,
+Day two: `docker exec shadenet-node shadenet-node status` (onion, pins,
 readiness, Elder listing), `docker exec shadenet-node curl -s 127.0.0.1:9101/metrics`, `docker stop shadenet-node`
 to retire (the node leaves every Elder's directory within the 15-minute TTL; the identity stays in
-the volume, `docker volume rm shadenet-node` forgets it). Compose recipe: `examples/node/compose.yml`.
+the volume, `docker volume rm shadenet-node` forgets it). `docker exec shadenet-node shadenet-node retire`
+stops announcing while open tunnels finish; `touch /state/draining` (the drain flag) announces
+`draining: true` and turns `/readyz` to 503 until the file is removed. The heartbeat's series
+(`shade_tree_heartbeat_*`) are on the node's own metrics port. Compose recipe: `examples/node/compose.yml`.
 
 ### Fresh box, one command (systemd, no container)
 
@@ -230,7 +235,7 @@ sudo env \
 `SHADE_TREE_BOOTNODE_SIGNER` is printed into the client handoff; the heartbeat authenticates its own
 announcement and does not trust that value. If the Elder requires staked operator admission, fund
 and register a provider-specific operator key with `shade-tree register-gateway`, then load the
-heartbeat signing key from a root-only environment file as described above. Do not reuse a slash or
+node's announce signing key from a root-only environment file as described above. Do not reuse a slash or
 operator hot key merely because two nodes share an owner.
 
 Finish by checking `shade-tree-heartbeat` reports `accepted`, the signed canopy directory adds exactly the new
@@ -273,32 +278,34 @@ unset SHADE_TREE_REGISTER_KEY
 the operator is already staked. Paste the funded operator key at the hidden prompt; the
 one-shot environment assignment keeps its value out of argv and `unset` clears it afterward.
 
-### c. Run the gateway and heartbeat
+### c. Run the node
+
+The node verifies proofs, tunnels `:443` and announces itself to the bootnode from inside the
+same process (there is no separate heartbeat command):
 
 ```bash
-shade-tree-node node                                       # the egress; verifies proofs, tunnels :443
-
-shade-tree-node heartbeat \
-  --bootnode <bootnode-onion> \
-  --identity tor/hs-gateway/identity.local.json
+SHADE_TREE_BOOTNODE_ONION=<bootnode-onion> \
+SHADE_TREE_GW_IDENTITY=tor/hs-gateway/identity.local.json \
+shade-tree-node node
 ```
 
-For a staked bootnode, add the operator key so the heartbeat signs the durable
+For a staked bootnode, add the operator key so the node signs the durable
 onion<->operator authorization:
 
 ```bash
 read -s SHADE_TREE_GW_OPERATOR_KEY
-SHADE_TREE_GW_OPERATOR_KEY="$SHADE_TREE_GW_OPERATOR_KEY" shade-tree-node heartbeat \
-  --bootnode <bootnode-onion> \
-  --identity tor/hs-gateway/identity.local.json
+SHADE_TREE_GW_OPERATOR_KEY="$SHADE_TREE_GW_OPERATOR_KEY" \
+SHADE_TREE_BOOTNODE_ONION=<bootnode-onion> \
+SHADE_TREE_GW_IDENTITY=tor/hs-gateway/identity.local.json \
+shade-tree-node node
 unset SHADE_TREE_GW_OPERATOR_KEY
 ```
 
-The final `unset` runs after the heartbeat stops. For a durable service, load the key from the
+The final `unset` runs after the node stops. For a durable service, load the key from the
 root-readable environment file described below instead of placing it in a command or shell history.
 
-The heartbeat re-announces every `--interval` seconds (default 300). Confirm you are
-listed:
+The node re-announces every `SHADE_TREE_BOOTNODE_HEARTBEAT` seconds (default 300). Confirm you
+are listed:
 
 ```bash
 curl --socks5-hostname 127.0.0.1:9050 http://<bootnode-onion>/directory

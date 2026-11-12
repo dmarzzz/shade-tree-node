@@ -5,6 +5,7 @@ members = [
     "crates/shadenet-cli",
     "crates/shadenet",
     "crates/shadenet-rln",
+    "crates/shadenet-node",
 ]
 # shadenet-rln (T-RUST-2b RLN-INTEROP) has a heavy dep tree (ark-circom -> wasmer). Keep
 # it OUT of default-members so the everyday `cargo build` / `cargo test` only touch

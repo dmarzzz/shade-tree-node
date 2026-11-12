@@ -5879,6 +5879,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "shadenet-node"
+version = "0.7.5"
+dependencies = [
+ "ark-bn254",
+ "ark-ff",
+ "clap",
+ "getrandom 0.4.3",
+ "hex",
+ "libc",
+ "num-bigint",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sha3 0.12.0",
+ "shadenet",
+ "shadenet-proto",
+ "shadenet-rln",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.23",
+]
+
+[[package]]
 name = "shadenet-proto"
 version = "0.7.5"
 dependencies = [
@@ -5912,6 +5937,7 @@ dependencies = [
  "sha2 0.11.1",
  "sha3 0.12.0",
  "shadenet-proto",
+ "thiserror 2.0.21",
  "tokio",
  "wasmer",
 ]
