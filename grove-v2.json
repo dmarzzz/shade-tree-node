@@ -1,0 +1,90 @@
+{
+  "schema": "shade-tree-public-grove-v2",
+  "network": "sepolia",
+  "observedAt": "2026-11-14T01:45:00.000Z",
+  "source": {
+    "bootnodeReachable": true,
+    "directoryVerified": true,
+    "definition": "announced-within-ttl",
+    "cadenceMinutes": 15
+  },
+  "nodes": {
+    "announced": 17
+  },
+  "growth": {
+    "windowHours": 24,
+    "announcedNodeHours": 27,
+    "samples": 7
+  },
+  "privacy": {
+    "identities": false,
+    "locations": false,
+    "traffic": false,
+    "stablePositions": false,
+    "futureSharedStatsMinReportingNodes": 5
+  },
+  "history": [
+    {
+      "at": "2026-11-12T04:00:00.000Z",
+      "announced": 18
+    },
+    {
+      "at": "2026-11-12T20:15:00.000Z",
+      "announced": 17
+    },
+    {
+      "at": "2026-11-13T01:15:00.000Z",
+      "announced": 18
+    },
+    {
+      "at": "2026-11-13T07:45:00.000Z",
+      "announced": 18
+    },
+    {
+      "at": "2026-11-13T15:45:00.000Z",
+      "announced": 18
+    },
+    {
+      "at": "2026-11-13T21:45:00.000Z",
+      "announced": 18
+    },
+    {
+      "at": "2026-11-14T01:45:00.000Z",
+      "announced": 17
+    }
+  ],
+  "relay": {
+    "definition": "payload-bytes-relayed",
+    "unit": "bytes",
+    "generatedAt": "2026-11-14T01:45:00.000Z",
+    "delayHours": 6,
+    "minimumCohort": 5,
+    "rounding": {
+      "method": "ceiling",
+      "bucketBytes": "1073741824"
+    },
+    "windows": {
+      "sixHour": {
+        "status": "suppressed",
+        "windowHours": 6,
+        "windowStart": "2026-11-13T13:00:00.000Z",
+        "windowEnd": "2026-11-13T19:00:00.000Z",
+        "reportingNodes": 0,
+        "suppressionReason": "unavailable"
+      },
+      "twentyFourHour": {
+        "status": "suppressed",
+        "windowHours": 24,
+        "windowStart": "2026-11-12T19:00:00.000Z",
+        "windowEnd": "2026-11-13T19:00:00.000Z",
+        "reportingNodes": 0,
+        "suppressionReason": "unavailable"
+      }
+    }
+  },
+  "attestation": {
+    "algorithm": "Ed25519",
+    "keyId": "grove-2026-08",
+    "signature": "fQd/9UrJaployBrpHCIjP7oRN3ebu0MlhCPvZo5c5aX4g+CnT/0OExO3gyAFMromjjnst69RzF2Z+TJ9Mp9FAw=="
+  }
+}
