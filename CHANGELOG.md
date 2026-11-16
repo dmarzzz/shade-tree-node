@@ -4,6 +4,18 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### JS client: reuse the RLN group across epochs when the set is unchanged
+
+- The slot pool dropped its group at every epoch rollover, so with a staked or paid leaf every
+  epoch started with a full `Member*` log replay before the next proof. It now checks the
+  last loaded set at one block instead: the on-chain `currentRoot` (slot 3) and, for a staked set,
+  `nextIndex()` and `activeCount()`. It reuses the group only when all of them match the replay.
+  A changed set or any failed or malformed read is a full reload, as before.
+- New `revalidateContractGroup` in `packages/node/lib/root-provider.mjs`, a `.revalidate` method on
+  the `makeLeafSourceLoader` result, `makeSlotPool({ revalidateGroupFn })` and
+  `pool.keepWarmStats()`. members.json groups and custom loaders are unchanged. `docs/CLIENTS.md`
+  "Group reuse across epochs".
+
 ### Get access page: the terminal path is the keyless command
 
 - The Get access page and the agent brief on the landing page now show

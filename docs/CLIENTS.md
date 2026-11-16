@@ -130,6 +130,31 @@ shade-tree-node proxy --leaf-source paid --limit 32 \
   --paid-access-contract <v4-paid-set-address>
 ```
 
+### Group reuse across epochs (keep-warm)
+
+The slot pool (`makeSlotPool`) drops its RLN group at every epoch rollover. For a group read from
+members.json the next epoch rereads that file. For a group rebuilt from a contract, a full reload
+replays the whole `Member*` event log (`loadGroupFromContract`). Instead, the pool now asks the
+chain whether that set changed since the last full load (`revalidateContractGroup` in
+`packages/node/lib/root-provider.mjs`). It reads the header at the same block tag the load used
+(`finalized` on `public-stake-v1`), then at that block the contract's `currentRoot` (storage slot 3)
+and, for a staked set, `nextIndex()` and `activeCount()`: 4 calls for a staked set, 2 for a paid set,
+which has no counters.
+
+- The previous group is reused only when the on-chain root equals the replayed root and, for a
+  staked set, both counters equal the replay.
+- Any other answer is a full reload, exactly as before: a changed set, a malformed or zero word, a
+  missing block, a revert, a timeout. A group whose root moved is never proved from, so a reuse
+  cannot cause a `wrong-group-root` refusal.
+- A members.json group is reloaded every epoch, as before (a local file read).
+- `pool.keepWarmStats()` returns `{ loads, reused, reloadedChanged, reloadedError, enabled }` for
+  this process.
+- A custom `loadGroupFn` without a `.revalidate` method keeps the old behavior. `makeSlotPool({
+  revalidateGroupFn: null })` turns reuse off.
+
+The first proof of a process is still a full load. Tests: `packages/node/client/keep-warm.selftest.mjs`
+(loopback fake JSON-RPC: match, mismatch, RPC error, malformed answers, paid set).
+
 ## Option B: local proxy (`packages/node/client/shim.mjs`)
 
 Use this when the client is a **stock tool** you can't change (browser, curl, any

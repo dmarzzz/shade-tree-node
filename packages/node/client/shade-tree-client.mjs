@@ -33,7 +33,7 @@ import * as semaphoreConfig from "../lib/semaphore.mjs";
 import * as rln from "../lib/rln.mjs";
 import { openIdentity, readIdentityFile } from "../lib/identity-file.mjs";
 import { verifyReceipt } from "../lib/receipt.mjs";
-import { configuredContracts, loadGroupFromContract } from "../lib/root-provider.mjs";
+import { configuredContracts, loadGroupFromContract, revalidateContractGroup } from "../lib/root-provider.mjs";
 import { admitPathOfSource, parseLeafSource, envFlag, ADMIT_ORDER } from "../lib/admission.mjs";
 import { applyClientNetworkEnv } from "../lib/network-record.mjs";
 import {
@@ -65,9 +65,14 @@ const clientEpochSeconds = () => Number(process.env.SHADE_TREE_EPOCH_SECONDS ?? 
 //     look in — `invited` = members.json alone, `staked` = the SHADE_TREE_GROUP_CONTRACT sets alone,
 //     `paid` = the PaidAccessSet alone. A member with a leaf in more than one set uses it to
 //     choose which one to prove from (and therefore which gateways admit it).
+//   - Keep-warm: the returned function carries `.revalidate(prev)` -> Promise<boolean>, used by
+//     makeSlotPool at each epoch rollover. For a group this loader took from a contract it asks
+//     the chain whether that set is unchanged (revalidateContractGroup: root, plus both counters
+//     for a staked set) at the same block tag the load used; true = reuse `prev`. A members.json
+//     group, a result this loader did not produce, a changed set and any error are all "reload".
 export function makeLeafSourceLoader({
   secret, limit = K_SLOTS, env = process.env,
-  loadStatic = loadGroup, loadContract = loadGroupFromContract,
+  loadStatic = loadGroup, loadContract = loadGroupFromContract, checkContract = revalidateContractGroup,
   contracts = null, rpcUrl = env.SHADE_TREE_RPC_URL || "http://127.0.0.1:8545",
   only = parseLeafSource(env.SHADE_TREE_LEAF_SOURCE, { name: "SHADE_TREE_LEAF_SOURCE" }),
 } = {}) {
@@ -76,7 +81,10 @@ export function makeLeafSourceLoader({
   const publicRootTag = env.SHADE_TREE_STAKE_PROFILE === "public-stake-v1" ? "finalized" : null;
   const wantStatic = only === "auto" || only === "invited";
   const holds = (g, leaf) => !!g && typeof g.indexOf === "function" && g.indexOf(BigInt(leaf)) !== -1;
-  return async function discoverGroup() {
+  // Which contract each returned result came from. Keyed by the exact object handed to the pool,
+  // so a forged or copied `prev` can never pick the contract or kind that gets checked.
+  const origin = new WeakMap();
+  async function discoverGroup() {
     if (only !== "auto" && only !== "invited" && sources.length === 0) {
       throw new Error(`ShadeTreeClient: SHADE_TREE_LEAF_SOURCE=${only} but no ${only} set is configured (set ${only === "paid" ? "SHADE_TREE_PAID_ACCESS_CONTRACT" : "SHADE_TREE_GROUP_CONTRACT"}, or SHADE_TREE_NETWORK with a contracts.json that has one)`);
     }
@@ -98,7 +106,11 @@ export function makeLeafSourceLoader({
       const label = `${c.kind || "staked"}(${c.address})`;
       try {
         const r = await loadContract({ contract: c.address, rpcUrl, ...(publicRootTag ? { blockTag: publicRootTag } : {}) });
-        if (holds(r.group, leaf)) return { ...r, source: label };
+        if (holds(r.group, leaf)) {
+          const found = { ...r, source: label };
+          origin.set(found, c);
+          return found;
+        }
         tried.push(`${label} (${r.count} leaves)`);
       } catch (e) {
         tried.push(`${label} (unreadable: ${e.message})`);
@@ -109,7 +121,14 @@ export function makeLeafSourceLoader({
       "check --limit / SHADE_TREE_LIMIT (it must equal the tier you enrolled, staked or paid at), " +
       "or buy access (docs/PAYMENTS.md), stake (`shade-tree register-member`), or ask the operator to add you to members.json",
     );
+  }
+  discoverGroup.revalidate = async function revalidate(prev) {
+    const c = prev && typeof prev === "object" ? origin.get(prev) : undefined;
+    if (!c) return false; // members.json, or not ours: reload (a static read is local and cheap)
+    const r = await checkContract({ contract: c.address, kind: c.kind || "staked", prev, rpcUrl, blockTag: publicRootTag || "latest" });
+    return !!r && r.same === true;
   };
+  return discoverGroup;
 }
 
 // ---- slot pool: per-epoch group warm + one slot/tunnel rotation ----------------
@@ -158,9 +177,15 @@ export function makeSlotPool({
   slotLockTimeoutMs,
   epochSeconds = clientEpochSeconds(),
   now = Date.now,
+  // Keep-warm across epochs: async (prevLoaded) => true when the set behind the last full load is
+  // unchanged on chain. Defaults to the loader's own `.revalidate` (makeLeafSourceLoader has one);
+  // a loader without one, or `false`, keeps the old behavior (a full load every epoch).
+  revalidateGroupFn = typeof loadGroupFn?.revalidate === "function" ? loadGroupFn.revalidate : null,
 }) {
   K = Number(normLimit(K));
   let epoch = null;
+  let lastLoaded = null; // the last FULL loader result ({ group, root, count, source, ... })
+  const keepWarm = { loads: 0, reused: 0, reloadedChanged: 0, reloadedError: 0 };
   let cursor = 0; // durable nextSlot observed after this process's latest allocation
   let resolvedStatePath;
   let group = null;
@@ -169,7 +194,38 @@ export function makeSlotPool({
 
   async function ensureGroup() {
     if (group) return group;
-    if (!groupPromise) groupPromise = Promise.resolve(loadGroupFn()).then((g) => { source = g.source ?? source; return (group = g.group); });
+    if (!groupPromise) {
+      const full = () => Promise.resolve(loadGroupFn()).then((g) => {
+        keepWarm.loads++;
+        lastLoaded = g;
+        source = g.source ?? source;
+        return (group = g.group);
+      });
+      const prev = lastLoaded;
+      if (!revalidateGroupFn || !prev) {
+        groupPromise = full();
+      } else {
+        // Reuse ONLY on an explicit `true`. A changed set, a non-boolean answer and any error
+        // all fall through to the full load: the fallback is exactly the old per-epoch cost,
+        // and a group whose root moved is never proved from (fail closed).
+        groupPromise = Promise.resolve()
+          .then(() => revalidateGroupFn(prev))
+          .then(
+            (same) => {
+              if (same === true) {
+                keepWarm.reused++;
+                return (group = prev.group);
+              }
+              keepWarm.reloadedChanged++;
+              return full();
+            },
+            () => {
+              keepWarm.reloadedError++;
+              return full();
+            },
+          );
+      }
+    }
     return groupPromise;
   }
   // The leaf source's ADMISSION PATH (invited|staked|paid) once discovered; null when the loader
@@ -207,6 +263,8 @@ export function makeSlotPool({
     cursor = 0;
     group = null;
     groupPromise = null;
+    // The group is still dropped every epoch; ensureGroup below either revalidates the last full
+    // load against the chain (keep-warm, a few calls) or reloads it (the whole log replay).
     // Background warm: cache the group + prime the prover so tunnel-time proving is as
     // fast as it can be (the signal-bound proof itself cannot be precomputed).
     Promise.resolve()
@@ -251,6 +309,9 @@ export function makeSlotPool({
   return {
     ensureEpoch,
     ensureGroup,
+    // Keep-warm counters for this process: full loads, epochs that reused the previous group, and
+    // reloads because the set changed or the check failed.
+    keepWarmStats: () => ({ ...keepWarm, enabled: !!revalidateGroupFn }),
     leafSource,
     nextSlot,
     K,
