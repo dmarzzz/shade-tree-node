@@ -22,15 +22,20 @@ export const MAX_REASONS = 5;
 export const MAX_REASON_CHARS = 200;
 
 // `SKIP` at the start of a line (after spaces or tabs), then end of line, a colon or whitespace.
-const SKIP_LINE = /^[ \t]*SKIP(?::|[ \t]|$)[ \t]*(.*)$/;
+// The reason is the whole rest of the `\n`-delimited line. `[\s\S]*` instead of `.*` on purpose:
+// `.` stops at CR, U+2028 and U+2029, and a reason containing one of them would make the line
+// not match at all, so the suite would read as PASS. cleanReason makes the reason one line.
+const SKIP_LINE = /^[ \t]*SKIP(?::|[ \t\r\u2028\u2029]|$)[ \t]*([\s\S]*)$/;
+const LINE_BREAKS = /[\r\u2028\u2029]+/g;
 
 // Control characters other than tab, plus ANSI escape sequences, are dropped from a reason so a
-// suite cannot rewrite the runner's own output lines.
+// suite cannot rewrite the runner's own output lines. CR, U+2028 and U+2029 become a space.
+// (OSC sequences lose their escape and BEL bytes; their printable payload stays as plain text.)
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
 
 function cleanReason(raw) {
-  const s = raw.replace(ANSI, "").replace(CONTROL, "").trim();
+  const s = raw.replace(ANSI, "").replace(LINE_BREAKS, " ").replace(CONTROL, "").trim();
   return s.length > MAX_REASON_CHARS ? s.slice(0, MAX_REASON_CHARS - 3) + "..." : s;
 }
 

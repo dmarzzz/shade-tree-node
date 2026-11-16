@@ -6,13 +6,17 @@
 //   - lines that only mention SKIP mid-line (heartbeat "; SKIP announce", SHADE_TREE_SKIP_VALIDATE,
 //     SKIPPED) stay PASS
 //   - a nonzero exit is FAIL even if it printed SKIP
-//   - adversarial stdout: ANSI / control characters, CR line ends, huge input, many SKIP lines,
+//   - adversarial stdout: ANSI / control characters, CR line ends, CR / U+2028 / U+2029 inside a
+//     reason (still SKIP, reason made one line), huge input, many SKIP lines,
 //     non-string stdout, cannot break the summary or inject runner lines
 //   - the summary keeps the old "N/M green" count and names each SKIP suite
+//   - end to end: scripts/test-all.mjs on a temp tree with one CR-in-reason SKIP suite lists SKIP
 //
 //   node scripts/suite-skips.selftest.mjs   (exit 0 = all invariants held)
 
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -78,6 +82,22 @@ console.log("\nadversarial stdout:");
   const c = classifySuite({ status: 0, stdout: "  SKIP \u001b[31mred\u001b[0m reason\u0007\n  SKIP x\r\n" });
   ok(c.outcome === "SKIP" && c.reasons[0] === "red reason" && c.reasons[1] === "x", `ANSI, BEL and CR stripped: ${JSON.stringify(c.reasons)}`);
 }
+// A CR, U+2028 or U+2029 inside the reason must not hide the SKIP line (`.` does not match them).
+for (const [label, stdout, reason] of [
+  ["embedded CR", "  SKIP missing\rtool\n", "missing tool"],
+  ["repeated CR inside the reason", "  SKIP missing\r\r\rtool\n", "missing tool"],
+  ["repeated CR at the line end", "  SKIP missing\r\r\n", "missing"],
+  ["bare SKIP, repeated CR", "  SKIP\r\r\n", ""],
+  ["U+2028 in the reason", "  SKIP missing\u2028tool\n", "missing tool"],
+  ["U+2029 in the reason", "  SKIP missing\u2029tool\n", "missing tool"],
+]) {
+  const c = classifySuite({ status: 0, stdout });
+  ok(c.outcome === "SKIP" && c.reasons.length === 1 && c.reasons[0] === reason && !/[\r\n\u2028\u2029]/.test(c.reasons[0]),
+    `${label}, exit 0 -> SKIP, one-line reason ${JSON.stringify(c.reasons)}`);
+  ok(classifySuite({ status: 1, stdout }).outcome === "FAIL", `${label}, exit 1 -> FAIL`);
+}
+ok(classifySuite({ status: 0, stdout: "  ok   x\rSKIP y\n  ok   z\u2028SKIP w\nSKIPPED\rx\n" }).outcome === "PASS",
+  "SKIP after a mid-line CR / U+2028, or SKIPPED followed by CR -> still PASS");
 {
   const c = classifySuite({ status: 0, stdout: "\u001b[33m  SKIP colored line\u001b[0m\n" });
   ok(c.outcome === "SKIP" && c.reasons[0] === "colored line", "SKIP line wrapped in an ANSI color -> still SKIP");
@@ -126,6 +146,24 @@ console.log("\nsummary:");
   ok(lines.join("\n") === "\n=== summary: 2/2 green ===" && skipped.length === 0, "no skips -> summary line identical to the old format");
 }
 ok(reasonText([]) === "(no reason given)" && reasonText(["a", ""]) === "a; (no reason given)", "reasonText joins and fills empty reasons");
+
+console.log("\nthrough the real runner (scripts/test-all.mjs on a one-suite temp tree):");
+{
+  const dir = mkdtempSync(join(tmpdir(), "suite-skips-"));
+  try {
+    mkdirSync(join(dir, "scripts"));
+    for (const f of ["test-all.mjs", "suite-skips.mjs"]) copyFileSync(join(ROOT, "scripts", f), join(dir, "scripts", f));
+    writeFileSync(join(dir, "case.selftest.mjs"), 'console.log("  SKIP missing\\rtool");\n');
+    const env = { ...process.env };
+    delete env.SHADE_TREE_FAST;
+    const r = spawnSync(process.execPath, [join(dir, "scripts", "test-all.mjs"), "--no-contracts"], { cwd: dir, env, encoding: "utf8", timeout: 30_000 });
+    ok(r.status === 0 && r.stdout.includes("  SKIP  case.selftest.mjs  (exit 0, not exercised: missing tool)")
+      && r.stdout.includes("1/1 green, 1 of them SKIPPED") && !r.stdout.includes("  PASS  case.selftest.mjs"),
+      "suite printing `SKIP missing<CR>tool` -> runner lists SKIP, not PASS, exit 0");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 console.log(failures ? `\n${failures} FAILED` : "\nall green");
 process.exit(failures ? 1 : 0);
