@@ -1,12 +1,14 @@
 // Selftest for packages/node/lib/prover-workers.mjs (SHADE_TREE_PROVER_WORKERS).
 // Covers: the default (min(cpus, 4), the empty-cpus fallback), the parse surface against hostile
 // values (empty, whitespace, non-numeric, 0, negative, fractions, exponent/hex/sign forms,
-// trailing junk, huge, non-string), the config.mjs wiring for both roles that prove or verify,
-// that the os.cpus() override is scoped to the build and restored on success, rejection and a
-// synchronous throw, and that the init builds once, honors a cached engine, and fails closed on a
-// bad value without touching os.cpus. Fast lane: no proof, no worker threads, no network.
-// The end-to-end check (a real snarkjs engine gets the capped pool) is in the last block and
-// builds only the bn128 engine (no zkey), then terminates it.
+// trailing junk, huge) and hostile types (null-prototype objects, objects whose toString or
+// valueOf throws, arrays, symbols, bigints, functions, proxies with throwing traps): every one
+// must return ok:false without throwing. Also the config.mjs wiring for both roles that prove or
+// verify, that the os.cpus() override is restored on success, rejection and a synchronous throw,
+// and that the init builds once, honors a cached engine, and fails closed on a bad value without
+// touching os.cpus. No proof, no network. All blocks but the last use fakes and start no worker
+// threads. The last block is end to end: it builds a real snarkjs bn128 engine (no zkey) with 2
+// worker threads, checks the pool size, then terminates it.
 //
 //   node packages/node/lib/prover-workers.selftest.mjs
 
@@ -39,7 +41,8 @@ for (const raw of [undefined, null, "", "   ", "\t\n"]) {
   check(r.ok && r.workers === 4 && r.source === "default", `unset/empty ${JSON.stringify(raw)} -> default 4 on 16 cpus`);
 }
 check(parseProverWorkers("", 2).workers === 2, "empty on 2 cpus -> 2 (never more than the host has)");
-for (const [raw, want] of [["1", 1], ["4", 4], ["16", 16], ["64", 64], [" 8 ", 8], ["08", 8], ["001", 1], [12, 12]]) {
+// Strings are the environment case; an integer number is accepted as the same value.
+for (const [raw, want] of [["1", 1], ["4", 4], ["16", 16], ["64", 64], [" 8 ", 8], ["08", 8], ["001", 1], [12, 12], [4.0, 4]]) {
   const r = parseProverWorkers(raw, 16);
   check(r.ok && r.workers === want && r.source === "env", `${JSON.stringify(raw)} -> ${want}`);
 }
@@ -51,7 +54,7 @@ const BAD = [
   "0", "00", "-1", "-0", "+4", "65", "100", "999", "1000", "4294967297", "9".repeat(400),
   "1.5", "4.0", ".5", "1e1", "1E2", "0x10", "0b11", "0o7", "Infinity", "-Infinity", "NaN",
   "four", "4abc", "abc4", "4 4", "4,8", "4_0", "٤", "４", "4\u0000", "true", "[]", "{}",
-  0, -1, 1.5, 65, NaN, Infinity, true, false, {}, [4, 8], { valueOf: () => 4 },
+  0, -1, 1.5, 65, NaN, Infinity, -0, 1e21, true, false, {}, [4, 8], { valueOf: () => 4 },
 ];
 for (const raw of BAD) {
   let r;
@@ -59,14 +62,42 @@ for (const raw of BAD) {
   check(r.ok === false && /SHADE_TREE_PROVER_WORKERS must be an integer 1\.\.64/.test(r.reason), `rejects ${JSON.stringify(String(raw)).slice(0, 24)}`);
   check(isProverWorkers(raw) === false, `isProverWorkers rejects ${JSON.stringify(String(raw)).slice(0, 24)}`);
 }
-// A value whose toString throws must not crash the parser into an uncaught throw path the caller
-// does not expect: parse is documented TOTAL. String() on a symbol throws, so wrap and assert.
-{
-  let r, threw = false;
-  try { r = parseProverWorkers(Symbol("x"), 16); } catch { threw = true; }
-  check(threw || r.ok === false, "a Symbol is rejected or throws (never accepted)");
+// Hostile types. Each must give ok:false from the parser and false from the predicate, with no
+// throw: the parser checks typeof and never calls String(), toString or valueOf on its input.
+// (Labels are fixed strings because String() itself throws on several of these values.)
+const boom = () => { throw new Error("coercion must not happen"); };
+const revoked = Proxy.revocable({}, {});
+revoked.revoke();
+const HOSTILE = [
+  ["null-prototype object", Object.create(null)],
+  ["null-prototype object with digit fields", Object.assign(Object.create(null), { 0: "4", length: 1 })],
+  ["object whose toString throws", { toString: boom }],
+  ["object whose valueOf and toString throw", { valueOf: boom, toString: boom }],
+  ["object whose Symbol.toPrimitive throws", { [Symbol.toPrimitive]: boom }],
+  ["object whose toString returns 4", { toString: () => "4" }],
+  ["array [4]", [4]],
+  ["array of string 8", ["8"]],
+  ["empty array", []],
+  ["array holding a throwing object", [{ toString: boom }]],
+  ["Symbol", Symbol("x")],
+  ["Symbol named 4", Symbol("4")],
+  ["bigint 4n", 4n],
+  ["function", () => 4],
+  ["String object", Object("4")],
+  ["Number object", Object(4)],
+  ["proxy whose every trap throws", new Proxy({}, { get: boom, has: boom, ownKeys: boom, getPrototypeOf: boom, getOwnPropertyDescriptor: boom })],
+  ["revoked proxy", revoked.proxy],
+  ["Date", new Date(4)],
+];
+for (const [label, raw] of HOSTILE) {
+  let r, p;
+  assert.doesNotThrow(() => { r = parseProverWorkers(raw, 16); }, `parse never throws on ${label}`);
+  check(r !== null && typeof r === "object" && r.ok === false, `parse: ${label} -> ok:false`);
+  check(/SHADE_TREE_PROVER_WORKERS must be an integer 1\.\.64/.test(r.reason), `parse: ${label} reason names the variable`);
+  assert.doesNotThrow(() => { p = isProverWorkers(raw); }, `isProverWorkers never throws on ${label}`);
+  check(p === false, `isProverWorkers: ${label} -> false`);
 }
-check(isProverWorkers("4") && isProverWorkers(" 64 ") && !isProverWorkers("") && !isProverWorkers("  "), "isProverWorkers: explicit values only");
+check(isProverWorkers("4") && isProverWorkers(" 64 ") && isProverWorkers(12) && !isProverWorkers("") && !isProverWorkers("  ") && !isProverWorkers(undefined) && !isProverWorkers(null), "isProverWorkers: explicit values only");
 
 // ---- config.mjs wiring -------------------------------------------------------
 for (const role of ["gateway", "client"]) {

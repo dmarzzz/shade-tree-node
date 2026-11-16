@@ -6,19 +6,21 @@
 // cached on `globalThis.curve_bn128` and reused for the life of the process. ffjavascript and
 // snarkjs expose no knob for the count: only `singleThread`, which this code does not use.
 //
-// On a 16-vCPU x86 box a fresh process that makes 11 RLN proofs peaks at about 1.4 GiB RSS with
-// the default 16 workers, and about 0.5 GiB with 4 workers, at about 1.8x the warm proof time
-// (see the PR that added this file for the numbers and method). A Proxy or gateway on a shared
-// VPS, or a phone, pays that memory for a speed-up it may not need. So the default here is
+// Measured once, on a 16-vCPU x86 box, for an isolated prover process (11 RLN proofs, then 10
+// verifies): median peak RSS about 1.4 GiB with 16 workers and about 0.5 GiB with 4, with the
+// median warm proof about 1.7x slower at 4 (see the PR that added this file for the numbers and
+// method). Other CPU counts and a verify-only process were not measured. The default here is
 // min(cpus, 4), and an operator can raise it (up to 64) or lower it (down to 1).
 //
 // How the cap works: before the first snarkjs call in this process, under the caller's snarkjs
 // mutex, build the bn128 engine ourselves through the SAME snarkjs/ffjavascript instance that
 // rlnjs uses, with `os.cpus()` temporarily replaced by a list of the chosen length. ffjavascript
-// only reads `.length`. The original `os.cpus` is restored in a `finally`, so the override is
-// visible only to code that calls `os.cpus()` while the engine is being built (nothing else in
-// this process proves or verifies at that moment, because the caller holds the snarkjs lock).
-// Every later snarkjs call finds the cached engine and never reads `os.cpus()` again.
+// only reads `.length`. The original `os.cpus` is restored in a `finally`. The override is
+// process-global for the whole asynchronous engine build: any code in the process that calls
+// `os.cpus()` during that interval sees the replaced list. The caller's mutex (the one in
+// rln.mjs) serializes only snarkjs calls made through that rln.mjs instance; it does not cover
+// other code that calls snarkjs directly or unrelated `os.cpus()` readers. While the engine stays
+// cached, later snarkjs calls reuse it and do not read `os.cpus()` again.
 //
 // A bad value fails closed: `ensureCurve()` throws with the variable name and the reason, so the
 // prove or verify that needed the engine fails with a precise message instead of silently running
@@ -39,24 +41,35 @@ export function defaultProverWorkers(cpuCount) {
 
 // parseProverWorkers(raw, cpuCount) -> { ok:true, workers, source:"default"|"env" }
 //                                    | { ok:false, reason }
-// TOTAL: any input yields a result, never a throw. Unset or empty (after trim) = the default.
-// Otherwise only a plain decimal integer 1..64 is accepted: no sign, no exponent, no hex, no
-// fraction, no trailing junk. `Number("1e3")`, `Number("0x10")` and `parseInt("4abc")` all
-// "work" in JS, which is exactly why this does not use them.
+// TOTAL: any input yields a result, never a throw. The input type is checked with `typeof` only;
+// nothing is coerced with String(), toString or valueOf, so objects, arrays, symbols, proxies
+// and values with a throwing toString are rejected, not converted.
+// Accepted types: undefined / null (= unset, the default); a string (the environment case);
+// a number that is an integer (treated as its decimal string). Everything else is ok:false.
+// A string that is empty after trim = the default. Otherwise only a plain decimal integer 1..64
+// is accepted: no sign, no exponent, no hex, no fraction, no trailing junk. `Number("1e3")`,
+// `Number("0x10")` and `parseInt("4abc")` all "work" in JS, which is exactly why this does not
+// use them.
+const BAD_WORKERS = `${PROVER_WORKERS_VAR} must be an integer 1..${MAX_PROVER_WORKERS}`;
 export function parseProverWorkers(raw, cpuCount) {
   if (raw === undefined || raw === null) return { ok: true, workers: defaultProverWorkers(cpuCount), source: "default" };
-  const s = String(raw).trim();
+  let s;
+  if (typeof raw === "string") s = raw.trim();
+  else if (typeof raw === "number" && Number.isInteger(raw)) s = raw.toFixed(0);
+  else return { ok: false, reason: BAD_WORKERS };
   if (s === "") return { ok: true, workers: defaultProverWorkers(cpuCount), source: "default" };
-  if (!/^\d{1,3}$/.test(s)) return { ok: false, reason: `${PROVER_WORKERS_VAR} must be an integer 1..${MAX_PROVER_WORKERS}` };
+  if (!/^\d{1,3}$/.test(s)) return { ok: false, reason: BAD_WORKERS };
   const n = Number(s);
-  if (n < 1 || n > MAX_PROVER_WORKERS) return { ok: false, reason: `${PROVER_WORKERS_VAR} must be an integer 1..${MAX_PROVER_WORKERS}` };
+  if (n < 1 || n > MAX_PROVER_WORKERS) return { ok: false, reason: BAD_WORKERS };
   return { ok: true, workers: n, source: "env" };
 }
 
-// isProverWorkers(v): the config.mjs shape check (true only for a value parseProverWorkers accepts
-// from the environment; unset is handled by config.mjs as "optional, absent").
+// isProverWorkers(v): the config.mjs shape check. True only for an explicit value that
+// parseProverWorkers accepts (unset or empty is handled by config.mjs as "optional, absent").
+// Total like the parser: never throws, never coerces.
 export function isProverWorkers(v) {
-  return parseProverWorkers(v, 1).ok && String(v).trim() !== "";
+  const r = parseProverWorkers(v, 1);
+  return r.ok === true && r.source === "env";
 }
 
 // withCpuCount(osModule, n, fn): run async fn with osModule.cpus() returning a list of length n,

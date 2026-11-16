@@ -364,8 +364,10 @@ let _snarkLock = Promise.resolve();
 // Size the snarkjs worker pool before the first prove or verify builds it (SHADE_TREE_PROVER_WORKERS,
 // default min(cpus, 4); packages/node/lib/prover-workers.mjs says why). Built through the snarkjs
 // that rlnjs itself requires, so the engine it caches is the one every later proof uses. Runs
-// inside the lock, so no other snarkjs call can build an uncapped pool or read the patched
-// os.cpus() meanwhile; a no-op once the engine exists.
+// inside the lock, so no other prove or verify made through this module can start (and build an
+// uncapped pool) during the build. The os.cpus() override is process-global while the build is
+// awaited; the lock does not cover snarkjs calls made outside this module or other os.cpus()
+// readers. A no-op once the engine exists.
 const ensureCurve = makeCurveInit({
   buildCurve: () => requireFromRln("snarkjs").curves.getCurveFromName("bn128"),
   osModule: os,
