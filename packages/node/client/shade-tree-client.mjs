@@ -185,7 +185,12 @@ export function makeSlotPool({
   K = Number(normLimit(K));
   let epoch = null;
   let lastLoaded = null; // the last FULL loader result ({ group, root, count, source, ... })
-  const keepWarm = { loads: 0, reused: 0, reloadedChanged: 0, reloadedError: 0 };
+  const keepWarm = { loads: 0, reused: 0, reloadedChanged: 0, reloadedError: 0, staleDiscarded: 0 };
+  // Cache generation. Every rollover bumps it. A check or full load started in an older generation
+  // may settle after a newer one has published (or failed); its result is then discarded: it never
+  // writes group / groupPromise / lastLoaded / source, and its awaiter gets the CURRENT generation's
+  // group (or that generation's failure) instead.
+  let generation = 0;
   let cursor = 0; // durable nextSlot observed after this process's latest allocation
   let resolvedStatePath;
   let group = null;
@@ -195,23 +200,38 @@ export function makeSlotPool({
   async function ensureGroup() {
     if (group) return group;
     if (!groupPromise) {
-      const full = () => Promise.resolve(loadGroupFn()).then((g) => {
-        keepWarm.loads++;
-        lastLoaded = g;
-        source = g.source ?? source;
-        return (group = g.group);
-      });
+      const gen = generation;
+      // An obsolete result publishes nothing and hands its caller over to the current generation.
+      const obsolete = () => {
+        keepWarm.staleDiscarded++;
+        return ensureGroup();
+      };
+      const full = () => Promise.resolve(loadGroupFn()).then(
+        (g) => {
+          keepWarm.loads++;
+          if (gen !== generation) return obsolete();
+          lastLoaded = g;
+          source = g.source ?? source;
+          return (group = g.group);
+        },
+        (e) => {
+          if (gen !== generation) return obsolete();
+          throw e;
+        },
+      );
       const prev = lastLoaded;
       if (!revalidateGroupFn || !prev) {
         groupPromise = full();
       } else {
         // Reuse ONLY on an explicit `true`. A changed set, a non-boolean answer and any error
-        // all fall through to the full load: the fallback is exactly the old per-epoch cost,
-        // and a group whose root moved is never proved from (fail closed).
+        // all fall through to the full load: the fallback is exactly the old per-epoch cost.
+        // The check compares at one sampled block (see revalidateContractGroup); it is not a
+        // freshness guarantee for anything after that block.
         groupPromise = Promise.resolve()
           .then(() => revalidateGroupFn(prev))
           .then(
             (same) => {
+              if (gen !== generation) return obsolete();
               if (same === true) {
                 keepWarm.reused++;
                 return (group = prev.group);
@@ -220,6 +240,7 @@ export function makeSlotPool({
               return full();
             },
             () => {
+              if (gen !== generation) return obsolete();
               keepWarm.reloadedError++;
               return full();
             },
@@ -261,6 +282,7 @@ export function makeSlotPool({
   function rollover(ep) {
     epoch = ep;
     cursor = 0;
+    generation++; // fences every check / load still in flight from the previous epoch
     group = null;
     groupPromise = null;
     // The group is still dropped every epoch; ensureGroup below either revalidates the last full
@@ -310,7 +332,7 @@ export function makeSlotPool({
     ensureEpoch,
     ensureGroup,
     // Keep-warm counters for this process: full loads, epochs that reused the previous group, and
-    // reloads because the set changed or the check failed.
+    // reloads because the set changed or the check failed, and late older-epoch results discarded.
     keepWarmStats: () => ({ ...keepWarm, enabled: !!revalidateGroupFn }),
     leafSource,
     nextSlot,

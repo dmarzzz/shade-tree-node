@@ -8,6 +8,8 @@
 //   - adversarial answers (malformed words, missing block, zero slot, counter lies, revert,
 //     a forged `prev`, non-boolean check results) never reuse a group
 //   - paid sets are checked on the root alone; members.json groups are never revalidated
+//   - generation fence: a check or full load from an older epoch that settles after a newer
+//     epoch's reload (successful or failed) publishes nothing into the current cache
 //
 //   node packages/node/client/keep-warm.selftest.mjs
 import http from "node:http";
@@ -69,16 +71,34 @@ function answer(method, params) {
   return { error: { code: -32601, message: "method not found" } };
 }
 
+// A held reply: the answer is computed (and serialized) when the request arrives, i.e. sampled at
+// that moment's chain state, and only SENT when the test releases it. One-shot.
+let hold = null; // { match(method, params), entered(), gate: Promise }
+function holdNext(match) {
+  let entered, release;
+  const seen = new Promise((r) => { entered = r; });
+  const gate = new Promise((r) => { release = r; });
+  hold = { match, entered, gate };
+  return { seen, release };
+}
+
 const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (d) => { body += d; });
-  req.on("end", () => {
+  req.on("end", async () => {
     const { id, method, params } = JSON.parse(body);
     calls.push(method);
     const a = answer(method, params);
     if (a === "drop") { res.destroy(); return; }
+    const out = JSON.stringify({ jsonrpc: "2.0", id, ...a });
+    if (hold && hold.match(method, params)) {
+      const h = hold;
+      hold = null;
+      h.entered();
+      await h.gate;
+    }
     res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ jsonrpc: "2.0", id, ...a }));
+    res.end(out);
   });
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -187,6 +207,149 @@ async function main() {
     const a = await pool.ensureGroup();
     const b = await roll(pool, epoch);
     ok(a !== b && pool.keepWarmStats().loads === 2, `custom check returning ${JSON.stringify(v)} -> reload`);
+  }
+
+  // 4b. generation fence: a check or full load started in an older epoch settles late. It must
+  // never publish into the current epoch's cache, nor turn a current-epoch failure into a success.
+  console.log("\nstale epochs (generation fence):");
+  const isNextIndex = (m, p) => m === "eth_call" && p[0].data === "0xfc7e9c6f";
+  // Hold the LAST read of a staked check (activeCount): every answer the stale check gets was
+  // sampled before the set changed, so it really concludes "unchanged" (same: true).
+  const isActiveCount = (m, p) => m === "eth_call" && p[0].data === "0x4331ed1f";
+  const isLogs = (m) => m === "eth_getLogs";
+  const logsFail = (m) => (m === "eth_getLogs" ? { error: { code: -32603, message: "reload unavailable" } } : undefined);
+  const settle = (p) => p.then((g) => ({ g }), (e) => ({ e }));
+  const fenceSet = () => {
+    const st = chainState("staked");
+    st.add(mine);
+    chains.set(STAKED, st);
+    return st;
+  };
+
+  // (a) stale CHECK settles after a SUCCESSFUL newer reload (the review repro, success variant)
+  {
+    const st = fenceSet();
+    reset();
+    epoch = { v: 1n };
+    ({ pool } = poolFor({ contracts: [{ address: STAKED, kind: "staked" }], epoch }));
+    pool.ensureEpoch();
+    const old = await pool.ensureGroup();
+    const h = holdNext(isActiveCount); // epoch 2's check: root + nextIndex match, its last reply stalls
+    epoch.v += 1n; pool.ensureEpoch();
+    const pendingOld = settle(pool.ensureGroup());
+    await h.seen;
+    st.add(leaf("0x7")); // the set changes; epoch 3 sees the new root and reloads
+    epoch.v += 1n; pool.ensureEpoch();
+    const fresh = await pool.ensureGroup();
+    ok(fresh !== old && fresh.members.length === 2, "(a) epoch 3: root moved, full reload has 2 members");
+    h.release(); // epoch 2's reply arrives: at ITS block the set was unchanged
+    const o = await pendingOld;
+    const after = await pool.ensureGroup();
+    ok(after === fresh, "(a) the stale epoch-2 check does not overwrite the epoch-3 group");
+    ok(o.g === fresh, "(a) the stale caller is handed the current epoch's group, not the old one");
+    const s2 = pool.keepWarmStats();
+    ok(s2.reused === 0 && s2.staleDiscarded === 1, "(a) the stale 'same' is not counted as a reuse; staleDiscarded 1");
+    calls.length = 0;
+    const next = await roll(pool, epoch);
+    ok(next === fresh && count("eth_getLogs") === 0, "(a) next epoch revalidates against the epoch-3 load (lastLoaded not clobbered)");
+  }
+
+  // (b) stale CHECK settles after a FAILED newer reload (the review repro, fail-reload variant)
+  {
+    const st = fenceSet();
+    reset();
+    epoch = { v: 1n };
+    ({ pool } = poolFor({ contracts: [{ address: STAKED, kind: "staked" }], epoch }));
+    pool.ensureEpoch();
+    const old = await pool.ensureGroup();
+    const h = holdNext(isActiveCount);
+    epoch.v += 1n; pool.ensureEpoch();
+    const pendingOld = settle(pool.ensureGroup());
+    await h.seen;
+    st.add(leaf("0x7"));
+    fault = logsFail;
+    epoch.v += 1n; pool.ensureEpoch();
+    const cur = await settle(pool.ensureGroup());
+    ok(cur.e && /reload unavailable/.test(cur.e.message), "(b) epoch 3: root moved, full reload fails");
+    h.release();
+    const o = await pendingOld;
+    const after = await settle(pool.ensureGroup());
+    ok(after.e && after.g === undefined, "(b) the stale successful check does not resurrect the old group: ensureGroup still fails");
+    ok(o.e && o.g !== old, "(b) the stale caller gets the current epoch's failure, not the old group");
+    fault = null;
+    calls.length = 0;
+    const next = await roll(pool, epoch);
+    ok(next !== old && next.members.length === 2 && count("eth_getLogs") === 1, "(b) next epoch: root still differs from the old load, full reload");
+  }
+
+  // (c) stale FULL LOAD settles after a successful newer load
+  {
+    const st = fenceSet();
+    reset();
+    epoch = { v: 1n };
+    ({ pool } = poolFor({ contracts: [{ address: STAKED, kind: "staked" }], epoch }));
+    const h = holdNext(isLogs); // epoch 1's replay reply (1 member) stalls
+    pool.ensureEpoch();
+    const pendingOld = settle(pool.ensureGroup());
+    await h.seen;
+    st.add(leaf("0x7"));
+    epoch.v += 1n; pool.ensureEpoch(); // nothing loaded yet: epoch 2 starts its own full load
+    const fresh = await pool.ensureGroup();
+    ok(fresh.members.length === 2, "(c) epoch 2: its own full load has 2 members");
+    h.release();
+    const o = await pendingOld;
+    ok((await pool.ensureGroup()) === fresh && o.g === fresh, "(c) the stale epoch-1 load does not overwrite the epoch-2 group");
+    calls.length = 0;
+    const next = await roll(pool, epoch);
+    ok(next === fresh && count("eth_getLogs") === 0, "(c) next epoch reuses the epoch-2 load: lastLoaded was not replaced by the stale one");
+    ok(pool.keepWarmStats().staleDiscarded === 1, "(c) staleDiscarded 1");
+  }
+
+  // (d) stale FULL LOAD settles after a FAILED newer load
+  {
+    const st = fenceSet();
+    reset();
+    epoch = { v: 1n };
+    ({ pool } = poolFor({ contracts: [{ address: STAKED, kind: "staked" }], epoch }));
+    const h = holdNext(isLogs);
+    pool.ensureEpoch();
+    const pendingOld = settle(pool.ensureGroup());
+    await h.seen;
+    st.add(leaf("0x7"));
+    fault = logsFail;
+    epoch.v += 1n; pool.ensureEpoch();
+    const cur = await settle(pool.ensureGroup());
+    ok(cur.e && /reload unavailable/.test(cur.e.message), "(d) epoch 2: its full load fails");
+    h.release();
+    const o = await pendingOld;
+    const after = await settle(pool.ensureGroup());
+    ok(after.e && o.e && o.g === undefined, "(d) the stale epoch-1 load cannot satisfy epoch 2: both callers see the failure");
+    fault = null;
+    calls.length = 0;
+    const next = await roll(pool, epoch);
+    ok(next.members.length === 2 && count("eth_getLogs") === 1 && pool.keepWarmStats().reused === 0, "(d) next epoch: nothing to revalidate (stale load never became lastLoaded), full load");
+  }
+
+  // (e) stale check that ERRORS after a newer reuse: no reloadedError, no extra load into the new epoch
+  {
+    fenceSet();
+    reset();
+    epoch = { v: 1n };
+    ({ pool } = poolFor({ contracts: [{ address: STAKED, kind: "staked" }], epoch }));
+    pool.ensureEpoch();
+    const g0 = await pool.ensureGroup();
+    const h = holdNext(isNextIndex);
+    epoch.v += 1n; pool.ensureEpoch();
+    const pendingOld = settle(pool.ensureGroup());
+    await h.seen;
+    epoch.v += 1n; pool.ensureEpoch();
+    const cur = await pool.ensureGroup(); // epoch 3's own check: unchanged -> reuse
+    fault = (m) => (m === "eth_call" ? { error: { code: -32000, message: "late failure" } } : undefined);
+    h.release(); // the held reply was already serialized as a success; force the next counter to fail
+    const o = await pendingOld;
+    fault = null;
+    const s3 = pool.keepWarmStats();
+    ok(cur === g0 && o.g === g0 && s3.loads === 1 && s3.reloadedError === 0, "(e) a late epoch-2 counter failure does not start a reload into epoch 3");
   }
 
   // 5. paid set: root alone (no counters exist)
