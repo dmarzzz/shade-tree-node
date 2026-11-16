@@ -481,6 +481,46 @@ export async function contractCounters(contract, block, rpcUrl = RPC_URL()) {
   return { nextIndex: values[0], activeCount: values[1] };
 }
 
+// ---- Keep-warm revalidation (client) ---------------------------------------------------------
+// revalidateContractGroup({ contract, kind, prev, rpcUrl, blockTag }) -> { same, block, reason }:
+// is the set unchanged since `prev` (a loadGroupFromContract result) was replayed? The client
+// pool drops its group at every epoch rollover, and a full reload is a whole eth_getLogs replay
+// (30 pages on the live v4 profile; each page may wait up to the RPC deadline, rpc-safety.mjs
+// DEFAULT_RPC_TIMEOUT_MS). This answers the same question with 2 calls (paid) or 4 calls
+// (staked) at ONE block: the header, the on-chain `currentRoot` (storage slot
+// ROOT_STORAGE_SLOT = 3 on both StakedReputationSet and PaidAccessSet) and, for a staked set,
+// both counters. `same` is true only when the on-chain root equals the replayed root AND (staked)
+// nextIndex/activeCount equal the replay. Anything else is `same: false` with a reason; a
+// transport error or a malformed word THROWS. Callers must treat both as "reload" (fail closed):
+// reusing a group whose root moved would prove under a root the gateway retired
+// (wrong-group-root). A PaidAccessSet has no counters (replayVerified skips them too), so a paid
+// set is checked on the root alone. The root comparison already pins the whole leaf set; the
+// counters are the same independent cross-check replayVerified uses.
+const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
+export async function revalidateContractGroup({ contract, kind = "staked", prev, rpcUrl = RPC_URL(), blockTag = "latest", slot = 3 } = {}) {
+  if (!contract) throw new Error("revalidateContractGroup needs a contract address");
+  if (!prev || !prev.group || !Array.isArray(prev.group.members)) throw new Error("revalidateContractGroup needs the previous loaded group");
+  const blk = await rpc("eth_getBlockByNumber", [blockTag, false], rpcUrl);
+  const number = blk && typeof blk.number === "string" && /^0x[0-9a-fA-F]{1,16}$/.test(blk.number) ? BigInt(blk.number) : null;
+  if (number == null) throw new Error(`revalidateContractGroup: no usable block number for ${blockTag}`);
+  const tag = "0x" + number.toString(16);
+  const slotHex = "0x" + BigInt(slot).toString(16).padStart(64, "0");
+  const word = await rpc("eth_getStorageAt", [contract, slotHex, tag], rpcUrl);
+  if (typeof word !== "string" || !WORD_RE.test(word)) throw new Error("revalidateContractGroup: malformed currentRoot word");
+  const v = BigInt(word);
+  // The empty tree's on-chain root is nonzero (the all-zero-leaf root) while the replay calls an
+  // empty set null; a zero word is an unset slot (wrong address / not deployed at this block).
+  const onRoot = v === 0n ? null : v.toString();
+  const block = Number(number);
+  if (onRoot == null || prev.root == null || onRoot !== String(prev.root)) return { same: false, block, reason: "root" };
+  if (kind === "paid") return { same: true, block, reason: null };
+  const counters = await contractCounters(contract, tag, rpcUrl);
+  // A staked set always has counters; none here means the read failed: fail closed.
+  if (!counters) return { same: false, block, reason: "counters-unavailable" };
+  if (counters.nextIndex !== prev.group.members.length || counters.activeCount !== prev.count) return { same: false, block, reason: "counters" };
+  return { same: true, block, reason: null };
+}
+
 export function replayMatchesCounters(replay, counters) {
   if (!counters) return true;
   return replay.group.members.length === counters.nextIndex && replay.active === counters.activeCount;
