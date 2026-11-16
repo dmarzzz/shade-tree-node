@@ -317,10 +317,11 @@ console.log("\nenvelope-timeout refusal fails over (exact string only):");
 
 const ENVELOPE_TIMEOUT = "refuse:" + GATEWAY_ENVELOPE_TIMEOUT_REFUSAL;
 
-await test("the client constant is the exact text the gateway's envelope deadline replies with", async () => {
+await test("the client constant matches the gateway reader's deadline error and the hardening selftest's pinned reply", async () => {
   assert.equal(GATEWAY_ENVELOPE_TIMEOUT_REFUSAL, "bad-envelope:envelope timeout");
-  // Drive the real gateway reader into its deadline, then add the reply prefix the gateway's
-  // handler uses for every readEnvelope rejection. A renamed message on either side fails here.
+  // Drive the real gateway reader into its deadline and prepend `bad-envelope:` here. This pins the
+  // reader error and the client constant; the complete wire reply from the handler is pinned by the
+  // gateway hardening integration tests (checked below to carry the same text).
   const silent = new EventEmitter();
   let wireErr = null;
   try { await readEnvelope(silent, { timeoutMs: 5 }); } catch (error) { wireErr = "bad-envelope:" + error.message; }

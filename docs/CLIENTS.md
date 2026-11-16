@@ -70,9 +70,10 @@ The same proof, slot, and Tor isolation credential are reused within one tunnel'
 Dial/framing failures rotate to the next onion. Proof, policy, replay, and `payload-limit` refusals
 are terminal and are not routed around. The JavaScript client also routes around node-local refusals
 (`too-many-connections`, `nullifier-conn-limit`, `gateway-error`, `bad-target-dns`, `upstream:*`) and
-the exact envelope-deadline reply `bad-envelope:envelope timeout`, which a node sends before it reads
-the envelope; it tries the identical envelope at the next candidate. Every other `bad-envelope:`
-reply stays terminal. The Rust client treats gateway refusals as terminal except `upstream:*`, which it retries once on
+the exact envelope-deadline reply `bad-envelope:envelope timeout`, which a node sends before the
+envelope reader completes, and before parsing, verification or admission (partial bytes may have
+arrived and are discarded); it tries the identical envelope at the next candidate. Every other
+`bad-envelope:` reply stays terminal. The Rust client treats gateway refusals as terminal except `upstream:*`, which it retries once on
 another node with a new slot; transport/framing failures rotate. Two local dial failures mark a node down; future selections
 skip it while healthy choices exist, and a later success recovers it. The JavaScript Proxy's
 periodic Canopy refresh adds and removes onions without a restart while carrying forward health for
