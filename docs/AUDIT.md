@@ -15,7 +15,9 @@ node scripts/doctor.mjs  # environment sanity (node, tor, deps, keys)
 ```
 
 `scripts/test-all.mjs` discovers every selftest, so a new `*selftest.mjs` is included with no
-wiring. It exits nonzero and names the failing suite if anything breaks.
+wiring. It exits nonzero and names the failing suite if anything breaks. A suite that exits 0
+but prints a `SKIP` line (a tool such as `anvil`/`forge` is missing) is reported as `SKIP`, not
+`PASS`, and listed in the summary with its reason: green, but not exercised.
 
 ## Test inventory
 
