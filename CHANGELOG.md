@@ -4,6 +4,17 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### The Elder Tree moves to Rust: the shared service crate (ADR 0015)
+
+- `crates/shadenet-service` holds what every ShadeNet service binary needs: the Tor HTTP
+  client, the JSON-RPC client with failover, the Prometheus registry and its loopback
+  `/metrics`, `/livez` and `/readyz` listener, the onion identity, the clock, atomic files, the
+  build commit and logging. They moved out of `shadenet-node` unchanged; the node's series,
+  refusal labels and readiness stay in the node, and a service registers its own series on top
+  of the process ones. The node's `--version` commit now comes from the shared crate's build
+  script. [ADR 0015](docs/adr/0015-elder-in-rust.md) decides the Elder Tree becomes
+  `shadenet-elder` on this crate, with its routes, knobs, files and series unchanged.
+
 ### The node moves to Rust: the operator process (ADR 0014)
 
 - `shadenet-node` is now the whole node: the JavaScript supervisor, gateway and heartbeat became

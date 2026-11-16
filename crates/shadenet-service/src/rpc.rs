@@ -11,10 +11,10 @@ use serde_json::{json, Value};
 
 use crate::metrics::Registry;
 
-pub(crate) const MAX_URLS: usize = 5;
-pub(crate) const DEFAULT_TIMEOUT_MS: u64 = 15_000;
-pub(crate) const DEFAULT_RETRIES: u64 = 6;
-pub(crate) const MAX_RETRIES: u64 = 10;
+pub const MAX_URLS: usize = 5;
+pub const DEFAULT_TIMEOUT_MS: u64 = 15_000;
+pub const DEFAULT_RETRIES: u64 = 6;
+pub const MAX_RETRIES: u64 = 10;
 const RETRY_BASE_MS: u64 = 400;
 const RETRY_DELAY_CAP_MS: u64 = 10_000;
 const RETRY_BUDGET_MS: u64 = 30_000;
@@ -23,7 +23,7 @@ const RETRY_BUDGET_MS: u64 = 30_000;
 const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum RpcError {
+pub enum Error {
     /// The chain answered: an execution revert, bad params, or any other JSON-RPC error that
     /// would be the same on every endpoint.
     #[error("{method}: {message}")]
@@ -44,13 +44,13 @@ pub(crate) enum RpcError {
     MissingResult { method: String },
 }
 
-impl RpcError {
-    pub(crate) fn is_revert(&self) -> bool {
+impl Error {
+    pub fn is_revert(&self) -> bool {
         matches!(self, Self::Answer { message, .. } if message.to_ascii_lowercase().contains("revert"))
     }
 }
 
-pub(crate) struct Rpc {
+pub struct Rpc {
     urls: Vec<String>,
     client: reqwest::Client,
     retries: u64,
@@ -60,7 +60,7 @@ pub(crate) struct Rpc {
 }
 
 /// The origin of an RPC URL for logs; paths often hold API keys.
-pub(crate) fn origin(url: &str) -> String {
+pub fn origin(url: &str) -> String {
     reqwest::Url::parse(url)
         .ok()
         .map(|u| u.origin().ascii_serialization())
@@ -108,7 +108,7 @@ fn retry_delay(attempt: u32, retry_after: Option<u64>) -> Duration {
 }
 
 impl Rpc {
-    pub(crate) fn new(
+    pub fn new(
         urls: Vec<String>,
         timeout: Duration,
         retries: u64,
@@ -132,11 +132,11 @@ impl Rpc {
     }
 
     /// The origin of the endpoint currently in use, for error text (paths often hold keys).
-    pub(crate) fn primary_origin(&self) -> String {
+    pub fn primary_origin(&self) -> String {
         origin(&self.urls[self.sticky.load(Ordering::Relaxed) % self.urls.len()])
     }
 
-    pub(crate) async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
+    pub async fn call(&self, method: &str, params: Value) -> Result<Value, Error> {
         let count = self.urls.len();
         let start = self.sticky.load(Ordering::Relaxed) % count;
         let mut last = String::new();
@@ -151,12 +151,12 @@ impl Rpc {
                     self.sticky.store(index, Ordering::Relaxed);
                     return Ok(result);
                 }
-                Err(RpcError::Answer {
+                Err(Error::Answer {
                     code,
                     message,
                     method,
                 }) if !retryable(code, &message) => {
-                    return Err(RpcError::Answer {
+                    return Err(Error::Answer {
                         code,
                         message,
                         method,
@@ -176,7 +176,7 @@ impl Rpc {
                 }
             }
         }
-        Err(RpcError::AllFailed {
+        Err(Error::AllFailed {
             method: method.to_string(),
             count,
             last,
@@ -189,10 +189,10 @@ impl Rpc {
         method: &str,
         params: Value,
         retries: u64,
-    ) -> Result<Value, RpcError> {
+    ) -> Result<Value, Error> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let body = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-        let transport = |message: String| RpcError::Transport {
+        let transport = |message: String| Error::Transport {
             method: method.to_string(),
             message,
         };
@@ -273,7 +273,7 @@ impl Rpc {
         let json: Value = serde_json::from_slice(&body)
             .map_err(|e| transport(format!("invalid RPC JSON: {e}")))?;
         if let Some(error) = json.get("error") {
-            return Err(RpcError::Answer {
+            return Err(Error::Answer {
                 method: method.to_string(),
                 code: error["code"].as_i64().unwrap_or(0),
                 message: error["message"]
@@ -284,7 +284,7 @@ impl Rpc {
         }
         json.get("result")
             .cloned()
-            .ok_or_else(|| RpcError::MissingResult {
+            .ok_or_else(|| Error::MissingResult {
                 method: method.to_string(),
             })
     }
@@ -406,7 +406,7 @@ mod tests {
         let rpc = Rpc::new(vec![down], Duration::from_secs(5), 0, None).unwrap();
         assert!(matches!(
             rpc.call("eth_chainId", json!([])).await,
-            Err(RpcError::AllFailed { count: 1, .. })
+            Err(Error::AllFailed { count: 1, .. })
         ));
     }
 }

@@ -1,6 +1,6 @@
 # ADR 0014: The node is a Rust binary
 
-- Status: Accepted
+- Status: Accepted; the "Elder Tree stays JavaScript" bullet is superseded by [ADR 0015](0015-elder-in-rust.md)
 - Date: 2026-10-26
 - Task: roadmap #369 M3 (network growth: low hundreds of residential nodes); supersedes the
   "gateway and bootnode stay JavaScript" half of [ADR 0001](0001-client-language.md) and

@@ -1,20 +1,20 @@
-//! Wall-clock helpers: unix milliseconds and the ISO 8601 form the JavaScript node writes
+//! Wall-clock helpers: unix milliseconds and the ISO 8601 form the JavaScript services write
 //! (`new Date().toISOString()`), without a calendar dependency.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(crate) fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
-pub(crate) fn now_secs() -> u64 {
+pub fn now_secs() -> u64 {
     now_ms() / 1000
 }
 
 /// `YYYY-MM-DDTHH:MM:SS.mmmZ` for a unix millisecond timestamp.
-pub(crate) fn iso(ms: u64) -> String {
+pub fn iso(ms: u64) -> String {
     let secs = ms / 1000;
     let millis = ms % 1000;
     let days = i64::try_from(secs / 86_400).unwrap_or(i64::MAX);
@@ -29,14 +29,14 @@ pub(crate) fn iso(ms: u64) -> String {
 }
 
 /// `YYYY-MM-DD` for a unix millisecond timestamp.
-pub(crate) fn iso_date(ms: u64) -> String {
+pub fn iso_date(ms: u64) -> String {
     iso(ms).chars().take(10).collect()
 }
 
 /// Parse the exact form [`iso`] writes; anything else (another zone, no milliseconds, an
 /// out-of-range field) is `None`, the way the JavaScript telemetry code insists on a value
 /// that round-trips through `toISOString()`.
-pub(crate) fn parse_iso(text: &str) -> Option<u64> {
+pub fn parse_iso(text: &str) -> Option<u64> {
     let bytes = text.as_bytes();
     if bytes.len() != 24 || bytes[23] != b'Z' {
         return None;
@@ -79,7 +79,7 @@ pub(crate) fn parse_iso(text: &str) -> Option<u64> {
 }
 
 // howard hinnant's civil calendar algorithms, valid for every date in the proleptic gregorian
-// calendar; the node only ever sees timestamps after 1970.
+// calendar; a service only ever sees timestamps after 1970.
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;

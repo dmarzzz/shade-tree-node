@@ -7,8 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde_json::{json, Value};
-
-use crate::clock;
+use shadenet_service::clock;
 
 pub(crate) const FILE: &str = "status.json";
 

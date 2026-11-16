@@ -20,6 +20,7 @@ claim is traceable to a source file, contract, or existing doc.
 | [0011](0011-session-tickets.md) | Session tickets ride the v4 port | `session-v1` is two new v4 envelope kinds on the existing onion port (an initialization that binds a ticket-book digest, and proof-less ticket spends), not the HTTP/2 side port of the design doc; Tor already multiplexes streams on one circuit, the book digest is the session handle, the byte ceiling is the proof's own slot budget; off unless the record's `sessionTickets` says so. |
 | [0010](0010-two-sdks-one-spec.md) | Two SDKs, one spec | The spec and `testdata/vectors.json` are normative; a Rust SDK (CLI, proxy, MCP) and a JS SDK (browser and Node) live in one monorepo, pass the same vectors and expose the same errors; replaces ADR 0001's "JS source wins". |
 | [0014](0014-node-in-rust.md) | The node is a Rust binary | `shadenet-node` replaces the JavaScript gateway, heartbeat and supervisor behind one `Config` + `ShadeNode` entrypoint, with every wire and operator contract unchanged; C Tor as a child first, Arti hosting as a later variant; the Elder stays JS. |
+| [0015](0015-elder-in-rust.md) | The Elder Tree is a Rust binary | `shadenet-elder` replaces the JavaScript bootnode server, federation, incidents and keygen behind one `Config` + `Elder` entrypoint; what both binaries need lives in `shadenet-service`, the one crate with a `pub` surface; routes, knobs, files and series unchanged. |
 
 ## Format
 

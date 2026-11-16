@@ -10,11 +10,12 @@ use std::time::Duration;
 
 use serde_json::Value;
 use shadenet_proto::ed25519_sign;
+use shadenet_service::clock;
+use shadenet_service::files::atomic_write;
+use shadenet_service::metrics::Registry;
+use shadenet_service::torhttp::{self, Request, Socks};
 
-use crate::clock;
-use crate::metrics::Registry;
 use crate::receipt::Signer;
-use crate::torhttp::{self, Request, Socks};
 
 pub(crate) const COUNTER_SCHEMA: &str = "shade-tree-relay-counter-v1";
 pub(crate) const REPORT_STATE_SCHEMA: &str = "shade-tree-relay-report-state-v1";
@@ -132,26 +133,6 @@ impl Traffic {
             counter.add(direction, bytes);
         }
     }
-}
-
-pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
-    }
-    let temp = path.with_extension("json.tmp");
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o600);
-    }
-    use std::io::Write as _;
-    options
-        .open(&temp)
-        .and_then(|mut f| f.write_all(bytes))
-        .map_err(|e| format!("write {}: {e}", temp.display()))?;
-    std::fs::rename(&temp, path).map_err(|e| format!("rename {}: {e}", path.display()))
 }
 
 fn u64_string(value: &Value) -> Option<u64> {
@@ -317,6 +298,7 @@ pub(crate) async fn report(
         return Err("Elder rejected relay telemetry".into());
     }
     atomic_write(&paths.report, next_state.as_bytes())
+        .map_err(|e| format!("write {}: {e}", paths.report.display()))
 }
 
 #[cfg(test)]

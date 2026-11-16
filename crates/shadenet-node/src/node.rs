@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use shadenet_proto::{accept_envelope_version, PROTO_MAX, PROTO_MIN};
+use shadenet_service::metrics::Registry;
+use shadenet_service::rpc::Rpc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
@@ -28,12 +30,11 @@ use crate::error::Error;
 use crate::heartbeat::Heartbeat;
 use crate::light::{self, Light};
 use crate::members::MemberSet;
-use crate::metrics::{self, Readiness, Registry};
+use crate::metrics::{self, Readiness};
 use crate::operator;
 use crate::receipt;
 use crate::record;
 use crate::roots::Roots;
-use crate::rpc::Rpc;
 use crate::session;
 use crate::slash::{self, SlashConfig, Slasher};
 use crate::spent::{Admission, Share, SpentSet};
@@ -92,6 +93,7 @@ impl ShadeNode {
             "node",
             config::build_version(),
             &config::build_commit(),
+            metrics::DEFINITIONS,
         ));
         let drain_flag = Arc::new(drain::Flag::new(config.drain_file().to_path_buf()));
         let readiness = Arc::new(Readiness::new(drain::Flag::new(
@@ -414,10 +416,14 @@ impl ShadeNode {
             .map_err(|source| Error::LocalAddr { addr, source })?;
         let metrics_listener = match config.metrics_port() {
             0 => None,
-            port => Some(metrics::bind(port).await.map_err(|source| Error::Bind {
-                addr: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-                source,
-            })?),
+            port => Some(
+                shadenet_service::metrics::bind(port)
+                    .await
+                    .map_err(|source| Error::Bind {
+                        addr: std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+                        source,
+                    })?,
+            ),
         };
         let mut shutdown = Shutdown::install()?;
         let (retire_tx, retire_rx) = watch::channel(false);
@@ -461,10 +467,11 @@ impl ShadeNode {
                 listen = format!("127.0.0.1:{}", shared.config.metrics_port()),
                 "operator metrics ready"
             );
-            background.spawn(metrics::serve(
+            let ready = Arc::clone(&readiness);
+            background.spawn(shadenet_service::metrics::serve(
                 listener,
                 Arc::clone(&registry),
-                Arc::clone(&readiness),
+                move || ready.ready(),
             ));
         }
         if let Some(heartbeat) = &heartbeat {

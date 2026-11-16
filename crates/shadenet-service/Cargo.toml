@@ -1,0 +1,24 @@
+[package]
+name = "shadenet-service"
+version = "0.7.5"
+edition = "2021"
+rust-version = "1.98"
+license = "MIT"
+description = "What every ShadeNet service binary shares: the Tor HTTP client, the JSON-RPC client, the metrics registry and its loopback listener, the onion identity, the clock, atomic files and logging"
+repository = "https://github.com/dmarzzz/shade-tree-node"
+publish = false
+
+[dependencies]
+shadenet-proto = { path = "../shadenet-proto", version = "0.7.5" }
+hex = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time"] }
+# the onion identity: sha-512 expands the seed into tor's key file; the seed comes from
+# operating-system randomness
+sha2 = "0.11"
+getrandom = "0.4"
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "env-filter", "json", "std"] }

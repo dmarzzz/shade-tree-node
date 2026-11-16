@@ -10,17 +10,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use shadenet_service::torhttp::{self, Request, Socks};
+use shadenet_service::{clock, onion};
 
-use crate::clock;
 use crate::config::{self, Config};
 use crate::error::Error;
 use crate::knobs::{self, Knobs, GATEWAY_PORT, TOR_SOCKS_PORT};
-use crate::onion;
 use crate::receipt::Signer;
 use crate::record::{self, Record};
 use crate::status;
 use crate::tor;
-use crate::torhttp::{self, Request, Socks};
 use crate::verify;
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(10);

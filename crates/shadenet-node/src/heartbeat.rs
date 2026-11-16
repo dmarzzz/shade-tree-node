@@ -12,16 +12,16 @@ use shadenet_proto::{
     has_caps, operator_auth_message, verify_operator_sig, Announce, Caps, PayCaps, ProtoCaps,
     RateCaps, SessionCaps, ANNOUNCE_VERSION, PROTO_MAX, PROTO_MIN,
 };
+use shadenet_service::clock;
+use shadenet_service::metrics::Registry;
+use shadenet_service::torhttp::{self, Request, Socks};
 use tokio::net::TcpStream;
 use tokio::sync::watch;
 
-use crate::clock;
 use crate::drain;
 use crate::knobs;
-use crate::metrics::Registry;
 use crate::receipt::Signer;
 use crate::telemetry;
-use crate::torhttp::{self, Request, Socks};
 
 pub(crate) const DEFAULT_INTERVAL_SECS: u64 = 300;
 pub(crate) const DEFAULT_EGRESS_CHECK_TARGET: &str = "1.1.1.1:443";

@@ -7,11 +7,10 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
+use shadenet_service::onion;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::oneshot;
-
-use crate::onion;
 
 pub(crate) const DEFAULT_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(180);
 const STOP_GRACE: Duration = Duration::from_secs(5);

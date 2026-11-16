@@ -4,70 +4,56 @@
 //! reply is read to end of stream under a byte cap, and a 4xx other than 408 or 429 is an
 //! answer (a refusal) rather than a transport failure to retry.
 
-use std::fmt;
 use std::time::Duration;
 
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-pub(crate) const DEFAULT_MAX_BYTES: usize = 2 * 1024 * 1024;
-pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
-pub(crate) const DEFAULT_ATTEMPTS: u32 = 4;
+pub const DEFAULT_MAX_BYTES: usize = 2 * 1024 * 1024;
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(20);
+pub const DEFAULT_ATTEMPTS: u32 = 4;
 
-#[derive(Debug)]
-pub(crate) enum Error {
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
     /// The peer spoke HTTP and declined; `reply` is its JSON body when it had one.
+    #[error("bootnode HTTP {status}: {}", body.chars().take(200).collect::<String>())]
     Refusal {
         status: u16,
         reply: Option<Value>,
         body: String,
     },
+    #[error("{0}")]
     Transport(String),
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Refusal { status, body, .. } => {
-                write!(
-                    f,
-                    "bootnode HTTP {status}: {}",
-                    body.chars().take(200).collect::<String>()
-                )
-            }
-            Self::Transport(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
 impl Error {
     /// A refusal is an answer: asking again gets the same one. 408 and 429 stay retryable.
-    fn is_refusal(&self) -> bool {
+    pub fn is_refusal(&self) -> bool {
         matches!(self, Self::Refusal { status, .. } if (400..500).contains(status) && *status != 408 && *status != 429)
     }
 }
 
 /// Where the local Tor SOCKS port is.
 #[derive(Clone)]
-pub(crate) struct Socks {
-    pub(crate) host: String,
-    pub(crate) port: u16,
+pub struct Socks {
+    pub host: String,
+    pub port: u16,
 }
 
-pub(crate) struct Request<'a> {
-    pub(crate) method: &'static str,
-    pub(crate) path: &'a str,
-    pub(crate) body: Option<&'a [u8]>,
-    pub(crate) authorization: Option<&'a str>,
-    pub(crate) timeout: Duration,
-    pub(crate) max_bytes: usize,
+/// One HTTP request: a method, a path, an optional JSON body and bearer, with its timeout
+/// and the cap on the reply.
+pub struct Request<'a> {
+    pub method: &'static str,
+    pub path: &'a str,
+    pub body: Option<&'a [u8]>,
+    pub authorization: Option<&'a str>,
+    pub timeout: Duration,
+    pub max_bytes: usize,
 }
 
 impl<'a> Request<'a> {
-    pub(crate) fn get(path: &'a str) -> Self {
+    pub fn get(path: &'a str) -> Self {
         Self {
             method: "GET",
             path,
@@ -78,7 +64,7 @@ impl<'a> Request<'a> {
         }
     }
 
-    pub(crate) fn post(path: &'a str, body: &'a [u8]) -> Self {
+    pub fn post(path: &'a str, body: &'a [u8]) -> Self {
         Self {
             method: "POST",
             path,
@@ -96,7 +82,7 @@ fn normalize_onion(onion: &str) -> String {
 }
 
 /// A request to `onion:port` over Tor, retried through onion cold start.
-pub(crate) async fn request_over_tor(
+pub async fn request_over_tor(
     socks: &Socks,
     onion: &str,
     destination_port: u16,
@@ -132,11 +118,7 @@ pub(crate) async fn request_over_tor(
 }
 
 /// The same request to a plain `host:port` peer (a private network or a test).
-pub(crate) async fn request_plain(
-    host: &str,
-    port: u16,
-    request: &Request<'_>,
-) -> Result<Value, Error> {
+pub async fn request_plain(host: &str, port: u16, request: &Request<'_>) -> Result<Value, Error> {
     let dial = async {
         let stream = TcpStream::connect((host, port))
             .await
@@ -264,7 +246,7 @@ async fn exchange(
 }
 
 /// Split status line, headers and body; a non-200 is a refusal carrying the parsed body.
-pub(crate) fn parse_response(raw: &[u8]) -> Result<Value, Error> {
+pub fn parse_response(raw: &[u8]) -> Result<Value, Error> {
     let separator = raw
         .windows(4)
         .position(|w| w == b"\r\n\r\n")

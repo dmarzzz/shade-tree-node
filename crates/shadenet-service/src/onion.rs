@@ -1,6 +1,6 @@
-//! Mint a node's onion identity (`packages/node/bootnode/keygen.mjs`): one ed25519 seed that
+//! Mint a service's onion identity (`packages/node/bootnode/keygen.mjs`): one ed25519 seed that
 //! is both the Tor v3 hidden-service key (`hs_ed25519_secret_key` holds the expanded form)
-//! and the key the node signs announces and receipts with (`identity.local.json`).
+//! and the key the service signs with (`identity.local.json`).
 
 use std::path::Path;
 
@@ -9,7 +9,8 @@ use shadenet_proto::{ed25519_public_key, pubkey_to_onion};
 
 const TAG_SECRET: &str = "== ed25519v1-secret: type0 ==";
 const TAG_PUBLIC: &str = "== ed25519v1-public: type0 ==";
-pub(crate) const IDENTITY_FILE: &str = "identity.local.json";
+/// The seed file beside Tor's key files.
+pub const IDENTITY_FILE: &str = "identity.local.json";
 const FILES: [&str; 4] = [
     "hs_ed25519_secret_key",
     "hs_ed25519_public_key",
@@ -17,8 +18,8 @@ const FILES: [&str; 4] = [
     IDENTITY_FILE,
 ];
 
-pub(crate) struct Minted {
-    pub(crate) onion: String,
+pub struct Minted {
+    pub onion: String,
 }
 
 fn tag32(tag: &str) -> [u8; 32] {
@@ -59,8 +60,9 @@ fn write_private(path: &Path, bytes: &[u8], exclusive: bool) -> Result<(), Strin
         .map_err(|e| format!("write {}: {e}", path.display()))
 }
 
+/// Create `dir` readable by the service user only (Tor refuses a wider hidden-service dir).
 #[cfg(unix)]
-pub(crate) fn make_private_dir(dir: &Path) -> Result<(), String> {
+pub fn make_private_dir(dir: &Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt as _;
     std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
@@ -68,12 +70,12 @@ pub(crate) fn make_private_dir(dir: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(unix))]
-pub(crate) fn make_private_dir(dir: &Path) -> Result<(), String> {
+pub fn make_private_dir(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))
 }
 
 /// Mint a fresh identity into `hs_dir`. Refuses to overwrite an existing one unless `force`.
-pub(crate) fn mint(hs_dir: &Path, label: &str, force: bool) -> Result<Minted, String> {
+pub fn mint(hs_dir: &Path, label: &str, force: bool) -> Result<Minted, String> {
     let existing: Vec<&str> = FILES
         .iter()
         .copied()

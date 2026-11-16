@@ -11,10 +11,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use num_bigint::BigUint;
+use shadenet_service::torhttp::{self, Request, Socks};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-
-use crate::torhttp::{self, Request, Socks};
 
 pub(crate) const MAX_PEERS: usize = 64;
 pub(crate) const DEFAULT_PATH: &str = "/fleet-tally";

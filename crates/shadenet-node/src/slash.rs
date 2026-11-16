@@ -14,9 +14,9 @@ use shadenet::eth::{self, calldata, decode_uints, Address, Eip1559, Token, Walle
 use shadenet_rln::tree::{fr_to_dec, rate_commitment};
 
 use crate::chain::Kind;
-use crate::rpc::{Rpc, RpcError};
 use crate::spent::Share;
 use crate::verify::parse_field;
+use shadenet_service::rpc::{self, Rpc};
 
 const RECEIPT_TIMEOUT: Duration = Duration::from_secs(180);
 const RECEIPT_POLL: Duration = Duration::from_secs(2);
@@ -215,7 +215,7 @@ async fn holds(
     target: &Target,
     secret: Fr,
     tier: &Tier,
-) -> Result<Option<(String, u64)>, RpcError> {
+) -> Result<Option<(String, u64)>, rpc::Error> {
     let mut candidates: Vec<(String, u64)> = target
         .tiers
         .iter()
@@ -263,12 +263,12 @@ async fn view(
     to: Address,
     signature: &str,
     args: &[Token],
-) -> Result<Vec<u8>, RpcError> {
+) -> Result<Vec<u8>, rpc::Error> {
     let data = calldata(signature, args);
     let call = json!({"to": to.to_string(), "data": format!("0x{}", hex::encode(&data))});
     let result = rpc.call("eth_call", json!([call, "latest"])).await?;
     let raw = result.as_str().unwrap_or("").trim_start_matches("0x");
-    hex::decode(raw).map_err(|_| RpcError::Transport {
+    hex::decode(raw).map_err(|_| rpc::Error::Transport {
         method: "eth_call".into(),
         message: "returned invalid hex data".into(),
     })
@@ -404,7 +404,7 @@ impl OnChain {
             "to": to.to_string(),
             "data": format!("0x{}", hex::encode(&data)),
         });
-        let quantity = |value: Result<Value, RpcError>, what: &str| -> Result<U256, String> {
+        let quantity = |value: Result<Value, rpc::Error>, what: &str| -> Result<U256, String> {
             let value = value.map_err(|e| format!("{what}: {}", bounded(&e)))?;
             value
                 .as_str()
@@ -497,7 +497,7 @@ impl OnChain {
 
 /// An RPC error with any echoed calldata removed: provider messages may quote the transaction,
 /// which carries the reconstructed secret.
-fn bounded(error: &RpcError) -> String {
+fn bounded(error: &rpc::Error) -> String {
     let text = error.to_string();
     if text.contains("0x") && text.len() > 120 {
         return format!(

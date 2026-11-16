@@ -5892,15 +5892,14 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.11.1",
  "sha3 0.12.0",
  "shadenet",
  "shadenet-proto",
  "shadenet-rln",
+ "shadenet-service",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
- "tracing-subscriber 0.3.23",
 ]
 
 [[package]]
@@ -5940,6 +5939,23 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "wasmer",
+]
+
+[[package]]
+name = "shadenet-service"
+version = "0.7.5"
+dependencies = [
+ "clap",
+ "getrandom 0.4.3",
+ "hex",
+ "reqwest",
+ "serde_json",
+ "sha2 0.11.1",
+ "shadenet-proto",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.23",
 ]
 
 [[package]]

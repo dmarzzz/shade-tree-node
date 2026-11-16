@@ -4,24 +4,26 @@
 //! `SHADE_TREE_*` layer) and hands the process to `ShadeNode`; the other commands never start
 //! a node and go through `Operator`.
 
-use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use shadenet_node::{Config, Operator, ShadeNode};
+use shadenet_service::logging::{self, Format, Level};
 
-const LONG_VERSION: &str = concat!(
-    env!("CARGO_PKG_VERSION"),
-    " (commit ",
-    env!("SHADENET_COMMIT"),
-    ")"
-);
+/// `<version> (commit <sha>)`, what `--version` prints.
+fn long_version() -> String {
+    format!(
+        "{} (commit {})",
+        env!("CARGO_PKG_VERSION"),
+        shadenet_service::version::COMMIT
+    )
+}
 
 #[derive(Parser)]
 #[command(
     name = "shadenet-node",
-    version = LONG_VERSION,
+    version = long_version(),
     about = "Run a Shade Tree node from a deployment record",
     disable_help_subcommand = true,
     after_help = "Knobs: `shadenet-node help` lists the SHADENET_* variables and node.toml keys."
@@ -29,10 +31,10 @@ const LONG_VERSION: &str = concat!(
 struct Cli {
     /// Log level [env: SHADENET_LOG_LEVEL]
     #[arg(long, global = true, value_enum)]
-    log_level: Option<LogLevel>,
+    log_level: Option<Level>,
     /// Log format [env: SHADENET_LOG_FORMAT]
     #[arg(long, global = true, value_enum)]
-    log_format: Option<LogFormat>,
+    log_format: Option<Format>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -73,22 +75,6 @@ enum Command {
     Help,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum LogLevel {
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-enum LogFormat {
-    Auto,
-    Json,
-    Text,
-    Pretty,
-}
-
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
@@ -118,7 +104,15 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let hint = Config::log_hint();
-    init_logging(cli.log_level, cli.log_format, hint);
+    logging::init(logging::Settings {
+        level: cli.log_level,
+        format: cli.log_format,
+        env_level: shadenet::env::var_lenient("LOG_LEVEL"),
+        env_format: shadenet::env::var_lenient("LOG_FORMAT"),
+        env_filter: shadenet::env::var_lenient("LOG"),
+        hint,
+        target: "shadenet_node",
+    });
     match command {
         Command::Run => run(),
         Command::Check { probe, json } => report(Operator::check(probe, json).map(|ready| !ready)),
@@ -191,60 +185,4 @@ fn chain(error: &dyn std::error::Error) -> String {
         source = cause.source();
     }
     text
-}
-
-/// Flags win, then `SHADENET_LOG_*` / `SHADE_TREE_LOG_*`, then the front door's `log` knob.
-fn init_logging(
-    level: Option<LogLevel>,
-    format: Option<LogFormat>,
-    hint: Option<(String, String)>,
-) {
-    use tracing_subscriber::EnvFilter;
-    let level = level
-        .or_else(|| {
-            shadenet::env::var_lenient("LOG_LEVEL").and_then(|v| LogLevel::from_str(&v, true).ok())
-        })
-        .or_else(|| {
-            hint.as_ref()
-                .and_then(|(_, level)| LogLevel::from_str(level, true).ok())
-        })
-        .unwrap_or(LogLevel::Info);
-    let format = format
-        .or_else(|| {
-            shadenet::env::var_lenient("LOG_FORMAT")
-                .and_then(|v| LogFormat::from_str(&v, true).ok())
-        })
-        .or_else(|| {
-            hint.as_ref()
-                .and_then(|(format, _)| LogFormat::from_str(format, true).ok())
-        })
-        .unwrap_or(LogFormat::Auto);
-    let ours = match level {
-        LogLevel::Debug => "debug",
-        LogLevel::Info => "info",
-        LogLevel::Warn => "warn",
-        LogLevel::Error => "error",
-    };
-    // through the front door SHADENET_LOG is the `format:level` knob, not a filter directive
-    let filter = hint
-        .is_none()
-        .then(|| shadenet::env::var_lenient("LOG"))
-        .flatten()
-        .and_then(|spec| EnvFilter::try_new(spec).ok())
-        .unwrap_or_else(|| EnvFilter::new(format!("warn,shadenet_node={ours}")));
-    let terminal = std::io::stderr().is_terminal();
-    let interactive = terminal
-        && std::env::var("TERM").is_ok_and(|t| t != "dumb")
-        && std::env::var("CI").is_err();
-    let builder = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr);
-    let _ = match format {
-        LogFormat::Json => builder.json().with_current_span(false).try_init(),
-        LogFormat::Auto if !interactive => builder.json().with_current_span(false).try_init(),
-        LogFormat::Auto | LogFormat::Pretty => {
-            builder.with_ansi(terminal).with_target(false).try_init()
-        }
-        LogFormat::Text => builder.with_ansi(false).with_target(false).try_init(),
-    };
 }

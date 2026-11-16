@@ -10,7 +10,6 @@
 
 mod alerts;
 mod chain;
-mod clock;
 mod config;
 mod drain;
 mod egress;
@@ -23,12 +22,10 @@ mod members;
 mod metrics;
 mod mpt;
 mod node;
-mod onion;
 mod operator;
 mod receipt;
 mod record;
 mod roots;
-mod rpc;
 mod session;
 mod slash;
 mod spent;
@@ -36,7 +33,6 @@ mod status;
 mod tally;
 mod telemetry;
 mod tor;
-mod torhttp;
 mod tunnel;
 mod verify;
 

@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 use crate::mpt;
-use crate::rpc::{Rpc, RpcError};
+use shadenet_service::rpc::{self, Rpc};
 
 /// `StakedReputationSet.ROOT_STORAGE_SLOT` (`currentRoot`).
 const ROOT_SLOT: u64 = 3;
@@ -45,8 +45,8 @@ pub(crate) struct Anchor {
     checked: Mutex<bool>,
 }
 
-fn transport(method: &str, message: impl Into<String>) -> RpcError {
-    RpcError::Transport {
+fn transport(method: &str, message: impl Into<String>) -> rpc::Error {
+    rpc::Error::Transport {
         method: method.into(),
         message: message.into(),
     }
@@ -75,7 +75,7 @@ impl Anchor {
 
     /// Once: Helios must be on the configured chain (else the upstream RPC's). A failed check
     /// is retried on the next call, so a sidecar still booting delays the start, nothing more.
-    async fn check_chain(&self, upstream: &Rpc) -> Result<(), RpcError> {
+    async fn check_chain(&self, upstream: &Rpc) -> Result<(), rpc::Error> {
         let mut checked = self.checked.lock().await;
         if *checked {
             return Ok(());
@@ -120,7 +120,7 @@ impl Anchor {
         &self,
         upstream: &Rpc,
         tag: &str,
-    ) -> Result<([u8; 32], u64), RpcError> {
+    ) -> Result<([u8; 32], u64), rpc::Error> {
         self.check_chain(upstream).await?;
         let block = self
             .helios
@@ -192,7 +192,7 @@ impl Light {
         rpc: &Rpc,
         contract: &str,
         tag: &str,
-    ) -> Result<Read, RpcError> {
+    ) -> Result<Read, rpc::Error> {
         let slot_hex = format!("0x{ROOT_SLOT:064x}");
         let (state_root, block) = match &self.anchor {
             Some(anchor) => {
@@ -278,9 +278,9 @@ impl Light {
         slot_hex: &str,
         state_root: &[u8; 32],
         proof: &Value,
-    ) -> Result<BigUint, RpcError> {
+    ) -> Result<BigUint, rpc::Error> {
         let fail = |message: String| transport("eth_getProof", message);
-        let nodes = |list: &Value| -> Result<Vec<Vec<u8>>, RpcError> {
+        let nodes = |list: &Value| -> Result<Vec<Vec<u8>>, rpc::Error> {
             list.as_array()
                 .ok_or_else(|| fail("eth_getProof returned no proof".into()))?
                 .iter()

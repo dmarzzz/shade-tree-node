@@ -7,10 +7,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
+use shadenet_service::clock;
+use shadenet_service::metrics::{Registry, Sample};
 
-use crate::clock;
 use crate::drain;
-use crate::metrics::{Registry, Sample};
 
 pub(crate) const DEFAULT_INTERVAL_MS: u64 = 30_000;
 pub(crate) const DEFAULT_REPEAT_MS: u64 = 4 * 60 * 60 * 1000;
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn rules_read_the_registry_like_the_javascript_evaluator() {
-        let registry = Registry::new("node", "0", "0");
+        let registry = Registry::new("node", "0", "0", crate::metrics::DEFINITIONS);
         let drain = drain::Flag::new(std::env::temp_dir().join("shadenet-alerts-no-such-flag"));
         let mut windows = Windows::default();
         fn ctx<'a>(

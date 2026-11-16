@@ -443,7 +443,12 @@ mod tests {
         let upstream = TcpStream::connect(sink_addr).await.unwrap();
         let budget = Arc::new(Budget::new(12, 60));
         let hold = budget.acquire(Budget::key("e", "n")).unwrap();
-        let registry = Arc::new(crate::metrics::Registry::new("node", "0", "0"));
+        let registry = Arc::new(shadenet_service::metrics::Registry::new(
+            "node",
+            "0",
+            "0",
+            crate::metrics::DEFINITIONS,
+        ));
         let traffic = Arc::new(Traffic::new(Arc::clone(&registry), None));
         let relay = tokio::spawn(relay(
             client,

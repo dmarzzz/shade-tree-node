@@ -19,6 +19,8 @@ use std::time::Duration;
 
 use num_bigint::BigUint;
 use shadenet_proto::{PayCaps, RateCaps};
+use shadenet_service::rpc;
+use shadenet_service::torhttp::Socks;
 
 use crate::alerts;
 use crate::chain::{Contract, Kind};
@@ -29,11 +31,9 @@ use crate::heartbeat::{self, CapsInputs, EgressCheck, OperatorAuth};
 use crate::knobs::{self, Knobs, KNOBS};
 use crate::light;
 use crate::record::{self, Record};
-use crate::rpc;
 use crate::session;
 use crate::tally;
 use crate::telemetry;
-use crate::torhttp::Socks;
 use crate::verify::ArtifactSet;
 
 const DEFAULT_PORT: u16 = 8443;
@@ -69,7 +69,7 @@ pub(crate) fn build_commit() -> String {
     let pinned = shadenet::env::var_lenient("BUILD_COMMIT")
         .map(|c| c.trim().to_ascii_lowercase())
         .filter(|c| c.len() == 40 && c.bytes().all(|b| b.is_ascii_hexdigit()));
-    pinned.unwrap_or_else(|| env!("SHADENET_COMMIT").to_string())
+    pinned.unwrap_or_else(|| shadenet_service::version::COMMIT.to_string())
 }
 
 /// Where settings are read from: the process environment, or the map the front door derived.
@@ -1285,7 +1285,7 @@ fn tiers(raw: Option<&str>, slots: u64) -> Result<Vec<u64>, Error> {
 
 /// The identity file path the front door derives, for `check` and `status`.
 pub(crate) fn identity_path(knobs: &Knobs) -> PathBuf {
-    knobs.hs_dir().join(crate::onion::IDENTITY_FILE)
+    knobs.hs_dir().join(shadenet_service::onion::IDENTITY_FILE)
 }
 
 #[cfg(test)]

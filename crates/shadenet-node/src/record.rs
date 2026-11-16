@@ -491,7 +491,7 @@ pub(crate) fn derive_env(
         &mut out,
         "SHADE_TREE_GW_IDENTITY",
         hs_dir
-            .join(crate::onion::IDENTITY_FILE)
+            .join(shadenet_service::onion::IDENTITY_FILE)
             .display()
             .to_string(),
     );

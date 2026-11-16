@@ -13,8 +13,8 @@ use shadenet_rln::replay::{
 };
 
 use crate::light::Light;
-use crate::metrics::Registry;
-use crate::rpc::{Rpc, RpcError};
+use shadenet_service::metrics::Registry;
+use shadenet_service::rpc::{self, Rpc};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(12);
 const MIN_CHUNK: u64 = 8;
@@ -369,7 +369,7 @@ impl ChainSource {
         self.publish(&sources);
     }
 
-    fn fail(&self, index: usize, error: &RpcError, started: Instant) {
+    fn fail(&self, index: usize, error: &rpc::Error, started: Instant) {
         let mut sources = self.sources.lock().unwrap_or_else(|e| e.into_inner());
         let source = &mut sources[index];
         source.scanned = None;
@@ -396,7 +396,7 @@ impl ChainSource {
         self.publish(&sources);
     }
 
-    async fn block_tag(&self) -> Result<String, RpcError> {
+    async fn block_tag(&self) -> Result<String, rpc::Error> {
         if self.confirmations == 0 {
             return Ok("finalized".into());
         }
@@ -413,7 +413,7 @@ impl ChainSource {
         &self,
         contract: &Contract,
         scanned: Option<(u64, Vec<Value>)>,
-    ) -> Result<Read, RpcError> {
+    ) -> Result<Read, rpc::Error> {
         let tag = self.block_tag().await?;
         let finalized = tag == "finalized";
         if let Provider::Light(light) = &self.provider {
@@ -432,7 +432,7 @@ impl ChainSource {
             .rpc
             .call("eth_getBlockByNumber", json!([tag, false]))
             .await?;
-        let observed = parse_hex(&block["number"]).ok_or_else(|| RpcError::Transport {
+        let observed = parse_hex(&block["number"]).ok_or_else(|| rpc::Error::Transport {
             method: "eth_getBlockByNumber".into(),
             message: format!("{tag} returned no block number"),
         })?;
@@ -480,7 +480,7 @@ impl ChainSource {
                         for end in old_count + 1..=logs.len() {
                             let step =
                                 reconstruct(&logs[..end], self.rln_identifier).map_err(|e| {
-                                    RpcError::Transport {
+                                    rpc::Error::Transport {
                                         method: "eth_getLogs".into(),
                                         message: e,
                                     }
@@ -502,7 +502,7 @@ impl ChainSource {
                     chunk = (chunk / 2).max(MIN_CHUNK);
                 }
                 Err(e) => {
-                    return Err(RpcError::Transport {
+                    return Err(rpc::Error::Transport {
                         method: "eth_getLogs".into(),
                         message: if is_incomplete(&e) {
                             format!("{e}; partial history even in {chunk}-block pages")
@@ -516,7 +516,7 @@ impl ChainSource {
     }
 
     /// `(nextIndex, activeCount)` at `block`, or `None` for a set without those views.
-    async fn counters(&self, address: &str, block: &str) -> Result<Option<(u64, u64)>, RpcError> {
+    async fn counters(&self, address: &str, block: &str) -> Result<Option<(u64, u64)>, rpc::Error> {
         let mut out = [0_u64; 2];
         for (slot, selector) in [NEXT_INDEX_SELECTOR, ACTIVE_COUNT_SELECTOR]
             .iter()
@@ -554,7 +554,7 @@ impl ChainSource {
         from: u64,
         to: u64,
         chunk: &mut u64,
-    ) -> Result<Vec<Value>, RpcError> {
+    ) -> Result<Vec<Value>, rpc::Error> {
         let mut cursor = from;
         let mut logs = Vec::new();
         while cursor <= to {
@@ -571,7 +571,7 @@ impl ChainSource {
                     cursor = end.saturating_add(1);
                 }
                 Ok(_) => {
-                    return Err(RpcError::Transport {
+                    return Err(rpc::Error::Transport {
                         method: "eth_getLogs".into(),
                         message: "returned a non-array result".into(),
                     })
