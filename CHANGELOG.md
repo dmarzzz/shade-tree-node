@@ -4,6 +4,18 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### JS client: an envelope-deadline refusal fails over to the next node
+
+- `retryableGatewayRefusal` now also matches the exact reply `bad-envelope:envelope timeout`
+  (exported as `GATEWAY_ENVELOPE_TIMEOUT_REFUSAL`). A node writes it from the `readEnvelope`
+  deadline, before it parses, verifies or admits the envelope, so nothing was spent there. The
+  client marks that node unhealthy and sends the identical envelope to the next candidate, with the
+  same proof and slot, as it already does for `upstream:*`. Before, the request failed at the first
+  node.
+- Matched exactly. `envelope too large`, `closed before envelope` and JSON errors stay terminal,
+  and so do near misses (case, whitespace, a prefix). A pinned single node behaves as before.
+- The Rust client is unchanged.
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative
