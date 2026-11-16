@@ -32,6 +32,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import os from "node:os";
+import { makeCurveInit } from "./prover-workers.mjs";
 import { loadArtifactSet, loadProverSets, resolveArtifact, selectArtifact, artifactIdOf, builtinArtifactId } from "./zk-artifacts.mjs";
 
 import {
@@ -359,8 +361,18 @@ function getVerifier(id, vkey) {
 // real tunnel) and any gateway serving concurrent tunnel proofs. Serialize ALL snarkjs work
 // behind one promise-chain mutex. Proving is ~0.4s; overlapping callers simply queue.
 let _snarkLock = Promise.resolve();
+// Size the snarkjs worker pool before the first prove or verify builds it (SHADE_TREE_PROVER_WORKERS,
+// default min(cpus, 4); packages/node/lib/prover-workers.mjs says why). Built through the snarkjs
+// that rlnjs itself requires, so the engine it caches is the one every later proof uses. Runs
+// inside the lock, so no other snarkjs call can build an uncapped pool or read the patched
+// os.cpus() meanwhile; a no-op once the engine exists.
+const ensureCurve = makeCurveInit({
+  buildCurve: () => requireFromRln("snarkjs").curves.getCurveFromName("bn128"),
+  osModule: os,
+});
 function withSnarkLock(fn) {
-  const run = _snarkLock.then(fn, fn);
+  const guarded = () => ensureCurve().then(fn);
+  const run = _snarkLock.then(guarded, guarded);
   _snarkLock = run.then(() => {}, () => {}); // keep the chain alive regardless of outcome
   return run;
 }
