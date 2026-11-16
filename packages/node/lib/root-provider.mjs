@@ -485,8 +485,9 @@ export async function contractCounters(contract, block, rpcUrl = RPC_URL()) {
 // revalidateContractGroup({ contract, kind, prev, rpcUrl, blockTag }) -> { same, block, reason }:
 // is the set unchanged since `prev` (a loadGroupFromContract result) was replayed? The client
 // pool drops its group at every epoch rollover, and a full reload is a whole eth_getLogs replay
-// (about 30 pages on the live v4 profile; one slow page can cost 15 s). This answers the same
-// question with 3-4 calls at ONE block: the header, the on-chain `currentRoot` (storage slot
+// (30 pages on the live v4 profile; each page may wait up to the RPC deadline, rpc-safety.mjs
+// DEFAULT_RPC_TIMEOUT_MS). This answers the same question with 2 calls (paid) or 4 calls
+// (staked) at ONE block: the header, the on-chain `currentRoot` (storage slot
 // ROOT_STORAGE_SLOT = 3 on both StakedReputationSet and PaidAccessSet) and, for a staked set,
 // both counters. `same` is true only when the on-chain root equals the replayed root AND (staked)
 // nextIndex/activeCount equal the replay. Anything else is `same: false` with a reason; a
