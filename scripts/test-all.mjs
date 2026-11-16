@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, dirname, join, relative } from "node:path";
+import { classifySuite, reasonText, summaryLines } from "./suite-skips.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -109,10 +110,14 @@ for (const f of selftests) {
     }
   }
 
-  results.push({ name: rel, passed, retried: wasRetried && passed });
+  // Exit 0 is green, but a suite that printed a SKIP line did not run (all of) its checks:
+  // report it as SKIP with its reason instead of PASS (scripts/suite-skips.mjs).
+  const { outcome, reasons } = passed ? classifySuite({ status: 0, stdout: r.stdout }) : { outcome: "FAIL", reasons: [] };
+  results.push({ name: rel, passed, outcome, reasons, retried: wasRetried && passed });
   const tail = (r.stdout || "").trim().split("\n").pop() || "";
-  const flag = passed ? (wasRetried ? "PASS*" : "PASS") : "FAIL";
-  console.log(`  ${flag}  ${rel}${passed ? (wasRetried ? "  (green on isolated retry)" : "") : "  <-- " + ((r.stderr || tail).trim().split("\n").pop() || "nonzero exit")}`);
+  const flag = passed ? outcome + (wasRetried ? "*" : "") : "FAIL";
+  const note = outcome === "SKIP" ? "  (exit 0, not exercised: " + reasonText(reasons) + ")" : "";
+  console.log(`  ${flag}  ${rel}${passed ? note + (wasRetried ? "  (green on isolated retry)" : "") : "  <-- " + ((r.stderr || tail).trim().split("\n").pop() || "nonzero exit")}`);
   if (!passed && r.stdout) console.log(r.stdout.split("\n").filter((l) => l.includes("FAIL")).map((l) => "        " + l).join("\n"));
 }
 
@@ -125,7 +130,7 @@ if (fast) {
     console.log("  SKIP  forge not installed (run with a foundry toolchain, or --no-contracts)");
   } else {
     const passed = forge.status === 0;
-    results.push({ name: "forge test", passed });
+    results.push({ name: "forge test", passed, outcome: passed ? "PASS" : "FAIL", reasons: [] });
     const summary = (forge.stdout || "").split("\n").filter((l) => /tests? passed|Suite result|failed/.test(l)).slice(-3).join("\n");
     console.log(passed ? summary || "  PASS" : (forge.stdout || forge.stderr));
     if (passed) {
@@ -139,16 +144,16 @@ if (fast) {
         ? spawnSync(process.execPath, [join(ROOT, "deploy/v4/check-bytecode-manifest.mjs")], { cwd: ROOT, encoding: "utf8" })
         : linkedBuild;
       const manifestPassed = linkedBuild.status === 0 && manifest.status === 0;
-      results.push({ name: "public-stake-v1 bytecode manifest", passed: manifestPassed });
+      results.push({ name: "public-stake-v1 bytecode manifest", passed: manifestPassed, outcome: manifestPassed ? "PASS" : "FAIL", reasons: [] });
       console.log(manifestPassed ? `  PASS  ${(manifest.stdout || "").trim()}` : (manifest.stderr || manifest.stdout));
     }
   }
 }
 
-const failed = results.filter((r) => !r.passed);
-console.log(`\n=== summary: ${results.length - failed.length}/${results.length} green ===`);
+const { lines: summary, failed, skipped: skippedSuites } = summaryLines(results);
+console.log(summary.join("\n"));
 if (retried.length) {
   console.log(`RETRIED (green on isolated retry -- contention flake, not a defect):\n` + retried.map((n) => "  ~ " + n).join("\n"));
 }
 if (failed.length) { console.log("FAILED:\n" + failed.map((f) => "  - " + f.name).join("\n")); process.exit(1); }
-console.log("all green");
+console.log(skippedSuites.length ? `all green (${skippedSuites.length} SKIPPED, listed above)` : "all green");
