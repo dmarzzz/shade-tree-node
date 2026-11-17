@@ -87,7 +87,7 @@ does not enable browser CORS access.
 | Elder Tree | `SHADE_TREE_METRICS_PORT` | 9100 |
 | Shade Tree node | `SHADE_TREE_METRICS_PORT` | 9101 |
 | Registrar | `SHADE_TREE_METRICS_PORT` | 9102 |
-| Heartbeat | `SHADE_TREE_HEARTBEAT_METRICS_PORT` | 9103 |
+| Heartbeat (JavaScript node only; the Rust node serves `shade_tree_heartbeat_*` on its own port) | `SHADE_TREE_HEARTBEAT_METRICS_PORT` | 9103 |
 | Proxy | `SHADE_TREE_METRICS_PORT` | choose a free local port |
 
 The listeners are off when their port is `0` or unset in a direct invocation.
