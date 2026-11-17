@@ -81,7 +81,7 @@ const CATEGORIES = [
     'CONTRIBUTING.md',
   ]],
   ['Operate', [
-    'docs/OPERATOR.md', 'docs/BOOTNODE.md', 'docs/INCIDENT.md', 'docs/SLO.md',
+    'docs/OPERATOR.md', 'docs/HOME-NODE.md', 'docs/BOOTNODE.md', 'docs/INCIDENT.md', 'docs/SLO.md',
     'docs/history/DEPLOY.md', 'docs/history/DEPLOYMENT.md', 'docs/FLEET.md',
     'docs/CLIENTS.md', 'docs/LIGHT-CLIENT.md', 'specs/data-api.md',
   ]],

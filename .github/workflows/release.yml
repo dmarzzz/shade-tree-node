@@ -190,6 +190,22 @@ jobs:
           RELEASE_TARGET: ${{ matrix.target }}
         run: cargo build --release -p shadenet-cli --target "$RELEASE_TARGET"
 
+      # The node (ADR 0014): pure Rust like the default client, so it cross-compiles the same
+      # way. Linux and macOS only: it supervises a C Tor child and takes unix signals.
+      - name: Build the node (cross via zigbuild)
+        if: ${{ matrix.cross }}
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: cargo zigbuild --release -p shadenet-node --target "$RELEASE_TARGET"
+
+      - name: Build the node (native)
+        if: ${{ !matrix.cross && runner.os != 'Windows' }}
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: cargo build --release -p shadenet-node --target "$RELEASE_TARGET"
+
       - name: Sign and notarize (macOS)
         if: ${{ runner.os == 'macOS' }}
         shell: bash
@@ -214,6 +230,21 @@ jobs:
           RELEASE_TARGET: ${{ matrix.target }}
           RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
         run: bash scripts/release/package.sh "$RELEASE_TARGET" "$RELEASE_VERSION" "" "$RELEASE_EXT"
+
+      - name: Package the node
+        id: package-node
+        if: ${{ runner.os != 'Windows' }}
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+          RELEASE_VERSION: ${{ needs.set-version.outputs.version }}
+        run: bash scripts/release/package-node.sh "$RELEASE_TARGET" "$RELEASE_VERSION"
+
+      - name: Attest the node's build provenance
+        if: ${{ runner.os != 'Windows' }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.package-node.outputs.node_artifacts }}
 
       - name: Generate SPDX SBOM (shadenet)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3

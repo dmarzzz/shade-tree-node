@@ -28,7 +28,7 @@ use std::io::BufReader;
 use ark_bn254::{Bn254, Fr, G1Affine, G2Affine};
 use ark_circom::{read_zkey, CircomReduction, WitnessCalculator};
 use ark_ff::{BigInteger, PrimeField};
-use ark_groth16::{prepare_verifying_key, Groth16, Proof};
+use ark_groth16::{Groth16, Proof};
 use ark_std::UniformRand;
 use num_bigint::{BigInt, BigUint, Sign};
 use wasmer::{Module, Store};
@@ -340,10 +340,9 @@ pub fn build_envelope(input: &EnvelopeInput) -> Result<BuiltEnvelope, String> {
             }
         }
     };
-    let vk = crate::withdraw::parse_vk(&vk_json)?;
-    let pvk = prepare_verifying_key(&vk);
-    let ok = Groth16::<Bn254, CircomReduction>::verify_proof(&pvk, &proof, public_inputs)
-        .map_err(|e| format!("verify: {e}"))?;
+    let vk = crate::verify::VerifyingKey::parse(&vk_json).map_err(|e| e.to_string())?;
+    let ok =
+        crate::verify::verify(&vk, &proof, public_inputs).map_err(|e| format!("verify: {e}"))?;
     if !ok {
         return Err("Rust proof did NOT verify against verification_key.json".into());
     }

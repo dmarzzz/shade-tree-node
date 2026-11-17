@@ -1051,7 +1051,15 @@ export class ShadeTreeClient {
           emit({ phase: "dial", status: "failover", onion: cand, error: refusal.message });
           continue;
         }
-        // Client/proof/policy refusals are terminal and do not poison node health.
+        if (candidateAck.err === "bad-target-policy") {
+          // the operator's egress policy excluded this target before any proof work: nothing was
+          // spent at that node and the envelope binds to none, so the identical wire goes to the
+          // next candidate. the node is healthy; only its policy differs.
+          lastErr = refusal;
+          emit({ phase: "dial", status: "failover", onion: cand, error: refusal.message });
+          continue;
+        }
+        // Client/proof refusals are terminal and do not poison node health.
         throw refusal;
       }
 

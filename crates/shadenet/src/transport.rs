@@ -547,11 +547,12 @@ impl Client {
 
     /// Prove once, then try candidates in order. Dial and I/O failures advance to the next
     /// candidate, after one more try at the same onion (a hidden-service rendezvous often fails
-    /// once and works on retry). A gateway refusal is terminal, except a root refusal
-    /// (`wrong-group-root` / `gate:*`) on a plain tunnel envelope: nothing was spent or published
-    /// at a node that refused before egress, and the envelope is bound to no node, so the
-    /// identical bytes go to the next candidate (ADR 0013). A session initialization binds its
-    /// node and has one candidate.
+    /// once and works on retry). A gateway refusal is terminal, except a refusal from before
+    /// egress on a plain tunnel envelope: a root the node does not know (`wrong-group-root` /
+    /// `gate:*`) or a target its operator's egress policy excludes (`bad-target-policy`).
+    /// Nothing was spent or published at such a node, and the envelope is bound to no node, so
+    /// the identical bytes go to the next candidate (ADR 0013). A session initialization binds
+    /// its node and has one candidate.
     pub async fn connect(&self, request: ConnectRequest) -> Result<Connected, Error> {
         if request.gateways.is_empty() {
             return Err(Error::NoGateways);
@@ -642,7 +643,7 @@ impl Client {
             None => self.dialer.isolated(),
         };
         let plain_tunnel = session.is_none();
-        let mut root_refusal: Option<Error> = None;
+        let mut carried_refusal: Option<Error> = None;
 
         for gateway in request.gateways {
             let started = Instant::now();
@@ -695,10 +696,11 @@ impl Client {
                             .unwrap_or("");
                         if plain_tunnel
                             && (reason.starts_with("wrong-group-root")
-                                || reason.starts_with("gate:"))
+                                || reason.starts_with("gate:")
+                                || reason == "bad-target-policy")
                         {
-                            tracing::info!(gateway = %gateway.label(), %reason, "node refused the root; same envelope to the next candidate");
-                            root_refusal = Some(Error::GatewayRefused {
+                            tracing::info!(gateway = %gateway.label(), %reason, "node refused before egress; same envelope to the next candidate");
+                            carried_refusal = Some(Error::GatewayRefused {
                                 gateway,
                                 kind,
                                 ack: Box::new(ack),
@@ -730,7 +732,7 @@ impl Client {
                 }),
             }
         }
-        if let Some(mut refusal) = root_refusal {
+        if let Some(mut refusal) = carried_refusal {
             if let Error::GatewayRefused {
                 attempts: ref mut all,
                 ..
@@ -1084,7 +1086,7 @@ mod tests {
     }
 
     /// A dialer whose gateways answer by onion name: `refuse` ones answer a root refusal,
-    /// `down` ones fail to dial, everything else accepts.
+    /// `policy` ones an egress-policy refusal, `down` ones fail to dial, everything else accepts.
     struct ScriptedDialer {
         dials: Arc<std::sync::Mutex<Vec<String>>>,
     }
@@ -1098,7 +1100,13 @@ mod tests {
                     return Err(format!("connect onion {name}: no circuit"));
                 }
                 let (client, mut gateway_side) = tokio::io::duplex(4096);
-                let refuse = name.starts_with("refuse");
+                let reply: &'static [u8] = if name.starts_with("refuse") {
+                    b"{\"ok\":false,\"err\":\"wrong-group-root\"}\n"
+                } else if name.starts_with("policy") {
+                    b"{\"ok\":false,\"err\":\"bad-target-policy\"}\n"
+                } else {
+                    b"{\"ok\":true}\n"
+                };
                 tokio::spawn(async move {
                     loop {
                         let mut byte = [0_u8; 1];
@@ -1107,11 +1115,6 @@ mod tests {
                             break;
                         }
                     }
-                    let reply: &[u8] = if refuse {
-                        b"{\"ok\":false,\"err\":\"wrong-group-root\"}\n"
-                    } else {
-                        b"{\"ok\":true}\n"
-                    };
                     gateway_side.write_all(reply).await.unwrap();
                 });
                 Ok(Box::pin(client) as BoxStream)
@@ -1171,6 +1174,47 @@ mod tests {
                 "accept-c.onion:80"
             ]
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_egress_policy_refusal_sends_the_same_envelope_to_the_next_candidate() {
+        let (client, dials) = scripted();
+        let connected = client
+            .connect(ConnectRequest {
+                gateways: vec![onion("policy-a"), onion("accept-c")],
+                proof: proof_request("x.example:443"),
+                slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
+                artifact: "rln-test".into(),
+                session: None,
+            })
+            .await
+            .expect("the second candidate accepts");
+        assert_eq!(connected.gateway.label(), "accept-c.onion:80");
+        assert_eq!(connected.attempts.len(), 2);
+        assert_eq!(
+            dials.lock().unwrap().as_slice(),
+            ["policy-a.onion:80", "accept-c.onion:80"]
+        );
+
+        let (client, _) = scripted();
+        let error = client
+            .connect(ConnectRequest {
+                gateways: vec![onion("policy-a"), onion("policy-b")],
+                proof: proof_request("x.example:443"),
+                slots: SlotPolicy::UnsafeForSlashingTest { message_id: 0 },
+                artifact: "rln-test".into(),
+                session: None,
+            })
+            .await
+            .err()
+            .expect("refused everywhere");
+        match error {
+            Error::GatewayRefused { attempts, ack, .. } => {
+                assert_eq!(attempts.len(), 2);
+                assert_eq!(ack["err"], "bad-target-policy");
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

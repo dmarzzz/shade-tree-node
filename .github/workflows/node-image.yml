@@ -1,9 +1,10 @@
 name: node-image
 
-# ghcr.io/<owner>/shadenet-node: Tor + the JS node + heartbeat from a checkout, run from a
-# deployment record alone. Called by release.yml for every tag, and runnable by hand for a ref
-# (`gh workflow run node-image.yml -f ref=v0.7.1 -f push=true`) when a tag's image needs
-# (re)publishing without cutting a new release.
+# ghcr.io/<owner>/shadenet-node: Tor + the Rust `shadenet-node` binary (ADR 0014), built from a
+# checkout and run from a deployment record alone. Called by release.yml for every tag, and
+# runnable by hand for a ref (`gh workflow run node-image.yml -f ref=v0.7.1 -f push=true`) when a
+# tag's image needs (re)publishing without cutting a new release. The Rust build runs on the
+# build platform and cross-compiles for arm64 (cargo-zigbuild), so QEMU only runs the apt stage.
 
 on:
   workflow_call:
@@ -85,7 +86,9 @@ jobs:
           torv="$(docker run --rm --entrypoint tor shadenet-node:smoke --version)"
           grep -q "Tor version" <<<"$torv"
           docker run --rm shadenet-node:smoke status --quiet || true
-          echo "smoke ok: $(head -1 <<<"$torv")"
+          version="$(docker run --rm shadenet-node:smoke --version)"
+          grep -q "commit ${COMMIT:0:12}" <<<"$version"
+          echo "smoke ok: $(head -1 <<<"$torv"); $version"
 
       # Without a push, still build arm64 through QEMU (not loaded, not pushed): a QEMU or
       # base-image change that breaks the arm64 build fails here instead of during a release.

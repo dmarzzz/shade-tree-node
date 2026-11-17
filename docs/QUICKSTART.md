@@ -165,12 +165,13 @@ Copy only the printed secret value into the hidden prompt in step 5.
 ### 4. Run a Shade Tree node and announce it
 
 ```bash
-SHADE_TREE_MEMBERS_FILE=./group/members.json shade-tree-node node
-shade-tree-node heartbeat --bootnode <elder-onion> \
-  --identity tor/hs-gateway/identity.local.json
+SHADE_TREE_MEMBERS_FILE=./group/members.json \
+SHADE_TREE_BOOTNODE_ONION=<elder-onion> \
+SHADE_TREE_GW_IDENTITY=tor/hs-gateway/identity.local.json \
+shade-tree-node node
 ```
 
-The heartbeat announces the node to the Elder Tree every few minutes and keeps it live.
+The node announces itself to the Elder Tree every few minutes and keeps itself live.
 Confirm it is listed:
 
 ```bash

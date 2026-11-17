@@ -47,6 +47,10 @@ Files:
 | `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_egress_check_up` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_draining` | gauge | none | `packages/node/bootnode/heartbeat.mjs` (1 while the operator drain flag is announced) |
+| `shade_tree_canary_probes_total` | counter | `outcome` (`clean`, `challenged`, `unknown`) | `crates/shadenet-node/src/canary.rs` (reputation canary probes from the node's own address) |
+| `shade_tree_canary_challenged` | gauge | none | `crates/shadenet-node/src/canary.rs` (1 when the latest round was blocked or challenged) |
+| `shade_tree_canary_drained` | gauge | none | `crates/shadenet-node/src/canary.rs` (1 while the canary holds the drain flag) |
+| `shade_tree_gateway_blocklist_hosts` | gauge | none | `crates/shadenet-node/src/egress.rs` (hosts loaded from `SHADE_TREE_EGRESS_DENY_FILE`) |
 | `shade_tree_alert_webhook_total` | counter | `result` (sent\|failed) | `packages/node/lib/alerts.mjs` (gateway + heartbeat, when a webhook is set) |
 | `shade_tree_registrar_payments_total` | counter | `protocol` (unknown\|x402\|mpp), `result` (challenged\|inserted\|replayed\|rejected\|failed), bounded `reason` on non-success outcomes | `packages/node/payments/registrar.mjs` |
 | `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `packages/node/payments/registrar.mjs` |
@@ -87,7 +91,7 @@ does not enable browser CORS access.
 | Elder Tree | `SHADE_TREE_METRICS_PORT` | 9100 |
 | Shade Tree node | `SHADE_TREE_METRICS_PORT` | 9101 |
 | Registrar | `SHADE_TREE_METRICS_PORT` | 9102 |
-| Heartbeat | `SHADE_TREE_HEARTBEAT_METRICS_PORT` | 9103 |
+| Heartbeat (JavaScript node only; the Rust node serves `shade_tree_heartbeat_*` on its own port) | `SHADE_TREE_HEARTBEAT_METRICS_PORT` | 9103 |
 | Proxy | `SHADE_TREE_METRICS_PORT` | choose a free local port |
 
 The listeners are off when their port is `0` or unset in a direct invocation.

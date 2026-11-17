@@ -12,8 +12,11 @@ fi
 
 bash scripts/start-tor.sh
 
-if pgrep -f "packages/node/gateway/gateway.mjs" >/dev/null; then echo "gateway already running"; else
-  node packages/node/gateway/gateway.mjs > gateway.log 2>&1 & echo "gateway pid $!"
+if pgrep -f "shadenet-node" >/dev/null; then echo "gateway already running"; else
+  export SHADE_TREE_MEMBERS_FILE="${SHADE_TREE_MEMBERS_FILE:-group/members.json}"
+  source scripts/node-bin.sh
+  GATEWAY_CMD="$(shadenet_node_cmd "$PWD")"
+  $GATEWAY_CMD > gateway.log 2>&1 & echo "gateway pid $!"
 fi
 sleep 1
 if pgrep -f "packages/node/client/shim.mjs" >/dev/null; then echo "shim already running"; else

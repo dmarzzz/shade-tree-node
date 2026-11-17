@@ -84,8 +84,8 @@ async function main() {
   ok(ehelp.code === 0 && /initiateExit|unbonding/i.test(ehelp.out), "`shade-tree exit-gateway --help` exits 0 (no RPC touched)");
   const ihelp = shadeTreeCli(["identity", "--help"], { timeout: 10_000 });
   ok(ihelp.code === 0 && /--out/.test(ihelp.out), "`shade-tree identity --help` exits 0 and names --out");
-  const heartbeatMetrics = shadeTreeCli(["heartbeat", "--metrics-port", "70000"], { timeout: 10_000 });
-  ok(heartbeatMetrics.code !== 0 && /SHADE_TREE_HEARTBEAT_METRICS_PORT/.test(heartbeatMetrics.out) && !/SHADE_TREE_METRICS_PORT:/.test(heartbeatMetrics.out), "heartbeat remaps common --metrics-port to its dedicated metrics listener");
+  const heartbeat = shadeTreeCli(["heartbeat", "--metrics-port", "70000"], { timeout: 10_000 });
+  ok(heartbeat.code === 2 && /shadenet-node run/.test(heartbeat.out), "heartbeat is retired: it explains that the Rust node announces itself and exits 2");
   const tieredEnroll = shadeTreeCli(["enroll", "--commitment-only", "--limit", "32"], { timeout: 40_000 });
   ok(tieredEnroll.code === 0 && /export SHADE_TREE_LIMIT=32/.test(tieredEnroll.out), "enroll receives the tier selected by the top-level --limit flag");
 

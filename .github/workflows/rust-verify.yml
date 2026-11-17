@@ -79,6 +79,11 @@ jobs:
       - name: Check workspace (all targets and features)
         run: cargo check --workspace --all-targets --all-features --locked
 
+      - name: Install Foundry (Anvil, forge and cast for the on-chain tests and the member lifecycle)
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: stable
+
       - name: Test workspace (all features)
         run: cargo test --workspace --all-features --locked
 
@@ -94,22 +99,28 @@ jobs:
       - name: Rust proof -> JavaScript verifier interop (blocking)
         run: bash crates/shadenet-rln/interop/run.sh
 
-      - name: Rust client -> JavaScript gateway + payload relay (blocking)
+      # The harnesses build and start the Rust node from this checkout (ADR 0014).
+      - name: Rust client -> Rust node + payload relay (blocking)
         run: bash crates/shadenet-rln/interop/egress-run.sh
 
-      - name: Rust CONNECT Proxy -> JavaScript gateway + early payload (blocking)
+      - name: Rust CONNECT Proxy -> Rust node + early payload (blocking)
         run: bash crates/shadenet-rln/interop/proxy-run.sh
 
-      - name: Rust failover + last-known-good canopy (blocking)
+      - name: Rust failover + last-known-good canopy against the Rust node (blocking)
         run: bash crates/shadenet-rln/interop/failover-lkg-run.sh
 
       - name: Rust Proxy 8 concurrent tunnels + structured 429 + status endpoint (blocking)
         run: bash crates/shadenet-rln/interop/proxy-concurrency-run.sh
 
-      - name: Install Foundry (Anvil + forge for the member lifecycle)
-        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
-        with:
-          version: stable
-
       - name: Rust member lifecycle on the real contracts (register, exit, withdraw) (blocking)
         run: bash crates/shadenet-rln/interop/member-lifecycle-run.sh
+
+      # The ADR 0014 conformance guard: both clients talk to the Rust node, and the Rust client
+      # still talks to the JavaScript gateway for as long as that one ships.
+      - name: JavaScript client -> Rust node + payload relay (blocking)
+        run: bash crates/shadenet-rln/interop/js-client-run.sh
+
+      - name: Rust client -> JavaScript gateway + payload relay, until the JavaScript node is deleted (blocking)
+        env:
+          SHADE_TREE_GATEWAY_CMD: node ${{ github.workspace }}/packages/node/gateway/gateway.mjs
+        run: bash crates/shadenet-rln/interop/egress-run.sh
