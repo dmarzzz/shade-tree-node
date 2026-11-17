@@ -84,6 +84,8 @@ jobs:
           [[ $code -eq 2 ]] || { echo "run without a record exited $code, expected 2: $out" >&2; exit 1; }
           grep -q "set SHADENET_RECORD" <<<"$out"
           torv="$(docker run --rm --entrypoint tor shadenet-node:smoke --version)"
+          elderv="$(docker run --rm --entrypoint shadenet-elder shadenet-node:smoke --version)"
+          echo "$elderv" | grep -q "(commit " || { echo "shadenet-elder --version: $elderv" >&2; exit 1; }
           grep -q "Tor version" <<<"$torv"
           docker run --rm shadenet-node:smoke status --quiet || true
           version="$(docker run --rm shadenet-node:smoke --version)"

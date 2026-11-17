@@ -54,19 +54,26 @@ Elder half of `packages/node/lib/relay-telemetry.mjs`.
   them explicitly already. `SHADE_TREE_NETWORK`, which read `network/<name>/` from a checkout,
   is replaced by `SHADENET_RECORD`, the same record reader the node uses, because a binary has
   no checkout.
-- **The port lands in phases**, each gated by the existing conformance guard run against the
-  Rust Elder: the registry and the four discovery routes with the node's heartbeat and the
-  JavaScript client; persistence, deltas, transport features and stake mode; federation and
-  probing; incidents, the relay aggregate and the registrar advert; then the deploy wiring.
-  New vectors in `testdata/vectors.json` pin the Elder's signed documents.
+- **The conformance guard runs against the Rust Elder** (`crates/shadenet-rln/interop/elder-run.sh`,
+  blocking in CI): the Rust node announces and reports relay telemetry to it, a JavaScript-built
+  announce is accepted, the Rust and JavaScript Elders federate with each other in both
+  directions, the prober reaches the node, and the JavaScript `verifyDirectory`,
+  `verifyIncidents` and `verifyRelayAggregate` verify what it serves, fetched straight and
+  through a SOCKS stand-in as a client would. The signed directory bytes stay pinned by the
+  existing `testdata/vectors.json` entries.
+- **One JavaScript behaviour is fixed rather than copied** (the ADR 0014 rule): the JavaScript
+  Elder listed an announce's capabilities without the unknown fields a newer node may add, under
+  a `capsSig` that covered them, so such an entry failed every client's check; the Rust Elder
+  lists the capabilities as the node signed them.
 
 ## Consequences
 
 - The JavaScript Elder stays one release, as the node did, and is deleted with the JavaScript
   node. Its consumers (the clients' selection, the uptime probe, the status page, the fleet
   tally, the grove snapshot) keep working because the wire does not move.
-- The deploy renders the Elder unit from the binary; the release workflow packages a third
-  binary; the node image gains it.
+- The release workflow packages a third binary and the node image carries it; `shade-tree-node
+  elder` runs it. The deploy (`bootstrap.sh`) keeps rendering the JavaScript Elder's unit until
+  the deletion of the JavaScript node gives it a binary source, exactly as for the node.
 - `shadenet-node` loses its own copies of the shared modules and its build script; its
   `--version` commit comes from `shadenet-service`.
 - The registrar is the last JavaScript service and is not covered by this decision.

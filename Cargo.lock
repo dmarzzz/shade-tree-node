@@ -3000,6 +3000,7 @@ dependencies = [
  "http",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "smallvec",
@@ -5875,6 +5876,30 @@ dependencies = [
  "toml 1.1.6+spec-1.1.0",
  "tracing",
  "tracing-subscriber 0.3.23",
+ "zeroize",
+]
+
+[[package]]
+name = "shadenet-elder"
+version = "0.7.5"
+dependencies = [
+ "bytes",
+ "clap",
+ "flate2",
+ "getrandom 0.4.3",
+ "hex",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "shadenet",
+ "shadenet-proto",
+ "shadenet-service",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "zeroize",
 ]
 

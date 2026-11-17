@@ -124,3 +124,9 @@ jobs:
         env:
           SHADE_TREE_GATEWAY_CMD: node ${{ github.workspace }}/packages/node/gateway/gateway.mjs
         run: bash crates/shadenet-rln/interop/egress-run.sh
+
+      # The ADR 0015 conformance guard: the Rust node and a JavaScript announce reach the Rust
+      # Elder, the two Elders federate both ways, and the JavaScript verifiers check what the
+      # Rust Elder serves.
+      - name: Rust Elder Tree <- Rust node, JavaScript announce, federation with the JavaScript Elder (blocking)
+        run: bash crates/shadenet-rln/interop/elder-run.sh

@@ -4,16 +4,49 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
-### The Elder Tree moves to Rust: the shared service crate (ADR 0015)
+### The Elder Tree moves to Rust (ADR 0015)
 
+- `shadenet-elder` (`crates/shadenet-elder`) is the Elder Tree: `run` serves `/announce`,
+  `/directory`, `/directory/delta`, `/gateway/<onion>`, `/health`, `/incidents`,
+  `/incidents/alertmanager`, `/telemetry/relay` and `/telemetry/aggregate` with the same bodies,
+  status codes, headers, ETag and gzip behaviour as the JavaScript Elder; `check` prints the
+  settings and whether the ports and the signer are usable; `identity <hs-dir>` mints the Elder's
+  onion (`keygen.mjs`). Every `SHADE_TREE_BOOTNODE_*`, `SHADE_TREE_STAKE_*` and
+  `SHADE_TREE_RELAY_*` knob keeps its name and default, read under the `SHADENET_` prefix too;
+  the signer, the store and the two state files are the same files, so an existing Elder keeps
+  its signer and its onion. The registry, the global announce bucket, the HTTP slow-client
+  limits, write-through persistence with a re-verifying reload, the delta protocol, on-chain and
+  mock stake, federation, active probing, the incident feed with the Alertmanager webhook, the
+  relay telemetry aggregator and the registrar advert are all there, with the same
+  `shade_tree_bootnode_*` series and the `bootnode up on 127.0.0.1:<port>` ready line.
+  `shade-tree-node elder` (and `bootnode`) now runs this binary, like `node` runs
+  `shadenet-node`; the release packages it beside the node and the node image carries it.
+  The JavaScript Elder ships for one more release and goes with the JavaScript node.
+- Small differences, on purpose: file defaults that pointed inside the npm checkout
+  (`bootnode/bootnode-signer.key`, `incidents.local.json`, `relay-telemetry-state.local.json`)
+  now default under `SHADENET_STATE`; the deploy sets them explicitly already.
+  `SHADE_TREE_NETWORK` (a checkout's `network/<name>/`) is not read by the binary. The Rust
+  Elder waits for request headers with one timer, on a new connection and on an idle keep-alive
+  one alike, set to the smaller of `SHADE_TREE_BOOTNODE_HEADERS_TIMEOUT_MS` and
+  `SHADE_TREE_BOOTNODE_KEEPALIVE_TIMEOUT_MS`; its timers fire exactly, so
+  `SHADE_TREE_BOOTNODE_CONN_CHECK_MS` has no meaning to it. An announce whose weight is not a
+  non-negative integer is refused as unverifiable instead of being clamped to zero. A fixed
+  JavaScript behaviour (ADR 0014's rule): the capabilities of a node that signed fields this
+  build does not know are listed as the node signed them, so the entry still verifies.
+- The conformance guard gains an Elder leg (`crates/shadenet-rln/interop/elder-run.sh`,
+  blocking in `rust-verify`): with a SOCKS stand-in for Tor, the Rust node announces and
+  reports relay telemetry to the Rust Elder, a JavaScript-built announce is accepted, the Rust
+  and JavaScript Elders federate both ways, the prober reaches the node, and the JavaScript
+  `verifyDirectory`, `verifyIncidents` and `verifyRelayAggregate` verify what the Rust Elder
+  serves, fetched straight and through the SOCKS stand-in as a client would.
 - `crates/shadenet-service` holds what every ShadeNet service binary needs: the Tor HTTP
   client, the JSON-RPC client with failover, the Prometheus registry and its loopback
   `/metrics`, `/livez` and `/readyz` listener, the onion identity, the clock, atomic files, the
   build commit and logging. They moved out of `shadenet-node` unchanged; the node's series,
   refusal labels and readiness stay in the node, and a service registers its own series on top
   of the process ones. The node's `--version` commit now comes from the shared crate's build
-  script. [ADR 0015](docs/adr/0015-elder-in-rust.md) decides the Elder Tree becomes
-  `shadenet-elder` on this crate, with its routes, knobs, files and series unchanged.
+  script. A binary crate has one entrypoint and keeps everything else private; the shared crate
+  is where the `pub` items live.
 
 ### The node moves to Rust: the operator process (ADR 0014)
 

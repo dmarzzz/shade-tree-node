@@ -20,14 +20,14 @@ reference. The Rust SDK and the JavaScript SDK both test against them
 crates/
 ├── shadenet/         THE RUST SDK: Client, config, status, connect, fetch, the local proxy
 ├── shadenet-cli/     the `shadenet` binary (also installed as `shade-tree` for one minor release)
+├── shadenet-elder/   the `shadenet-elder` binary: the Elder Tree, the live node directory behind an onion (ADR 0015)
 ├── shadenet-node/    the `shadenet-node` binary: the egress node, its heartbeat and Tor supervisor (ADR 0014)
 ├── shadenet-proto/   canonical bytes, signatures, selection, receipts (no I/O)
 ├── shadenet-rln/     RLN proving (`prove` feature), verification, and artifact bindings
 └── shadenet-service/ what the service binaries share: Tor HTTP, JSON-RPC, metrics, the onion identity, logging
 ```
 
-A service binary (`shadenet-node`, and `shadenet-elder` under [ADR 0015](../docs/adr/0015-elder-in-rust.md))
-has one entrypoint and keeps its modules private; `shadenet-service` is where the `pub`
+A service binary (`shadenet-node`, `shadenet-elder`) has one entrypoint and keeps its modules private; `shadenet-service` is where the `pub`
 items both need live, so no binary depends on another.
 
 `shadenet-proto` owns every deterministic security decision and has no I/O or

@@ -387,8 +387,9 @@ rows 3 and 4).
 
 ## 5. Bootnode HTTP API
 
-Server: `packages/node/bootnode/server.mjs:151` `makeServer`. All responses
-`content-type: application/json`. Listens on loopback (`127.0.0.1:SHADE_TREE_BOOTNODE_PORT`, default
+Server: `packages/node/bootnode/server.mjs:151` `makeServer`; the Rust Elder
+(`crates/shadenet-elder/src/server.rs`, ADR 0015) serves the same routes, bodies and status codes.
+All responses `content-type: application/json`. Listens on loopback (`127.0.0.1:SHADE_TREE_BOOTNODE_PORT`, default
 `8877`) behind its own onion service.
 
 Public copy may call the bootnode the **Elder Tree**, and the group of nodes it lists,

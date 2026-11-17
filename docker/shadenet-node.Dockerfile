@@ -38,8 +38,9 @@ RUN case "$TARGETARCH" in \
       *) echo "unsupported TARGETARCH $TARGETARCH" >&2; exit 1 ;; \
     esac \
     && rustup target add "$target" \
-    && SHADENET_BUILD_COMMIT="$COMMIT" cargo zigbuild --release --locked -p shadenet-node --target "$target" \
-    && install -m 0755 "target/$target/release/shadenet-node" /shadenet-node
+    && SHADENET_BUILD_COMMIT="$COMMIT" cargo zigbuild --release --locked -p shadenet-node -p shadenet-elder --target "$target" \
+    && install -m 0755 "target/$target/release/shadenet-node" /shadenet-node \
+    && install -m 0755 "target/$target/release/shadenet-elder" /shadenet-elder
 
 FROM debian:bookworm-slim
 
@@ -62,6 +63,8 @@ RUN apt-get update \
     && mkdir -p /state && chown shadenet:shadenet /state
 
 COPY --from=build /shadenet-node /usr/local/bin/shadenet-node
+# the Elder Tree (ADR 0015) ships in the same image; run it with `--entrypoint shadenet-elder`
+COPY --from=build /shadenet-elder /usr/local/bin/shadenet-elder
 
 ENV SHADENET_STATE=/state \
     SHADENET_BUILD_COMMIT=${COMMIT}

@@ -84,8 +84,8 @@ const COMMANDS = {
   run:               { help: "run an agent with process-scoped ShadeNet routing: shade-tree run [--proxy http://127.0.0.1:8888] -- <command> [args]" },
   drain:             { help: "operator: shade-tree-node drain on|off|status [--wait] -- announce a planned stop (clients route around this node), then restart or stop it" },
   keygen:            { script: "packages/node/bootnode/keygen.mjs",       help: "mint an onion identity (refuses overwrite): shade-tree-node keygen <hsDir> [--label name] [--force]" },
-  elder:             { script: "packages/node/bootnode/server.mjs",       help: "run the Elder Tree, which signs the canopy directory", long: true },
-  bootnode:          { script: "packages/node/bootnode/server.mjs",       help: "legacy alias for `elder`", long: true },
+  elder:             { binary: "run", bin: "shadenet-elder",             help: "run the Elder Tree, which signs the canopy directory (the Rust shadenet-elder)", long: true },
+  bootnode:          { binary: "run", bin: "shadenet-elder",             help: "legacy alias for `elder`", long: true },
   heartbeat:         { retired: "the Rust node announces itself to every Elder Tree from inside `shade-tree-node node` (`shadenet-node run`, ADR 0014); set SHADE_TREE_BOOTNODE_ONIONS on the node", help: "retired: the node announces itself (see `node`)" },
   join:              { script: "group/join.mjs",            help: "guided front door: `shade-tree-node join [member]` or `shade-tree-node join node`; make an identity + print the next commands (`gateway` remains an alias)" },
   enroll:            { script: "group/enroll.mjs",          help: "generate a member identity + print its secret/commitment" },
@@ -99,8 +99,8 @@ const COMMANDS = {
   "withdraw-gateway":{ script: "group/exit-gateway.mjs", prepend: ["withdraw"], help: "after UNBONDING, reclaim the gateway bond: shade-tree-node withdraw-gateway [--recipient 0x..] [--dry-run]" },
   "gateway-status":  { script: "group/exit-gateway.mjs", prepend: ["status"],   help: "read-only: this operator's GatewayRegistry stake state (staked / exiting / withdrawableAt): shade-tree-node gateway-status [--operator 0x..]" },
   "sign-directory":  { script: "group/sign-directory.mjs",  help: "sign a static fleet directory (offline discovery)" },
-  node:              { binary: "run",                                     help: "run a proof-gated Shade Tree egress node (the Rust shadenet-node)", long: true },
-  gateway:           { binary: "run",                                     help: "legacy alias for `node`", long: true },
+  node:              { binary: "run", bin: "shadenet-node",              help: "run a proof-gated Shade Tree egress node (the Rust shadenet-node)", long: true },
+  gateway:           { binary: "run", bin: "shadenet-node",              help: "legacy alias for `node`", long: true },
   proxy:             { script: "packages/node/client/shim.mjs",           help: "run the local HTTP-CONNECT proxy", long: true },
   client:            { script: "packages/node/client/shim.mjs",           help: "legacy alias for `proxy`", long: true },
   shim:              { script: "packages/node/client/shim.mjs",           help: "legacy alias for `proxy`", long: true },
@@ -204,6 +204,15 @@ function nodeHelp(command = "node") {
   console.log("Public rollout remains blocked by the deployment gates and development ZK setup.\n");
   console.log("Guided local setup: shade-tree-node join node");
   console.log("Guide: https://github.com/dmarzzz/shade-tree-node/blob/main/docs/OPERATOR.md");
+}
+
+function elderHelp(command = "elder") {
+  console.log(`shade-tree ${command}: run the Elder Tree (the bootnode), the live node directory behind an onion\n`);
+  console.log("usage: shade-tree-node elder [--port N] [--admission open|stake] [--stake-mode onchain|mock] [--gateway-registry 0x..] [--rpc-url URL]\n");
+  console.log("The Elder is the Rust `shadenet-elder` binary (ADR 0015): a build in this checkout, else the one on PATH.");
+  console.log("Every flag becomes its SHADE_TREE_BOOTNODE_* variable (docs/CONFIG.md); federation, probing and the");
+  console.log("incident webhook are environment-only knobs (docs/BOOTNODE.md).");
+  console.log("Guide: https://github.com/dmarzzz/shade-tree-node/blob/main/docs/BOOTNODE.md");
 }
 
 function parseRunArgs(argv) {
@@ -409,6 +418,7 @@ async function main() {
   if (flags.help) {
     if (["proxy", "client", "shim"].includes(cmd)) proxyHelp(cmd);
     else if (["node", "gateway"].includes(cmd)) nodeHelp(cmd);
+    else if (["elder", "bootnode"].includes(cmd)) elderHelp(cmd);
     else console.log(`shade-tree ${cmd}: ${entry.help}`);
     process.exit(0);
   }
@@ -480,22 +490,23 @@ async function main() {
   }
 
   const [program, ...prefix] = entry.binary
-    ? [nodeBinary(cmd), entry.binary]
+    ? [nodeBinary(cmd, entry.bin), entry.binary]
     : [process.execPath, join(ROOT, entry.script), ...(entry.prepend || [])];
   const child = spawn(program, [...prefix, ...positionals, ...passthrough], { stdio: "inherit", env });
   forwardChild(child, `shade-tree ${cmd}`);
 }
 
-// The node is the Rust `shadenet-node` binary (ADR 0014): a build in this checkout first, then
-// the one on PATH, so a developer runs what they just built and an installed CLI runs the release.
-function nodeBinary(cmd) {
+// The node and the Elder are Rust binaries (ADR 0014, ADR 0015): a build in this checkout first,
+// then the one on PATH, so a developer runs what they just built and an installed CLI runs the
+// release.
+function nodeBinary(cmd, name) {
   const built = ["release", "debug"]
-    .map((profile) => join(ROOT, "target", profile, "shadenet-node"))
+    .map((profile) => join(ROOT, "target", profile, name))
     .find((path) => existsSync(path));
   if (built) return built;
-  const onPath = (process.env.PATH || "").split(delimiter).some((dir) => dir && existsSync(join(dir, "shadenet-node")));
-  if (onPath) return "shadenet-node";
-  console.error(`shade-tree ${cmd}: the node is the Rust \`shadenet-node\` binary (ADR 0014) and none was found: put a release build on PATH or run \`cargo build --release -p shadenet-node\` in this checkout`);
+  const onPath = (process.env.PATH || "").split(delimiter).some((dir) => dir && existsSync(join(dir, name)));
+  if (onPath) return name;
+  console.error(`shade-tree ${cmd}: this command is the Rust \`${name}\` binary and none was found: put a release build on PATH or run \`cargo build --release -p ${name}\` in this checkout`);
   process.exit(127);
 }
 

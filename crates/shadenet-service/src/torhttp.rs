@@ -117,6 +117,27 @@ pub async fn request_over_tor(
     )))
 }
 
+/// Open a stream to `host:port` through Tor without speaking on it: a reachability probe,
+/// or a caller that runs its own protocol on the stream.
+pub async fn connect_over_tor(
+    socks: &Socks,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> Result<TcpStream, Error> {
+    let host = normalize_onion(host);
+    let dial = async {
+        let proxy = TcpStream::connect((socks.host.as_str(), socks.port))
+            .await
+            .map_err(|e| Error::Transport(format!("tor socks unreachable: {e}")))?;
+        socks5_connect(proxy, &host, port).await
+    };
+    match tokio::time::timeout(timeout, dial).await {
+        Ok(result) => result,
+        Err(_) => Err(Error::Transport("timeout".into())),
+    }
+}
+
 /// The same request to a plain `host:port` peer (a private network or a test).
 pub async fn request_plain(host: &str, port: u16, request: &Request<'_>) -> Result<Value, Error> {
     let dial = async {
