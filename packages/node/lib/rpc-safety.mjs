@@ -258,8 +258,8 @@ function routesLike(base, agent) {
 // and whenever it cannot be established that the global dispatcher is an Agent with nothing
 // configured but what this one changes. A proxy dispatcher (for example the EnvHttpProxyAgent
 // that NODE_USE_ENV_PROXY=1 installs), an Agent built with its own connect function, TLS options,
-// factory or limits, a composed (intercepted) or subclassed one, or one whose internals cannot be
-// read all keep routing RPC traffic: RPC then uses the global dispatcher, as before this change. The
+// factory or limits, a composed (intercepted) one, any subclass of Agent at any depth, or one whose
+// internals cannot be read: RPC then uses the global dispatcher, as before this change. The
 // check runs on every call, so a global dispatcher installed later is honoured from the next call.
 export function rpcDispatcher({ env = process.env } = {}) {
   const keepAliveMs = rpcKeepAliveMs(env);
@@ -272,10 +272,15 @@ export function rpcDispatcher({ env = process.env } = {}) {
   // proxy agent or any other dispatcher class is never instantiated here.
   if (typeof Dispatcher !== "function" || Object.getPrototypeOf(base) !== Dispatcher.prototype) return null;
   if (!ownSymbol(base, "options") || !ownSymbol(base, "factory")) return null;
-  // A subclass of an Agent (its parent class already has undici's own dispatch slot) can hold
-  // routing state this check cannot read, so it is left alone.
-  const parentProto = Object.getPrototypeOf(Dispatcher.prototype);
-  if (!parentProto || ownSymbol(parentProto, "dispatch")) return null;
+  // Only undici's Agent class itself, never a subclass at any depth: a subclass can route through
+  // its own methods or instance state that this check cannot read. undici's Agent is the one class
+  // on the chain that defines its internal dispatch slot. So that slot must be defined on the
+  // global's own class and on nothing above it. A subclass that does not redefine the slot fails
+  // the first test, and one that does fails the second, however deep it sits.
+  if (!ownSymbol(Dispatcher.prototype, "dispatch")) return null;
+  for (let proto = Object.getPrototypeOf(Dispatcher.prototype); proto; proto = Object.getPrototypeOf(proto)) {
+    if (ownSymbol(proto, "dispatch")) return null;
+  }
   if (rpcAgentCache?.Dispatcher !== Dispatcher || rpcAgentCache.keepAliveMs !== keepAliveMs) {
     let agent;
     try {

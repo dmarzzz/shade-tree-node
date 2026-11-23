@@ -213,12 +213,47 @@ test("dispatcher: an operator-configured plain Agent (connect function) is never
   } finally { await direct.close(); await routed.close(); }
 });
 
+// An Agent subclass two levels down, whose routing lives in a public dispatch override and in a
+// field set only on the installed instance (a fresh instance of the same class would not route).
+// No subclass is replaced, at any depth: the `origin` fixture the URL names must see no request.
+test("dispatcher: an indirect Agent subclass with instance routing is never bypassed, on the wire", async () => {
+  const origin = await fakeRpc({ result: "origin" });
+  const routed = await fakeRpc({ result: "routed" });
+  try {
+    await withGlobalDispatcher(null, async (real) => {
+      const Agent = real.constructor;
+      class RoutingAgent extends Agent {
+        constructor(options) { super(options); this.route = null; }
+        dispatch(opts, handler) {
+          return super.dispatch(this.route ? { ...opts, origin: this.route } : opts, handler);
+        }
+      }
+      class DeployedAgent extends RoutingAgent {}
+      const installed = new DeployedAgent();
+      installed.route = routed.url.replace(/\/$/, "");
+      globalThis[GLOBAL_DISPATCHER] = installed;
+      try {
+        assert.equal(rpcDispatcher({ env: {} }), null, "no RPC dispatcher over an indirect subclass");
+        assert.equal(await jsonRpcCall(origin.url, "eth_chainId", [], { timeoutMs: 5000, retries: 0, dispatcher: null }), "routed");
+        assert.equal(await jsonRpcCall(origin.url, "eth_chainId", [], { timeoutMs: 5000, retries: 0 }), "routed");
+        assert.equal(origin.requests, 0, "the direct origin received no bypass request");
+        assert.equal(routed.requests, 2);
+      } finally { await installed.destroy(); }
+    });
+  } finally { await origin.close(); await routed.close(); }
+});
+
 test("dispatcher: any other configured, composed, subclassed or patched Agent is left alone", async () => {
   await withGlobalDispatcher(null, async (real) => {
     const Agent = real.constructor;
     const plain = new Agent();
     const patched = new Agent();
     patched.dispatch = (opts, handler) => Agent.prototype.dispatch.call(patched, opts, handler);
+    const kDispatch = Object.getOwnPropertySymbols(Agent.prototype).find((s) => s.description === "dispatch");
+    assert.ok(kDispatch, "undici's Agent defines its internal dispatch slot");
+    class SlotOverride extends Agent { [kDispatch](opts, handler) { return super[kDispatch](opts, handler); } }
+    class Middle extends Agent {}
+    class DeepSlotOverride extends Middle { [kDispatch](opts, handler) { return super[kDispatch](opts, handler); } }
     const variants = {
       "connect options (TLS)": new Agent({ connect: { rejectUnauthorized: false } }),
       "connect timeout": new Agent({ connect: { timeout: 1234 } }),
@@ -228,6 +263,9 @@ test("dispatcher: any other configured, composed, subclassed or patched Agent is
       "own keep-alive": new Agent({ keepAliveTimeout: 1000 }),
       "composed interceptor": plain.compose((dispatch) => dispatch),
       "subclass": new (class extends Agent {})(),
+      "two-level subclass": new (class extends Middle {})(),
+      "subclass redefining the internal dispatch slot": new SlotOverride(),
+      "two-level subclass redefining the internal dispatch slot": new DeepSlotOverride(),
       "instance dispatch override": patched,
     };
     try {
@@ -245,6 +283,22 @@ test("dispatcher: any other configured, composed, subclassed or patched Agent is
       globalThis[GLOBAL_DISPATCHER] = new OtherDispatcher();
       assert.equal(rpcDispatcher({ env: {} }), null, "another dispatcher class");
       assert.equal(built, 1, "rpcDispatcher did not construct another instance of a non-Agent class");
+      // Same for a class with options and factory slots but no internal dispatch slot, and for one
+      // with an internal dispatch slot but no options and factory slots.
+      class SlotShaped {
+        constructor() { built++; this[Symbol("options")] = {}; this[Symbol("factory")] = () => null; }
+        dispatch() { return false; }
+      }
+      globalThis[GLOBAL_DISPATCHER] = new SlotShaped();
+      assert.equal(rpcDispatcher({ env: {} }), null, "options and factory slots without a dispatch slot");
+      class DispatchSlotOnly {
+        constructor() { built++; }
+        [Symbol("dispatch")]() { return false; }
+        dispatch() { return false; }
+      }
+      globalThis[GLOBAL_DISPATCHER] = new DispatchSlotOnly();
+      assert.equal(rpcDispatcher({ env: {} }), null, "a dispatch slot without options and factory slots");
+      assert.equal(built, 3, "rpcDispatcher constructed neither of those classes");
     } finally {
       for (const d of [plain, ...Object.values(variants)]) await d.destroy().catch(() => {});
     }
