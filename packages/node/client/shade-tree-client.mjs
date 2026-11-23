@@ -346,6 +346,25 @@ export const DEFAULT_FETCH_MAX_BODY_BYTES = 8 * 1024 * 1024;
 // nodes before the drain change (#379) enforce by destroying every stream. Same as the Rust client.
 export const SESSION_NEW_STREAM_HEADROOM_MS = 45_000;
 
+// Session classes this client requests, best first (ADR 0013 decision 6; the Rust client's
+// `CLASSES` order). `research-v2` is `research-v1` with 60 s idle instead of 15 s, so a client that
+// opens one tunnel at a time keeps its book across gaps of up to about a minute (still within
+// the book's life minus SESSION_NEW_STREAM_HEADROOM_MS, see _liveBook).
+export const SESSION_CLASS_PREFERENCE = Object.freeze(["research-v2", "research-v1"]);
+
+// The class to request at `cand`. A candidate with SIGNED caps (`cand.session`) gets the best class
+// it advertises, or null when it advertises none this client knows. A candidate without caps is
+// eligible only when the client is pinned (`pinned`); it gets the best class not in `refused` (the
+// classes that node already answered `session-class` to), or null when every class was refused.
+export function pickSessionClass(cand, { pinned = false, refused = null } = {}) {
+  if (cand?.session) {
+    const advertised = Array.isArray(cand.session.classes) ? cand.session.classes : [];
+    return SESSION_CLASS_PREFERENCE.find((id) => advertised.includes(id) && SESSION_CLASSES[id]) ?? null;
+  }
+  if (!pinned) return null;
+  return SESSION_CLASS_PREFERENCE.find((id) => SESSION_CLASSES[id] && !refused?.has(id)) ?? null;
+}
+
 export class ShadeTreeGatewayAckError extends Error {
   constructor(code, message, options = {}) {
     super(message, options);
@@ -672,11 +691,13 @@ export class ShadeTreeClient {
     this.socksIsolation = opts.socksIsolation !== false && process.env.SHADE_TREE_SOCKS_ISOLATION !== "0";
     // Session tickets (ADR 0011): { sessionTickets } or SHADE_TREE_SESSION_TICKETS=1 (the deployment
     // record's `sessionTickets`, set at H2). OFF by default: one proof, one tunnel, per-tunnel
-    // rotation. ON: one proof buys a research-v1 book of six tickets at ONE node and the next five
-    // tunnels ride cheap ticket envelopes on the same Tor circuit, linkable to that node.
+    // rotation. ON: one proof buys a book of six tickets at ONE node (research-v2 where the node
+    // serves it, else research-v1; see pickSessionClass) and the next five tunnels ride cheap
+    // ticket envelopes on the same Tor circuit, linkable to that node.
     this.sessionTickets = opts.sessionTickets != null ? Boolean(opts.sessionTickets) : envFlag(process.env.SHADE_TREE_SESSION_TICKETS);
     this._books = new Map();          // onion -> live ticket book
     this._sessionRefused = new Set(); // onions that answered session-unsupported
+    this._sessionClassRefused = new Map(); // pinned onion without caps -> Set of classes it answered session-class to
     // Injectable SOCKS client (tests pass a fake); defaults to the real `socks` lib.
     this._socks = opts.socksClient || SocksClient;
     // Gateway selection: a pinned onion, or a signed directory (fleet rotation). Direct SDK
@@ -947,11 +968,14 @@ export class ShadeTreeClient {
     const { pv, pa } = plan;
 
     // With session tickets on, the proof opens a book at the first session-capable candidate
-    // (its SIGNED caps carry `session` with research-v1; a pinned onion is assumed capable until
-    // it says otherwise) and the first ticket opens this tunnel.
+    // (its SIGNED caps carry `session` with a class this client knows; a pinned onion is assumed
+    // to serve research-v2 until it answers session-class, then research-v1, until it answers
+    // session-unsupported) and the first ticket opens this tunnel.
     if (this.sessionTickets) {
-      const sessionCand = cands.find((c) => !this._sessionRefused.has(c.onion) && (c.session ? c.session.classes.includes("research-v1") : !!(this.onion || onion)));
-      if (sessionCand) return this._sessionInit(target, sessionCand, { pv, pa }, emit);
+      const pinned = !!(this.onion || onion);
+      const classFor = (c) => pickSessionClass(c, { pinned, refused: this._sessionClassRefused.get(c.onion) });
+      const sessionCand = cands.find((c) => !this._sessionRefused.has(c.onion) && classFor(c));
+      if (sessionCand) return this._sessionInit(target, sessionCand, { pv, pa }, emit, classFor(sessionCand));
     }
 
     emit({ phase: "prove", status: "start", artifact: pa.id });
@@ -1171,9 +1195,8 @@ export class ShadeTreeClient {
     return null;
   }
 
-  // Prove once to open a research-v1 book at `cand`, then spend its first ticket for `target`.
-  async _sessionInit(target, cand, { pv, pa }, emit) {
-    const classId = "research-v1";
+  // Prove once to open a `classId` book at `cand`, then spend its first ticket for `target`.
+  async _sessionInit(target, cand, { pv, pa }, emit, classId = "research-v1") {
     const policy = SESSION_CLASSES[classId];
     const secrets = Array.from({ length: policy.tickets }, () => randomBytes(32));
     const built = buildTicketBook(secrets);
@@ -1232,7 +1255,17 @@ export class ShadeTreeClient {
     }
     if (ack.ok !== true) {
       if (ack.err === "session-unsupported") this._sessionRefused.add(cand.onion);
-      emit({ phase: "session", status: "refused", onion: cand.onion, error: ack.err });
+      emit({ phase: "session", status: "refused", onion: cand.onion, error: ack.err, class: classId });
+      if (ack.err === "session-class" && !cand.session) {
+        // A pinned node without caps that does not serve this class. The node checks the class
+        // before it verifies the proof, so nothing was admitted; the class is bound into the
+        // signal, so the next class needs its own proof on a NEW slot (never this slot again).
+        const refused = this._sessionClassRefused.get(cand.onion) || new Set();
+        refused.add(classId);
+        this._sessionClassRefused.set(cand.onion, refused);
+        const next = pickSessionClass(cand, { pinned: true, refused });
+        if (next) return this._sessionInit(target, cand, { pv, pa }, emit, next);
+      }
       throw this._gateRefusalError(ack, cand.onion);
     }
     const echo = ack.session || {};

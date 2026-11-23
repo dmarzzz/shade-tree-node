@@ -99,7 +99,8 @@ try {
     const events = [];
     const t1 = await c.connect(echoTarget, { onEvent: (e) => events.push(e) });
     assert.equal(proofsVerified, 1, "one proof for the first tunnel");
-    assert.ok(events.some((e) => e.phase === "session" && e.status === "opened" && e.tickets === 6), "a research-v1 book was opened");
+    // Pinned with no caps: the client asks for its best class, research-v2, and the node serves it.
+    assert.ok(events.some((e) => e.phase === "session" && e.status === "opened" && e.tickets === 6 && e.class === "research-v2"), "a research-v2 book was opened");
     assert.equal(t1.shadeTree.ticket, 0);
     assert.equal(t1.shadeTree.session.length, 64);
     await roundTrip(t1, "first through ticket 0");
