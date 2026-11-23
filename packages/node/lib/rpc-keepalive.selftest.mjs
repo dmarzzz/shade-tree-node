@@ -15,6 +15,7 @@
 import assert from "node:assert/strict";
 import dc from "node:diagnostics_channel";
 import http from "node:http";
+import net from "node:net";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
@@ -29,13 +30,15 @@ const GLOBAL_DISPATCHER = Symbol.for("undici.globalDispatcher.1");
 const POLL_GAP_MS = 12_000;
 
 // ---- fake JSON-RPC server ---------------------------------------------------
-// Answers every call with result "0x1". `hold()` makes the NEXT request wait until the returned
+// Answers every call with `result` (default "0x1"). `hold()` makes the NEXT request wait until the returned
 // release function is called. The server never drops an idle socket unless a test says so, and it
 // sends no `Keep-Alive: timeout=` hint (keepAliveTimeout 0), so the client's own idle timeout decides,
 // as with the RPC providers we measured.
-async function fakeRpc() {
+async function fakeRpc({ result = "0x1" } = {}) {
   const holds = [];
   let requests = 0;
+  let tunnels = 0;
+  const tunnelSockets = new Set();
   const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (c) => { body += c; });
@@ -44,19 +47,34 @@ async function fakeRpc() {
       const { id } = JSON.parse(body);
       const answer = () => {
         res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ jsonrpc: "2.0", id, result: "0x1" }));
+        res.end(JSON.stringify({ jsonrpc: "2.0", id, result }));
       };
       const hold = holds.shift();
       if (hold) { hold.arrived(); hold.wait.then(answer); } else answer();
     });
   });
+  // As an HTTP proxy: a CONNECT tunnel to `localhost:<port>` (only used by the env-proxy case).
+  server.on("connect", (req, socket, head) => {
+    tunnels++;
+    const port = Number(String(req.url).split(":").pop());
+    const upstream = net.connect({ host: "localhost", port }, () => {
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      if (head.length) upstream.write(head);
+      socket.pipe(upstream);
+      upstream.pipe(socket);
+    });
+    for (const s of [socket, upstream]) { tunnelSockets.add(s); s.on("error", () => {}); s.on("close", () => tunnelSockets.delete(s)); }
+    socket.on("close", () => upstream.destroy());
+    upstream.on("close", () => socket.destroy());
+  });
   server.keepAliveTimeout = 0;
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => server.listen(0, "localhost", resolve));
   const port = server.address().port;
   return {
     port,
-    url: `http://127.0.0.1:${port}/`,
+    url: `http://localhost:${port}/`,
     get requests() { return requests; },
+    get tunnels() { return tunnels; },
     // Returns { arrived: Promise (request reached the server), release() }.
     hold() {
       let release;
@@ -67,7 +85,11 @@ async function fakeRpc() {
       return { arrived, release };
     },
     closeIdle() { server.closeIdleConnections(); },
-    close() { server.closeAllConnections(); return new Promise((r) => server.close(r)); },
+    close() {
+      for (const s of tunnelSockets) s.destroy();
+      server.closeAllConnections();
+      return new Promise((r) => server.close(r));
+    },
   };
 }
 
@@ -124,6 +146,7 @@ test("env: default, valid values, off, cap, and garbage fall back to the default
     ["-1", 30_000], ["abc", 30_000], ["1e4", 30_000], ["0x10", 30_000], ["12.5", 30_000],
     ["Infinity", 30_000], ["NaN", 30_000], ["30000ms", 30_000], ["99999999999", 30_000],
     ["\u0661\u0662", 30_000], ["+5", 30_000], [" ", 30_000],
+    ["\t20000\n", 20_000], ["0000020000", 20_000], ["00000020000", 30_000],
   ];
   for (const [raw, want] of cases) {
     const env = raw === undefined ? {} : { SHADE_TREE_RPC_KEEPALIVE_MS: raw };
@@ -156,6 +179,101 @@ test("dispatcher: a proxy (non-Agent) global dispatcher is never bypassed", asyn
       assert.equal(proxy.dispatched, 1, "the RPC request went through the installed global dispatcher");
     });
   } finally { await srv.close(); }
+});
+
+// An operator-configured plain Agent (same class as Node's default) must never be replaced. The
+// connect function sends every connection to the `routed` fixture, whatever origin was asked for;
+// the `direct` fixture is the origin the URL names and must see no request at all.
+test("dispatcher: an operator-configured plain Agent (connect function) is never bypassed, on the wire", async () => {
+  const direct = await fakeRpc({ result: "direct" });
+  const routed = await fakeRpc({ result: "routed" });
+  try {
+    await withGlobalDispatcher(null, async (real) => {
+      const Agent = real.constructor;
+      let connectorCalls = 0;
+      const configured = new Agent({
+        connect(_opts, callback) {
+          connectorCalls++;
+          const socket = net.connect({ host: "localhost", port: routed.port });
+          socket.once("connect", () => callback(null, socket));
+          socket.once("error", (e) => callback(e, null));
+        },
+      });
+      globalThis[GLOBAL_DISPATCHER] = configured;
+      try {
+        assert.equal(configured.constructor.name, "Agent", "the same class name as Node's default");
+        assert.equal(rpcDispatcher({ env: {} }), null, "no RPC dispatcher over a configured Agent");
+        assert.equal(await jsonRpcCall(direct.url, "eth_chainId", [], { timeoutMs: 5000, retries: 0 }), "routed");
+        assert.equal(await jsonRpcCall(direct.url, "eth_chainId", [], { timeoutMs: 5000, retries: 0, dispatcher: null }), "routed");
+        assert.equal(direct.requests, 0, "the direct origin received no bypass request");
+        assert.equal(routed.requests, 2);
+        assert.ok(connectorCalls >= 1, "the operator's connect function was used");
+      } finally { await configured.destroy(); }
+    });
+  } finally { await direct.close(); await routed.close(); }
+});
+
+test("dispatcher: any other configured, composed, subclassed or patched Agent is left alone", async () => {
+  await withGlobalDispatcher(null, async (real) => {
+    const Agent = real.constructor;
+    const plain = new Agent();
+    const patched = new Agent();
+    patched.dispatch = (opts, handler) => Agent.prototype.dispatch.call(patched, opts, handler);
+    const variants = {
+      "connect options (TLS)": new Agent({ connect: { rejectUnauthorized: false } }),
+      "connect timeout": new Agent({ connect: { timeout: 1234 } }),
+      "custom factory": new Agent({ factory: (origin, opts) => new Agent(opts) }),
+      "connection limit": new Agent({ connections: 1 }),
+      "max origins": new Agent({ maxOrigins: 5 }),
+      "own keep-alive": new Agent({ keepAliveTimeout: 1000 }),
+      "composed interceptor": plain.compose((dispatch) => dispatch),
+      "subclass": new (class extends Agent {})(),
+      "instance dispatch override": patched,
+    };
+    try {
+      for (const [label, dispatcher] of Object.entries(variants)) {
+        globalThis[GLOBAL_DISPATCHER] = dispatcher;
+        assert.equal(rpcDispatcher({ env: {} }), null, label);
+      }
+      globalThis[GLOBAL_DISPATCHER] = plain;
+      assert.ok(rpcDispatcher({ env: {} }), "an unconfigured `new Agent()` gets the RPC dispatcher");
+      globalThis[GLOBAL_DISPATCHER] = { dispatch() {} };
+      assert.equal(rpcDispatcher({ env: {} }), null, "a plain object");
+      // A dispatcher class without undici's Agent slots (a proxy agent, for one) is never constructed.
+      let built = 0;
+      class OtherDispatcher { constructor() { built++; } dispatch() { return false; } }
+      globalThis[GLOBAL_DISPATCHER] = new OtherDispatcher();
+      assert.equal(rpcDispatcher({ env: {} }), null, "another dispatcher class");
+      assert.equal(built, 1, "rpcDispatcher did not construct another instance of a non-Agent class");
+    } finally {
+      for (const d of [plain, ...Object.values(variants)]) await d.destroy().catch(() => {});
+    }
+  });
+});
+
+// The actual EnvHttpProxyAgent Node installs for NODE_USE_ENV_PROXY=1, in a child process (it is
+// installed at startup). The RPC request must go through the proxy: one CONNECT tunnel, and the
+// origin answers through it.
+test("dispatcher: NODE_USE_ENV_PROXY=1 (EnvHttpProxyAgent) keeps RPC on the proxy", async () => {
+  const origin = await fakeRpc({ result: "origin" });
+  const proxy = await fakeRpc({ result: "proxy-itself" });
+  try {
+    const proxyUrl = `http://localhost:${proxy.port}`;
+    const env = { ...process.env, NODE_USE_ENV_PROXY: "1", NO_PROXY: "", no_proxy: "" };
+    for (const name of ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"]) env[name] = proxyUrl;
+    const out = await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), "--env-proxy-child", origin.url], { env, stdio: ["ignore", "pipe", "inherit"] });
+      let text = "";
+      child.stdout.on("data", (c) => { text += c; });
+      const timer = setTimeout(() => { child.kill(); reject(new Error("env-proxy child still alive after 10 s")); }, 10_000);
+      child.on("exit", (c) => { clearTimeout(timer); resolve({ c, text }); });
+    });
+    assert.equal(out.c, 0, out.text);
+    const seen = JSON.parse(out.text.trim().split("\n").pop());
+    assert.deepEqual(seen, { cls: "EnvHttpProxyAgent", dedicated: false, result: "origin" });
+    assert.equal(proxy.tunnels, 1, "the RPC request went through one CONNECT tunnel");
+    assert.equal(origin.requests, 1);
+  } finally { await origin.close(); await proxy.close(); }
 });
 
 test("jsonRpcCall: an injected fetchImpl gets no dispatcher unless one is passed", async () => {
@@ -205,6 +323,26 @@ test("interleaving: held request survives a rebuild (success) and a fallback to 
         assert.equal(await held, "0x1", "held call completed (failed reload)");
       });
       assert.equal(rpcDispatcher(), before, "the cached dispatcher is reused once the global is an Agent again");
+    });
+    // Failed reload, second kind: the global becomes an operator-configured Agent of the SAME class,
+    // so the cached keep-alive Agent still matches by class but must not be used.
+    await withEnv("26000", async () => {
+      const before = rpcDispatcher();
+      assert.ok(before);
+      const h = srv.hold();
+      const held = jsonRpcCall(srv.url, "eth_call", [], { timeoutMs: 10_000, retries: 0 });
+      held.catch(() => {});
+      await h.arrived;
+      await withGlobalDispatcher(null, async (real) => {
+        const configured = new real.constructor({ connect: { timeout: 4321 } });
+        globalThis[GLOBAL_DISPATCHER] = configured;
+        try {
+          assert.equal(rpcDispatcher(), null, "reload failed: the cached Agent is not used over a configured one");
+          h.release();
+          assert.equal(await held, "0x1", "held call on the cached Agent completed (configured global)");
+        } finally { await configured.destroy(); }
+      });
+      assert.equal(rpcDispatcher(), before, "cached dispatcher back once the default global is restored");
     });
   } finally { await srv.close(); }
 });
@@ -289,7 +427,10 @@ test("poll shape: 3 polls x 3 calls, 12 s apart: polls 2-3 reuse a socket with t
   } finally { await ka.close(); await control.close(); }
 });
 
-if (process.argv[2] === "--child") {
+if (process.argv[2] === "--env-proxy-child") {
+  const result = await jsonRpcCall(process.argv[3], "eth_chainId", [], { timeoutMs: 5000, retries: 0 });
+  console.log(JSON.stringify({ cls: globalThis[GLOBAL_DISPATCHER].constructor.name, dedicated: rpcDispatcher() !== null, result }));
+} else if (process.argv[2] === "--child") {
   const result = await jsonRpcCall(process.argv[3], "eth_chainId", [], { timeoutMs: 5000, retries: 0 });
   console.log(`child-ok ${result}`);
 } else {
@@ -307,5 +448,5 @@ if (process.argv[2] === "--child") {
     console.log(`FAIL: ${failed}/${cases.length} RPC keep-alive cases failed`);
     process.exit(1);
   }
-  console.log(`PASS: RPC keep-alive (${cases.length} cases): env parse, dispatcher cache, proxy not bypassed, in-flight rebuild, server idle close, process exit, 12 s poll reuse`);
+  console.log(`PASS: RPC keep-alive (${cases.length} cases): env parse, dispatcher cache, proxy / configured Agent / env proxy not bypassed, in-flight rebuild, server idle close, process exit, 12 s poll reuse`);
 }

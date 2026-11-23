@@ -1,3 +1,4 @@
+import { isDeepStrictEqual, types as utilTypes } from "node:util";
 import { registry } from "./metrics.mjs";
 
 // SHADE_TREE_RPC_URL may name several endpoints, comma-separated, tried in order (OPS-8). One
@@ -210,8 +211,9 @@ export const MAX_RPC_KEEPALIVE_MS = 600_000;
 const GLOBAL_DISPATCHER = Symbol.for("undici.globalDispatcher.1");
 
 // Decimal milliseconds; `0` turns the dedicated dispatcher off (RPC uses the global one, as before).
-// Anything else that is not a plain non-negative integer falls back to the default; large values
-// are capped.
+// Surrounding whitespace is trimmed. Accepted: 1 to 10 ASCII digits; values above 600000 are capped.
+// Anything else falls back to the default, including a digit string longer than 10 digits (so
+// "99999999999" gives 30000, not the cap) and signs, decimals, exponents and unit suffixes.
 export function rpcKeepAliveMs(env = process.env) {
   const raw = env.SHADE_TREE_RPC_KEEPALIVE_MS;
   if (raw === undefined || raw === "") return DEFAULT_RPC_KEEPALIVE_MS;
@@ -220,26 +222,72 @@ export function rpcKeepAliveMs(env = process.env) {
   return Math.min(Number(text), MAX_RPC_KEEPALIVE_MS);
 }
 
-// One dispatcher per (agent class, keep-alive) pair. A superseded one is not closed: fetch hands a
-// request to its dispatcher asynchronously, so closing it could fail a request that already chose
-// it. Its idle sockets close on their own after its keep-alive.
+// One dispatcher per (dispatcher class, keep-alive) pair. A superseded one is not closed: fetch
+// hands a request to its dispatcher asynchronously, so closing it could fail a request that already
+// chose it. Its idle sockets close on their own after its keep-alive.
 let rpcAgentCache = null;
+
+const KEEPALIVE_OPTION_KEYS = new Set(["keepAliveTimeout", "keepAliveMaxTimeout"]);
+const ownSymbol = (obj, description) => Object.getOwnPropertySymbols(obj).find((s) => s.description === description);
+function optionsWithoutKeepAlive(options) {
+  return Object.fromEntries(Object.entries(options).filter(([key]) => !KEEPALIVE_OPTION_KEYS.has(key)));
+}
+
+// True only when `base` (already known to be a non-Proxy instance of `agent`'s own class) routes
+// like `agent` apart from the two keep-alive options, as far as can be read: the same own
+// properties (no per-instance override such as a replaced dispatch), the same connection factory,
+// and the same construction options (connect function or TLS options, connection limits, and so
+// on). It reads undici's internal `options` and `factory` slots; when they cannot be found the
+// answer is false.
+function routesLike(base, agent) {
+  const baseKeys = Reflect.ownKeys(base).map(String).sort();
+  const agentKeys = Reflect.ownKeys(agent).map(String).sort();
+  if (!isDeepStrictEqual(baseKeys, agentKeys)) return false;
+  const kOptions = ownSymbol(base, "options");
+  const kFactory = ownSymbol(base, "factory");
+  if (!kOptions || !kFactory || kOptions !== ownSymbol(agent, "options") || kFactory !== ownSymbol(agent, "factory")) return false;
+  if (base[kFactory] !== agent[kFactory]) return false;
+  const baseOptions = base[kOptions];
+  const agentOptions = agent[kOptions];
+  if (!baseOptions || typeof baseOptions !== "object" || !agentOptions || typeof agentOptions !== "object") return false;
+  return isDeepStrictEqual(baseOptions, optionsWithoutKeepAlive(agentOptions));
+}
 
 // The dispatcher for RPC fetches, or null to use the global one. Built from the class of Node's
 // own fetch dispatcher, so it needs no dependency. Returns null when the operator turned it off,
-// and when the global dispatcher is not a plain Agent: a proxy dispatcher (for example the
-// EnvHttpProxyAgent that NODE_USE_ENV_PROXY=1 installs) must keep routing RPC traffic.
+// and whenever it cannot be established that the global dispatcher is an Agent with nothing
+// configured but what this one changes. A proxy dispatcher (for example the EnvHttpProxyAgent
+// that NODE_USE_ENV_PROXY=1 installs), an Agent built with its own connect function, TLS options,
+// factory or limits, a composed (intercepted) or subclassed one, or one whose internals cannot be
+// read all keep routing RPC traffic: RPC then uses the global dispatcher, as before this change. The
+// check runs on every call, so a global dispatcher installed later is honoured from the next call.
 export function rpcDispatcher({ env = process.env } = {}) {
   const keepAliveMs = rpcKeepAliveMs(env);
   if (keepAliveMs === 0) return null;
   void globalThis.Response; // loads Node's bundled undici, which installs the default dispatcher
   const base = globalThis[GLOBAL_DISPATCHER];
-  const Agent = base?.constructor;
-  if (typeof Agent !== "function" || Agent.name !== "Agent") return null;
-  if (rpcAgentCache?.Agent === Agent && rpcAgentCache.keepAliveMs === keepAliveMs) return rpcAgentCache.agent;
-  const agent = new Agent({ keepAliveTimeout: keepAliveMs, keepAliveMaxTimeout: keepAliveMs });
-  rpcAgentCache = { Agent, keepAliveMs, agent };
-  return agent;
+  if (!base || typeof base !== "object" || utilTypes.isProxy(base)) return null;
+  const Dispatcher = base.constructor;
+  // Only an Agent-shaped dispatcher (undici's options and factory slots) is ever constructed, so a
+  // proxy agent or any other dispatcher class is never instantiated here.
+  if (typeof Dispatcher !== "function" || Object.getPrototypeOf(base) !== Dispatcher.prototype) return null;
+  if (!ownSymbol(base, "options") || !ownSymbol(base, "factory")) return null;
+  // A subclass of an Agent (its parent class already has undici's own dispatch slot) can hold
+  // routing state this check cannot read, so it is left alone.
+  const parentProto = Object.getPrototypeOf(Dispatcher.prototype);
+  if (!parentProto || ownSymbol(parentProto, "dispatch")) return null;
+  if (rpcAgentCache?.Dispatcher !== Dispatcher || rpcAgentCache.keepAliveMs !== keepAliveMs) {
+    let agent;
+    try {
+      agent = new Dispatcher({ keepAliveTimeout: keepAliveMs, keepAliveMaxTimeout: keepAliveMs });
+    } catch {
+      return null;
+    }
+    rpcAgentCache = { Dispatcher, keepAliveMs, agent };
+  }
+  // Checked against the current global on every call: only the built Agent is cached, never the
+  // decision, so an operator-configured Agent installed later (same class) is still left alone.
+  return routesLike(base, rpcAgentCache.agent) ? rpcAgentCache.agent : null;
 }
 
 // A small raw JSON-RPC call used both by the root provider and by the bounded ethers bootstrap.
