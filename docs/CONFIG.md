@@ -102,6 +102,10 @@ Read by `packages/node/gateway/gateway.mjs` (egress proxy). See also On-chain an
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
+| `SHADE_TREE_DESTINATION_LOG` | off | Only `1` enables a separate local destination-only JSONL sink; never sent to logger, telemetry or metrics. See [DESTINATION-LOG.md](DESTINATION-LOG.md). | gateway | (none) |
+| `SHADE_TREE_DESTINATION_LOG_DIR` | (unset) | Required absolute dedicated service-owned 0700 directory when destination logging is enabled; files are 0600. No automatic provisioning. | gateway | (none) |
+| `SHADE_TREE_DESTINATION_LOG_RETENTION` | `7d` | Rolling age from tunnel close: positive integer plus `m`, `h`, or `d` (`30m`, `6h`); `forever` disables age only. Up to one minute bucket rounding plus one shared epoch sweep under healthy I/O, not a hard deletion deadline. | gateway | (none) |
+| `SHADE_TREE_DESTINATION_LOG_MAX_BYTES` | `50331648` | Global logical JSONL byte cap (48 MiB), always positive, including in `forever` mode; evicts oldest segments before append. | gateway | (none) |
 | `SHADE_TREE_EGRESS_ALLOW` | `*:443` | Comma-separated `host:port` patterns a tunnel may reach (`*`, `*.suffix` for subdomains, or exact host; port `*` or a number). Default-deny. Anything beyond `:443` lets the node read plaintext. | gateway | (none) |
 | `SHADE_TREE_EGRESS_DENY` | (empty) | Patterns refused even if allowed; deny wins. | gateway | (none) |
 | `SHADE_TREE_EGRESS_DENY_FILE` | (unset) | A blocklist file on the deny side: one host per line as `0.0.0.0 host`, `127.0.0.1 host`, `:: host`, `host` or `host:port`, `#` comments (the hosts format of the public blocklists). A listed host and its subdomains are refused `bad-target-policy` on every port. Read at start (unreadable = startup error) and re-read within a minute of the file changing; `shade_tree_gateway_blocklist_hosts` counts the entries. | gateway | (none) |
