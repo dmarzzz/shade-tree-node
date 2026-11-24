@@ -350,6 +350,18 @@ impl Config {
                 "mock".into()
             }
         });
+        // Stake admission with nothing naming a stake source would fall back to the mock, which
+        // lists any announce with a valid operator signature as staked. The JavaScript Elder
+        // found the registry in the network record; this binary reads no record, so it refuses
+        // to start instead of quietly admitting everyone.
+        if admission == Admission::Stake && stake_mode.is_none() && registry.is_none() {
+            errors.push(
+                "SHADE_TREE_BOOTNODE_ADMISSION=stake needs a stake source: set \
+                 SHADE_TREE_GATEWAY_REGISTRY (the GatewayRegistry address) to check stake on \
+                 chain, or SHADE_TREE_STAKE_MODE=mock to accept any operator signature"
+                    .into(),
+            );
+        }
         let stake = match resolved_mode.as_str() {
             "onchain" => match registry.filter(|r| is_eth_address(r)) {
                 Some(registry) => StakeSource::Onchain {

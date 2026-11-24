@@ -497,6 +497,25 @@ fn the_operator_commands_and_the_exit_codes() {
             && err.contains("config: SHADE_TREE_BOOTNODE_TTL"),
         "{err}"
     );
+    // Stake admission with no stake source named would run on the open mock: refused at start.
+    let no_source = run(&["check"], &[("SHADE_TREE_BOOTNODE_ADMISSION", "stake")]);
+    assert_eq!(no_source.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&no_source.stderr).to_string();
+    assert!(err.contains("needs a stake source"), "{err}");
+    // The mock is still there when it is asked for by name.
+    let named_mock = run(
+        &["check"],
+        &[
+            ("SHADE_TREE_BOOTNODE_ADMISSION", "stake"),
+            ("SHADE_TREE_STAKE_MODE", "mock"),
+        ],
+    );
+    assert_eq!(
+        named_mock.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&named_mock.stderr)
+    );
     let conflict = run(
         &["check"],
         &[

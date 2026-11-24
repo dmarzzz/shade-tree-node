@@ -77,7 +77,10 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 - Small differences, on purpose: file defaults that pointed inside the npm checkout
   (`bootnode/bootnode-signer.key`, `incidents.local.json`, `relay-telemetry-state.local.json`)
   now default under `SHADENET_STATE`; the deploy sets them explicitly already.
-  `SHADE_TREE_NETWORK` (a checkout's `network/<name>/`) is not read by the binary. The Rust
+  `SHADE_TREE_NETWORK` (a checkout's `network/<name>/`) is not read by the binary. With
+  `SHADE_TREE_BOOTNODE_ADMISSION=stake` and neither `SHADE_TREE_GATEWAY_REGISTRY` nor an explicit
+  `SHADE_TREE_STAKE_MODE`, the Rust Elder refuses to start: the JavaScript Elder found the
+  registry in that record, and falling back to the mock would list unstaked nodes as staked. The Rust
   Elder waits for request headers with one timer, on a new connection and on an idle keep-alive
   one alike, set to the smaller of `SHADE_TREE_BOOTNODE_HEADERS_TIMEOUT_MS` and
   `SHADE_TREE_BOOTNODE_KEEPALIVE_TIMEOUT_MS`; its timers fire exactly, so

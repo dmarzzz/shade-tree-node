@@ -52,8 +52,9 @@ Elder half of `packages/node/lib/relay-telemetry.mjs`.
   npm checkout (`bootnode/bootnode-signer.key`, `incidents.local.json`,
   `relay-telemetry-state.local.json`) move under the Elder's state directory; the deploy sets
   them explicitly already. `SHADE_TREE_NETWORK`, which read `network/<name>/` from a checkout,
-  is replaced by `SHADENET_RECORD`, the same record reader the node uses, because a binary has
-  no checkout.
+  is not read by the binary, because a binary has no checkout: the registry address is set with
+  `SHADE_TREE_GATEWAY_REGISTRY`, and stake admission with neither that nor an explicit
+  `SHADE_TREE_STAKE_MODE` is a configuration error, not a fall back to the mock.
 - **The conformance guard runs against the Rust Elder** (`crates/shadenet-rln/interop/elder-run.sh`,
   blocking in CI): the Rust node announces and reports relay telemetry to it, a JavaScript-built
   announce is accepted, the Rust and JavaScript Elders federate with each other in both
