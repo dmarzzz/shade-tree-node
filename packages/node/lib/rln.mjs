@@ -295,6 +295,24 @@ export function newGroup(rateCommitments = []) {
   return g;
 }
 
+// groupFromLeafArray(leaves) -> the same tree as newGroup(leaves), built bottom-up in one pass.
+// newGroup appends leaf by leaf, and every append rehashes that leaf's whole depth-20 path, so a
+// long replay hashes each upper node many times over. The Group constructor instead takes the
+// leaf array and hashes each node of the tree once, level by level. Same leaves in the same
+// order, same zero value, same depth: the same tree and root. `leaves` may hold the tree's zero
+// value at vacated slots (zero-in-place removal). The constructor copies the array (BigInt map),
+// so the caller keeps ownership of `leaves`.
+export function groupFromLeafArray(leaves) {
+  return new RLNGroup(RLN_IDENTIFIER, TREE_DEPTH, leaves);
+}
+
+// The tree's leaf zero value (what a vacated slot holds), from an empty group: 20 hashes, once.
+let treeZero = null;
+export function groupZeroValue() {
+  if (treeZero === null) treeZero = new RLNGroup(RLN_IDENTIFIER, TREE_DEPTH).zeroValue;
+  return treeZero;
+}
+
 // Build a group from a list of identities (test helper). Each entry is an Identity (default
 // tier) or `{ identity, limit }` for a tiered member — ONE tree holds every tier.
 export function groupFromIdentities(identities) {

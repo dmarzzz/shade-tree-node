@@ -28,10 +28,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-// Build the tree with the RLN v3 depth-20 Poseidon tree (newGroup), NOT the app's
+// Build the tree with the RLN v3 depth-20 Poseidon tree (rln.mjs groupFromLeafArray, the same
+// Group as newGroup), NOT the app's
 // top-level Semaphore v4 LeanIMT — only the former matches the circom-rln circuit root.
 // The indexed event value (topics[1]) is now the rateCommitment leaf.
-import { newGroup } from "./rln.mjs";
+import { groupFromLeafArray, groupZeroValue } from "./rln.mjs";
 import { makeHeliosTrustedStateRoot } from "./helios-root.mjs";
 import { parseFromBlocks, deployBlockForContract } from "./network-record.mjs";
 import { jsonRpcCall, rpcOrigin } from "./rpc-safety.mjs";
@@ -539,40 +540,65 @@ export function reconstructRoot(logs) {
 // the ordered-log index `trackFrom`. The gateway uses transitions only for the immutable
 // finalized suffix it learned since its previous poll; an initial history scan never admits
 // historical intermediate roots.
+//
+// Two phases, one rule set. Logs before `trackFrom` produce no transition, so their roots are
+// never needed: they are folded into a plain leaf array (append at the next index, the tree's
+// zero value at a vacated index) and the tree is then built ONCE from that array, bottom-up
+// (groupFromLeafArray: each node hashed once). Updating a Merkle path per log instead costs a
+// full depth-20 path of hashes for every register AND every removal. Logs at or after
+// `trackFrom` still go through the tree one at a time, because each of them needs its own root.
+// Both phases apply the same `applyLog` decisions (index, duplicate register, unknown removal),
+// so the leaf array, and therefore the tree and the root, are the same as a per-log replay.
 export function reconstructGroup(logs, { trackFrom = Number.POSITIVE_INFINITY } = {}) {
   const ordered = [...logs].sort(
     (a, b) =>
       Number(BigInt(a.blockNumber) - BigInt(b.blockNumber)) ||
       Number(BigInt(a.logIndex) - BigInt(b.logIndex))
   );
-  const g = newGroup();                 // empty depth-20 RLN tree
   const liveIndex = new Map();          // commitment(string) -> its current live leaf index
   let active = 0;                       // members currently in the admission set
+  let nextIndex = 0;                    // the contract's nextIndex: the next append slot
+  let leaves = [];                      // phase 1: the leaf array (no tree yet)
+  let g = null;                         // phase 2: the depth-20 RLN tree built from `leaves`
+  const zero = groupZeroValue();        // a vacated leaf (what Group.removeMember writes)
   const transitions = [];
-  for (let position = 0; position < ordered.length; position++) {
-    const log = ordered[position];
+  // applyLog(log) -> changed. Applies ONE ordered Member* log to the leaf array (phase 1) or
+  // to the tree (phase 2).
+  const applyLog = (log) => {
     const topic0 = (log.topics[0] || "").toLowerCase();
     const commitment = BigInt(log.topics[1]).toString(); // indexed commitment = topics[1]
-    let changed = false;
     if (REGISTERED_TOPICS.has(topic0)) {
       // A register APPENDS a fresh leaf at the next free index — exactly the contract's
-      // monotonic nextIndex. `g.members.length` is that append index. The guard is purely
-      // defensive: the contract reverts a second active registration of the same
-      // commitment (AlreadyMember), so a duplicate register log can only be a reorg echo.
-      if (liveIndex.has(commitment)) continue;
-      liveIndex.set(commitment, g.members.length);
-      g.addMember(BigInt(commitment));
+      // monotonic nextIndex. The guard is purely defensive: the contract reverts a second
+      // active registration of the same commitment (AlreadyMember), so a duplicate register
+      // log can only be a reorg echo.
+      if (liveIndex.has(commitment)) return false;
+      liveIndex.set(commitment, nextIndex++);
+      if (g) g.addMember(BigInt(commitment));
+      else leaves.push(BigInt(commitment));
       active++;
-      changed = true;
-    } else if (REMOVED_TOPICS.has(topic0)) {
+      return true;
+    }
+    if (REMOVED_TOPICS.has(topic0)) {
       const idx = liveIndex.get(commitment);
-      if (idx === undefined) continue;  // not currently live -> nothing to vacate
-      g.removeMember(idx);              // ZERO-IN-PLACE at the original index (indices preserved)
+      if (idx === undefined) return false; // not currently live -> nothing to vacate
+      // ZERO-IN-PLACE at the original index (indices preserved)
+      if (g) g.removeMember(idx);
+      else leaves[idx] = zero;
       liveIndex.delete(commitment);
       active--;
-      changed = true;
+      return true;
     }
-    if (changed && position >= trackFrom) transitions.push(active === 0 ? null : g.root.toString());
+    return false;
+  };
+  let position = 0;
+  // `!(position >= trackFrom)` is the exact complement of the phase-2 test below, for any
+  // trackFrom (Infinity, 0, a negative number or NaN), so no log changes phase.
+  for (; position < ordered.length && !(position >= trackFrom); position++) applyLog(ordered[position]);
+  g = groupFromLeafArray(leaves);       // one bottom-up build of the untracked prefix
+  leaves = null;
+  for (; position < ordered.length; position++) {
+    if (applyLog(ordered[position])) transitions.push(active === 0 ? null : g.root.toString());
   }
   // COORDINATION: the on-chain StakedReputationSet / PaidAccessSet MUST maintain the identical
   // circom-rln depth-20 Poseidon tree of rateCommitments for these roots to match proof roots,
