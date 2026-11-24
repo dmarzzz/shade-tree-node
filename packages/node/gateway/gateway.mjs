@@ -49,6 +49,7 @@ import { makeRootProvider, configuredContracts } from "../lib/root-provider.mjs"
 import { ADMIT_ORDER, DEFAULT_ADMIT, parseAdmit, admitsFromRoots, describeAdmits } from "../lib/admission.mjs";
 import { buildReceipt } from "../lib/receipt.mjs";
 import { makeConfiguredFleetTally } from "./fleet-tally.mjs";
+import { makeDestinationAudit } from "./destination-audit.mjs";
 import { registry as metrics, installRuntimeMetrics, listenMetrics, safeMetricsPort } from "../lib/metrics.mjs";
 import { createLogger } from "../lib/log.mjs";
 import { printOperatorBanner } from "../lib/operator-ui.mjs";
@@ -1477,6 +1478,7 @@ export function makeHandler(spentSet, {
   onTunnelOpen = () => {},
   onTunnelClose = () => {},
   relayCounter = null,
+  destinationAudit = null,
   // Session tickets (ADR 0011): `sessions` is a makeSessionBooks() instance and `sessionOnion`
   // this node's own onion. Both null (the default, flag off) => every session-v1 envelope is
   // refused `session-unsupported` and the v4 path is byte-identical.
@@ -1524,8 +1526,17 @@ export function makeHandler(spentSet, {
     let tunnelOpened = false;
     let upstream = null;
     let gatewayCloseReason = null;
+    let auditRecord = null;
+    let auditStarted = 0;
     let relayStreams = [];
     const closeTunnel = () => {
+      if (auditRecord) {
+        auditRecord.durationMs = Math.max(0, Math.round(performance.now() - auditStarted));
+        auditRecord.closeReason = gatewayCloseReason || "peer-close";
+        // Audit is best-effort and must never alter relay cleanup, even on sink failure.
+        try { destinationAudit.write(auditRecord); } catch { /* no traffic data in logs */ }
+        auditRecord = null;
+      }
       if (tunnelOpened) {
         tunnelOpened = false;
         onTunnelClose();
@@ -1570,6 +1581,14 @@ export function makeHandler(spentSet, {
           return;
         }
         established = true;
+        if (destinationAudit) {
+          auditStarted = performance.now();
+          auditRecord = {
+            host: tgt.host, ip: candidate.address, port: tgt.port,
+            openedAt: new Date().toISOString(),
+            agentToDestinationBytes: 0, destinationToAgentBytes: 0,
+          };
+        }
         if (idleTimeoutMs > 0) candidateSocket.setTimeout(idleTimeoutMs);
         tunnelOpened = true;
         observeUpstreamConnect();
@@ -1606,10 +1625,12 @@ export function makeHandler(spentSet, {
           });
         };
         const countAgentToDestination = (chunk) => {
+          if (auditRecord) auditRecord.agentToDestinationBytes += chunk.length;
           relayCounter?.addAgentToDestination(chunk);
           M.agentToDestinationBytes.inc({}, chunk.length);
         };
         const countDestinationToAgent = (chunk) => {
+          if (auditRecord) auditRecord.destinationToAgentBytes += chunk.length;
           relayCounter?.addDestinationToAgent(chunk);
           M.destinationToAgentBytes.inc({}, chunk.length);
         };
@@ -2032,9 +2053,14 @@ async function main() {
   const spentState = makeSpentStatePersister(spentSet, { path: spentStatePath() });
   spentState.load();
   const payloadBudget = makePayloadBudget();
+  const destinationAudit = await makeDestinationAudit({
+    onError: () => log.warn("destination audit records dropped; inspect private sink capacity and permissions"),
+  });
   const sweepTimer = setInterval(() => {
     spentSet.sweep();
     payloadBudget.sweep();
+    // The sink serializes and catches async retention failures outside the relay path.
+    void destinationAudit?.sweep();
   }, EPOCH_SECONDS * 1000);
   sweepTimer.unref();
   const spentFlushTimer = setInterval(() => spentState.flush(), SPENT_STATE_FLUSH_MS);
@@ -2063,6 +2089,7 @@ async function main() {
     limiter,
     payloadBudget,
     relayCounter,
+    destinationAudit,
     sessions: session?.sessions ?? null,
     sessionOnion: session?.onion ?? null,
     onTunnelOpen: () => { activeTunnels += 1; },
@@ -2109,6 +2136,7 @@ async function main() {
       ["session tickets", session ? `on (${SESSION_CLASS_IDS.join(", ")})` : "off"],
       ["payload limit", payloadBudget.maxBytes > 0 ? `${payloadBudget.maxBytes} bytes combined / RLN slot` : "off"],
       ["relay telemetry", relayTelemetryEnabled ? "private reports on" : "off"],
+      ["destination audit", destinationAudit ? "local-only / bounded retention" : "off"],
       ["metrics", metricsPort > 0 ? `127.0.0.1:${metricsPort}` : "off"],
       ["logs", `${process.env.SHADE_TREE_LOG_LEVEL || "info"} / ${process.env.SHADE_TREE_LOG_FORMAT || "auto"}`],
     ] });
