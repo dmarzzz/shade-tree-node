@@ -90,10 +90,10 @@ Read by `packages/node/gateway/gateway.mjs` (egress proxy). See also On-chain an
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
-| `SHADE_TREE_DESTINATION_AUDIT` | off | Only `1` enables a separate local destination-only JSONL sink; never sent to logger, telemetry or metrics. See [DESTINATION-AUDIT.md](DESTINATION-AUDIT.md). | gateway | (none) |
-| `SHADE_TREE_DESTINATION_AUDIT_DIR` | (unset) | Required absolute dedicated service-owned 0700 directory when audit is enabled; files are 0600. No automatic provisioning. | gateway | (none) |
-| `SHADE_TREE_DESTINATION_AUDIT_RETENTION` | `7d` | Rolling age from tunnel close: positive integer plus `m`, `h`, or `d` (`30m`, `6h`); `forever` disables age only. Up to one minute bucket rounding plus one shared epoch sweep under healthy I/O, not a hard deletion deadline. | gateway | (none) |
-| `SHADE_TREE_DESTINATION_AUDIT_MAX_BYTES` | `50331648` | Global logical JSONL byte cap (48 MiB), always positive, including in `forever` mode; evicts oldest segments before append. | gateway | (none) |
+| `SHADE_TREE_DESTINATION_LOG` | off | Only `1` enables a separate local destination-only JSONL sink; never sent to logger, telemetry or metrics. See [DESTINATION-LOG.md](DESTINATION-LOG.md). | gateway | (none) |
+| `SHADE_TREE_DESTINATION_LOG_DIR` | (unset) | Required absolute dedicated service-owned 0700 directory when destination logging is enabled; files are 0600. No automatic provisioning. | gateway | (none) |
+| `SHADE_TREE_DESTINATION_LOG_RETENTION` | `7d` | Rolling age from tunnel close: positive integer plus `m`, `h`, or `d` (`30m`, `6h`); `forever` disables age only. Up to one minute bucket rounding plus one shared epoch sweep under healthy I/O, not a hard deletion deadline. | gateway | (none) |
+| `SHADE_TREE_DESTINATION_LOG_MAX_BYTES` | `50331648` | Global logical JSONL byte cap (48 MiB), always positive, including in `forever` mode; evicts oldest segments before append. | gateway | (none) |
 | `SHADE_TREE_EGRESS_ALLOW` | `*:443` | Comma-separated `host:port` patterns a tunnel may reach (`*`, `*.suffix` for subdomains, or exact host; port `*` or a number). Default-deny. Anything beyond `:443` lets the node read plaintext. | gateway | (none) |
 | `SHADE_TREE_EGRESS_DENY` | (empty) | Patterns refused even if allowed; deny wins. | gateway | (none) |
 | `SHADE_TREE_SESSION_TICKETS` | `0` | `1` = session tickets on (ADR 0011, `sessionTickets` in the deployment record, set at H2): one RLN proof buys a `research-v1` book of six single-use tunnel tickets at this node; the heartbeat advertises the signed `session` capability. Needs the onion identity file (`SHADE_TREE_GW_IDENTITY`); off, session envelopes are refused `session-unsupported` and v4 is byte-identical. The JS client reads the same variable (`{ sessionTickets }` in code); the Rust client reads `SHADENET_SESSION_TICKETS`. | gateway, heartbeat, client | (none) |

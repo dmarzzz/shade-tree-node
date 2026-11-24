@@ -3,7 +3,7 @@ import net from "node:net";
 import { mkdtemp, chmod, readFile, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { makeDestinationAudit } from "./destination-audit.mjs";
+import { makeDestinationLog } from "./destination-log.mjs";
 import { makeSessionBooks } from "./session.mjs";
 import { buildTicketBook, ticketFields } from "../lib/session-tickets.mjs";
 
@@ -17,19 +17,19 @@ async function until(predicate) {
 }
 const listen = (server) => new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const close = (server) => new Promise((resolve) => server.close(resolve));
-const dir = await mkdtemp(join(tmpdir(), "destination-audit-test-"));
-const env = { SHADE_TREE_DESTINATION_AUDIT: "1", SHADE_TREE_DESTINATION_AUDIT_DIR: dir };
+const dir = await mkdtemp(join(tmpdir(), "destination-log-test-"));
+const env = { SHADE_TREE_DESTINATION_LOG: "1", SHADE_TREE_DESTINATION_LOG_DIR: dir };
 let clock = Date.now();
 let errors = 0;
 let sink;
 try {
-  assert.equal(await makeDestinationAudit({ env: {} }), null);
-  assert.equal(await makeDestinationAudit({ env: { SHADE_TREE_DESTINATION_AUDIT: "0", SHADE_TREE_DESTINATION_AUDIT_DIR: "/does/not/exist" } }), null);
-  assert.deepEqual(await readdir(dir), [], "disabled audit creates no files");
+  assert.equal(await makeDestinationLog({ env: {} }), null);
+  assert.equal(await makeDestinationLog({ env: { SHADE_TREE_DESTINATION_LOG: "0", SHADE_TREE_DESTINATION_LOG_DIR: "/does/not/exist" } }), null);
+  assert.deepEqual(await readdir(dir), [], "disabled destination logging creates no files");
   await chmod(dir, 0o755);
-  await assert.rejects(makeDestinationAudit({ env }), /0700/);
+  await assert.rejects(makeDestinationLog({ env }), /0700/);
   await chmod(dir, 0o700);
-  sink = await makeDestinationAudit({ env, now: () => clock, onError: () => errors++ });
+  sink = await makeDestinationLog({ env, now: () => clock, onError: () => errors++ });
   const echo = net.createServer((socket) => {
     // Idle/payload-limit cases deliberately reset the upstream; this test peer must
     // consume that expected socket error rather than crash the selftest process.
@@ -37,7 +37,7 @@ try {
     socket.on("data", (data) => socket.write(data));
   });
   await listen(echo);
-  async function tunnel(audit, { fail = false, idle = false, limit = false, session = false } = {}) {
+  async function tunnel(destinationLog, { fail = false, idle = false, limit = false, session = false } = {}) {
     const attempts = [];
     const books = session ? makeSessionBooks() : null;
     const tickets = session ? buildTicketBook(Array.from({ length: 6 }, (_, i) => Buffer.alloc(32, i + 1))) : null;
@@ -60,7 +60,7 @@ try {
       envelopeTimeoutMs: 2000, idleTimeoutMs: idle ? 50 : 0,
       maxPayloadBytes: limit ? 5 : 0,
       limiter: makeConnLimiter({ maxConns: 0, maxPerNullifier: 0 }),
-      destinationAudit: audit,
+      destinationLog,
       sessions: books, sessionOnion: session ? "a".repeat(56) + ".onion" : null,
       onTunnelClose() { gatewayClosed = true; },
     }));
@@ -72,7 +72,7 @@ try {
     await new Promise((resolve) => client.once("connect", resolve));
     const early = Buffer.from("opaque-early");
     const later = Buffer.from("opaque-later");
-    const envelope = { v: 4, target: `audit-test.invalid:${echo.address().port}` };
+    const envelope = { v: 4, target: `destination-log-test.invalid:${echo.address().port}` };
     if (session) envelope.ticket = ticketFields({ ticketBookDigest: tickets.ticketBookDigest,
       index: 0, secret: tickets.secrets[0], requestNonce: "ab".repeat(16) });
     else Object.assign(envelope, { nullifier: "DO-NOT-LOG-IDENTIFIER", nonce: "DO-NOT-LOG-NONCE", share: { x: "1", y: "2" } });
@@ -104,7 +104,7 @@ try {
   assert.deepEqual(Object.keys(record).sort(), ["event", "host", "ip", "port", "openedAt", "durationMs", "agentToDestinationBytes", "destinationToAgentBytes", "closeReason"].sort());
   assert.deepEqual(result.attempts, ["127.0.0.2", "127.0.0.1"]);
   assert.equal(record.ip, "127.0.0.1", "logs successful pinned candidate, not first DNS answer");
-  assert.equal(record.host, "audit-test.invalid");
+  assert.equal(record.host, "destination-log-test.invalid");
   assert.equal(record.port, result.port);
   assert.equal(record.agentToDestinationBytes, result.bytes);
   assert.equal(record.destinationToAgentBytes, result.bytes);
@@ -116,7 +116,7 @@ try {
   await tunnel(null);
   await tunnel(sink, { fail: true });
   await sink.flush();
-  assert.equal((await readFile(file, "utf8")).trim().split("\n").length, 1, "off and failed dials produce no audit");
+  assert.equal((await readFile(file, "utf8")).trim().split("\n").length, 1, "off and failed dials produce no destination log records");
   await tunnel(sink, { idle: true });
   await tunnel(sink, { limit: true });
   await sink.flush();
@@ -137,7 +137,7 @@ try {
   await close(echo);
   // Retention tests run independently below; integration records remain local fixtures.
   assert.equal(errors, 0);
-  console.log("PASS: destination-only audit, exact opaque relay/bytes, pinned fallback IP, off/failure silence, close reasons, sink failure isolation and permissions");
+  console.log("PASS: destination logging, exact opaque relay/bytes, pinned fallback IP, off/failure silence, close reasons, sink failure isolation and permissions");
 } finally {
   await sink?.close();
   await rm(dir, { recursive: true, force: true });

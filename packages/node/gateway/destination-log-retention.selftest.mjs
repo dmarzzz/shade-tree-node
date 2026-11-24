@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmod, link, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { makeDestinationAudit } from "./destination-audit.mjs";
+import { makeDestinationLog } from "./destination-log.mjs";
 
 const MINUTE = 60000;
 const root = await mkdtemp(join(tmpdir(), "destination-retention-"));
@@ -13,11 +13,11 @@ let next = 0;
 async function fixture(options = {}) {
   const directory = join(root, String(next++));
   await mkdir(directory, { mode: 0o700 });
-  const env = { SHADE_TREE_DESTINATION_AUDIT: "1", SHADE_TREE_DESTINATION_AUDIT_DIR: directory, ...options };
+  const env = { SHADE_TREE_DESTINATION_LOG: "1", SHADE_TREE_DESTINATION_LOG_DIR: directory, ...options };
   let clock = 30000000 * MINUTE;
   let errors = 0;
   const start = async () => {
-    const sink = await makeDestinationAudit({ env, now: () => clock, onError: () => { errors++; } });
+    const sink = await makeDestinationLog({ env, now: () => clock, onError: () => { errors++; } });
     sinks.push(sink);
     return sink;
   };
@@ -30,21 +30,21 @@ async function usage(directory) {
 }
 try {
   // Disabled means no validation, timer or filesystem work, even with invalid other knobs.
-  assert.equal(await makeDestinationAudit({ env: { SHADE_TREE_DESTINATION_AUDIT_RETENTION: "bad" } }), null);
+  assert.equal(await makeDestinationLog({ env: { SHADE_TREE_DESTINATION_LOG_RETENTION: "bad" } }), null);
   const invalid = await fixture();
   for (const value of ["", "0", "0m", "-1h", "1.5d", "30", "1s", "7D", "forever ", "Infinity", "9999999999999999d"]) {
-    await assert.rejects(makeDestinationAudit({ env: { ...invalid.env, SHADE_TREE_DESTINATION_AUDIT_RETENTION: value } }), /retention/);
+    await assert.rejects(makeDestinationLog({ env: { ...invalid.env, SHADE_TREE_DESTINATION_LOG_RETENTION: value } }), /retention/);
   }
   for (const value of ["", "0", "-1", "1.5", "1e6", "Infinity", "9007199254740992", " 10"]) {
-    await assert.rejects(makeDestinationAudit({ env: { ...invalid.env, SHADE_TREE_DESTINATION_AUDIT_MAX_BYTES: value } }), /max bytes/);
+    await assert.rejects(makeDestinationLog({ env: { ...invalid.env, SHADE_TREE_DESTINATION_LOG_MAX_BYTES: value } }), /max bytes/);
   }
-  await assert.rejects(makeDestinationAudit({ env: { ...invalid.env, SHADE_TREE_DESTINATION_AUDIT_DIR: "relative" } }), /absolute/);
-  await assert.rejects(makeDestinationAudit({ env: { SHADE_TREE_DESTINATION_AUDIT: "1" } }), /absolute/);
+  await assert.rejects(makeDestinationLog({ env: { ...invalid.env, SHADE_TREE_DESTINATION_LOG_DIR: "relative" } }), /absolute/);
+  await assert.rejects(makeDestinationLog({ env: { SHADE_TREE_DESTINATION_LOG: "1" } }), /absolute/);
 
   // Minute bucket end is the expiry boundary. No early deletion; less than a minute
   // of bucket rounding, then at most one shared epoch sweep under healthy I/O.
   for (const [setting, minutes] of [[undefined, 7 * 24 * 60], ["30m", 30], ["6h", 360], ["1m", 1], ["2d", 2880]]) {
-    const f = await fixture(setting ? { SHADE_TREE_DESTINATION_AUDIT_RETENTION: setting } : {});
+    const f = await fixture(setting ? { SHADE_TREE_DESTINATION_LOG_RETENTION: setting } : {});
     const sink = await f.start();
     f.advance(12345);
     sink.write(record);
@@ -64,13 +64,13 @@ try {
   }
 
   // Size eviction is oldest-first across all minute files, and forever disables age only.
-  const sizing = await fixture({ SHADE_TREE_DESTINATION_AUDIT_RETENTION: "forever" });
+  const sizing = await fixture({ SHADE_TREE_DESTINATION_LOG_RETENTION: "forever" });
   let sink = await sizing.start();
   sink.write(record);
   await sink.flush();
   const lineBytes = await usage(sizing.directory);
   await sink.close();
-  sizing.env.SHADE_TREE_DESTINATION_AUDIT_MAX_BYTES = String(lineBytes * 2);
+  sizing.env.SHADE_TREE_DESTINATION_LOG_MAX_BYTES = String(lineBytes * 2);
   sink = await sizing.start();
   const first = (await readdir(sizing.directory))[0];
   sizing.advance(MINUTE);
@@ -87,7 +87,7 @@ try {
   await sink.sweep();
   assert.equal(await usage(sizing.directory), lineBytes * 2, "forever retains old records under cap");
   await sink.close();
-  sizing.env.SHADE_TREE_DESTINATION_AUDIT_MAX_BYTES = String(lineBytes);
+  sizing.env.SHADE_TREE_DESTINATION_LOG_MAX_BYTES = String(lineBytes);
   sink = await sizing.start();
   assert.equal(await usage(sizing.directory), lineBytes, "startup enforces reduced global cap");
   assert.ok(!(await readdir(sizing.directory)).includes(second));
@@ -96,7 +96,7 @@ try {
   assert.equal(await usage(sizing.directory), lineBytes, "same-minute rollover evicts rather than stops recording");
 
   // Eight-MiB segments rotate even within one minute. Existing sizes are recovered on restart.
-  const rotation = await fixture({ SHADE_TREE_DESTINATION_AUDIT_RETENTION: "forever" });
+  const rotation = await fixture({ SHADE_TREE_DESTINATION_LOG_RETENTION: "forever" });
   const large = `destination-${Math.floor(rotation.clock() / MINUTE)}-1.jsonl`;
   await writeFile(join(rotation.directory, large), "", { mode: 0o600 });
   await truncate(join(rotation.directory, large), 8 * 1024 * 1024);
@@ -107,14 +107,14 @@ try {
   assert.equal((await stat(join(rotation.directory, large))).size, 8 * 1024 * 1024);
   assert.equal(await usage(rotation.directory), 8 * 1024 * 1024 + lineBytes);
 
-  const tiny = await fixture({ SHADE_TREE_DESTINATION_AUDIT_MAX_BYTES: "1" });
+  const tiny = await fixture({ SHADE_TREE_DESTINATION_LOG_MAX_BYTES: "1" });
   sink = await tiny.start();
   sink.write(record);
   await sink.flush();
   assert.deepEqual(await readdir(tiny.directory), [], "oversize record dropped, no empty file");
   assert.equal(tiny.errors(), 1);
 
-  const startup = await fixture({ SHADE_TREE_DESTINATION_AUDIT_RETENTION: "30m" });
+  const startup = await fixture({ SHADE_TREE_DESTINATION_LOG_RETENTION: "30m" });
   sink = await startup.start();
   sink.write(record);
   await sink.flush();
@@ -125,7 +125,7 @@ try {
 
   // Queued records cannot resurrect expired buckets. Queue overflow and error callbacks
   // cannot reject maintenance promises or become an unbounded backlog.
-  const queued = await fixture({ SHADE_TREE_DESTINATION_AUDIT_RETENTION: "1m" });
+  const queued = await fixture({ SHADE_TREE_DESTINATION_LOG_RETENTION: "1m" });
   sink = await queued.start();
   for (let i = 0; i < 300; i++) sink.write(record);
   queued.advance(2 * MINUTE);
@@ -151,13 +151,13 @@ try {
     if (kind === "hardlink") await link(outside, target);
     if (kind === "mode") await writeFile(target, "", { mode: 0o644 });
     if (kind === "directory") await mkdir(target);
-    await assert.rejects(unsafe.start(), /unsafe destination audit file/, kind);
+    await assert.rejects(unsafe.start(), /unsafe destination log file/, kind);
     await rm(target, { recursive: true });
   }
   assert.equal(await readFile(outside, "utf8"), "unchanged");
   const linked = join(root, "linked-directory");
   await symlink(invalid.directory, linked);
-  await assert.rejects(makeDestinationAudit({ env: { ...invalid.env, SHADE_TREE_DESTINATION_AUDIT_DIR: linked } }), /0700/);
+  await assert.rejects(makeDestinationLog({ env: { ...invalid.env, SHADE_TREE_DESTINATION_LOG_DIR: linked } }), /0700/);
 
   const failure = await fixture();
   sink = await failure.start();

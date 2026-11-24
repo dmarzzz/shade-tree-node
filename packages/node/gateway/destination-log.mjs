@@ -1,4 +1,4 @@
-// Independent local-only destination audit. Never use the general logger/telemetry transport.
+// Independent local-only destination log. Never use the general logger/telemetry transport.
 import { constants } from "node:fs";
 import { lstat, open, readdir, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
@@ -13,30 +13,30 @@ function retentionMs(value) {
   if (value === "forever") return Infinity;
   const match = /^([1-9]\d*)([mhd])$/.exec(value);
   const ms = match && Number(match[1]) * { m: MINUTE, h: 60 * MINUTE, d: 24 * 60 * MINUTE }[match[2]];
-  if (!Number.isSafeInteger(ms) || ms <= 0) throw new Error("destination audit retention must be a positive integer with m/h/d, or forever");
+  if (!Number.isSafeInteger(ms) || ms <= 0) throw new Error("destination log retention must be a positive integer with m/h/d, or forever");
   return ms;
 }
 function safeFile(stat) {
   // Refuse links and shared files rather than following an attacker-controlled sink.
   if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o600) {
-    throw new Error("unsafe destination audit file");
+    throw new Error("unsafe destination log file");
   }
 }
 
-export async function makeDestinationAudit({ env = process.env, now = Date.now, onError = () => {} } = {}) {
-  if (env.SHADE_TREE_DESTINATION_AUDIT !== "1") return null;
-  const age = retentionMs(env.SHADE_TREE_DESTINATION_AUDIT_RETENTION ?? "7d");
-  const capValue = env.SHADE_TREE_DESTINATION_AUDIT_MAX_BYTES ?? "50331648";
+export async function makeDestinationLog({ env = process.env, now = Date.now, onError = () => {} } = {}) {
+  if (env.SHADE_TREE_DESTINATION_LOG !== "1") return null;
+  const age = retentionMs(env.SHADE_TREE_DESTINATION_LOG_RETENTION ?? "7d");
+  const capValue = env.SHADE_TREE_DESTINATION_LOG_MAX_BYTES ?? "50331648";
   const maxBytes = Number(capValue);
   if (!/^[1-9]\d*$/.test(capValue) || !Number.isSafeInteger(maxBytes)) {
-    throw new Error("destination audit max bytes must be a positive safe integer");
+    throw new Error("destination log max bytes must be a positive safe integer");
   }
-  const directory = env.SHADE_TREE_DESTINATION_AUDIT_DIR;
+  const directory = env.SHADE_TREE_DESTINATION_LOG_DIR;
   // Pre-provision a dedicated directory; do not silently fall back to stdout or a shared sink.
-  if (!directory || !isAbsolute(directory)) throw new Error("destination audit requires an absolute private directory");
+  if (!directory || !isAbsolute(directory)) throw new Error("destination log requires an absolute private directory");
   const stat = await lstat(directory);
   if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700) {
-    throw new Error("destination audit directory must be owned by the service uid with mode 0700");
+    throw new Error("destination log directory must be owned by the service uid with mode 0700");
   }
   const files = new Map();
   let total = 0;
@@ -57,7 +57,7 @@ export async function makeDestinationAudit({ env = process.env, now = Date.now, 
       if (!match) continue;
       const stamp = Number(match[1]);
       const seq = Number(match[2]);
-      if (!Number.isSafeInteger(stamp) || !Number.isSafeInteger(seq)) throw new Error("unsafe destination audit filename");
+      if (!Number.isSafeInteger(stamp) || !Number.isSafeInteger(seq)) throw new Error("unsafe destination log filename");
       const st = await lstat(join(directory, name));
       safeFile(st);
       scanned.set(name, { name, stamp, sequence: seq, size: st.size });
@@ -139,7 +139,7 @@ export async function makeDestinationAudit({ env = process.env, now = Date.now, 
           const st = await file.stat();
           safeFile(st);
           // Only this process may write the private directory. Refuse unexpected mutation.
-          if (st.size !== entry.size) throw new Error("destination audit file changed externally");
+          if (st.size !== entry.size) throw new Error("destination log file changed externally");
           if (fresh) files.set(entry.name, entry);
           try { await file.writeFile(line); } finally {
             // Account for a partial write even if the filesystem reports an error.

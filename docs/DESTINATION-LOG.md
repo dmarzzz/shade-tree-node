@@ -1,10 +1,10 @@
-# Destination-only tunnel audit (local opt-in)
+# Relay destination logging (local opt-in)
 
-Off by default. `SHADE_TREE_DESTINATION_AUDIT=1` enables an independent local JSONL sink; no destination fields enter the ordinary logger, Prometheus, relay telemetry, alerts, or fleet tally. No network transport is added. Both v4 and session-ticket tunnels use the shared `establishTunnel` instrumentation.
+Off by default. `SHADE_TREE_DESTINATION_LOG=1` enables an independent local JSONL sink; no destination fields enter the ordinary logger, Prometheus, relay telemetry, alerts, or fleet tally. No network transport is added. Both v4 and session-ticket tunnels use the shared `establishTunnel` instrumentation.
 
 ## Provisioning (not performed by this patch)
 
-Pre-create a dedicated directory owned by the gateway service uid with **0700** permissions, under a trusted parent not writable by other users. Set `SHADE_TREE_DESTINATION_AUDIT_DIR` to its absolute path. Startup fails if enabled without a suitable directory. Files must be regular, singly linked, service-owned **0600** files; symlinks are refused. Use one gateway process per directory; the size cap is not a cross-process coordination mechanism. Exclude this directory from log shippers, backups, sync and shared mounts. Do not point it at the general log directory.
+Pre-create a dedicated directory owned by the gateway service uid with **0700** permissions, under a trusted parent not writable by other users. Set `SHADE_TREE_DESTINATION_LOG_DIR` to its absolute path. Startup fails if enabled without a suitable directory. Files must be regular, singly linked, service-owned **0600** files; symlinks are refused. Use one gateway process per directory; the size cap is not a cross-process coordination mechanism. Exclude this directory from log shippers, backups, sync and shared mounts. Do not point it at the general log directory.
 
 No deployment, service configuration, or external host changes are included.
 
@@ -26,12 +26,12 @@ No client identifiers, nullifiers, ticket/session IDs, proof fields, payloads, U
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SHADE_TREE_DESTINATION_AUDIT` | off | Only `1` enables the sink. |
-| `SHADE_TREE_DESTINATION_AUDIT_DIR` | unset | Required absolute path to a dedicated private directory. |
-| `SHADE_TREE_DESTINATION_AUDIT_RETENTION` | `7d` | Positive integer followed by `m`, `h`, or `d`, for example `30m`, `6h`, or `7d`. Literal `forever` disables age expiry only. |
-| `SHADE_TREE_DESTINATION_AUDIT_MAX_BYTES` | `50331648` (48 MiB) | Positive integer global cap in logical JSONL bytes, across all audit segments. Cannot be disabled, including in `forever` mode. |
+| `SHADE_TREE_DESTINATION_LOG` | off | Only `1` enables the sink. |
+| `SHADE_TREE_DESTINATION_LOG_DIR` | unset | Required absolute path to a dedicated private directory. |
+| `SHADE_TREE_DESTINATION_LOG_RETENTION` | `7d` | Positive integer followed by `m`, `h`, or `d`, for example `30m`, `6h`, or `7d`. Literal `forever` disables age expiry only. |
+| `SHADE_TREE_DESTINATION_LOG_MAX_BYTES` | `50331648` (48 MiB) | Positive integer global cap in logical JSONL bytes, across all log segments. Cannot be disabled, including in `forever` mode. |
 
-Invalid enabled configuration fails startup without echoing the supplied value. Disabled configuration does no audit filesystem work and ignores the other audit settings. No dependency, cron job, deployment change, or additional interval is needed.
+Invalid enabled configuration fails startup without echoing the supplied value. Disabled configuration does no destination-log filesystem work and ignores the other destination-log settings. No dependency, cron job, deployment change, or additional interval is needed.
 
 Files are minute buckets named `destination-<UTC epoch minute>-<sequence>.jsonl`, rotated at **8 MiB each**. Size enforcement evicts the oldest bucket/sequence first, **before** appending, including during `forever` retention. A busy minute rotates instead of permanently dropping all later records. An individual record larger than the global or segment cap is dropped. Startup rescans sizes and enforces any reduced cap. The cap measures logical file contents, not filesystem allocation, directory entries or unrelated files; use a dedicated directory with no other writers. Unrelated filenames are neither deleted nor counted.
 
@@ -41,12 +41,12 @@ Pruning runs at startup and asynchronously from the gateway's existing `sweepTim
 
 **When the process is stopped, files remain until the next startup or independent operator cleanup.** No offline cleanup is installed by this feature. Pruning is unlinking, not secure erasure; snapshots/backups must be excluded separately.
 
-This is best-effort operational auditing, not a billing/forensic ledger. Open/long-lived tunnels have no record until close. Crashes, forced exits and shutdown before queue drainage can lose the tail. No per-tunnel persistent identity is created. Normal relay policy, acknowledgement, stream transforms and cleanup remain unchanged.
+This is best-effort destination logging, not a billing/forensic ledger. Open/long-lived tunnels have no record until close. Crashes, forced exits and shutdown before queue drainage can lose the tail. No per-tunnel persistent identity is created. Normal relay policy, acknowledgement, stream transforms and cleanup remain unchanged.
 
 ## Local validation
 
-`node packages/node/gateway/destination-audit.selftest.mjs` exercises the real shared handler and loopback echo relay, with injected admission verification and a controlled first-candidate refusal. It checks byte-identical acknowledgement/payload, early/remainder and later bytes, chosen IP fallback, exact schema/exclusion, disabled and failed-dial silence, idle/payload-limit reasons, sink-failure isolation and permissions. A pre-opened synthetic ticket book also exercises the real session-ticket spend path and verifies the same schema and exact relay counters; no session or ticket metadata reaches the file.
+`node packages/node/gateway/destination-log.selftest.mjs` exercises the real shared handler and loopback echo relay, with injected admission verification and a controlled first-candidate refusal. It checks byte-identical acknowledgement/payload, early/remainder and later bytes, chosen IP fallback, exact schema/exclusion, disabled and failed-dial silence, idle/payload-limit reasons, sink-failure isolation and permissions. A pre-opened synthetic ticket book also exercises the real session-ticket spend path and verifies the same schema and exact relay counters; no session or ticket metadata reaches the file.
 
-`node packages/node/gateway/destination-audit-retention.selftest.mjs` uses a controlled clock and private disposable directories to check the default and minute/hour/day retention boundaries, idle sweeps, coalescing, `forever`, global oldest-first eviction, same-minute segment rotation, restart recovery, invalid settings, bounded queue, oversize drops, symlink/hardlink refusal and runtime I/O failure isolation.
+`node packages/node/gateway/destination-log-retention.selftest.mjs` uses a controlled clock and private disposable directories to check the default and minute/hour/day retention boundaries, idle sweeps, coalescing, `forever`, global oldest-first eviction, same-minute segment rotation, restart recovery, invalid settings, bounded queue, oversize drops, symlink/hardlink refusal and runtime I/O failure isolation.
 
 Run all gateway selftests for regressions. This is not a real Groth16/Tor/deployed-host test.
