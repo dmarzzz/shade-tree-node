@@ -11,6 +11,11 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   last loaded set at one block instead: the on-chain `currentRoot` (slot 3) and, for a staked set,
   `nextIndex()` and `activeCount()`. It reuses the group only when all of them match the replay.
   A changed set or any failed or malformed read is a full reload, as before.
+- Every read of the check is pinned to the header's block number. The check has its own 5 s
+  deadline for all its calls together (`KEEPWARM_CHECK_TIMEOUT_MS`), so a hanging RPC adds at
+  most 5 s before the full reload.
+- Discovery order is kept: reuse applies only to the first configured contract, and members.json
+  is reread every epoch first, so members.json or an earlier contract that gains the leaf wins.
 - Each epoch is a cache generation: a check or full load from an older epoch that settles late is
   discarded and never replaces the current epoch's group or failure (`staleDiscarded` in the stats).
 - New `revalidateContractGroup` in `packages/node/lib/root-provider.mjs`, a `.revalidate` method on

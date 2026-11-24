@@ -34,7 +34,7 @@ import { dirname, join } from "node:path";
 import { newGroup } from "./rln.mjs";
 import { makeHeliosTrustedStateRoot } from "./helios-root.mjs";
 import { parseFromBlocks, deployBlockForContract } from "./network-record.mjs";
-import { jsonRpcCall, rpcOrigin } from "./rpc-safety.mjs";
+import { jsonRpcCall, rpcOrigin, rpcTimeoutMs } from "./rpc-safety.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -172,8 +172,8 @@ function rpcOriginForError(value) {
   return rpcOrigin(value);
 }
 
-async function rpc(method, params, url = RPC_URL()) {
-  return jsonRpcCall(url, method, params, { id: ++rpcId });
+async function rpc(method, params, url = RPC_URL(), opts = {}) {
+  return jsonRpcCall(url, method, params, { ...opts, id: ++rpcId });
 }
 
 async function blockNumber(tag = "latest", url = RPC_URL()) {
@@ -465,12 +465,12 @@ export async function loadGroupFromContract({ contract, rpcUrl = RPC_URL(), from
 const NEXT_INDEX_SELECTOR = "0xfc7e9c6f";   // nextIndex()
 const ACTIVE_COUNT_SELECTOR = "0x4331ed1f"; // activeCount()
 
-export async function contractCounters(contract, block, rpcUrl = RPC_URL()) {
+export async function contractCounters(contract, block, rpcUrl = RPC_URL(), rpcOpts = undefined) {
   const values = [];
   for (const data of [NEXT_INDEX_SELECTOR, ACTIVE_COUNT_SELECTOR]) {
     let word;
     try {
-      word = await rpc("eth_call", [{ to: contract, data }, block], rpcUrl);
+      word = await rpc("eth_call", [{ to: contract, data }, block], rpcUrl, typeof rpcOpts === "function" ? rpcOpts() : rpcOpts);
     } catch (e) {
       if (/revert/i.test(String((e && e.message) || e))) return null;
       throw e;
@@ -496,16 +496,38 @@ export async function contractCounters(contract, block, rpcUrl = RPC_URL()) {
 // (wrong-group-root). A PaidAccessSet has no counters (replayVerified skips them too), so a paid
 // set is checked on the root alone. The root comparison already pins the whole leaf set; the
 // counters are the same independent cross-check replayVerified uses.
+// Every read after the header is pinned to the header's block NUMBER (never the tag again), so the
+// root and both counters describe one block even when the chain advances mid-check.
+// `timeoutMs` bounds the WHOLE check (default KEEPWARM_CHECK_TIMEOUT_MS, well under the 15 s
+// per-call RPC default): each call gets the time left (capped at the RPC deadline) as its own abort
+// deadline, with no throttle retries, and no call starts once the budget is spent. The check itself
+// rejects when the budget runs out, even while an endpoint list is still failing over; a reply that
+// arrives after that is ignored. Any timeout is an error, i.e. "reload".
 const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
-export async function revalidateContractGroup({ contract, kind = "staked", prev, rpcUrl = RPC_URL(), blockTag = "latest", slot = 3 } = {}) {
+export const KEEPWARM_CHECK_TIMEOUT_MS = 5_000;
+export function revalidateContractGroup({ timeoutMs = KEEPWARM_CHECK_TIMEOUT_MS, ...args } = {}) {
+  const budget = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : KEEPWARM_CHECK_TIMEOUT_MS;
+  const deadline = Date.now() + budget;
+  const timedOut = () => new Error(`revalidateContractGroup: check timed out after ${budget}ms`);
+  const rpcOpts = () => {
+    const left = deadline - Date.now();
+    if (left <= 0) throw timedOut();
+    return { timeoutMs: Math.min(rpcTimeoutMs(), left), retries: 0 };
+  };
+  let timer;
+  const expired = new Promise((_, reject) => { timer = setTimeout(() => reject(timedOut()), budget); });
+  return Promise.race([checkPinned({ ...args, rpcOpts }), expired]).finally(() => clearTimeout(timer));
+}
+
+async function checkPinned({ contract, kind = "staked", prev, rpcUrl = RPC_URL(), blockTag = "latest", slot = 3, rpcOpts }) {
   if (!contract) throw new Error("revalidateContractGroup needs a contract address");
   if (!prev || !prev.group || !Array.isArray(prev.group.members)) throw new Error("revalidateContractGroup needs the previous loaded group");
-  const blk = await rpc("eth_getBlockByNumber", [blockTag, false], rpcUrl);
+  const blk = await rpc("eth_getBlockByNumber", [blockTag, false], rpcUrl, rpcOpts());
   const number = blk && typeof blk.number === "string" && /^0x[0-9a-fA-F]{1,16}$/.test(blk.number) ? BigInt(blk.number) : null;
   if (number == null) throw new Error(`revalidateContractGroup: no usable block number for ${blockTag}`);
   const tag = "0x" + number.toString(16);
   const slotHex = "0x" + BigInt(slot).toString(16).padStart(64, "0");
-  const word = await rpc("eth_getStorageAt", [contract, slotHex, tag], rpcUrl);
+  const word = await rpc("eth_getStorageAt", [contract, slotHex, tag], rpcUrl, rpcOpts());
   if (typeof word !== "string" || !WORD_RE.test(word)) throw new Error("revalidateContractGroup: malformed currentRoot word");
   const v = BigInt(word);
   // The empty tree's on-chain root is nonzero (the all-zero-leaf root) while the replay calls an
@@ -514,7 +536,7 @@ export async function revalidateContractGroup({ contract, kind = "staked", prev,
   const block = Number(number);
   if (onRoot == null || prev.root == null || onRoot !== String(prev.root)) return { same: false, block, reason: "root" };
   if (kind === "paid") return { same: true, block, reason: null };
-  const counters = await contractCounters(contract, tag, rpcUrl);
+  const counters = await contractCounters(contract, tag, rpcUrl, rpcOpts);
   // A staked set always has counters; none here means the read failed: fail closed.
   if (!counters) return { same: false, block, reason: "counters-unavailable" };
   if (counters.nextIndex !== prev.group.members.length || counters.activeCount !== prev.count) return { same: false, block, reason: "counters" };

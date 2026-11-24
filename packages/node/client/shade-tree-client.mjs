@@ -70,9 +70,13 @@ const clientEpochSeconds = () => Number(process.env.SHADE_TREE_EPOCH_SECONDS ?? 
 //     the chain whether that set is unchanged (revalidateContractGroup: root, plus both counters
 //     for a staked set) at the same block tag the load used; true = reuse `prev`. A members.json
 //     group, a result this loader did not produce, a changed set and any error are all "reload".
+//     Discovery order is kept: reuse only applies to the FIRST configured contract, and only while
+//     members.json (reread every epoch, as discovery does) does not hold the leaf. Otherwise the
+//     full discovery runs, as before, so an earlier source that gains the leaf still wins.
 export function makeLeafSourceLoader({
   secret, limit = K_SLOTS, env = process.env,
   loadStatic = loadGroup, loadContract = loadGroupFromContract, checkContract = revalidateContractGroup,
+  checkTimeoutMs = undefined, // the check's own whole-check deadline (default KEEPWARM_CHECK_TIMEOUT_MS, 5 s)
   contracts = null, rpcUrl = env.SHADE_TREE_RPC_URL || "http://127.0.0.1:8545",
   only = parseLeafSource(env.SHADE_TREE_LEAF_SOURCE, { name: "SHADE_TREE_LEAF_SOURCE" }),
 } = {}) {
@@ -84,6 +88,8 @@ export function makeLeafSourceLoader({
   // Which contract each returned result came from. Keyed by the exact object handed to the pool,
   // so a forged or copied `prev` can never pick the contract or kind that gets checked.
   const origin = new WeakMap();
+  let leafMemo = null;
+  const myLeaf = () => (leafMemo ??= rln.rateCommitmentOf(rln.identityFor(secret), limit).toString());
   async function discoverGroup() {
     if (only !== "auto" && only !== "invited" && sources.length === 0) {
       throw new Error(`ShadeTreeClient: SHADE_TREE_LEAF_SOURCE=${only} but no ${only} set is configured (set ${only === "paid" ? "SHADE_TREE_PAID_ACCESS_CONTRACT" : "SHADE_TREE_GROUP_CONTRACT"}, or SHADE_TREE_NETWORK with a contracts.json that has one)`);
@@ -91,7 +97,7 @@ export function makeLeafSourceLoader({
     // Legacy path first (no contract configured / invited pinned): the static group, exactly as
     // before, even when the leaf is not in it or the secret is not derivable here (fakes in tests).
     if (sources.length === 0) return { ...(await loadStatic()), source: "members.json" };
-    const leaf = rln.rateCommitmentOf(rln.identityFor(secret), limit).toString();
+    const leaf = myLeaf();
     const tried = [];
     if (wantStatic) {
       try {
@@ -125,7 +131,17 @@ export function makeLeafSourceLoader({
   discoverGroup.revalidate = async function revalidate(prev) {
     const c = prev && typeof prev === "object" ? origin.get(prev) : undefined;
     if (!c) return false; // members.json, or not ours: reload (a static read is local and cheap)
-    const r = await checkContract({ contract: c.address, kind: c.kind || "staked", prev, rpcUrl, blockTag: publicRootTag || "latest" });
+    // Discovery order must not go sticky. An earlier configured contract could have gained this
+    // leaf, and only a full discovery would see it: reuse only the FIRST contract searched.
+    if (sources.indexOf(c) !== 0) return false;
+    // members.json is searched before every contract. Reread it (a local file, as discovery does
+    // every epoch): if it now holds the leaf, rediscover so it wins, as on a fresh start.
+    if (wantStatic) {
+      let st = null;
+      try { st = await loadStatic(); } catch { st = null; } // unreadable: discovery would skip it too
+      if (st && holds(st.group, myLeaf())) return false;
+    }
+    const r = await checkContract({ contract: c.address, kind: c.kind || "staked", prev, rpcUrl, blockTag: publicRootTag || "latest", ...(checkTimeoutMs != null ? { timeoutMs: checkTimeoutMs } : {}) });
     return !!r && r.same === true;
   };
   return discoverGroup;
