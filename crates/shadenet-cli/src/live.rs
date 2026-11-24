@@ -1218,6 +1218,33 @@ fn leaves(args: LeavesArgs) -> ExitCode {
 
 // -------------------------------------------------------------------- init
 
+/// How `config.toml` in `config_dir` records `path`. The loader resolves a relative path against
+/// the config file's directory, not the working directory `init` ran in, so a file under
+/// `config_dir` is recorded relative to it (the directory can then be moved) and any other
+/// relative path is made absolute.
+fn config_relative(path: &Path, config_dir: &Path) -> String {
+    match path.strip_prefix(config_dir) {
+        Ok(rest) if !rest.as_os_str().is_empty() => rest.display().to_string(),
+        _ => std::path::absolute(path)
+            .unwrap_or_else(|_| path.to_path_buf())
+            .display()
+            .to_string(),
+    }
+}
+
+/// The `network` value `config.toml` records for a `--network` flag. A deployment record path
+/// (same test as the loader's) is made absolute for the reason in [`config_relative`]; a network
+/// name is kept as given.
+fn config_network_value(spec: &str) -> String {
+    if spec.contains('/') || spec.ends_with(".json") {
+        std::path::absolute(spec)
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| spec.to_string())
+    } else {
+        spec.to_string()
+    }
+}
+
 fn init(args: InitArgs, ctx: &Context) -> ExitCode {
     let Some(dir) = args.dir.clone().or_else(config_file::default_dir) else {
         return usage("init", "no config directory; pass --dir");
@@ -1312,16 +1339,20 @@ fn init(args: InitArgs, ctx: &Context) -> ExitCode {
         let network_value = if network.name == shadenet::profile::DEFAULT_NETWORK {
             network.name.clone()
         } else {
-            ctx.network.clone().unwrap_or_else(|| network.name.clone())
+            ctx.network
+                .as_deref()
+                .map(config_network_value)
+                .unwrap_or_else(|| network.name.clone())
         };
+        let config_dir = config_path.parent().unwrap_or(Path::new(""));
         let body = format!(
             "# ShadeNet client configuration. Flags and SHADENET_* variables override these.\n\
              network = {network_value:?}\n\
              identity = {:?}\n\
              proxy_token_file = {:?}\n\
              listen = \"127.0.0.1:8118\"\n",
-            identity_path.display().to_string(),
-            token_path.display().to_string()
+            config_relative(&identity_path, config_dir),
+            config_relative(&token_path, config_dir)
         );
         if let Err(e) = write_private(&config_path, body.as_bytes()) {
             return usage("init", e);

@@ -4,6 +4,30 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### `shadenet init --dir <relative path>` writes a config that loads (#436)
+
+- `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative
+  paths against the config file's directory. After `shadenet init --dir .shadenet`, every command
+  given `--config .shadenet/config.toml` failed with
+  `read identity .shadenet/.shadenet/identity.json: No such file or directory`.
+- `init` now records `identity` and `proxy_token_file` relative to the config file
+  (`identity.json`, `proxy-token`), so the directory can also be moved. A `--network` deployment
+  record given as a relative path is recorded as an absolute path.
+- A config written by 0.7.5 or earlier with a relative `--dir` is not rewritten: edit the two
+  paths to `identity.json` and `proxy-token`, or delete `config.toml` and run `init` again (it
+  keeps the identity and the token).
+
+### Test runner: suites that skip their checks show as SKIP, not PASS
+
+- `scripts/test-all.mjs` (`npm test`, `test:node`, `test:fast`, `coverage`) now reports a suite
+  that exits 0 but prints a line starting with `SKIP` as `SKIP <suite> (exit 0, not exercised:
+  <reason>)` instead of `PASS`. The summary adds the count and names each one, for example
+  `=== summary: 165/165 green, 3 of them SKIPPED ...`. Before, the anvil suites (`onchain-tiers`,
+  `paid-access`, `registrar`) printed `SKIP anvil/forge not on PATH` in CI's Node job, the runner
+  hid that line, and the run read as if they had passed.
+- The exit code does not change: a SKIP is still green. The parser is `scripts/suite-skips.mjs`,
+  with a selftest that also checks every SKIP message the repo's suites print today.
+
 ### A node at home
 
 - `SHADENET_PROFILE=home` (`profile` in `node.toml`) presets a node for a residential connection:
