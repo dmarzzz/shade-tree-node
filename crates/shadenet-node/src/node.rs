@@ -17,7 +17,7 @@ use shadenet_proto::{accept_envelope_version, PROTO_MAX, PROTO_MIN};
 use shadenet_service::metrics::Registry;
 use shadenet_service::rpc::Rpc;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{watch, Semaphore};
+use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
 
 use crate::alerts::Alerts;
@@ -61,7 +61,7 @@ pub struct ShadeNode {
 
 struct Shared {
     config: Config,
-    connections: Option<Semaphore>,
+    connections: Option<Arc<Semaphore>>,
     per_nullifier: Mutex<HashMap<String, usize>>,
     verifier: Verifier,
     roots: Roots,
@@ -446,7 +446,9 @@ impl ShadeNode {
         let mut shutdown = Shutdown::install()?;
         let (retire_tx, retire_rx) = watch::channel(false);
         let shared = Arc::new(Shared {
-            connections: config.max_connections().map(Semaphore::new),
+            connections: config
+                .max_connections()
+                .map(|limit| Arc::new(Semaphore::new(limit))),
             per_nullifier: Mutex::new(HashMap::new()),
             verifier,
             roots,
@@ -607,7 +609,14 @@ impl ShadeNode {
                 tokio::select! {
                     accepted = listener.accept() => match accepted {
                         Ok((stream, _)) => {
-                            connections.spawn(serve(Arc::clone(&shared), stream));
+                            // The connection cap is decided here, in accept order. Taking the
+                            // permit inside the spawned task let a later connection's task run
+                            // first and take it, so which connection was refused was a race.
+                            let admitted = shared
+                                .connections
+                                .as_ref()
+                                .map(|limit| Arc::clone(limit).try_acquire_owned().ok());
+                            connections.spawn(serve(Arc::clone(&shared), stream, admitted));
                         }
                         Err(e) => {
                             tracing::warn!("accept failed: {e}");
@@ -955,24 +964,29 @@ fn count_close(shared: &Shared, close: Close) {
     );
 }
 
-async fn serve(shared: Arc<Shared>, mut stream: TcpStream) {
+/// Serve one accepted connection. `admitted` is the accept loop's decision on the connection
+/// cap: `None` when there is no cap, `Some(None)` when the cap was full at accept, and
+/// `Some(Some(permit))` otherwise; the permit is held until the connection ends.
+async fn serve(
+    shared: Arc<Shared>,
+    mut stream: TcpStream,
+    admitted: Option<Option<OwnedSemaphorePermit>>,
+) {
     let _ = stream.set_nodelay(true);
     let _connection = Connection::open(&shared);
-    let _permit = match &shared.connections {
-        Some(limit) => match limit.try_acquire() {
-            Ok(permit) => Some(permit),
-            Err(_) => {
-                drop_with(
-                    &shared,
-                    &mut stream,
-                    Path::Tunnel,
-                    REASON_TOO_MANY_CONNECTIONS,
-                    &refusal(REASON_TOO_MANY_CONNECTIONS, &[]),
-                )
-                .await;
-                return;
-            }
-        },
+    let _permit = match admitted {
+        Some(None) => {
+            drop_with(
+                &shared,
+                &mut stream,
+                Path::Tunnel,
+                REASON_TOO_MANY_CONNECTIONS,
+                &refusal(REASON_TOO_MANY_CONNECTIONS, &[]),
+            )
+            .await;
+            return;
+        }
+        Some(permit) => permit,
         None => None,
     };
     let (envelope, early) = match read_envelope(&mut stream, shared.config.envelope_timeout()).await
