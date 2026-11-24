@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 
-use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
+use ark_bn254::{Bn254, Fr};
 use ark_circom::{read_zkey, CircomReduction, WitnessCalculator};
 use ark_ff::{BigInteger, PrimeField};
-use ark_groth16::{prepare_verifying_key, Groth16, Proof, VerifyingKey};
+use ark_groth16::{Groth16, Proof};
 use ark_std::UniformRand;
 use num_bigint::{BigInt, BigUint, Sign};
 use wasmer::{Module, Store};
@@ -85,83 +85,6 @@ fn canonical_bigint(value: &str, label: &str) -> Result<BigInt, String> {
 
 fn pf_to_dec<F: PrimeField>(field: &F) -> String {
     BigUint::from_bytes_be(&field.into_bigint().to_bytes_be()).to_str_radix(10)
-}
-
-pub(crate) fn dec_to_fq(value: &serde_json::Value, label: &str) -> Result<Fq, String> {
-    let value = value
-        .as_str()
-        .ok_or_else(|| format!("verification key {label} is not a decimal string"))?;
-    let integer = BigUint::parse_bytes(value.as_bytes(), 10)
-        .ok_or_else(|| format!("verification key {label} is not decimal"))?;
-    let modulus = BigUint::from_bytes_be(&Fq::MODULUS.to_bytes_be());
-    if integer >= modulus {
-        return Err(format!(
-            "verification key {label} is outside the BN254 base field"
-        ));
-    }
-    Ok(Fq::from(integer))
-}
-
-pub(crate) fn g1(value: &serde_json::Value, label: &str) -> Result<G1Affine, String> {
-    let values = value
-        .as_array()
-        .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("verification key {label} is not a G1 point"))?;
-    let point = G1Affine::new_unchecked(
-        dec_to_fq(&values[0], &format!("{label}.x"))?,
-        dec_to_fq(&values[1], &format!("{label}.y"))?,
-    );
-    if !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve() {
-        return Err(format!("verification key {label} is not a valid G1 point"));
-    }
-    Ok(point)
-}
-
-pub(crate) fn g2(value: &serde_json::Value, label: &str) -> Result<G2Affine, String> {
-    let values = value
-        .as_array()
-        .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("verification key {label} is not a G2 point"))?;
-    let x = values[0]
-        .as_array()
-        .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("verification key {label}.x is not Fq2"))?;
-    let y = values[1]
-        .as_array()
-        .filter(|values| values.len() >= 2)
-        .ok_or_else(|| format!("verification key {label}.y is not Fq2"))?;
-    let point = G2Affine::new_unchecked(
-        Fq2::new(
-            dec_to_fq(&x[0], &format!("{label}.x.c0"))?,
-            dec_to_fq(&x[1], &format!("{label}.x.c1"))?,
-        ),
-        Fq2::new(
-            dec_to_fq(&y[0], &format!("{label}.y.c0"))?,
-            dec_to_fq(&y[1], &format!("{label}.y.c1"))?,
-        ),
-    );
-    if !point.is_on_curve() || !point.is_in_correct_subgroup_assuming_on_curve() {
-        return Err(format!("verification key {label} is not a valid G2 point"));
-    }
-    Ok(point)
-}
-
-/// Parse a snarkjs verification key, checking every point is on the curve and in the subgroup.
-pub(crate) fn parse_vk(value: &serde_json::Value) -> Result<VerifyingKey<Bn254>, String> {
-    let gamma_abc_g1 = value["IC"]
-        .as_array()
-        .ok_or_else(|| "verification key IC is not an array".to_string())?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| g1(value, &format!("IC[{index}]")))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(VerifyingKey {
-        alpha_g1: g1(&value["vk_alpha_1"], "vk_alpha_1")?,
-        beta_g2: g2(&value["vk_beta_2"], "vk_beta_2")?,
-        gamma_g2: g2(&value["vk_gamma_2"], "vk_gamma_2")?,
-        delta_g2: g2(&value["vk_delta_2"], "vk_delta_2")?,
-        gamma_abc_g1,
-    })
 }
 
 fn push_word<F: PrimeField>(out: &mut Vec<u8>, value: &F) {
@@ -296,9 +219,8 @@ pub fn build_withdraw_proof(input: &WithdrawProofInput) -> Result<BuiltWithdrawP
             }
         }
     };
-    let parsed_vk = parse_vk(&vk_json)?;
-    let prepared = prepare_verifying_key(&parsed_vk);
-    if !Groth16::<Bn254, CircomReduction>::verify_proof(&prepared, &proof, public_inputs)
+    let parsed_vk = crate::verify::VerifyingKey::parse(&vk_json).map_err(|e| e.to_string())?;
+    if !crate::verify::verify(&parsed_vk, &proof, public_inputs)
         .map_err(|e| format!("verify withdraw proof: {e}"))?
     {
         return Err("withdraw proof did not verify against its embedded key".into());

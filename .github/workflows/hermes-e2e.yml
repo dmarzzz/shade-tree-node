@@ -54,8 +54,8 @@ jobs:
             "git+https://github.com/NousResearch/hermes-agent.git@$HERMES_COMMIT"
           echo "$RUNNER_TEMP/hermes-venv/bin" >> "$GITHUB_PATH"
 
-      - name: Build Rust Proxy with embedded Arti
-        run: cargo build --locked --manifest-path Cargo.toml -p shadenet-cli --features live
+      - name: Build Rust Proxy with embedded Arti and the Rust node
+        run: cargo build --locked --manifest-path Cargo.toml -p shadenet-cli --features live -p shadenet-node
 
       - name: Start deterministic loopback model
         run: |
@@ -75,6 +75,7 @@ jobs:
           HERMES_E2E_PROVIDER: custom
           HERMES_E2E_IGNORE_USER_CONFIG: "1"
           HERMES_E2E_RUST_BIN: ${{ github.workspace }}/target/debug/shade-tree
+          SHADE_TREE_GATEWAY_CMD: ${{ github.workspace }}/target/debug/shadenet-node
         run: |
           for attempt in 1 2; do
             echo "Hermes E2E attempt $attempt/2"

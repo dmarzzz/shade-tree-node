@@ -146,14 +146,11 @@ async function joinNode() {
   out("       SHADE_TREE_REGISTER_KEY=\"$SHADE_TREE_REGISTER_KEY\" shade-tree register-gateway");
   out("       unset SHADE_TREE_REGISTER_KEY");
   out("");
-  out("  2. Run the egress gateway (verifies member proofs, tunnels :443):");
+  out("  2. Run the node (verifies member proofs, tunnels :443, announces itself to the Elder Tree):");
   out("");
+  out("       SHADE_TREE_BOOTNODE_ONION=<elder-onion> \\");
+  out("       SHADE_TREE_GW_IDENTITY=" + join(id.dir, "identity.local.json") + " \\");
   out("       shade-tree-node node");
-  out("");
-  out("  3. Announce it to an Elder Tree and keep it live:");
-  out("");
-  out("       shade-tree-node heartbeat --bootnode <elder-onion> \\");
-  out("         --identity " + join(id.dir, "identity.local.json"));
   out("");
   out("     (get <elder-onion> from the Grove operator; its Canopy signer is the pin Proxies need.)");
 

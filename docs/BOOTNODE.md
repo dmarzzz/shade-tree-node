@@ -9,16 +9,29 @@ dynamic realization of roadmap milestone 3.
 
 ## What it is
 
-A small HTTP service (`packages/node/bootnode/server.mjs`) published as its **own v3 onion service**, so
-Proxies reach it through a Tor SOCKS dial with no exit node. The
-bootnode never learns a client IP.
+A small HTTP service, the Rust `shadenet-elder` binary (`crates/shadenet-elder`,
+[ADR 0015](adr/0015-elder-in-rust.md); the JavaScript `packages/node/bootnode/server.mjs` ships
+for one more release), published as its **own v3 onion service**, so Proxies reach it through a
+Tor SOCKS dial with no exit node. The bootnode never learns a client IP.
 
 ```
-POST /announce         a gateway registers/renews itself (see "The announce" below)
-GET  /directory        the current signed directory of live gateways
-GET  /gateway/<onion>  the stored signed announce for one gateway (zero-trust re-verification)
-GET  /health           liveness + count + admission policy
+POST /announce                 a gateway registers/renews itself (see "The announce" below)
+GET  /directory                the current signed directory of live gateways
+GET  /directory/delta?since=   what changed since a client's last ETag
+GET  /gateway/<onion>          the stored signed announce for one gateway (zero-trust re-verification)
+GET  /health                   liveness + count + admission policy
+GET  /incidents                the signed operator incident feed (docs/INCIDENT.md)
+POST /incidents/alertmanager   the Alertmanager webhook, on with SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN
+POST /telemetry/relay          a node's private relay-byte report (docs/RELAY-TELEMETRY.md)
+GET  /telemetry/aggregate      the signed, delayed cohort aggregate
 ```
+
+`shadenet-elder run` serves them (`shade-tree-node elder` runs the same binary); `shadenet-elder
+check` prints the resolved settings and whether the ports and the signer are usable;
+`shadenet-elder identity <hs-dir>` mints the Elder's own onion for Tor's `HiddenServiceDir`.
+Settings are the `SHADE_TREE_BOOTNODE_*` variables below, read under the `SHADENET_` prefix too;
+the signer key, the store, the incidents file and the relay checkpoint default to
+`SHADENET_STATE` (`/state` in a container) when not set explicitly.
 
 ## What it verifies and what clients trust
 
@@ -101,7 +114,7 @@ and "the key we sign with."
 ## Liveness
 
 A bootnode entry is soft state with a TTL (`--ttl`, default 900s). A gateway proves liveness
-by continuing to announce (`shade-tree heartbeat`, every `--interval` seconds); a dead gateway ages
+by continuing to announce (the node's own heartbeat, every `SHADE_TREE_BOOTNODE_HEARTBEAT` seconds); a dead gateway ages
 out without anyone deregistering it. Clients cache the last-known-good directory, so a dead or
 poisoned bootnode degrades to the previous good fleet, never to nothing.
 
@@ -138,7 +151,7 @@ above.
 SHADE_TREE_BOOTNODE_PEERS=<peerA>.onion,<peerB>.onion \
 SHADE_TREE_BOOTNODE_ONION=<this-bootnode>.onion \
 SHADE_TREE_BOOTNODE_FED_INTERVAL=60 \
-  shade-tree elder ...
+  shadenet-elder run
 ```
 
 | env | default | meaning |
@@ -234,13 +247,15 @@ fleets *larger* than `burst` that restart in lockstep need `SHADE_TREE_BOOTNODE_
 
 ### HTTP slow-client limits
 
-Node's `http.Server` defaults leave slow-loris open (headers 60 s, whole request 300 s, headers
-16 KiB, enforced every 30 s). Every bootnode request is small and fast, so `makeServer` sets:
-headers within `SHADE_TREE_BOOTNODE_HEADERS_TIMEOUT_MS` (10 s), whole request within
-`SHADE_TREE_BOOTNODE_REQUEST_TIMEOUT_MS` (30 s) → `408` + close; idle keep-alive closed after
-`SHADE_TREE_BOOTNODE_KEEPALIVE_TIMEOUT_MS` (5 s); headers over `SHADE_TREE_BOOTNODE_MAX_HEADER_BYTES`
-(8 KiB) → `431`; enforced every `SHADE_TREE_BOOTNODE_CONN_CHECK_MS` (1 s). The 64 KiB body cap on
-`/announce` is unchanged.
+Every bootnode request is small and fast, so the server waits only so long for it: headers within
+`SHADE_TREE_BOOTNODE_HEADERS_TIMEOUT_MS` (10 s), the whole request within
+`SHADE_TREE_BOOTNODE_REQUEST_TIMEOUT_MS` (30 s) → `408` + close; an idle keep-alive connection is
+closed after `SHADE_TREE_BOOTNODE_KEEPALIVE_TIMEOUT_MS` (5 s); headers over
+`SHADE_TREE_BOOTNODE_MAX_HEADER_BYTES` (8 KiB) → `431`. The Rust Elder runs one timer for "waiting
+for request headers", on a new connection and on an idle keep-alive one alike, set to the smaller
+of the headers and keep-alive limits; its timers fire exactly, so
+`SHADE_TREE_BOOTNODE_CONN_CHECK_MS` only concerns the JavaScript Elder (Node's own defaults were
+60 s / 300 s / 16 KiB, checked every 30 s). The 64 KiB body cap on `/announce` is unchanged.
 
 *Accept (proven in `packages/node/bootnode/hardening.selftest.mjs`, real sockets + a verify spy):* a
 fresh-onion burst gets exactly `burst` verifies and the rest are `429` with verify never called;

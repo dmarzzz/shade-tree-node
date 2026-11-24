@@ -92,7 +92,7 @@ SHADE_TREE_SECRET="$SHADE_TREE_SECRET" SHADE_TREE_LIMIT="$SHADE_TREE_LIMIT" \
   SHADE_TREE_NETWORK=<current-v4-network> shade-tree proxy
 unset SHADE_TREE_SECRET
 unset SHADE_TREE_LIMIT
-SHADE_TREE_NETWORK=<current-v4-network> shade-tree heartbeat
+SHADENET_RECORD=<record-url> shadenet-node run       # the node announces itself (ADR 0014)
 read -s SHADE_TREE_REGISTER_KEY
 SHADE_TREE_REGISTER_KEY="$SHADE_TREE_REGISTER_KEY" \
   SHADE_TREE_NETWORK=<current-v4-network> shade-tree register-gateway
