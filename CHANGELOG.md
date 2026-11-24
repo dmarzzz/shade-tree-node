@@ -4,6 +4,17 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Prover worker pool capped at min(cpus, 4) (`SHADE_TREE_PROVER_WORKERS`)
+
+- snarkjs runs every Groth16 prove and verify on an ffjavascript worker pool that had one worker
+  per `os.cpus()` entry, each with its own wasm memory. On a 16-vCPU box an isolated prover
+  process making 11 proofs had a median peak RSS near 1.4 GiB; with 4 workers, near 0.5 GiB, at
+  about 1.7x the median warm proof time. Other CPU counts and verify-only processes were not
+  measured. The Proxy and the gateway now build the pool with `min(cpus, 4)` workers.
+- `SHADE_TREE_PROVER_WORKERS` (integer `1..64`) sets the count; unset or empty keeps the new
+  default. A bad value is a startup error. Hosts with 4 or fewer CPUs see no change.
+- New `packages/node/lib/prover-workers.mjs` with its selftest. Documented in `docs/CONFIG.md`.
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative

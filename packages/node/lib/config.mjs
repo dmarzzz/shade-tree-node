@@ -23,6 +23,7 @@
 // encoded as such and called out in the header of each role block below.
 
 import { onionToPubkey } from "./directory.mjs";
+import { isProverWorkers, MAX_PROVER_WORKERS } from "./prover-workers.mjs";
 
 // BN254 (alt_bn128) scalar field prime — the field the RLN secret / Poseidon operate in.
 // Inlined (not imported from packages/node/lib/rln.mjs) so this validator stays dependency-light and pure:
@@ -242,6 +243,7 @@ const P_URL = "must be an http(s)/ws(s) URL";
 const P_FIELD = "must be a positive field-element secret (0x-hex or decimal, non-zero mod field)";
 const P_POSINT = "must be a positive integer";
 const P_NONNEG = "must be a non-negative integer";
+const P_WORKERS = `must be an integer 1..${MAX_PROVER_WORKERS} (unset or empty = min(cpus, 4))`;
 const P_ADMISSION = "must be one of: open, stake";
 const P_STAKEMODE = "must be one of: onchain, mock";
 const P_ROOTPROV = "must be one of: node, light";
@@ -325,6 +327,7 @@ export const ROLE_SPECS = {
       ["SHADE_TREE_EPOCH_SECONDS", isPosInt, P_POSINT],
       ["SHADE_TREE_SLOTS", isPosInt, P_POSINT],
       ["SHADE_TREE_RLN_IDENTIFIER", isPosInt, P_POSINT],
+      ["SHADE_TREE_PROVER_WORKERS", isProverWorkers, P_WORKERS], // snarkjs worker pool, 1..64 (default min(cpus, 4))
     ],
     conditional(env, errors) {
       checkMetricsPortCollision(env, errors, "SHADE_TREE_GATEWAY_PORT", 8443, "node backend");
@@ -366,6 +369,7 @@ export const ROLE_SPECS = {
       ["SHADE_TREE_EPOCH_SECONDS", isPosInt, P_POSINT],
       ["SHADE_TREE_SLOTS", isPosInt, P_POSINT],
       ["SHADE_TREE_RLN_IDENTIFIER", isPosInt, P_POSINT],
+      ["SHADE_TREE_PROVER_WORKERS", isProverWorkers, P_WORKERS], // snarkjs worker pool, 1..64 (default min(cpus, 4))
       // SHADE_TREE_DIRECTORY is a filesystem path (no shape to check); presence is handled in the
       // conditional. SHADE_TREE_DIRECTORY_CACHE likewise.
     ],
