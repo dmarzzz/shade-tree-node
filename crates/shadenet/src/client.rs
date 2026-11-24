@@ -1503,6 +1503,11 @@ impl Client {
     /// when the budget allows and [`Config::retry_other_node`] is on. The proof is never
     /// replayed: the retry spends a new ticket or slot, which is why it stops at one.
     ///
+    /// A `bad-target-policy` refusal is retried here only with session tickets on, where the
+    /// attempt was bound to one node. Without them the transport has already carried the same
+    /// envelope to every candidate, so every node refused and a retry would spend a second slot
+    /// to ask them all again.
+    ///
     /// `attempt_epoch` receives the epoch the last attempt proved for, when it got that far.
     async fn connect_once(
         &self,
@@ -1514,7 +1519,9 @@ impl Client {
         let avoid = match &result {
             Err(Error::NodeRefused {
                 gateway, reason, ..
-            }) if reason.starts_with("upstream:") || reason == "bad-target-policy" => {
+            }) if reason.starts_with("upstream:")
+                || (reason == "bad-target-policy" && self.config.session_tickets) =>
+            {
                 tracing::info!(%gateway, %reason, %target, "node could not or would not reach the destination; trying another node once");
                 Some(gateway.clone())
             }
