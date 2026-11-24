@@ -29,6 +29,10 @@ echo "== build the Rust Proxy (debug, with the plain-TCP dev transport)"
 cargo build --locked --quiet --manifest-path "$REPO/Cargo.toml" -p shadenet-cli --features live
 BIN="$REPO/target/debug/shadenet"
 
+echo "== build the Rust node"
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
+
 echo "== ephemeral member identity + invited set"
 node "$INTEROP/egress-derive.mjs" "$WORK" "$SECRET" >/dev/null
 
@@ -38,7 +42,7 @@ SHADE_TREE_GATEWAY_PORT="$NODE_PORT" \
 SHADE_TREE_EPOCH_SECONDS="$EPOCH_SECONDS" \
 SHADE_TREE_SPENT_STATE_FILE=off \
 SHADE_TREE_BANNER=never \
-  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/node.log" 2>&1 &
+  $GATEWAY_CMD > "$WORK/node.log" 2>&1 &
 PIDS+=($!)
 node "$INTEROP/wait-log.mjs" "$WORK/node.log" "gateway up on" 30000 || { cat "$WORK/node.log"; exit 1; }
 

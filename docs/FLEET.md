@@ -123,8 +123,10 @@ able to graft a hostile address:
    (onion services), so selection lives in the shim, not in Tor's relay path selection.
 2. **Failover.** Build a full try-order (the spread pick, then the rest as weighted-random
    fallbacks). Dial in order; on a dial timeout move to the next gateway. Once a socket
-   is up and the envelope is sent, the request is committed to that gateway; failover
-   is dial-time only.
+   is up and the envelope is sent, the request is committed to that gateway, except when
+   the gateway refuses before egress (a root it does not know, or a target its operator's
+   egress policy excludes, `bad-target-policy`): nothing was spent there, so the identical
+   envelope goes to the next candidate (ADR 0013). Everything else is dial-time only.
 3. **Feedback.** Report per-dial success/latency back into the in-memory health of the
    fleet. Two consecutive failures mark a gateway `down` and selection skips it until a
    later refresh; a persistently slow gateway loses effective weight via a latency

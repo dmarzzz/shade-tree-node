@@ -188,6 +188,8 @@ A node can run near GPU workers, model servers, or an Ethereum validator. Give
 egress a dedicated public IP when possible. Keep validator keys and
 authenticated RPC endpoints out of the node. Read the [operator
 guide](docs/OPERATOR.md) and current [deployment plan](docs/DEPLOYMENT-PLAN.md).
+On a residential connection, set `SHADENET_PROFILE=home` and read the
+[home node guide](docs/HOME-NODE.md) first.
 
 Interactive services grow one small ASCII tree when ready. Bootstrap installs
 use structured JSON logs and separate loopback metrics for each role. See the

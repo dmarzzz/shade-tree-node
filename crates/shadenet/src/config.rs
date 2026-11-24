@@ -139,8 +139,9 @@ pub struct Config {
     /// (ADR 0013). `None` refuses at once with `budget_exhausted`. The CLI defaults the proxy,
     /// `mcp` and `fetch` to two epochs; SDK callers opt in.
     pub queue_max_wait: Option<Duration>,
-    /// After a node refuses a tunnel for an `upstream:*` reason, try once more on another node
-    /// when the budget allows (ADR 0013).
+    /// After a node refuses a tunnel for an `upstream:*` reason or under its operator's egress
+    /// policy (`bad-target-policy`), try once more on another node when the budget allows
+    /// (ADR 0013).
     pub retry_other_node: bool,
     /// Nodes this client never selects from the canopy because they exit from this connection's
     /// public IP (roadmap #369 M0): onions, any case, `.onion` and `:port` optional.
@@ -401,7 +402,7 @@ impl ConfigBuilder {
         queue_max_wait: Option<Duration>
     );
     setter!(
-        /// Retry once on another node after an `upstream:*` refusal.
+        /// Retry once on another node after an `upstream:*` or `bad-target-policy` refusal.
         retry_other_node: bool
     );
     setter!(

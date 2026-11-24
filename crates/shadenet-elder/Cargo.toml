@@ -1,0 +1,39 @@
+[package]
+name = "shadenet-elder"
+version = "0.7.5"
+edition = "2021"
+rust-version = "1.98"
+license = "MIT"
+description = "ShadeNet Elder Tree: the `shadenet-elder` binary, the live node directory published as an onion service (ADR 0015)"
+repository = "https://github.com/dmarzzz/shade-tree-node"
+publish = false
+
+[lib]
+name = "shadenet_elder"
+path = "src/lib.rs"
+
+[[bin]]
+name = "shadenet-elder"
+path = "src/main.rs"
+
+[dependencies]
+shadenet-proto = { path = "../shadenet-proto", version = "0.7.5" }
+shadenet-service = { path = "../shadenet-service", version = "0.7.5" }
+shadenet = { path = "../shadenet", version = "0.7.5", default-features = false }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-graceful"] }
+http-body-util = "0.1"
+bytes = "1"
+flate2 = "1"
+tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time", "signal", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+# the directory etag is the sha-256 of the served bytes; the signer seed comes from
+# operating-system randomness
+sha2 = "0.11"
+getrandom = "0.4"
+hex = "0.4"
+clap = { version = "4", features = ["derive", "wrap_help", "string"] }
+thiserror = "2"
+tracing = "0.1"
+zeroize = "1"
