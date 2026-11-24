@@ -1,7 +1,7 @@
 // reconstructGroup builds the untracked prefix of the member log bottom-up (one tree build from a
 // leaf array) instead of one Merkle-path update per log. This suite pins that the result is the
 // SAME as the per-log replay it replaced, on histories where removals are interleaved with
-// registers (each removal lands 7 registers after its own register, as on a live set), and for
+// registers (the removal of member i follows register i+7, capped at the final register), and for
 // every `trackFrom` a caller passes: Infinity (startup, full rescan), a finite poll boundary
 // (NodeRootProvider's incremental poll), 0, past the end, negative and NaN.
 //
@@ -63,8 +63,9 @@ const hex = (n) => `0x${n.toString(16)}`;
 const reg = (c, block, li = 0, topic = TOPIC.registeredV4) => ({ blockNumber: hex(block), logIndex: hex(li), topics: [topic, word(c)] });
 const rm = (c, block, li = 0, topic = TOPIC.withdrawn) => ({ blockNumber: hex(block), logIndex: hex(li), topics: [topic, word(c)] });
 
-// q24-shaped history: register i at key 2i; for a fraction `frac` of members, a removal right
-// after register i+7. One log per block.
+// q24-shaped history: register i at key 2i; for a fraction `frac` of members, the removal of
+// member i right after register min(n - 1, i + 7), so the last members' removals are capped at
+// the final register. One log per block.
 function interleaved(n, frac) {
   const ev = [];
   const commits = [];
