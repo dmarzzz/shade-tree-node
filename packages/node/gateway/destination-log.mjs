@@ -1,7 +1,7 @@
 // Independent local-only destination log. Never use the general logger/telemetry transport.
 import { constants } from "node:fs";
 import { lstat, open, readdir, unlink } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 const MINUTE = 60 * 1000;
 const FILE = /^destination-(\d+)-(\d+)\.jsonl$/;
@@ -18,8 +18,13 @@ function retentionMs(value) {
 }
 function safeFile(stat) {
   // Refuse links and shared files rather than following an attacker-controlled sink.
-  if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o600) {
+  if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid() || (stat.mode & 0o7777) !== 0o600) {
     throw new Error("unsafe destination log file");
+  }
+}
+function safeDirectory(stat) {
+  if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o7777) !== 0o700) {
+    throw new Error("destination log directory must be owned by the service uid with mode 0700");
   }
 }
 
@@ -32,15 +37,17 @@ export async function makeDestinationLog({ env = process.env, now = Date.now, on
     throw new Error("destination log max bytes must be a positive safe integer");
   }
   const directory = env.SHADE_TREE_DESTINATION_LOG_DIR;
-  // Pre-provision a dedicated directory; do not silently fall back to stdout or a shared sink.
-  if (!directory || !isAbsolute(directory)) throw new Error("destination log requires an absolute private directory");
-  const stat = await lstat(directory);
-  if (!stat.isDirectory() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700) {
-    throw new Error("destination log directory must be owned by the service uid with mode 0700");
+  // Require an unambiguous final component: trailing slash/dot can make lstat follow a link.
+  // Pre-provision a dedicated directory; never fall back to stdout or a shared sink.
+  if (typeof directory !== "string" || !isAbsolute(directory) || directory === "/" || resolve(directory) !== directory) {
+    throw new Error("destination log requires an absolute private directory with canonical path spelling");
   }
+  const stat = await lstat(directory);
+  safeDirectory(stat);
   const files = new Map();
   let total = 0;
   let sequence = 0;
+  let needsScan = false;
   const bucket = () => Math.floor(now() / MINUTE);
   const expired = (stamp) => (stamp + 1) * MINUTE <= now() - age;
   const oldest = () => [...files.values()].sort((a, b) => a.stamp - b.stamp || a.sequence - b.sequence);
@@ -50,8 +57,12 @@ export async function makeDestinationLog({ env = process.env, now = Date.now, on
     total -= entry.size;
   };
   const scan = async () => {
+    const current = await lstat(directory);
+    safeDirectory(current);
+    if (current.dev !== stat.dev || current.ino !== stat.ino) throw new Error("destination log directory changed externally");
     const scanned = new Map();
     let scannedTotal = 0;
+    let scannedSequence = sequence;
     for (const name of await readdir(directory)) {
       const match = FILE.exec(name);
       if (!match) continue;
@@ -60,14 +71,21 @@ export async function makeDestinationLog({ env = process.env, now = Date.now, on
       if (!Number.isSafeInteger(stamp) || !Number.isSafeInteger(seq)) throw new Error("unsafe destination log filename");
       const st = await lstat(join(directory, name));
       safeFile(st);
-      scanned.set(name, { name, stamp, sequence: seq, size: st.size });
-      sequence = Math.max(sequence, seq);
+      const previous = files.get(name);
+      // Only reuse a complete segment written by this instance. Restart/crash tails and
+      // externally changed files stay sealed without reading their contents on the hot path.
+      const appendable = previous?.appendable === true && previous.size === st.size
+        && previous.dev === st.dev && previous.ino === st.ino;
+      scanned.set(name, { name, stamp, sequence: seq, size: st.size, dev: st.dev, ino: st.ino, appendable });
+      scannedSequence = Math.max(scannedSequence, seq);
       scannedTotal += st.size;
     }
-    // Keep the previous accounting intact if any lstat or validation fails mid-scan.
+    // Keep the previous accounting and sequence intact if validation fails mid-scan.
     files.clear();
     for (const [name, entry] of scanned) files.set(name, entry);
     total = scannedTotal;
+    sequence = scannedSequence;
+    needsScan = false;
   };
   const prune = async () => {
     await scan();
@@ -88,13 +106,14 @@ export async function makeDestinationLog({ env = process.env, now = Date.now, on
   const enqueue = (task) => {
     if (closed || pending >= MAX_PENDING) { report(); return false; }
     pending += 1;
-    tail = tail.then(task).catch(report).finally(() => { pending -= 1; });
+    tail = tail.then(task).catch(() => { needsScan = true; report(); }).finally(() => { pending -= 1; });
     return true;
   };
   return {
     // Called by the gateway's existing epoch sweep, not a timer or per-request prune.
     // Coalescing prevents slow storage from accumulating maintenance work.
     sweep() {
+      if (closed) return tail;
       if (!sweeping) {
         sweeping = true;
         if (!enqueue(async () => { try { await prune(); } finally { sweeping = false; } })) sweeping = false;
@@ -102,52 +121,88 @@ export async function makeDestinationLog({ env = process.env, now = Date.now, on
       return tail;
     },
     write(record) {
-      // Closed allowlist: neither caller objects nor error messages are serialized wholesale.
-      const line = JSON.stringify({
-        event: "destination.tunnel.closed",
-        host: record.host,
-        ip: record.ip,
-        port: record.port,
-        openedAt: record.openedAt,
-        durationMs: record.durationMs,
-        agentToDestinationBytes: record.agentToDestinationBytes,
-        destinationToAgentBytes: record.destinationToAgentBytes,
-        closeReason: REASONS.has(record.closeReason) ? record.closeReason : "peer-close",
-      }) + "\n";
-      const bytes = Buffer.byteLength(line);
-      const stamp = bucket();
+      if (closed || pending >= MAX_PENDING) { report(); return; }
+      let line, bytes, stamp;
+      try {
+        // Snapshot a closed primitive-only allowlist; never invoke field toJSON methods.
+        const closeReason = record.closeReason;
+        const metadata = {
+          event: "destination.tunnel.closed",
+          host: record.host,
+          ip: record.ip,
+          port: record.port,
+          openedAt: record.openedAt,
+          durationMs: record.durationMs,
+          agentToDestinationBytes: record.agentToDestinationBytes,
+          destinationToAgentBytes: record.destinationToAgentBytes,
+          closeReason: REASONS.has(closeReason) ? closeReason : "peer-close",
+        };
+        for (const key of ["host", "ip", "openedAt"]) {
+          if (typeof metadata[key] !== "string") throw new Error("invalid destination log metadata");
+        }
+        for (const key of ["port", "durationMs", "agentToDestinationBytes", "destinationToAgentBytes"]) {
+          if (typeof metadata[key] !== "number" || !Number.isFinite(metadata[key]) || metadata[key] < 0) {
+            throw new Error("invalid destination log metadata");
+          }
+        }
+        line = JSON.stringify(metadata) + "\n";
+        bytes = Buffer.byteLength(line);
+        stamp = bucket();
+        if (!Number.isSafeInteger(stamp) || stamp < 0) throw new Error("invalid destination log clock");
+      } catch { report(); return; }
       enqueue(async () => {
         // A queued record that ages out cannot recreate an expired file.
         if (expired(stamp)) return;
         if (bytes > Math.min(MAX_FILE_BYTES, maxBytes)) { report(); return; }
-        // Size enforcement is incremental, not a directory scan or age-prune on every close.
+        // Only failures trigger an extra scan; healthy closes retain incremental accounting.
+        if (needsScan) await scan();
         // Evict before append, even in forever mode; disk usage never exceeds the global cap.
         for (const entry of oldest()) {
           if (total + bytes <= maxBytes) break;
           await remove(entry);
         }
-        let entry = oldest().reverse().find((f) => f.stamp === stamp && f.size + bytes <= MAX_FILE_BYTES);
+        // Never backfill a smaller record into an older, already-rotated segment.
+        let entry = oldest().reverse().find((f) => f.stamp === stamp);
+        if (entry && (!entry.appendable || entry.size + bytes > MAX_FILE_BYTES)) entry = undefined;
         const fresh = !entry;
         if (fresh) {
-          const seq = ++sequence;
-          entry = { name: `destination-${stamp}-${seq}.jsonl`, stamp, sequence: seq, size: 0 };
+          const seq = sequence + 1;
+          if (!Number.isSafeInteger(seq)) throw new Error("destination log sequence exhausted");
+          sequence = seq;
+          entry = { name: `destination-${stamp}-${seq}.jsonl`, stamp, sequence: seq, size: 0, appendable: false };
         }
-        const file = await open(join(directory, entry.name),
-          constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK
-            | (fresh ? constants.O_CREAT | constants.O_EXCL : 0), 0o600);
+        let file;
         try {
+          file = await open(join(directory, entry.name),
+            constants.O_WRONLY | constants.O_APPEND | constants.O_NOFOLLOW | constants.O_NONBLOCK
+              | (fresh ? constants.O_CREAT | constants.O_EXCL : 0), 0o600);
           const st = await file.stat();
           safeFile(st);
           // Only this process may write the private directory. Refuse unexpected mutation.
-          if (st.size !== entry.size) throw new Error("destination log file changed externally");
-          if (fresh) files.set(entry.name, entry);
-          try { await file.writeFile(line); } finally {
-            // Account for a partial write even if the filesystem reports an error.
+          if (st.size !== entry.size || (!fresh && (st.dev !== entry.dev || st.ino !== entry.ino))) {
+            throw new Error("destination log file changed externally");
+          }
+          if (fresh) {
+            entry.dev = st.dev; entry.ino = st.ino;
+            files.set(entry.name, entry);
+          }
+          try {
+            try { await file.writeFile(line); } catch (error) {
+              // Restore the last complete JSONL boundary. If rollback fails, leave this
+              // segment sealed and rescan before any further byte-cap decision.
+              await file.truncate(entry.size);
+              throw error;
+            }
+          } finally {
             const actual = (await file.stat()).size;
             total += actual - entry.size;
             entry.size = actual;
           }
-        } finally { await file.close(); }
+          entry.appendable = true;
+        } catch (error) {
+          entry.appendable = false;
+          throw error;
+        } finally { if (file) await file.close(); }
       });
     },
     async flush() { await tail; },
