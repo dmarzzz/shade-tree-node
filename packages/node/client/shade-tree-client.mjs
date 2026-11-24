@@ -473,6 +473,15 @@ export function readGatewayAck(socket, { timeoutMs = DEFAULT_GATEWAY_ACK_TIMEOUT
 // Start the ack reader BEFORE writing, so a synchronous/fake response cannot be missed. A write
 // callback error races the bounded ack; the ack timeout also bounds a socket whose write never
 // completes. readGatewayAck owns destruction on every rejection.
+//
+// Callers pass the socket straight from _dial with no await in between. The `socks` library
+// pauses the socket at the proxy's connect reply and resumes it one event-loop turn later
+// (setImmediate), re-emitting any bytes that came with the reply. A node can answer and close
+// before it reads an envelope (`bad-envelope:envelope timeout` from its envelope deadline,
+// `too-many-connections`). Holding the socket past that turn (proving, sleeping) drops the line
+// and the attempt fails as an acknowledgement transport error (ACK_EOF after a short hold,
+// ACK_CLOSED after a longer one) instead of with the node's reason. Prove before dialing.
+// dial-ack-handoff.selftest.mjs pins this with the real `socks` library.
 async function exchangeGatewayAck(socket, wire, options) {
   const ack = readGatewayAck(socket, options);
   if (socket.destroyed || socket.closed || socket.readableEnded) return ack;
@@ -990,6 +999,7 @@ export class ShadeTreeClient {
       emit({ phase: "dial", status: "start", onion: cand });
       let candidateSocket = null;
       try {
+        // No await between this dial and exchangeGatewayAck below (see exchangeGatewayAck).
         candidateSocket = await this._dial(cand, this.dialAttempts, socksAuth);
         candidateSocket.setNoDelay(true);
       } catch (e) {
@@ -1133,6 +1143,7 @@ export class ShadeTreeClient {
       emit({ phase: "ticket", status: "start", onion: cand.onion, ticket: index, left: book.unused.length });
       let sock;
       try {
+        // No await between this dial and exchangeGatewayAck below (see exchangeGatewayAck).
         sock = await this._dial(cand.onion, this.dialAttempts, book.socksAuth);
         sock.setNoDelay(true);
       } catch (e) {
@@ -1217,6 +1228,8 @@ export class ShadeTreeClient {
     emit({ phase: "session", status: "start", onion: cand.onion, class: classId });
     let sock;
     try {
+      // The proof above is complete before this dial, and nothing awaits between the dial and
+      // exchangeGatewayAck below (see exchangeGatewayAck).
       sock = await this._dial(cand.onion, this.dialAttempts, socksAuth);
       sock.setNoDelay(true);
     } catch (e) {
