@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use shadenet_service::metrics::Registry;
+
 use crate::alerts::Alerts;
-use crate::metrics::Registry;
 
 pub(crate) const DEFAULT_URLS: &str = "https://www.cloudflare.com/,https://duckduckgo.com/";
 pub(crate) const DEFAULT_INTERVAL_SECS: u64 = 600;
@@ -324,7 +325,7 @@ mod tests {
                 let _ = socket.shutdown().await;
             }
         });
-        let registry = Arc::new(Registry::new("node", "0", "0"));
+        let registry = Arc::new(Registry::new("node", "0", "0", crate::metrics::DEFINITIONS));
         let dir = std::env::temp_dir().join(format!("shadenet-canary-http-{}", std::process::id()));
         let canary = Canary::new(
             Settings {
