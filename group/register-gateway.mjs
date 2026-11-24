@@ -6,9 +6,9 @@
 // member over-spenders. The stake binds to the operator ADDRESS (msg.sender), never to an onion,
 // so one stake can back many/rotating onions and the fleet is never enumerable on chain.
 //
-// After staking, authorize your onion off chain and hand it to the heartbeat:
-//   SHADE_TREE_GW_OPERATOR_KEY=<this key> shade-tree-node heartbeat --bootnode <onion>
-// (the heartbeat signs operatorAuthMessage(onion, operator) durably; see packages/node/bootnode/heartbeat.mjs).
+// After staking, authorize your onion off chain and hand it to the node:
+//   SHADE_TREE_GW_OPERATOR_KEY=<this key> SHADE_TREE_BOOTNODE_ONION=<onion> shade-tree-node node
+// (the node's heartbeat signs operatorAuthMessage(onion, operator) durably; see crates/shadenet-node/src/heartbeat.rs).
 //
 // Config:
 //   SHADE_TREE_RPC_URL           JSON-RPC endpoint            (default: deployed.rpcUrl or anvil)

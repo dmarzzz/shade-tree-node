@@ -27,6 +27,9 @@ broadcast/
 experiments/
 demo/
 network/
+# The Rust node image compiles the SDK, which embeds the Sepolia record.
+!network/sepolia/deployment.json
+target/
 
 # Signer/enrollment secrets.
 .secret

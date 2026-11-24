@@ -157,7 +157,8 @@ pub struct CapsDto {
 }
 
 impl CapsDto {
-    fn into_proto(self) -> Caps {
+    /// The raw caps as the proto crate takes them; canonicalization happens there.
+    pub fn into_proto(self) -> Caps {
         Caps {
             ports: self.ports,
             region: self.region,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # T-RUST-3 integration harness: prove the Rust client's RESILIENT operational loop
 # (packages/node/client/shade-tree-client.mjs parity) — GATEWAY FAILOVER and LAST-KNOWN-GOOD directory
-# caching — against the REAL JS gateway, with NO Tor (plain-TCP, always-green like
+# caching — against the REAL Rust node, with NO Tor (plain-TCP, always-green like
 # egress-run.sh). Two layers:
 #
 #   LAYER A (FAILOVER): `shade-tree egress` is given an ORDERED candidate list whose FIRST
@@ -27,11 +27,15 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
+# The node under test: the Rust shadenet-node built from this checkout (ADR 0014), or whatever
+# SHADE_TREE_GATEWAY_CMD names. Both read the same SHADE_TREE_* variables.
+source "$REPO/scripts/node-bin.sh"
+GATEWAY_CMD="$(shadenet_node_cmd "$REPO")"
 CIRCUITS="$REPO/circuits/rln"
 TESTDATA="$REPO/crates/shadenet/src/testdata"
 WORK="$(mktemp -d)"
 
-# Ports: the real gateway is HARDCODED to 127.0.0.1:8443 (gateway.mjs LISTEN_PORT).
+# Ports: the node listens on 127.0.0.1:8443 (the SHADE_TREE_GATEWAY_PORT default).
 # The DEAD candidate is a port with nothing listening (connection refused fast).
 GW_PORT=8443
 DEAD_PORT=1
@@ -46,7 +50,6 @@ TARGET="127.0.0.1:${SINK_PORT}"
 PIDFILE="$WORK/pids"
 : > "$PIDFILE"
 track() { echo "$1" >> "$PIDFILE"; }   # record a backgrounded child's PID
-MEMBERS_BAK=""
 _cleaned=0
 cleanup() {
   [ "$_cleaned" = 1 ] && return 0
@@ -56,8 +59,6 @@ cleanup() {
       [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
     done < "$PIDFILE"
   fi
-  # restore the repo's group/members.json (layer A overwrites it as the gateway root)
-  [ -n "$MEMBERS_BAK" ] && [ -f "$MEMBERS_BAK" ] && mv -f "$MEMBERS_BAK" "$REPO/group/members.json" 2>/dev/null || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -102,19 +103,14 @@ node "$HERE/egress-derive.mjs" "$WORK"
 IDENTITY="$WORK/identity.json"
 MEMBERS="$WORK/members.json"
 
-# Point the gateway's PoC root source at our derived member set (backup + restore in trap).
-MEMBERS_BAK="$WORK/members.json.repo-bak"
-cp "$REPO/group/members.json" "$MEMBERS_BAK"
-cp "$MEMBERS" "$REPO/group/members.json"
-
 # A local egress sink = the :port the gateway proxies to (so `pass` fires without real net).
 node -e 'const net=require("net"); net.createServer(s=>s.resume()).listen('"$SINK_PORT"',"127.0.0.1",()=>console.error("[sink] up on 127.0.0.1:'"$SINK_PORT"'"));' > "$WORK/sink.log" 2>&1 &
 SINK_PID=$!; track "$SINK_PID"; disown "$SINK_PID" 2>/dev/null || true
 node "$HERE/wait-log.mjs" "$WORK/sink.log" "[sink] up" 15000
 
 # Start the real gateway. Allow ONLY our local sink target; default epoch length.
-SHADE_TREE_EGRESS_ALLOW="$TARGET" SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 SHADE_TREE_EPOCH_SECONDS=120 \
-  node "$REPO/packages/node/gateway/gateway.mjs" > "$WORK/gw.log" 2>&1 &
+SHADE_TREE_MEMBERS_FILE="$MEMBERS" SHADE_TREE_EGRESS_ALLOW="$TARGET" SHADE_TREE_ALLOW_PRIVATE_TARGETS=1 SHADE_TREE_EPOCH_SECONDS=120 \
+  $GATEWAY_CMD > "$WORK/gw.log" 2>&1 &
 GW_PID=$!; track "$GW_PID"; disown "$GW_PID" 2>/dev/null || true
 node "$HERE/wait-log.mjs" "$WORK/gw.log" "gateway up on" 20000
 

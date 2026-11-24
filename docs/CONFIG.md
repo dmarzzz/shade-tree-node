@@ -21,13 +21,25 @@ have set it. The tables below are that advanced layer.
 | `SHADENET_MEMBERS_FILE` / `members_file` | (unset) | Operator-owned `members.json`, required by the invited path; absolute path | `SHADE_TREE_MEMBERS_FILE` |
 | `SHADENET_ALLOW` / `allow` | `*:443` | Egress allow list, `host:port` patterns | `SHADE_TREE_EGRESS_ALLOW` |
 | `SHADENET_DENY` / `deny` | (empty) | Egress deny list; deny wins | `SHADE_TREE_EGRESS_DENY` |
+| `SHADENET_DENY_FILE` / `deny_file` | (unset) | A hosts-format or domain-list blocklist on the deny side, absolute path; a listed host and its subdomains are refused on every port; re-read when the file changes | `SHADE_TREE_EGRESS_DENY_FILE` |
+| `SHADENET_PROFILE` / `profile` | `default` | `home` presets `weight` `10`, `conns` `32`, `sessions` `4`, `bandwidth` `2m` and `canary` `on` for a node on a residential connection; a knob set explicitly keeps its value and `check` shows `profile home` as the source of the rest ([HOME-NODE.md](HOME-NODE.md)) | the three knobs it presets |
 | `SHADENET_WEIGHT` / `weight` | `100` | Selection weight 1..1000; lower means less traffic lands here | `SHADE_TREE_GW_WEIGHT` |
+| `SHADENET_CONNS` / `conns` | (unset: the node's `1024`) | Max concurrent tunnels, decided at accept; `0` = unlimited | `SHADE_TREE_MAX_CONNS` |
+| `SHADENET_SESSIONS` / `sessions` | (unset: the node's `256`) | Max live session-ticket books; `0` = unlimited | `SHADE_TREE_SESSION_MAX` |
+| `SHADENET_BANDWIDTH` / `bandwidth` | (unset: unlimited) | Bytes per second this node relays in total, both directions, with an optional `k` or `m` suffix (`2m` = 2 MiB/s); `0` = unlimited | `SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND` |
+| `SHADENET_CANARY` / `canary` | `off` | `on` runs the reputation canary: HTTPS probes from this host's own address that set the drain flag while they are blocked or challenged ([HOME-NODE.md](HOME-NODE.md#the-reputation-canary)) | `SHADE_TREE_CANARY` |
 | `SHADENET_REGION` / `region` | (unset) | Advertised region bucket: `na sa eu af as oc aq unknown` | `SHADE_TREE_GATEWAY_REGION` |
-| `SHADENET_METRICS` / `metrics` | `9101` | Prometheus port on loopback (the heartbeat uses port + 2), or `off` | `SHADE_TREE_METRICS_PORT`, `SHADE_TREE_HEARTBEAT_METRICS_PORT` |
+| `SHADENET_METRICS` / `metrics` | `9101` | Prometheus port on loopback, or `off`. The Rust node serves its own and the heartbeat's series on this one port (`SHADE_TREE_HEARTBEAT_METRICS_PORT` is still derived for the JavaScript node) | `SHADE_TREE_METRICS_PORT`, `SHADE_TREE_HEARTBEAT_METRICS_PORT` |
 | `SHADENET_LOG` / `log` | `json:info` | `json`, `pretty` or `text`, with an optional `:debug|info|warn|error` | `SHADE_TREE_LOG_FORMAT`, `SHADE_TREE_LOG_LEVEL` |
 | `SHADENET_OPERATOR_KEY_FILE` / `operator_key_file` | (unset) | Owner-only file holding the staked operator key (stake-admission canopies) | `SHADE_TREE_GW_OPERATOR_KEY` |
 | `SHADENET_OPERATOR` + `SHADENET_OPERATOR_SIG` / `operator`, `operator_sig` | (unset) | The operator address and its signature over `operatorAuthMessage(onion, operator)`, made with `shadenet-node authorize` where the key lives; the key never reaches the node | `SHADE_TREE_GW_OPERATOR`, `SHADE_TREE_GW_OPERATOR_SIG` |
 | `SHADENET_POW` / `pow` | `false` | Onion proof-of-work defense; needs a Tor built with the `pow` module (the image's stock Debian Tor has none) | the torrc |
+| `SHADENET_TOR_LOG` | `notice` | `info` makes Tor's file log at `<state>/tor.log` verbose | the torrc |
+
+The Rust node also derives `SHADE_TREE_DRAIN_FILE=<state>/draining`: touch that file to announce
+`draining: true` and answer `/readyz` with 503; remove it to go back. `shadenet-node retire` stops
+the heartbeat of the running node (it sends it SIGUSR1) so the node ages out of every Elder Tree
+within the TTL while open tunnels finish.
 
 Fixed inside the image: the node listens on `127.0.0.1:8443`, Tor's SOCKS on `127.0.0.1:9050`,
 no inbound ports (the node is an onion service). `node.toml` is a flat file of `key = "value"`
@@ -36,7 +48,7 @@ rejected with the line number.
 
 ## Bootnode
 
-Read by `packages/node/bootnode/server.mjs` (discovery service) and `packages/node/bootnode/heartbeat.mjs` (gateway announcer).
+Read by the Rust Elder (`shadenet-elder`, ADR 0015; the JavaScript `packages/node/bootnode/server.mjs` for one more release) and by the node's heartbeat.
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
@@ -56,9 +68,9 @@ Read by `packages/node/bootnode/server.mjs` (discovery service) and `packages/no
 | `SHADE_TREE_BOOTNODE_PORT` | `8877` | Loopback port Tor maps the bootnode onion to (listens on `127.0.0.1`). | bootnode server | `--port` |
 | `SHADE_TREE_BOOTNODE_ADMISSION` | `open` | Admission policy: `open` (onion-control only) or `stake` (require live operator stake). | bootnode server | `--admission` |
 | `SHADE_TREE_BOOTNODE_TTL` | `900` | Seconds a gateway stays live without re-announcing before it ages out. | bootnode server | `--ttl` |
-| `SHADE_TREE_BOOTNODE_SIGNER_KEY` | `bootnode/bootnode-signer.key` | Path to the pinned `{pub,priv}` JSON signer; minted and persisted if absent. | bootnode server | `--signer-key` |
+| `SHADE_TREE_BOOTNODE_SIGNER_KEY` | `<SHADENET_STATE>/bootnode-signer.key` (the JavaScript Elder: `bootnode/bootnode-signer.key`) | Path to the pinned `{pub,priv}` JSON signer; minted and persisted if absent. | bootnode server | `--signer-key` |
 | `SHADE_TREE_BOOTNODE_STORE` | (off) | Optional JSON state file for write-through persistence. When set, each accepted announce is mirrored to disk and reloaded on boot so a restart does not blank the fleet until every gateway re-announces. Reload re-verifies each record (onion control + operator stake) and drops any past its TTL, so a stale or tampered store can never admit anything a live announce would reject. | bootnode server | — |
-| `SHADE_TREE_BOOTNODE_INCIDENTS_FILE` | `bootnode/incidents.local.json` | The operator incident list served signed at `GET /incidents` (`{ "incidents": [ { id, component, instance, severity, summary, since, until } ] }`). Re-read on every fetch, so a hand edit is live at once; the Alertmanager webhook writes it too. | bootnode server (`packages/node/bootnode/incidents.mjs`) | — |
+| `SHADE_TREE_BOOTNODE_INCIDENTS_FILE` | `<SHADENET_STATE>/incidents.local.json` (the JavaScript Elder: `bootnode/incidents.local.json`) | The operator incident list served signed at `GET /incidents` (`{ "incidents": [ { id, component, instance, severity, summary, since, until } ] }`). Re-read on every fetch, so a hand edit is live at once; the Alertmanager webhook writes it too. | bootnode server (`packages/node/bootnode/incidents.mjs`) | — |
 | `SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN` | (unset → webhook off) | Bearer token for `POST /incidents/alertmanager`, the Alertmanager webhook receiver that turns firing and resolved alerts into incidents. Unset, the route answers 404 and only the file feeds `/incidents`. | bootnode server | — |
 | `SHADE_TREE_BOOTNODE_ONION` | (required for heartbeat / bootnode discovery) | The bootnode onion to announce to (heartbeat) / to fetch the live directory from (client). | heartbeat, client selection | `--bootnode` |
 | `SHADE_TREE_BOOTNODE_ONIONS` | (unset; `SHADE_TREE_NETWORK` fills it from the record's `elders[]`) | Every Elder Tree of the canopy, comma-separated, up to eight (ADR 0012). The heartbeat announces to each one every interval (one egress check, then one signed announce per Elder, in parallel); the cycle counts as accepted when at least one Elder accepted, and `shade_tree_heartbeat_elders_accepted` / `_elders_total` show the rest. `SHADE_TREE_BOOTNODE_ONION` stays the primary and is always first. | heartbeat, client selection | (none) |
@@ -71,7 +83,7 @@ Read by `packages/node/bootnode/server.mjs` (discovery service) and `packages/no
 | `SHADE_TREE_RELAY_TELEMETRY` | (unset → off) | `1` opts the gateway into local payload counters and the heartbeat into the separate signed Elder report path. Set it on both services. It never changes `/announce`. | gateway, heartbeat | (none) |
 | `SHADE_TREE_RELAY_TELEMETRY_STATE` | `tor/hs/relay-telemetry.local.json` | Shared 0600 node-local counter state. The gateway writes; the heartbeat reads. | gateway, heartbeat | (none) |
 | `SHADE_TREE_RELAY_REPORT_STATE` | `tor/hs/relay-report.local.json` | 0600 heartbeat sequence/baseline state, advanced only after Elder acceptance. | heartbeat | (none) |
-| `SHADE_TREE_RELAY_ELDER_STATE` | `bootnode/relay-telemetry-state.local.json` | Private 0600 replay checkpoint (node identity, last sequence/boot/counters only). Raw interval contributions remain memory-only and become unavailable across Elder restart. | bootnode server | (none) |
+| `SHADE_TREE_RELAY_ELDER_STATE` | `<SHADENET_STATE>/relay-telemetry-state.local.json` (the JavaScript Elder: `bootnode/relay-telemetry-state.local.json`) | Private 0600 replay checkpoint (node identity, last sequence/boot/counters only). Raw interval contributions remain memory-only and become unavailable across Elder restart. | bootnode server | (none) |
 | `SHADE_TREE_RELAY_MIN_COHORT` | `5` | Elder aggregate publication floor. Values below five refuse startup. | bootnode server | (none) |
 | `SHADE_TREE_RELAY_DELAY_HOURS` | `6` | Elder fixed-window publication delay. Values below six refuse startup. | bootnode server | (none) |
 | `SHADE_TREE_BOOTNODE_MAX_ENTRIES` | `10000` | Registry size cap: a NEW onion is refused `registry-full` when full; resident onions still refresh. | bootnode server | (none) |
@@ -80,9 +92,9 @@ Read by `packages/node/bootnode/server.mjs` (discovery service) and `packages/no
 | `SHADE_TREE_BOOTNODE_ANNOUNCE_BURST` | `max(100, maxEntries / 10)` (= `1000`) | The bucket's capacity: how many announces may reach verify in one instant. Covers a lockstep re-announce of a fleet up to this size; an attacker minting fresh onions gets at most this many verifies up front, then `RATE`/s. | bootnode server | (none) |
 | `SHADE_TREE_BOOTNODE_HEADERS_TIMEOUT_MS` | `10000` | HTTP: complete request headers must arrive within this (slow-loris headers => `408` + close). `0` disables. | bootnode server | (none) |
 | `SHADE_TREE_BOOTNODE_REQUEST_TIMEOUT_MS` | `30000` | HTTP: the whole request (headers + body) must complete within this (a dribbled body => `408` + close). Must be >= headers timeout (clamped). `0` disables. | bootnode server | (none) |
-| `SHADE_TREE_BOOTNODE_KEEPALIVE_TIMEOUT_MS` | `5000` | HTTP: an idle keep-alive connection is closed after this. | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_KEEPALIVE_TIMEOUT_MS` | `5000` | HTTP: an idle keep-alive connection is closed after this. The Rust Elder waits for request headers with one timer, the smaller of this and the headers timeout. | bootnode server | (none) |
 | `SHADE_TREE_BOOTNODE_MAX_HEADER_BYTES` | `8192` | HTTP: max total request-header bytes; over => `431`. | bootnode server | (none) |
-| `SHADE_TREE_BOOTNODE_CONN_CHECK_MS` | `1000` | HTTP: how often the timeouts above are enforced (Node's default 30 s would let a slow client linger that long past the deadline). | bootnode server | (none) |
+| `SHADE_TREE_BOOTNODE_CONN_CHECK_MS` | `1000` | HTTP: how often the timeouts above are enforced (Node's default 30 s would let a slow client linger that long past the deadline). JavaScript Elder only; the Rust Elder's timers fire exactly. | bootnode server (JavaScript) | (none) |
 
 ## Gateway
 
@@ -92,6 +104,11 @@ Read by `packages/node/gateway/gateway.mjs` (egress proxy). See also On-chain an
 |---|---|---|---|---|
 | `SHADE_TREE_EGRESS_ALLOW` | `*:443` | Comma-separated `host:port` patterns a tunnel may reach (`*`, `*.suffix` for subdomains, or exact host; port `*` or a number). Default-deny. Anything beyond `:443` lets the node read plaintext. | gateway | (none) |
 | `SHADE_TREE_EGRESS_DENY` | (empty) | Patterns refused even if allowed; deny wins. | gateway | (none) |
+| `SHADE_TREE_EGRESS_DENY_FILE` | (unset) | A blocklist file on the deny side: one host per line as `0.0.0.0 host`, `127.0.0.1 host`, `:: host`, `host` or `host:port`, `#` comments (the hosts format of the public blocklists). A listed host and its subdomains are refused `bad-target-policy` on every port. Read at start (unreadable = startup error) and re-read within a minute of the file changing; `shade_tree_gateway_blocklist_hosts` counts the entries. | gateway | (none) |
+| `SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND` | `0` (unlimited) | One token bucket over every byte the node relays, both directions, all tunnels, with one second of burst: the ceiling on what the node draws from the host's connection. Per-book session shaping still applies underneath it. | gateway | (none) |
+| `SHADE_TREE_CANARY` | `0` | `1` runs the reputation canary: a plain HTTPS GET from this host's own address (not through Tor) to each canary URL on a timer. A `403`, a `429` or a `503` carrying `cf-mitigated` is a challenge; two challenged rounds in a row write the drain flag with the content `canary`, three clean rounds in a row remove a flag with that content. A flag the operator set is never touched. Series: `shade_tree_canary_probes_total{outcome}`, `shade_tree_canary_challenged`, `shade_tree_canary_drained`; the `CanaryDrained` / `CanaryCleared` webhook events when alerts are on. | gateway | (none) |
+| `SHADE_TREE_CANARY_URLS` | `https://www.cloudflare.com/,https://duckduckgo.com/` | Comma-separated pages the canary fetches; pick ones behind the anti-bot vendors that matter to you. | gateway | (none) |
+| `SHADE_TREE_CANARY_INTERVAL_SECONDS` | `600` | Seconds between canary rounds, at least 60. The first round runs 30 s after start. | gateway | (none) |
 | `SHADE_TREE_SESSION_TICKETS` | `0` | `1` = session tickets on (ADR 0011, `sessionTickets` in the deployment record, set at H2): one RLN proof buys a `research-v1` book of six single-use tunnel tickets at this node; the heartbeat advertises the signed `session` capability. Needs the onion identity file (`SHADE_TREE_GW_IDENTITY`); off, session envelopes are refused `session-unsupported` and v4 is byte-identical. The JS client reads the same variable (`{ sessionTickets }` in code) and, like the Rust client, asks for `research-v2` (60 s idle) where the node serves it; the Rust client reads `SHADENET_SESSION_TICKETS`. | gateway, heartbeat, client | (none) |
 | `SHADE_TREE_SESSION_MAX` | `256` | Maximum live session-ticket books on this node; more initializations are refused `session-capacity`. | gateway | (none) |
 | `SHADE_TREE_SESSION_STREAM_MAX_MS` | `900000` | Hard cap on one session-ticket stream from its establishment. A book's lifetime only stops new spends; established streams drain until they go idle, hit the byte ceiling or reach this cap. `0` = no cap (idle and byte limits still apply). | gateway | (none) |
@@ -354,7 +371,7 @@ export SHADE_TREE_GATEWAY_REGISTRY=0x<GatewayRegistry>
 export SHADE_TREE_BOOTNODE_ONION=<bootnode-onion>
 export SHADE_TREE_GW_IDENTITY=tor/hs/identity.local.json
 read -s SHADE_TREE_GW_OPERATOR_KEY && export SHADE_TREE_GW_OPERATOR_KEY
-# shade-tree-node heartbeat
+# shade-tree-node node (the node announces itself; there is no separate heartbeat command)
 
 # gateway — on-chain root + real slashing
 export SHADE_TREE_GROUP_CONTRACT=0x<StakedReputationSet>

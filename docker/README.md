@@ -2,9 +2,11 @@
 
 ## Shade Tree node, from the record
 
-`docker/shadenet-node.Dockerfile` is the operator front door: Tor + the node + its heartbeat, run
-from a deployment record alone. Published by the release workflow as
-`ghcr.io/dmarzzz/shadenet-node:<version>` (multi-arch). See docs/OPERATOR.md section 2.
+`docker/shadenet-node.Dockerfile` is the operator front door: Tor + the Rust `shadenet-node`
+binary (ADR 0014; one process serves tunnels, announces and exposes metrics), run from a deployment
+record alone. Published by the release workflow as `ghcr.io/dmarzzz/shadenet-node:<version>`
+(multi-arch; the binary is cross-compiled with cargo-zigbuild, only the Tor stage runs under
+QEMU). See docs/OPERATOR.md section 2.
 
 ```sh
 docker run -d --name shadenet-node --restart unless-stopped \
@@ -47,7 +49,9 @@ Notes
 
 The full local path: one `tor` service publishing two onion services (bootnode
 and gateway) plus a SOCKS port, with `bootnode`, `gateway`, and `client` sharing
-tor's loopback via `network_mode: service:tor`.
+tor's loopback via `network_mode: service:tor`. The `gateway` service is the Rust
+`shadenet-node` image (`docker/shadenet-node.Dockerfile`) admitting the invited set in
+`group/members.json`; the other two roles still run from this JavaScript image.
 
 ```sh
 docker compose -p shade-tree up --build

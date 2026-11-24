@@ -63,6 +63,7 @@ class FakeSocket extends EventEmitter {
       else if (this.mode === "malformed") this.emit("data", Buffer.from('{"ok":"yes"}\n'));
       else if (this.mode === "transient") this.emit("data", Buffer.from('{"ok":false,"err":"upstream:ETIMEDOUT"}\n'));
       else if (this.mode === "terminal") this.emit("data", Buffer.from('{"ok":false,"err":"gate:invalid-proof"}\n'));
+      else if (this.mode === "policy") this.emit("data", Buffer.from('{"ok":false,"err":"bad-target-policy"}\n'));
       else if (this.mode === "version-mismatch") this.emit("data", Buffer.from('{"ok":false,"err":"unsupported-version:4","proto":{"min":5,"max":5}}\n'));
       else if (this.mode === "artifact-mismatch") this.emit("data", Buffer.from('{"ok":false,"err":"gate:artifact-unknown:test-artifact","artifacts":["other-artifact"]}\n'));
       else if (this.mode === "success-with-rest") {
@@ -263,6 +264,22 @@ await test("dial, write, cap, EOF, close, timeout, and malformed-ack failures al
   ackMetricError.code = "SHADE_TREE_GATEWAY_ACK_TIMEOUT";
   assert.equal(proxyFailureLabel(ackMetricError), "node-ack-failed");
   tunnel.destroy();
+});
+
+await test("an operator's egress policy refusal routes around that node without marking it down", async () => {
+  const policy = clientHarness(["policy", "success"], { ackMaxBytes: 128 });
+  const tunnel = await policy.connect();
+  assert.deepEqual(policy.calls, ["node-0", "node-1"]);
+  assert.equal(policy.writes[0], policy.writes[1], "the identical envelope goes to the next candidate");
+  assert.deepEqual(policy.reports.map(({ onion, ok }) => ({ onion, ok })), [{ onion: "node-1", ok: true }], "a policy refusal is not node-health evidence");
+  assert.equal(policy.sockets[0].destroyed, true);
+  tunnel.destroy();
+
+  const everywhere = clientHarness(["policy", "policy"], { ackMaxBytes: 128 });
+  let error = null;
+  try { await everywhere.connect(); } catch (e) { error = e; }
+  assert.match(String(error?.message || ""), /bad-target-policy/, `events=${JSON.stringify(everywhere.events)}`);
+  assert.deepEqual(everywhere.calls, ["node-0", "node-1"], "every candidate was tried");
 });
 
 await test("a node-local transient refusal fails over, but a proof refusal is terminal and does not poison health", async () => {
