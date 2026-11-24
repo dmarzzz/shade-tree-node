@@ -4,6 +4,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### JS client: session books use research-v2 where the node serves it (#103)
+
+- With session tickets on, the JS client always asked for `research-v1` (15 s idle). It now asks
+  for the best class the node serves, `research-v2` (60 s idle) before `research-v1`, as the Rust
+  client already does (ADR 0013 decision 6). A tunnel that comes 14-59 s after the last one now
+  spends a ticket from the open book instead of proving a new one, as long as the book still has a
+  ticket and is younger than its 90 s life minus the 45 s new-stream headroom.
+- A pinned onion (no caps) is asked for `research-v2` first. On a `session-class` refusal the client
+  opens a `research-v1` book in the same call (one more proof, on a new slot) and asks that onion
+  for `research-v1` from then on.
+- New `pickSessionClass` and `SESSION_CLASS_PREFERENCE` exports, new
+  `packages/node/client/session-class.selftest.mjs`. `docs/CLIENTS.md` "Session class".
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative
