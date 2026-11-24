@@ -130,6 +130,57 @@ shade-tree-node proxy --leaf-source paid --limit 32 \
   --paid-access-contract <v4-paid-set-address>
 ```
 
+### Group reuse across epochs (keep-warm)
+
+The slot pool (`makeSlotPool`) drops its RLN group at every epoch rollover. For a group read from
+members.json the next epoch rereads that file. For a group rebuilt from a contract, a full reload
+replays the whole `Member*` event log (`loadGroupFromContract`). Instead, the pool now asks the
+chain whether that set changed since the last full load (`revalidateContractGroup` in
+`packages/node/lib/root-provider.mjs`). It reads the header at the same block tag the load used
+(`finalized` on `public-stake-v1`), then the contract's `currentRoot` (storage slot 3) and, for a
+staked set, `nextIndex()` and `activeCount()`, each at that header's block number: 4 calls for a
+staked set, 2 for a paid set, which has no counters.
+
+- Discovery order is kept. Reuse applies only when the group came from the first configured
+  contract. With `SHADE_TREE_LEAF_SOURCE` `auto` or `invited`, members.json is reread first every
+  epoch, as discovery does; if it now holds your leaf, the full discovery runs and members.json
+  wins. A group found in a later contract always goes through the full discovery, so an earlier
+  contract that gains your leaf is picked up in the next epoch, as on a fresh start.
+- The check has its own deadline: 5 s for the whole check (`KEEPWARM_CHECK_TIMEOUT_MS`, loader
+  option `checkTimeoutMs`), fixed when the check starts and shared by all its calls, including
+  the failover between several `SHADE_TREE_RPC_URL` endpoints. No request to any endpoint starts
+  after the deadline, each request's own timeout is the time left (capped at
+  `SHADE_TREE_RPC_TIMEOUT_MS`), there are no throttle retries, and at the deadline the request in
+  flight is cancelled. So a hanging RPC adds at most 5 s before the full reload, which then runs
+  with the normal RPC deadlines, and the abandoned check sends nothing after that.
+
+- The previous group is reused only when the on-chain root equals the replayed root and, for a
+  staked set, both counters equal the replay.
+- Any other answer is a full reload, exactly as before: a changed set, a malformed or zero word, a
+  missing block, a revert, a timeout. If your own leaf was removed (exit, slash), the root moved,
+  so the reused group is dropped and the full discovery reports that no set holds your leaf.
+- What the check establishes: at the one block it sampled, the contract's root (and, for a staked
+  set, both counters) equals the previous replay, so the reused group is the group a fresh load at
+  that block would build. It is not a freshness guarantee: a change after the sampled block is seen
+  only by the next epoch's check, and the RPC is trusted for these reads, as it already is for the
+  log replay (a dishonest RPC is not covered).
+- Each epoch is a cache generation. A check or a full load that started in an older epoch and
+  settles late is discarded: it never replaces the current epoch's group or its failure, and never
+  becomes the load the next check compares against. `keepWarmStats().staleDiscarded` counts them.
+- A members.json group is reloaded every epoch, as before (a local file read).
+- `pool.keepWarmStats()` returns `{ loads, reused, reloadedChanged, reloadedError, staleDiscarded,
+  enabled }` for this process.
+- A custom `loadGroupFn` without a `.revalidate` method keeps the old behavior. `makeSlotPool({
+  revalidateGroupFn: null })` turns reuse off.
+
+The first proof of a process is still a full load. Tests: `packages/node/client/keep-warm.selftest.mjs`
+(loopback fake JSON-RPC that answers each read at the block it names: match, mismatch, RPC error,
+malformed answers, paid set, reads pinned to the header's block, the check deadline with hanging
+endpoints and no request started after it during failover, own leaf removed, members.json or an
+earlier contract gaining the leaf, and late replies
+from an older epoch's check or full load, or after the check deadline, when the reload succeeded or
+failed).
+
 ## Option B: local proxy (`packages/node/client/shim.mjs`)
 
 Use this when the client is a **stock tool** you can't change (browser, curl, any

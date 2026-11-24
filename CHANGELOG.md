@@ -4,6 +4,32 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### JS client: reuse the RLN group across epochs when the set is unchanged (#424)
+
+- The slot pool dropped its group at every epoch rollover, so with a staked or paid leaf every
+  epoch started with a full `Member*` log replay before the next proof. It now checks the
+  last loaded set at one block instead: the on-chain `currentRoot` (slot 3) and, for a staked set,
+  `nextIndex()` and `activeCount()`. It reuses the group only when all of them match the replay.
+  A changed set or any failed or malformed read is a full reload, as before.
+- Every read of the check is pinned to the header's block number. The check has its own 5 s
+  deadline for all its calls together, endpoint failover included (`KEEPWARM_CHECK_TIMEOUT_MS`):
+  no request starts after it and the request in flight is cancelled at it, so a hanging RPC adds
+  at most 5 s before the full reload.
+- `jsonRpcCall` (`packages/node/lib/rpc-safety.mjs`) takes an optional absolute `deadline` and
+  `signal` that bound the whole call across endpoint failover. Callers that pass neither are
+  unchanged.
+- Discovery order is kept: reuse applies only to the first configured contract, and with
+  `SHADE_TREE_LEAF_SOURCE` `auto` or `invited` members.json is reread every epoch first, so
+  members.json or an earlier contract that gains the leaf wins. The default `staked` source does
+  not read members.json, as before.
+- Each epoch is a cache generation: a check or full load from an older epoch that settles late is
+  discarded and never replaces the current epoch's group or failure (`staleDiscarded` in the stats).
+- New `revalidateContractGroup` in `packages/node/lib/root-provider.mjs`, a `.revalidate` method on
+  the `makeLeafSourceLoader` result, `makeSlotPool({ revalidateGroupFn })` and
+  `pool.keepWarmStats()` (`loads`, `reused`, `reloadedChanged`, `reloadedError`, `staleDiscarded`).
+  members.json groups and custom loaders are unchanged. `docs/CLIENTS.md`
+  "Group reuse across epochs".
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative

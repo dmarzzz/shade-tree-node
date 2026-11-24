@@ -197,21 +197,64 @@ function retryableRpcError(error) {
   return /rate|limit|too many|unavailable|header not found|timeout|busy|overload/i.test(String(error?.message || ""));
 }
 
+// A caller that bounds a whole operation (several calls, each with endpoint failover) passes the
+// same absolute `deadline` (a Date.now() value) and/or `signal` to every call. Without them each
+// endpoint gets a fresh `timeoutMs`, so a list of N hanging endpoints keeps starting requests for
+// N timeouts after the caller has given up. With them, no endpoint or attempt starts once the
+// deadline has passed or the signal has aborted, each request's own deadline is cut to the time
+// left, and aborting the signal cancels the request in flight. The error then has code
+// RPC_STOPPED and is never failed over.
+function stopReason(stop) {
+  if (stop.signal?.aborted) return "cancelled by the caller";
+  if (stop.deadline != null && Date.now() >= stop.deadline) return "the caller's deadline passed";
+  return null;
+}
+function stoppedError(method, why, cause) {
+  const error = new Error(`${method}: RPC call stopped: ${why}`, cause ? { cause } : undefined);
+  error.code = "RPC_STOPPED";
+  return error;
+}
+function throwIfStopped(method, stop, cause) {
+  const why = stopReason(stop);
+  if (why) throw stoppedError(method, why, cause);
+}
+// One request's signal: its own timeout, plus the caller's signal when there is one. The
+// listeners are removed when the request settles, so a long-lived caller signal does not collect
+// one listener per request.
+function attemptSignal(ms, outer) {
+  const timeout = AbortSignal.timeout(ms);
+  if (!outer) return { signal: timeout, done() {} };
+  const ctl = new AbortController();
+  const onTimeout = () => ctl.abort(timeout.reason);
+  const onOuter = () => ctl.abort(outer.reason);
+  if (outer.aborted) ctl.abort(outer.reason);
+  timeout.addEventListener("abort", onTimeout, { once: true });
+  outer.addEventListener("abort", onOuter, { once: true });
+  return {
+    signal: ctl.signal,
+    done() { timeout.removeEventListener("abort", onTimeout); outer.removeEventListener("abort", onOuter); },
+  };
+}
+
 // A small raw JSON-RPC call used both by the root provider and by the bounded ethers bootstrap.
 // The AbortSignal covers connection, response headers and response-body decoding. With several
 // configured endpoints, a transport failure, timeout, HTTP error, malformed body or retryable
 // JSON-RPC error moves to the next endpoint; the last error is thrown only when all fail. A
 // throttled endpoint is not waited on while another is untried: only the last endpoint in the
 // rotation backs off and retries, so a list fails over first and waits only when all are limited.
+// `deadline` and `signal` (optional) stop the whole call, failover included; see stopReason.
 export async function jsonRpcCall(url, method, params = [], {
   timeoutMs = rpcTimeoutMs(),
   fetchImpl = globalThis.fetch,
   id = 1,
   retries = rpcRetries(),
   sleep = sleepMs,
+  deadline = null,
+  signal = null,
 } = {}) {
   const urls = rpcUrlList(url);
-  if (urls.length <= 1) return jsonRpcCallOne(urls[0] ?? url, method, params, { timeoutMs, fetchImpl, id, retries, sleep });
+  const stop = { deadline: Number.isFinite(deadline) ? deadline : null, signal: signal ?? null };
+  if (urls.length <= 1) return jsonRpcCallOne(urls[0] ?? url, method, params, { timeoutMs, fetchImpl, id, retries, sleep, stop });
   const key = urls.join(",");
   const start = stickyEndpoint.get(key) ?? 0;
   let lastError;
@@ -219,11 +262,12 @@ export async function jsonRpcCall(url, method, params = [], {
     const index = (start + step) % urls.length;
     try {
       const result = await jsonRpcCallOne(urls[index], method, params, {
-        timeoutMs, fetchImpl, id, retries: step === urls.length - 1 ? retries : 0, sleep,
+        timeoutMs, fetchImpl, id, retries: step === urls.length - 1 ? retries : 0, sleep, stop,
       });
       stickyEndpoint.set(key, index);
       return result;
     } catch (error) {
+      if (error?.code === "RPC_STOPPED") throw error; // the caller gave up: not an endpoint failure
       if (error?.rpcAnswer && !retryableRpcError(error)) throw error;
       lastError = error;
       rpcFailovers.inc({ endpoint: String(index) });
@@ -232,13 +276,16 @@ export async function jsonRpcCall(url, method, params = [], {
   throw new Error(`${method}: all ${urls.length} RPC endpoints failed; last: ${lastError?.message || lastError}`, { cause: lastError });
 }
 
-async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, retries = 0, sleep = sleepMs }) {
+async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, retries = 0, sleep = sleepMs, stop = { deadline: null, signal: null } }) {
   let response;
   let json;
   let waited = 0;
   for (let attempt = 0; ; attempt++) {
+    throwIfStopped(method, stop); // before EVERY endpoint and every throttle retry, not once per call
     // A fresh deadline per attempt: the timeout bounds one request, the retry budget bounds waiting.
-    const signal = AbortSignal.timeout(timeoutMs);
+    // A caller's deadline cuts it to the time left.
+    const ms = stop.deadline == null ? timeoutMs : Math.max(1, Math.min(timeoutMs, stop.deadline - Date.now()));
+    const { signal, done } = attemptSignal(ms, stop.signal);
     try {
       response = await fetchImpl(url, {
         method: "POST",
@@ -250,7 +297,8 @@ async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, r
       // `json()`; retain that supported seam while still refusing explicit HTTP errors.
       if (response.ok === false) {
         const delay = throttleDelayMs(response, attempt);
-        if (delay != null && attempt < retries && waited + delay <= RPC_RETRY_BUDGET_MS) {
+        const fits = stop.deadline == null || Date.now() + delay < stop.deadline;
+        if (delay != null && attempt < retries && waited + delay <= RPC_RETRY_BUDGET_MS && fits) {
           try { await response.body?.cancel?.(); } catch { /* release the socket; nothing to read */ }
           rpcThrottleRetries.inc({ status: String(response.status) });
           waited += delay;
@@ -263,10 +311,17 @@ async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, r
       }
       json = await response.json();
     } catch (error) {
+      throwIfStopped(method, stop, error);
+      // A request deadline that was cut to the caller's deadline has used up the caller's time: the
+      // caller gave up, so this is not an endpoint failure to fail over from (the timer can fire a
+      // tick before Date.now() reaches the deadline).
+      if (signal.aborted && ms < timeoutMs) throw stoppedError(method, "the caller's deadline passed", error);
       if (signal.aborted || error?.name === "TimeoutError" || error?.name === "AbortError") {
-        throw new Error(`${method}: RPC request timed out after ${timeoutMs}ms at ${rpcOrigin(url)}`, { cause: error });
+        throw new Error(`${method}: RPC request timed out after ${ms}ms at ${rpcOrigin(url)}`, { cause: error });
       }
       throw new Error(`${method}: RPC request failed at ${rpcOrigin(url)}: ${error?.message || error}`, { cause: error });
+    } finally {
+      done();
     }
     break;
   }
