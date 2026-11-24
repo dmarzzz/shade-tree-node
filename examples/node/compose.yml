@@ -14,7 +14,13 @@ services:
       # SHADENET_ADMIT: staked
       # SHADENET_ALLOW: "*:443"
       # SHADENET_DENY: ""
+      # SHADENET_PROFILE: home       # a residential connection: weight 10, conns 32, sessions 4, bandwidth 2m, canary on (docs/HOME-NODE.md)
       # SHADENET_WEIGHT: "100"
+      # SHADENET_CONNS: "1024"
+      # SHADENET_SESSIONS: "256"
+      # SHADENET_BANDWIDTH: "2m"      # bytes per second across every tunnel; unset = unlimited
+      # SHADENET_DENY_FILE: /blocklists/hosts.txt   # hosts-format blocklist, mounted read-only
+      # SHADENET_CANARY: "on"
       # SHADENET_REGION: eu
       # SHADENET_METRICS: "9101"
       # SHADENET_LOG: json:info

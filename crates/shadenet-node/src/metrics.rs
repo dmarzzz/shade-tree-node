@@ -30,6 +30,10 @@ pub(crate) const DEFINITIONS: &[Definition] = &[
     ("shade_tree_heartbeat_elders_total", Kind::Gauge, "Elder Trees this heartbeat announces to (ADR 0012)."),
     ("shade_tree_heartbeat_elders_accepted", Kind::Gauge, "Elder Trees that accepted the latest heartbeat cycle."),
     ("shade_tree_heartbeat_draining", Kind::Gauge, "1 while the operator drain flag is set and announced in the signed caps."),
+    ("shade_tree_canary_probes_total", Kind::Counter, "Reputation canary probes by outcome=clean|challenged|unknown."),
+    ("shade_tree_canary_challenged", Kind::Gauge, "1 when the latest canary round met a block or a challenge."),
+    ("shade_tree_canary_drained", Kind::Gauge, "1 while the canary holds the drain flag."),
+    ("shade_tree_gateway_blocklist_hosts", Kind::Gauge, "Hosts loaded from SHADE_TREE_EGRESS_DENY_FILE."),
     ("shade_tree_alert_webhook_total", Kind::Counter, "Alert webhook deliveries by result=sent|failed."),
 ];
 

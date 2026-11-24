@@ -147,6 +147,28 @@ impl TokenBucket {
     }
 }
 
+/// One bucket for every byte the node relays in either direction: the operator's ceiling on
+/// what the node draws from the host's connection (`SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND`).
+pub(crate) struct Cap {
+    bucket: Mutex<TokenBucket>,
+}
+
+impl Cap {
+    /// `bytes_per_second`, with one second's worth of burst.
+    pub(crate) fn new(bytes_per_second: u64) -> Self {
+        Self {
+            bucket: Mutex::new(TokenBucket::new(bytes_per_second, bytes_per_second)),
+        }
+    }
+
+    fn delay(&self, bytes: usize) -> Duration {
+        self.bucket
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take(bytes)
+    }
+}
+
 /// Per-book shaping (ADR 0011): one bucket per direction shared by every stream of the book,
 /// so opening six streams never multiplies the advertised rate, plus the book's payload clock.
 pub(crate) struct Shaping {
@@ -244,6 +266,7 @@ pub(crate) async fn relay(
     hold: Hold,
     idle_timeout: Option<Duration>,
     shaping: Option<Arc<Shaping>>,
+    cap: Option<Arc<Cap>>,
     cancel: Option<Arc<tokio::sync::Notify>>,
     traffic: Arc<Traffic>,
 ) -> Close {
@@ -262,6 +285,7 @@ pub(crate) async fn relay(
         Arc::clone(&key),
         Arc::clone(&activity),
         shaping.clone(),
+        cap.clone(),
         Arc::clone(&traffic),
     ));
     pumps.spawn(pump(
@@ -273,6 +297,7 @@ pub(crate) async fn relay(
         key,
         Arc::clone(&activity),
         shaping,
+        cap,
         traffic,
     ));
     let idle = async {
@@ -319,6 +344,7 @@ async fn pump(
     key: Arc<String>,
     activity: Arc<Activity>,
     shaping: Option<Arc<Shaping>>,
+    cap: Option<Arc<Cap>>,
     traffic: Arc<Traffic>,
 ) -> (Direction, Pump) {
     let counted = match direction {
@@ -331,11 +357,15 @@ async fn pump(
         if !pending.is_empty() {
             let (allowed, exhausted) = budget.take(&key, pending.len());
             if allowed > 0 {
+                let mut delay = Duration::ZERO;
                 if let Some(shaping) = &shaping {
-                    let delay = shaping.delay(direction, allowed);
-                    if !delay.is_zero() {
-                        tokio::time::sleep(delay).await;
-                    }
+                    delay = shaping.delay(direction, allowed);
+                }
+                if let Some(cap) = &cap {
+                    delay = delay.max(cap.delay(allowed));
+                }
+                if !delay.is_zero() {
+                    tokio::time::sleep(delay).await;
                 }
                 if writer.write_all(&pending[..allowed]).await.is_err() {
                     return (direction, Pump::Failed);
@@ -384,6 +414,17 @@ mod tests {
         assert!(
             budget.acquire(key).is_some(),
             "the slot is forgotten after two epochs"
+        );
+    }
+
+    #[test]
+    fn the_node_wide_cap_delays_once_its_second_of_burst_is_spent() {
+        let cap = Cap::new(1000);
+        assert_eq!(cap.delay(1000), Duration::ZERO);
+        let wait = cap.delay(500);
+        assert!(
+            wait >= Duration::from_millis(400) && wait <= Duration::from_millis(600),
+            "{wait:?}"
         );
     }
 
@@ -455,6 +496,7 @@ mod tests {
             upstream,
             b"early".to_vec(),
             hold,
+            None,
             None,
             None,
             None,

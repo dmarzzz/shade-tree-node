@@ -11,6 +11,13 @@ const DEFAULT_WEIGHT: &str = "100";
 const DEFAULT_LOG: &str = "json:info";
 const DEFAULT_ADMIT: &str = "staked";
 const DEFAULT_ALLOW: &str = "*:443";
+const DEFAULT_PROFILE: &str = "default";
+// what `profile = "home"` sets for the knobs the operator left at their default
+const HOME_WEIGHT: &str = "10";
+const HOME_CONNS: &str = "32";
+const HOME_SESSIONS: &str = "4";
+const HOME_BANDWIDTH: &str = "2m";
+const HOME_CANARY: &str = "on";
 
 /// One knob: its environment name, its `node.toml` key and what it sets.
 pub(crate) struct Knob {
@@ -28,7 +35,13 @@ pub(crate) const KNOBS: &[Knob] = &[
     Knob { key: "members_file", env: "SHADENET_MEMBERS_FILE", what: "operator-owned members.json for the invited path", default: None },
     Knob { key: "allow", env: "SHADENET_ALLOW", what: "egress allow list, host:port patterns", default: Some(DEFAULT_ALLOW) },
     Knob { key: "deny", env: "SHADENET_DENY", what: "egress deny list; deny wins", default: Some("") },
+    Knob { key: "deny_file", env: "SHADENET_DENY_FILE", what: "hosts-format or domain-list blocklist on the deny side (absolute path); re-read when it changes", default: None },
+    Knob { key: "profile", env: "SHADENET_PROFILE", what: "preset: default | home (a node on a home connection: weight 10, conns 32, sessions 4, bandwidth 2m, canary on unless set)", default: Some(DEFAULT_PROFILE) },
     Knob { key: "weight", env: "SHADENET_WEIGHT", what: "selection weight 1..1000 (lower = less traffic lands here)", default: Some(DEFAULT_WEIGHT) },
+    Knob { key: "conns", env: "SHADENET_CONNS", what: "max concurrent tunnels; the node's own default is 1024, 0 = unlimited", default: Some("") },
+    Knob { key: "sessions", env: "SHADENET_SESSIONS", what: "max live session-ticket books; the node's own default is 256, 0 = unlimited", default: Some("") },
+    Knob { key: "bandwidth", env: "SHADENET_BANDWIDTH", what: "bytes per second this node relays in total, both directions (k or m suffix); unset or 0 = unlimited", default: Some("") },
+    Knob { key: "canary", env: "SHADENET_CANARY", what: "reputation canary: on | off (drains the node while probes from its address are challenged)", default: Some("off") },
     Knob { key: "region", env: "SHADENET_REGION", what: "coarse region bucket advertised: na sa eu af as oc aq unknown", default: Some("") },
     Knob { key: "metrics", env: "SHADENET_METRICS", what: "Prometheus port on loopback, or off", default: Some("9101") },
     Knob { key: "log", env: "SHADENET_LOG", what: "log format json | pretty | text, with an optional :level", default: Some(DEFAULT_LOG) },
@@ -57,7 +70,13 @@ pub(crate) struct Knobs {
     pub(crate) members_file: Option<String>,
     pub(crate) allow: String,
     pub(crate) deny: String,
+    pub(crate) deny_file: Option<String>,
+    pub(crate) profile: String,
     pub(crate) weight: String,
+    pub(crate) conns: String,
+    pub(crate) sessions: String,
+    pub(crate) bandwidth: String,
+    pub(crate) canary: String,
     pub(crate) region: String,
     pub(crate) metrics: String,
     pub(crate) log: String,
@@ -101,7 +120,13 @@ impl Knobs {
         push("members_file", self.members_file.clone());
         push("allow", Some(self.allow.clone()));
         push("deny", Some(self.deny.clone()));
+        push("deny_file", self.deny_file.clone());
+        push("profile", Some(self.profile.clone()));
         push("weight", Some(self.weight.clone()));
+        push("conns", Some(self.conns.clone()));
+        push("sessions", Some(self.sessions.clone()));
+        push("bandwidth", Some(self.bandwidth.clone()));
+        push("canary", Some(self.canary.clone()));
         push("region", Some(self.region.clone()));
         push("metrics", Some(self.metrics.clone()));
         push("log", Some(self.log.clone()));
@@ -294,9 +319,28 @@ pub(crate) fn resolve(
             sources.insert(knob.key, "default".to_string());
         }
     }
+    // a profile only fills in what the operator left at the default
+    let profile = values.get("profile").cloned().unwrap_or_default();
+    if profile == "home" {
+        for (key, preset) in [
+            ("weight", HOME_WEIGHT),
+            ("conns", HOME_CONNS),
+            ("sessions", HOME_SESSIONS),
+            ("bandwidth", HOME_BANDWIDTH),
+            ("canary", HOME_CANARY),
+        ] {
+            if sources.get(key).is_some_and(|source| source == "default") {
+                values.insert(key, preset.to_string());
+                sources.insert(key, "profile home".to_string());
+            }
+        }
+    }
     let get = |key: &str| values.get(key).cloned().unwrap_or_default();
     let optional = |key: &str| values.get(key).cloned().filter(|v| !v.is_empty());
     let mut errors = Vec::new();
+    if !matches!(profile.as_str(), "default" | "home") {
+        errors.push(format!("profile: default or home (got {profile})"));
+    }
     let record = optional("record");
     match &record {
         None => errors.push(
@@ -347,6 +391,35 @@ pub(crate) fn resolve(
     match weight.parse::<u64>() {
         Ok(w) if (1..=1000).contains(&w) => {}
         _ => errors.push(format!("weight: integer 1..1000 (got {weight})")),
+    }
+    let conns = get("conns");
+    if !conns.is_empty() && conns.parse::<u64>().is_err() {
+        errors.push(format!(
+            "conns: a whole number, 0 = unlimited (got {conns})"
+        ));
+    }
+    let sessions = get("sessions");
+    if !sessions.is_empty() && sessions.parse::<u64>().is_err() {
+        errors.push(format!(
+            "sessions: a whole number, 0 = unlimited (got {sessions})"
+        ));
+    }
+    let bandwidth = get("bandwidth");
+    if !bandwidth.is_empty() && parse_bandwidth(&bandwidth).is_none() {
+        errors.push(format!(
+            "bandwidth: bytes per second with an optional k or m suffix, 0 = unlimited (got {bandwidth})"
+        ));
+    }
+    let canary = get("canary");
+    if !matches!(canary.as_str(), "on" | "off") {
+        errors.push(format!("canary: on or off (got {canary})"));
+    }
+    let deny_file = optional("deny_file");
+    if deny_file
+        .as_deref()
+        .is_some_and(|f| !Path::new(f).is_absolute())
+    {
+        errors.push("deny_file: must be an absolute path".into());
     }
     let region = get("region");
     if !region.is_empty() && !shadenet_proto::is_region_bucket(&region) {
@@ -411,7 +484,13 @@ pub(crate) fn resolve(
             members_file,
             allow: get("allow"),
             deny: get("deny"),
+            deny_file,
+            profile,
             weight,
+            conns,
+            sessions,
+            bandwidth,
+            canary,
             region,
             metrics,
             log,
@@ -424,6 +503,22 @@ pub(crate) fn resolve(
         errors,
         toml_path: None,
     }
+}
+
+/// `bandwidth`: a whole number of bytes per second, or one with a `k` or `m` suffix (KiB, MiB).
+pub(crate) fn parse_bandwidth(text: &str) -> Option<u64> {
+    let text = text.trim().to_ascii_lowercase();
+    let (digits, unit) = match text.strip_suffix('k') {
+        Some(d) => (d, 1024_u64),
+        None => match text.strip_suffix('m') {
+            Some(d) => (d, 1024 * 1024),
+            None => (text.as_str(), 1),
+        },
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<u64>().ok()?.checked_mul(unit)
 }
 
 /// Read `node.toml` from the state directory (when present) and resolve. Fails only on an
@@ -575,6 +670,12 @@ mod tests {
                 ("SHADENET_LOG", "xml:loud"),
                 ("SHADENET_OPERATOR", "0x1"),
                 ("SHADENET_SETS", "0xabc"),
+                ("SHADENET_PROFILE", "office"),
+                ("SHADENET_CONNS", "many"),
+                ("SHADENET_SESSIONS", "-1"),
+                ("SHADENET_BANDWIDTH", "fast"),
+                ("SHADENET_CANARY", "maybe"),
+                ("SHADENET_DENY_FILE", "blocklist.txt"),
             ]),
             &BTreeMap::new(),
         );
@@ -590,12 +691,75 @@ mod tests {
             "operator: not a 0x-prefixed",
             "operator and operator_sig go together",
             "sets: 0xabc: expected 0x<contract>@<deployBlock>",
+            "profile: default or home (got office)",
+            "conns: a whole number, 0 = unlimited (got many)",
+            "sessions: a whole number, 0 = unlimited (got -1)",
+            "bandwidth: bytes per second with an optional k or m suffix, 0 = unlimited (got fast)",
+            "canary: on or off (got maybe)",
+            "deny_file: must be an absolute path",
         ] {
             assert!(text.contains(needle), "missing {needle:?} in {text}");
         }
         let missing = resolve(&env_of(&[]), &BTreeMap::new());
         assert!(missing.errors[0].starts_with("record: set SHADENET_RECORD"));
         assert_eq!(missing.knobs.metrics, "9101");
+    }
+
+    #[test]
+    fn the_home_profile_fills_in_only_what_the_operator_left_alone() {
+        let toml = BTreeMap::from([("sessions".to_string(), "4".to_string())]);
+        let home = resolve(
+            &env_of(&[
+                ("SHADENET_RECORD", "/tmp/record.json"),
+                ("SHADENET_PROFILE", "home"),
+                ("SHADENET_WEIGHT", "25"),
+            ]),
+            &toml,
+        );
+        assert!(home.errors.is_empty(), "{:?}", home.errors);
+        assert_eq!(home.knobs.profile, "home");
+        assert_eq!(home.knobs.weight, "25");
+        assert_eq!(home.sources["weight"], "env SHADENET_WEIGHT");
+        assert_eq!(home.knobs.sessions, "4");
+        assert_eq!(home.sources["sessions"], "node.toml sessions");
+        assert_eq!(home.knobs.conns, "32");
+        assert_eq!(home.sources["conns"], "profile home");
+        assert_eq!(home.knobs.bandwidth, "2m");
+        assert_eq!(home.knobs.canary, "on");
+        assert_eq!(home.sources["canary"], "profile home");
+        assert!(home
+            .knobs
+            .display_rows()
+            .contains(&("conns", "32".to_string())));
+
+        let plain = resolve(
+            &env_of(&[("SHADENET_RECORD", "/tmp/record.json")]),
+            &BTreeMap::new(),
+        );
+        assert_eq!(plain.knobs.profile, "default");
+        assert_eq!(plain.knobs.weight, "100");
+        assert_eq!(plain.knobs.conns, "");
+        assert_eq!(plain.knobs.sessions, "");
+        assert_eq!(plain.knobs.bandwidth, "");
+        assert_eq!(plain.knobs.canary, "off");
+        assert_eq!(plain.knobs.deny_file, None);
+        assert_eq!(plain.sources["conns"], "default");
+        assert!(!plain
+            .knobs
+            .display_rows()
+            .iter()
+            .any(|(key, _)| *key == "conns"));
+    }
+
+    #[test]
+    fn bandwidth_takes_bytes_with_a_k_or_m_suffix() {
+        assert_eq!(parse_bandwidth("0"), Some(0));
+        assert_eq!(parse_bandwidth("1500"), Some(1500));
+        assert_eq!(parse_bandwidth("512k"), Some(512 * 1024));
+        assert_eq!(parse_bandwidth(" 2M "), Some(2 * 1024 * 1024));
+        for bad in ["", "k", "2g", "2.5m", "-1", "fast"] {
+            assert_eq!(parse_bandwidth(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

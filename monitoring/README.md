@@ -47,6 +47,10 @@ Files:
 | `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_egress_check_up` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_draining` | gauge | none | `packages/node/bootnode/heartbeat.mjs` (1 while the operator drain flag is announced) |
+| `shade_tree_canary_probes_total` | counter | `outcome` (`clean`, `challenged`, `unknown`) | `crates/shadenet-node/src/canary.rs` (reputation canary probes from the node's own address) |
+| `shade_tree_canary_challenged` | gauge | none | `crates/shadenet-node/src/canary.rs` (1 when the latest round was blocked or challenged) |
+| `shade_tree_canary_drained` | gauge | none | `crates/shadenet-node/src/canary.rs` (1 while the canary holds the drain flag) |
+| `shade_tree_gateway_blocklist_hosts` | gauge | none | `crates/shadenet-node/src/egress.rs` (hosts loaded from `SHADE_TREE_EGRESS_DENY_FILE`) |
 | `shade_tree_alert_webhook_total` | counter | `result` (sent\|failed) | `packages/node/lib/alerts.mjs` (gateway + heartbeat, when a webhook is set) |
 | `shade_tree_registrar_payments_total` | counter | `protocol` (unknown\|x402\|mpp), `result` (challenged\|inserted\|replayed\|rejected\|failed), bounded `reason` on non-success outcomes | `packages/node/payments/registrar.mjs` |
 | `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `packages/node/payments/registrar.mjs` |

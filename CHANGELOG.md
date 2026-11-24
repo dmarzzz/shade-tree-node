@@ -4,6 +4,34 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### A node at home
+
+- `SHADENET_PROFILE=home` (`profile` in `node.toml`) presets a node for a residential connection:
+  `weight` 10, `conns` 32, `sessions` 4. A knob the operator sets keeps its value;
+  `shadenet-node check` shows `profile home` as the source of the rest. `SHADENET_CONNS` and
+  `SHADENET_SESSIONS` are new front-door knobs for `SHADE_TREE_MAX_CONNS` and
+  `SHADE_TREE_SESSION_MAX`; unset, the node's own defaults apply as before.
+- `SHADENET_BANDWIDTH` (`SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND`): one token bucket over every byte
+  the node relays, both directions, all tunnels, so the node has a ceiling on the host's
+  connection; per-book session shaping still applies underneath. `k` and `m` suffixes.
+- `SHADENET_CANARY=on` (`SHADE_TREE_CANARY=1`, `SHADE_TREE_CANARY_URLS`,
+  `SHADE_TREE_CANARY_INTERVAL_SECONDS`): the reputation canary fetches pages behind anti-bot
+  vendors from the node's own address every ten minutes. Two blocked or challenged rounds in a row
+  set the drain flag (content `canary`), three clean rounds clear it; a flag the operator set is
+  never touched. Three new series and two webhook events. The `home` profile turns it on and sets
+  `bandwidth` `2m`.
+- `SHADENET_DENY_FILE` (`SHADE_TREE_EGRESS_DENY_FILE`): a hosts-format or domain-list blocklist
+  on the deny side, covering subdomains, re-read within a minute of a change;
+  `shade_tree_gateway_blocklist_hosts` counts it.
+- Both clients route around a `bad-target-policy` refusal: the node refused before any proof work
+  and the envelope binds to no node, so the identical wire goes to the next candidate, as a root
+  refusal already did (ADR 0013). The refused node is not marked down. The Rust client's
+  retry-once path treats it like an `upstream:*` refusal.
+- `docs/HOME-NODE.md`: what a node does to a home connection, network isolation, the deny list for
+  the operator's own services, the blocklist file, the canary, pausing with the drain flag, the
+  avoid-nodes entry for clients in the same house, and why the payload cap stays as the record
+  sets it.
+
 ### The Elder Tree moves to Rust (ADR 0015)
 
 - `shadenet-elder` (`crates/shadenet-elder`) is the Elder Tree: `run` serves `/announce`,

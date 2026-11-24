@@ -136,8 +136,11 @@ node scans each from its own deploy block and the directory advertises both. The
 
 The knobs, all optional except the record (`shadenet-node help` lists them; the full table is
 [CONFIG.md](CONFIG.md#operator-front-door-shadenet-node)): `SHADENET_ADMIT` (staked, invited,staked, staked,paid),
-`SHADENET_MEMBERS_FILE`, `SHADENET_ALLOW` / `SHADENET_DENY` (egress policy), `SHADENET_WEIGHT` (how
-much traffic lands here), `SHADENET_REGION`, `SHADENET_METRICS` (loopback port or off), `SHADENET_LOG`,
+`SHADENET_MEMBERS_FILE`, `SHADENET_ALLOW` / `SHADENET_DENY` / `SHADENET_DENY_FILE` (egress policy and a
+blocklist file), `SHADENET_WEIGHT` (how much traffic lands here), `SHADENET_CONNS` / `SHADENET_SESSIONS` /
+`SHADENET_BANDWIDTH` (concurrent tunnels, live session books, bytes per second), `SHADENET_CANARY` (drain
+while probes from this address are challenged), `SHADENET_PROFILE` (`home` presets those five for a
+residential connection; see [HOME-NODE.md](HOME-NODE.md)), `SHADENET_REGION`, `SHADENET_METRICS` (loopback port or off), `SHADENET_LOG`,
 `SHADENET_OPERATOR_KEY_FILE` or `SHADENET_OPERATOR` + `SHADENET_OPERATOR_SIG`, `SHADENET_POW`. The same
 keys work in `/state/node.toml`. Any `SHADE_TREE_*` variable set explicitly still wins, so the
 advanced surface is unchanged.

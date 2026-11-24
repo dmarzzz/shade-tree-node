@@ -564,6 +564,25 @@ pub(crate) fn derive_env(
     if !knobs.deny.is_empty() {
         put(&mut out, "SHADE_TREE_EGRESS_DENY", knobs.deny.clone());
     }
+    if !knobs.conns.is_empty() {
+        put(&mut out, "SHADE_TREE_MAX_CONNS", knobs.conns.clone());
+    }
+    if !knobs.sessions.is_empty() {
+        put(&mut out, "SHADE_TREE_SESSION_MAX", knobs.sessions.clone());
+    }
+    if let Some(bytes) = knobs::parse_bandwidth(&knobs.bandwidth) {
+        put(
+            &mut out,
+            "SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND",
+            bytes.to_string(),
+        );
+    }
+    if let Some(file) = &knobs.deny_file {
+        put(&mut out, "SHADE_TREE_EGRESS_DENY_FILE", file.clone());
+    }
+    if knobs.canary == "on" {
+        put(&mut out, "SHADE_TREE_CANARY", "1".into());
+    }
     if !knobs.region.is_empty() {
         put(&mut out, "SHADE_TREE_GATEWAY_REGION", knobs.region.clone());
     }
@@ -669,6 +688,14 @@ mod tests {
         );
         assert!(!env.contains_key("SHADE_TREE_LEAF_SOURCE"));
         assert!(!env.contains_key("SHADE_TREE_LIMIT"));
+        assert!(
+            !env.contains_key("SHADE_TREE_MAX_CONNS")
+                && !env.contains_key("SHADE_TREE_SESSION_MAX")
+                && !env.contains_key("SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND")
+                && !env.contains_key("SHADE_TREE_EGRESS_DENY_FILE")
+                && !env.contains_key("SHADE_TREE_CANARY"),
+            "unset limits leave the node's own defaults alone"
+        );
         assert_eq!(env["SHADE_TREE_BANNER"], "never");
     }
 
@@ -683,6 +710,11 @@ mod tests {
             production.deploy_block.unwrap()
         );
         knobs.deny = "*:80".into();
+        knobs.conns = "32".into();
+        knobs.sessions = "8".into();
+        knobs.bandwidth = "2m".into();
+        knobs.deny_file = Some("/etc/shadenet/blocklist.txt".into());
+        knobs.canary = "on".into();
         knobs.region = "eu".into();
         knobs.operator = Some("0x70997970C51812dc3A010C7d01b50e0d17dc79C8".into());
         knobs.operator_sig = Some(format!("0x{}", "11".repeat(65)));
@@ -717,6 +749,14 @@ mod tests {
         );
         assert_eq!(env["SHADE_TREE_GW_WEIGHT"], "7");
         assert_eq!(env["SHADE_TREE_EGRESS_DENY"], "*:80");
+        assert_eq!(env["SHADE_TREE_MAX_CONNS"], "32");
+        assert_eq!(env["SHADE_TREE_SESSION_MAX"], "8");
+        assert_eq!(env["SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND"], "2097152");
+        assert_eq!(
+            env["SHADE_TREE_EGRESS_DENY_FILE"],
+            "/etc/shadenet/blocklist.txt"
+        );
+        assert_eq!(env["SHADE_TREE_CANARY"], "1");
         assert_eq!(env["SHADE_TREE_GATEWAY_REGION"], "eu");
         assert_eq!(
             env["SHADE_TREE_GW_OPERATOR"],

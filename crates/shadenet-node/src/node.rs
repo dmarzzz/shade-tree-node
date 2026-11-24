@@ -21,6 +21,7 @@ use tokio::sync::{watch, Semaphore};
 use tokio::task::JoinSet;
 
 use crate::alerts::Alerts;
+use crate::canary;
 use crate::chain::{ChainSource, Provider};
 use crate::config::{self, Config, ProviderConfig};
 use crate::drain;
@@ -67,6 +68,7 @@ struct Shared {
     slasher: Slasher,
     spent: Arc<SpentSet>,
     budget: Arc<Budget>,
+    cap: Option<Arc<tunnel::Cap>>,
     receipts: Option<Arc<receipt::Signer>>,
     sessions: Option<Sessions>,
     registry: Arc<Registry>,
@@ -399,6 +401,22 @@ impl ShadeNode {
             None => None,
         };
 
+        let canary = match config.take_canary() {
+            Some(settings) => Some(
+                canary::Canary::new(
+                    settings,
+                    config.drain_file(),
+                    Arc::clone(&registry),
+                    alerts.clone(),
+                )
+                .map_err(|message| Error::Setting {
+                    name: "SHADE_TREE_CANARY",
+                    message,
+                })?,
+            ),
+            None => None,
+        };
+
         let addr = config.listen();
         let inherited = inherited_listener();
         let activated = inherited.is_some();
@@ -435,6 +453,9 @@ impl ShadeNode {
             slasher,
             spent: Arc::clone(&spent),
             budget,
+            cap: config
+                .bandwidth_bytes_per_second()
+                .map(|rate| Arc::new(tunnel::Cap::new(rate))),
             receipts,
             sessions,
             registry: Arc::clone(&registry),
@@ -499,6 +520,38 @@ impl ShadeNode {
                     .await;
             }
             background.spawn(Arc::clone(alerts).run());
+        }
+        if let Some(canary) = canary {
+            tracing::info!("{}", canary.describe());
+            background.spawn(canary.run());
+        }
+        if let Some(hosts) = shared.config.egress().blocklist_hosts() {
+            shared
+                .registry
+                .gauge("shade_tree_gateway_blocklist_hosts", &[], hosts as f64);
+            tracing::info!(
+                hosts,
+                "egress blocklist loaded (SHADE_TREE_EGRESS_DENY_FILE); re-read when the file changes"
+            );
+            let shared = Arc::clone(&shared);
+            background.spawn(async move {
+                loop {
+                    tokio::time::sleep(egress::BLOCKLIST_POLL).await;
+                    if let Some(hosts) = shared.config.egress().reload_blocklist() {
+                        shared.registry.gauge(
+                            "shade_tree_gateway_blocklist_hosts",
+                            &[],
+                            hosts as f64,
+                        );
+                    }
+                }
+            });
+        }
+        if let Some(rate) = shared.config.bandwidth_bytes_per_second() {
+            tracing::info!(
+                bytes_per_second = rate,
+                "bandwidth cap: ON across every tunnel, both directions (SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND)"
+            );
         }
         if let Some(status) = &status_file {
             let pid = Some(std::process::id());
@@ -1102,6 +1155,7 @@ async fn serve(shared: Arc<Shared>, mut stream: TcpStream) {
         hold,
         shared.config.idle_timeout(),
         None,
+        shared.cap.clone(),
         None,
         Arc::clone(&shared.traffic),
     )
@@ -1449,6 +1503,7 @@ async fn ticket_spend(
         hold,
         shared.config.idle_timeout(),
         Some(Arc::clone(&reservation.shaping)),
+        shared.cap.clone(),
         Some(cancel),
         Arc::clone(&shared.traffic),
     )

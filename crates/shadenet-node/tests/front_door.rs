@@ -153,6 +153,12 @@ fn the_front_door_commands_behave_like_the_javascript_ones() {
         "SHADENET_SETS",
         "SHADENET_OPERATOR_SIG",
         "SHADENET_POW",
+        "SHADENET_PROFILE",
+        "SHADENET_CONNS",
+        "SHADENET_SESSIONS",
+        "SHADENET_BANDWIDTH",
+        "SHADENET_DENY_FILE",
+        "SHADENET_CANARY",
     ] {
         assert!(help.out.contains(knob), "{knob} missing from help");
     }
@@ -298,6 +304,43 @@ fn the_front_door_commands_behave_like_the_javascript_ones() {
     assert_eq!(toml["env"]["SHADE_TREE_GATEWAY_REGION"], "eu");
     assert!(findings_text(&toml).contains("node.toml read from"));
     std::fs::remove_file(state.join("node.toml")).unwrap();
+
+    // the home profile presets the knobs the operator left alone; an explicit knob still wins
+    let home = cli(
+        state,
+        &["check", "--json"],
+        &[
+            ("SHADENET_RECORD", &record_arg),
+            ("SHADENET_PROFILE", "home"),
+            ("SHADENET_WEIGHT", "25"),
+        ],
+    );
+    let home: Value = serde_json::from_str(&home.out).unwrap();
+    assert_eq!(home["knobs"]["profile"], "home");
+    assert_eq!(home["env"]["SHADE_TREE_GW_WEIGHT"], "25");
+    assert_eq!(home["env"]["SHADE_TREE_MAX_CONNS"], "32");
+    assert_eq!(home["env"]["SHADE_TREE_SESSION_MAX"], "4");
+    assert_eq!(
+        home["env"]["SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND"],
+        "2097152"
+    );
+    assert_eq!(home["env"]["SHADE_TREE_CANARY"], "1");
+    let plain = cli(
+        state,
+        &["check", "--json"],
+        &[("SHADENET_RECORD", &record_arg)],
+    );
+    let plain: Value = serde_json::from_str(&plain.out).unwrap();
+    assert!(plain["env"].get("SHADE_TREE_MAX_CONNS").is_none());
+    let human = cli(
+        state,
+        &["check"],
+        &[
+            ("SHADENET_RECORD", &record_arg),
+            ("SHADENET_PROFILE", "home"),
+        ],
+    );
+    assert!(human.out.contains("(profile home)"), "{}", human.out);
 
     // the human report names the plan and says ready or not
     let human = cli(state, &["check"], &[("SHADENET_RECORD", &record_arg)]);

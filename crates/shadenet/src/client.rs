@@ -1497,7 +1497,8 @@ impl Client {
     }
 
     /// One attempt: no queueing. A node that refuses for an `upstream:*` reason (it could not
-    /// reach the destination), or that could not be reached at all when it was the only
+    /// reach the destination) or with `bad-target-policy` (its operator's egress policy excludes
+    /// the target), or that could not be reached at all when it was the only
     /// candidate (a session book binds the proof to one node), is retried once on another node
     /// when the budget allows and [`Config::retry_other_node`] is on. The proof is never
     /// replayed: the retry spends a new ticket or slot, which is why it stops at one.
@@ -1513,8 +1514,8 @@ impl Client {
         let avoid = match &result {
             Err(Error::NodeRefused {
                 gateway, reason, ..
-            }) if reason.starts_with("upstream:") => {
-                tracing::info!(%gateway, %reason, %target, "node could not reach the destination; trying another node once");
+            }) if reason.starts_with("upstream:") || reason == "bad-target-policy" => {
+                tracing::info!(%gateway, %reason, %target, "node could not or would not reach the destination; trying another node once");
                 Some(gateway.clone())
             }
             Err(Error::Transport(_)) => {

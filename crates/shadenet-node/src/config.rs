@@ -23,6 +23,7 @@ use shadenet_service::rpc;
 use shadenet_service::torhttp::Socks;
 
 use crate::alerts;
+use crate::canary;
 use crate::chain::{Contract, Kind};
 use crate::drain;
 use crate::egress;
@@ -184,6 +185,8 @@ pub struct Config {
     receipts: bool,
     sessions: Option<SessionConfig>,
     egress: egress::Policy,
+    bandwidth: Option<u64>,
+    canary: Option<canary::Settings>,
     metrics_port: u16,
     drain_file: PathBuf,
     heartbeat: Option<heartbeat::Settings>,
@@ -690,6 +693,39 @@ impl Config {
 
         let tally = fleet_tally(vars, &tor, epoch_seconds)?;
 
+        let mut egress = egress::Policy::parse(&allow, &deny);
+        if let Some(file) = non_empty(env_str("EGRESS_DENY_FILE")?) {
+            egress = egress
+                .with_blocklist(PathBuf::from(file))
+                .map_err(|message| Error::Setting {
+                    name: "SHADE_TREE_EGRESS_DENY_FILE",
+                    message,
+                })?;
+        }
+        let bandwidth = env_int("BANDWIDTH_BYTES_PER_SECOND", 0)?;
+        let canary_interval =
+            env_int("CANARY_INTERVAL_SECONDS", canary::DEFAULT_INTERVAL_SECS)?.max(60);
+        let canary_urls: Vec<String> = non_empty(env_str("CANARY_URLS")?)
+            .unwrap_or_else(|| canary::DEFAULT_URLS.to_string())
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+        if let Some(bad) = canary_urls
+            .iter()
+            .find(|url| !url.starts_with("https://") && !url.starts_with("http://"))
+        {
+            return Err(Error::Setting {
+                name: "SHADE_TREE_CANARY_URLS",
+                message: format!("{bad}: every canary URL must start with https:// or http://"),
+            });
+        }
+        let canary = (env_str("CANARY")?.as_deref() == Some("1")).then(|| canary::Settings {
+            urls: canary_urls,
+            interval: Duration::from_secs(canary_interval),
+        });
+
         Ok(Self {
             listen: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
             envelope_timeout: millis(envelope_timeout),
@@ -715,7 +751,9 @@ impl Config {
             identity_file,
             receipts,
             sessions,
-            egress: egress::Policy::parse(&allow, &deny),
+            egress,
+            bandwidth: (bandwidth > 0).then_some(bandwidth),
+            canary,
             metrics_port,
             drain_file,
             heartbeat,
@@ -840,6 +878,15 @@ impl Config {
 
     pub(crate) fn drain_file(&self) -> &Path {
         &self.drain_file
+    }
+
+    /// The node-wide relay ceiling in bytes per second; `None` is unlimited.
+    pub(crate) fn bandwidth_bytes_per_second(&self) -> Option<u64> {
+        self.bandwidth
+    }
+
+    pub(crate) fn take_canary(&mut self) -> Option<canary::Settings> {
+        self.canary.take()
     }
 
     pub(crate) fn take_heartbeat(&mut self) -> Option<heartbeat::Settings> {

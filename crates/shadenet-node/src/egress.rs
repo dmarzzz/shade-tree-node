@@ -4,8 +4,11 @@
 //! admission, every answer must be public, and the pinned addresses are dialled in order under
 //! one deadline.
 
+use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::time::{Duration, Instant};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::Value;
 use tokio::net::TcpStream;
@@ -15,6 +18,8 @@ pub(crate) const REASON_BAD_TARGET_POLICY: &str = "bad-target-policy";
 pub(crate) const REASON_BAD_TARGET_DNS: &str = "bad-target-dns";
 pub(crate) const REASON_BAD_TARGET_ADDRESS: &str = "bad-target-address";
 const MAX_ADDRESSES: usize = 8;
+/// How often the node looks at the blocklist file for a change.
+pub(crate) const BLOCKLIST_POLL: Duration = Duration::from_secs(60);
 
 enum HostPattern {
     Any,
@@ -65,9 +70,118 @@ impl Pattern {
     }
 }
 
+/// A hosts-format or domain-list file on the deny side (`SHADE_TREE_EGRESS_DENY_FILE`): one
+/// host per line as `0.0.0.0 host`, `127.0.0.1 host`, `:: host` or `host`, `#` comments. A listed
+/// host is refused on every port, and so are its subdomains. Single-label names (the `localhost`
+/// lines of a hosts file) are skipped: they are never public destinations.
+pub(crate) struct Blocklist {
+    path: PathBuf,
+    hosts: RwLock<Arc<HashSet<String>>>,
+    modified: Mutex<Option<SystemTime>>,
+}
+
+/// The hosts named in blocklist text.
+fn parse_blocklist(text: &str) -> HashSet<String> {
+    let mut hosts = HashSet::new();
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        let mut fields = line.split_whitespace();
+        let Some(first) = fields.next() else {
+            continue;
+        };
+        let name = match fields.next() {
+            Some(second) if first.parse::<IpAddr>().is_ok() => second,
+            _ => first,
+        };
+        let name = name.rsplit_once(':').map_or(name, |(host, port)| {
+            if parse_port(port).is_some() {
+                host
+            } else {
+                name
+            }
+        });
+        let name = name.trim_end_matches('.').to_ascii_lowercase();
+        let plausible = name.contains('.')
+            && !name.starts_with('.')
+            && !name.contains("..")
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+        if plausible {
+            hosts.insert(name);
+        }
+    }
+    hosts
+}
+
+impl Blocklist {
+    fn load(path: &Path) -> Result<(HashSet<String>, Option<SystemTime>), String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+        Ok((parse_blocklist(&text), modified))
+    }
+
+    /// Read the file once; an unreadable file is a startup error.
+    pub(crate) fn open(path: PathBuf) -> Result<Self, String> {
+        let (hosts, modified) = Self::load(&path)?;
+        Ok(Self {
+            path,
+            hosts: RwLock::new(Arc::new(hosts)),
+            modified: Mutex::new(modified),
+        })
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.hosts.read().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Re-read the file when its modification time moved. `Some(count)` after a reload; an
+    /// unreadable file keeps the last good list.
+    pub(crate) fn reload(&self) -> Option<usize> {
+        let modified = std::fs::metadata(&self.path)
+            .and_then(|m| m.modified())
+            .ok();
+        {
+            let last = self.modified.lock().unwrap_or_else(|e| e.into_inner());
+            if *last == modified {
+                return None;
+            }
+        }
+        match Self::load(&self.path) {
+            Ok((hosts, modified)) => {
+                let count = hosts.len();
+                *self.hosts.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(hosts);
+                *self.modified.lock().unwrap_or_else(|e| e.into_inner()) = modified;
+                tracing::info!(path = %self.path.display(), hosts = count, "egress blocklist re-read");
+                Some(count)
+            }
+            Err(error) => {
+                tracing::warn!(%error, "egress blocklist could not be re-read; keeping the last good list");
+                None
+            }
+        }
+    }
+
+    /// The host itself or any parent domain is listed.
+    fn blocks(&self, host: &str) -> bool {
+        let hosts = Arc::clone(&self.hosts.read().unwrap_or_else(|e| e.into_inner()));
+        let mut suffix = host;
+        loop {
+            if hosts.contains(suffix) {
+                return true;
+            }
+            match suffix.split_once('.') {
+                Some((_, rest)) if !rest.is_empty() => suffix = rest,
+                _ => return false,
+            }
+        }
+    }
+}
+
 pub(crate) struct Policy {
     allows: Vec<Pattern>,
     denies: Vec<Pattern>,
+    blocklist: Option<Blocklist>,
 }
 
 /// A target that passed the grammar and the policy.
@@ -89,7 +203,24 @@ impl Policy {
         Self {
             allows: list(allow),
             denies: list(deny),
+            blocklist: None,
         }
+    }
+
+    /// Add a blocklist file to the deny side.
+    pub(crate) fn with_blocklist(mut self, path: PathBuf) -> Result<Self, String> {
+        self.blocklist = Some(Blocklist::open(path)?);
+        Ok(self)
+    }
+
+    /// How many hosts the blocklist holds, when there is one.
+    pub(crate) fn blocklist_hosts(&self) -> Option<usize> {
+        self.blocklist.as_ref().map(Blocklist::len)
+    }
+
+    /// Re-read a changed blocklist file; `Some(count)` after a reload.
+    pub(crate) fn reload_blocklist(&self) -> Option<usize> {
+        self.blocklist.as_ref().and_then(Blocklist::reload)
     }
 
     fn allows(&self, host: &str, port: u16) -> bool {
@@ -99,6 +230,13 @@ impl Policy {
             return false;
         }
         if self.denies.iter().any(|p| p.matches(host, port)) {
+            return false;
+        }
+        if self
+            .blocklist
+            .as_ref()
+            .is_some_and(|list| list.blocks(host))
+        {
             return false;
         }
         self.allows.iter().any(|p| p.matches(host, port))
@@ -365,6 +503,71 @@ mod tests {
         assert_eq!(check(&policy, "host:80"), Err(REASON_BAD_TARGET_POLICY));
         let empty = Policy::parse("", "");
         assert_eq!(check(&empty, "host:443"), Err(REASON_BAD_TARGET_POLICY));
+    }
+
+    #[test]
+    fn a_blocklist_file_reads_hosts_lines_and_covers_subdomains() {
+        let parsed = parse_blocklist(
+            "# comment\n0.0.0.0 ads.example.com # trailing\n127.0.0.1 localhost\n:: Tracker.Example.NET.\nbad.example.org:443\nnot a host\n\n..broken.com\nbare\n",
+        );
+        let mut hosts: Vec<&str> = parsed.iter().map(String::as_str).collect();
+        hosts.sort_unstable();
+        assert_eq!(
+            hosts,
+            ["ads.example.com", "bad.example.org", "tracker.example.net"]
+        );
+
+        let dir = std::env::temp_dir().join(format!("shadenet-blocklist-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("blocklist.txt");
+        std::fs::write(&file, "0.0.0.0 ads.example.com\n").unwrap();
+        let policy = Policy::parse("*:443", "")
+            .with_blocklist(file.clone())
+            .unwrap();
+        assert_eq!(policy.blocklist_hosts(), Some(1));
+        assert_eq!(
+            check(&policy, "ads.example.com:443"),
+            Err(REASON_BAD_TARGET_POLICY)
+        );
+        assert_eq!(
+            check(&policy, "cdn.ads.example.com:443"),
+            Err(REASON_BAD_TARGET_POLICY),
+            "subdomains are covered"
+        );
+        assert_eq!(
+            check(&policy, "ADS.example.com.:443"),
+            Err(REASON_BAD_TARGET_POLICY)
+        );
+        assert!(
+            check(&policy, "example.com:443").is_ok(),
+            "the parent is not"
+        );
+        assert!(check(&policy, "notads.example.com:443").is_ok());
+
+        assert_eq!(policy.reload_blocklist(), None, "unchanged file: no reload");
+        std::thread::sleep(Duration::from_millis(1100));
+        std::fs::write(
+            &file,
+            "0.0.0.0 other.example.com\n0.0.0.0 ads.example.com\n",
+        )
+        .unwrap();
+        assert_eq!(policy.reload_blocklist(), Some(2));
+        assert_eq!(
+            check(&policy, "other.example.com:443"),
+            Err(REASON_BAD_TARGET_POLICY)
+        );
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(
+            policy.reload_blocklist(),
+            None,
+            "a vanished file keeps the last list"
+        );
+        assert_eq!(policy.blocklist_hosts(), Some(2));
+        assert!(Policy::parse("*:443", "")
+            .with_blocklist(dir.join("missing.txt"))
+            .is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
