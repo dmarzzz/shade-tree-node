@@ -4,6 +4,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### `shadenet init --dir <relative path>` writes a config that loads (#436)
+
+- `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative
+  paths against the config file's directory. After `shadenet init --dir .shadenet`, every command
+  given `--config .shadenet/config.toml` failed with
+  `read identity .shadenet/.shadenet/identity.json: No such file or directory`.
+- `init` now records `identity` and `proxy_token_file` relative to the config file
+  (`identity.json`, `proxy-token`), so the directory can also be moved. A `--network` deployment
+  record given as a relative path is recorded as an absolute path.
+- A config written by 0.7.5 or earlier with a relative `--dir` is not rewritten: edit the two
+  paths to `identity.json` and `proxy-token`, or delete `config.toml` and run `init` again (it
+  keeps the identity and the token).
+
 ### Get access page: the terminal path is the keyless command
 
 - The Get access page and the agent brief on the landing page now show
