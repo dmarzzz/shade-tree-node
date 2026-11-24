@@ -17,6 +17,17 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
   paths to `identity.json` and `proxy-token`, or delete `config.toml` and run `init` again (it
   keeps the identity and the token).
 
+### Test runner: suites that skip their checks show as SKIP, not PASS
+
+- `scripts/test-all.mjs` (`npm test`, `test:node`, `test:fast`, `coverage`) now reports a suite
+  that exits 0 but prints a line starting with `SKIP` as `SKIP <suite> (exit 0, not exercised:
+  <reason>)` instead of `PASS`. The summary adds the count and names each one, for example
+  `=== summary: 165/165 green, 3 of them SKIPPED ...`. Before, the anvil suites (`onchain-tiers`,
+  `paid-access`, `registrar`) printed `SKIP anvil/forge not on PATH` in CI's Node job, the runner
+  hid that line, and the run read as if they had passed.
+- The exit code does not change: a SKIP is still green. The parser is `scripts/suite-skips.mjs`,
+  with a selftest that also checks every SKIP message the repo's suites print today.
+
 ### Get access page: the terminal path is the keyless command
 
 - The Get access page and the agent brief on the landing page now show
