@@ -154,12 +154,12 @@ async function main() {
   const target = "example.com:443";
   const n1 = "b-n1";
   const e1 = await proveForSlot(bob.secret, epoch, 0, requestSignal(target, n1), { group });
-  const env1 = { v: 4, target, nonce: n1, proof: e1.proof, nullifier: e1.nullifier, externalNullifier: e1.externalNullifier, share: e1.share };
+  const env1 = { v: 4, target, nonce: n1, artifact: e1.artifact, proof: e1.proof, nullifier: e1.nullifier, externalNullifier: e1.externalNullifier, share: e1.share };
   log("bob", `over-spend 1/2: slot 0 first signal, nullifier ${e1.nullifier.slice(0, 12)}.. -> sending`);
   log("bob", `over-spend 1/2: gateway ack ${JSON.stringify(await sendEnvelope(env1))}`);
   const n2 = "b-n2";
   const e2 = await proveForSlot(bob.secret, epoch, 0, requestSignal(target, n2), { group });
-  const env2 = { v: 4, target, nonce: n2, proof: e2.proof, nullifier: e2.nullifier, externalNullifier: e2.externalNullifier, share: e2.share };
+  const env2 = { v: 4, target, nonce: n2, artifact: e2.artifact, proof: e2.proof, nullifier: e2.nullifier, externalNullifier: e2.externalNullifier, share: e2.share };
   log("bob", `over-spend 2/2: slot 0 SECOND distinct signal (same nullifier) -> this is the rate violation -> sending`);
   const ack2 = await sendEnvelope(env2, 90000); // slash mines before ack
   log("bob", `over-spend 2/2: gateway ack ${JSON.stringify(ack2)}`);
