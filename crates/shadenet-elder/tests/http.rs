@@ -22,10 +22,15 @@ struct Elder {
 
 impl Elder {
     fn spawn(env: &[(&str, &str)]) -> Self {
+        // The tests in this file run in parallel in one process: the millisecond alone let two
+        // Elders share a state directory, and the second then read a signer key the first had
+        // created but not yet written.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
-            "shadenet-elder-http-{}-{}",
+            "shadenet-elder-http-{}-{}-{}",
             std::process::id(),
-            shadenet_service::clock::now_ms()
+            shadenet_service::clock::now_ms(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let mut command = Command::new(env!("CARGO_BIN_EXE_shadenet-elder"));
