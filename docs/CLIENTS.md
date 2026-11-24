@@ -67,14 +67,25 @@ random failover order for that tunnel. Set `--no-rotation-spread` or
 `SHADE_TREE_ROTATION_SPREAD=0` to opt out and make the first choice weighted-random too.
 
 The same proof, slot, and Tor isolation credential are reused within one tunnel's failover attempt.
-Dial/framing failures rotate to the next onion. Proof, policy, replay, and `payload-limit` refusals
-are terminal and are not routed around. The JavaScript client also routes around node-local refusals
-(`too-many-connections`, `nullifier-conn-limit`, `gateway-error`, `bad-target-dns`, `upstream:*`) and
-the exact envelope-deadline reply `bad-envelope:envelope timeout`, which a node sends before the
-envelope reader completes, and before parsing, verification or admission (partial bytes may have
-arrived and are discarded); it tries the identical envelope at the next candidate. Every other
-`bad-envelope:` reply stays terminal. The Rust client treats gateway refusals as terminal except `upstream:*`, which it retries once on
-another node with a new slot; transport/framing failures rotate. Two local dial failures mark a node down; future selections
+Dial/framing failures rotate to the next onion. Which gateway refusals are routed around differs by
+client.
+
+The JavaScript client routes around node-local refusals (`too-many-connections`,
+`nullifier-conn-limit`, `gateway-error`, `bad-target-dns`, `upstream:*`) and the exact
+envelope-deadline reply `bad-envelope:envelope timeout`, which a node sends before the envelope
+reader completes, and before parsing, verification or admission (partial bytes may have arrived and
+are discarded); it tries the identical envelope at the next candidate. It also tries the identical
+envelope at the next candidate after the exact `bad-target-policy` refusal (the node's operator
+egress policy excludes the target), without counting that refusal against the node's health. Every
+other `bad-envelope:` reply stays terminal, and so do proof, replay, and `payload-limit` refusals
+(apart from a protocol-version or artifact mismatch that names the node's accepted range or
+artifacts, which is also tried at the next candidate without a health penalty).
+
+The Rust client, on a plain tunnel, sends the identical envelope to the next candidate after a
+refusal starting `wrong-group-root` or `gate:`, or the exact `bad-target-policy`; it returns any
+other refusal at once. After an `upstream:*` refusal, and after `bad-target-policy` only when
+session tickets are on, it retries once on another node with a new slot or ticket, when
+`retry_other_node` is on and the slot budget allows. Two local dial failures mark a node down; future selections
 skip it while healthy choices exist, and a later success recovers it. The JavaScript Proxy's
 periodic Canopy refresh adds and removes onions without a restart while carrying forward health for
 unchanged nodes. The Rust Proxy also refreshes the signed canopy directory in the background (about every five
