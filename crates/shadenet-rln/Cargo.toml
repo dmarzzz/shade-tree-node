@@ -14,12 +14,17 @@ publish = false
 # explicitly with `cargo build -p shadenet-rln`.
 
 [features]
+default = ["prove"]
+# `prove` is the client half: the witness calculator and Groth16 prover over the repo's circom
+# artifacts (ark-circom -> wasmer). Without it the crate is the tree, the identity math and
+# `verify`, which is all a node needs.
+prove = ["dep:ark-circom", "dep:wasmer", "dep:tokio", "dep:ark-std"]
 # `embedded-artifacts` (T-RUST-4): `include_bytes!` the repo's circom-rln artifacts
 # (rln.wasm + rln_final.zkey + verification_key.json) straight into the binary, so a
 # released `live` client proves WITHOUT any external circuit files (call `build_envelope`
 # with `circuits_dir: None`). OFF by default so the standalone probe / tree bins and the
 # everyday shadenet-rln build do NOT bloat by ~8MB; `shadenet-cli`'s `live` feature turns it on.
-embedded-artifacts = []
+embedded-artifacts = ["prove"]
 
 [lib]
 name = "shadenet_rln"
@@ -28,6 +33,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "shadenet-rln-probe"
 path = "src/main.rs"
+required-features = ["prove"]
+
+[[test]]
+name = "untrusted_input"
+required-features = ["prove"]
 
 # T-RUST-2c: native Rust merkle root/path emitter (rlnjs Semaphore-v3 parity), so the
 # harness can feed a RUST-computed root+path into the prover instead of the JS fixture.
@@ -57,19 +67,20 @@ hex = "0.4"
 #   - WitnessCalculator(rln.wasm) -> full witness (SAME circom compile as the zkey,
 #     so no witness-graph / wire-order mismatch risk),
 #   - CircomReduction (the snarkjs-compatible QAP reduction).
-ark-circom = "0.5"
+ark-circom = { version = "0.5", optional = true }
 ark-groth16 = { version = "0.5", default-features = false }
 ark-bn254 = "0.5"
 ark-ff = "0.5"
 ark-ec = "0.5"
 ark-serialize = "0.5"
-ark-std = "0.5"
+ark-std = { version = "0.5", optional = true }
 ark-relations = "0.5"
-wasmer = "4"
+wasmer = { version = "4", optional = true }
 # ark-circom's WitnessCalculator runs on wasmer-wasix, whose virtual-fs needs a
 # Tokio reactor in context to open the wasm's host FS. A runtime guard around the
 # witness call satisfies it (probe-only; the release client would embed its own).
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full"], optional = true }
 num-bigint = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror = "2"

@@ -24,6 +24,16 @@ drop a `*selftest.mjs` anywhere in the tree and the runner picks it up (it skips
 contract suite is skipped, not failed; run `npm run test:node` to skip it
 deliberately.
 
+Some suites need a tool to do their real work (the anvil suites need `anvil` and
+`forge`, the terraform check needs `tofu` or `terraform`). Without it they print a
+line starting with `SKIP` and exit 0. The runner reports such a suite as `SKIP`
+with its reason, not `PASS`, and the summary names every skipped suite
+(`=== summary: 164/164 green, 3 of them SKIPPED ...`). A SKIP is still green (the
+exit code does not change), but it is not coverage: put `~/.foundry/bin` on `PATH`
+before you claim the on-chain paths were exercised. A suite that skips part of its
+work should print its own `SKIP <reason>` line at the start of a line so the
+runner can see it (`scripts/suite-skips.mjs`).
+
 ### What CI runs
 
 Required on every pull request: Rust workspace check, test and interop; `cargo fmt` and
