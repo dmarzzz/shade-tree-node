@@ -499,24 +499,33 @@ export async function contractCounters(contract, block, rpcUrl = RPC_URL(), rpcO
 // Every read after the header is pinned to the header's block NUMBER (never the tag again), so the
 // root and both counters describe one block even when the chain advances mid-check.
 // `timeoutMs` bounds the WHOLE check (default KEEPWARM_CHECK_TIMEOUT_MS, well under the 15 s
-// per-call RPC default): each call gets the time left (capped at the RPC deadline) as its own abort
-// deadline, with no throttle retries, and no call starts once the budget is spent. The check itself
-// rejects when the budget runs out, even while an endpoint list is still failing over; a reply that
-// arrives after that is ignored. Any timeout is an error, i.e. "reload".
+// per-call RPC default). The check fixes one absolute deadline (start + budget) and one
+// AbortSignal, and hands both to every call, so they also bound endpoint failover inside
+// jsonRpcCall: no request to any endpoint starts once the deadline has passed, each request's own
+// abort deadline is the time left (capped at SHADE_TREE_RPC_TIMEOUT_MS), and there are no throttle
+// retries. When the budget runs out the check rejects and aborts the signal, which cancels the
+// request in flight; nothing of the check runs after that, and a reply that still arrives is
+// ignored. Any timeout is an error, i.e. "reload".
 const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
 export const KEEPWARM_CHECK_TIMEOUT_MS = 5_000;
 export function revalidateContractGroup({ timeoutMs = KEEPWARM_CHECK_TIMEOUT_MS, ...args } = {}) {
   const budget = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : KEEPWARM_CHECK_TIMEOUT_MS;
   const deadline = Date.now() + budget;
+  const cancel = new AbortController();
   const timedOut = () => new Error(`revalidateContractGroup: check timed out after ${budget}ms`);
   const rpcOpts = () => {
-    const left = deadline - Date.now();
-    if (left <= 0) throw timedOut();
-    return { timeoutMs: Math.min(rpcTimeoutMs(), left), retries: 0 };
+    if (cancel.signal.aborted || Date.now() >= deadline) throw timedOut();
+    return { timeoutMs: rpcTimeoutMs(), retries: 0, deadline, signal: cancel.signal };
   };
   let timer;
-  const expired = new Promise((_, reject) => { timer = setTimeout(() => reject(timedOut()), budget); });
-  return Promise.race([checkPinned({ ...args, rpcOpts }), expired]).finally(() => clearTimeout(timer));
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => { const e = timedOut(); cancel.abort(e); reject(e); }, budget);
+  });
+  // A request whose own deadline was cut to the time left can end a tick before the timer: that
+  // RPC_STOPPED is the same timeout, reported the same way.
+  const checking = checkPinned({ ...args, rpcOpts }).catch((e) => { throw e?.code === "RPC_STOPPED" ? timedOut() : e; });
+  checking.catch(() => {}); // after expiry its "stopped" rejection has no reader
+  return Promise.race([checking, expired]).finally(() => clearTimeout(timer));
 }
 
 async function checkPinned({ contract, kind = "staked", prev, rpcUrl = RPC_URL(), blockTag = "latest", slot = 3, rpcOpts }) {

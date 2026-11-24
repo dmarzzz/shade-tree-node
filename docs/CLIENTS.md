@@ -147,10 +147,12 @@ staked set, 2 for a paid set, which has no counters.
   wins. A group found in a later contract always goes through the full discovery, so an earlier
   contract that gains your leaf is picked up in the next epoch, as on a fresh start.
 - The check has its own deadline: 5 s for the whole check (`KEEPWARM_CHECK_TIMEOUT_MS`, loader
-  option `checkTimeoutMs`). Each call gets the time left, capped at `SHADE_TREE_RPC_TIMEOUT_MS`,
-  with no throttle retries, and the check gives up when the 5 s run out even with several RPC
-  endpoints. So a hanging RPC adds at most 5 s before the full reload, which then runs with the
-  normal RPC deadlines.
+  option `checkTimeoutMs`), fixed when the check starts and shared by all its calls, including
+  the failover between several `SHADE_TREE_RPC_URL` endpoints. No request to any endpoint starts
+  after the deadline, each request's own timeout is the time left (capped at
+  `SHADE_TREE_RPC_TIMEOUT_MS`), there are no throttle retries, and at the deadline the request in
+  flight is cancelled. So a hanging RPC adds at most 5 s before the full reload, which then runs
+  with the normal RPC deadlines, and the abandoned check sends nothing after that.
 
 - The previous group is reused only when the on-chain root equals the replayed root and, for a
   staked set, both counters equal the replay.
@@ -174,7 +176,8 @@ staked set, 2 for a paid set, which has no counters.
 The first proof of a process is still a full load. Tests: `packages/node/client/keep-warm.selftest.mjs`
 (loopback fake JSON-RPC that answers each read at the block it names: match, mismatch, RPC error,
 malformed answers, paid set, reads pinned to the header's block, the check deadline with hanging
-endpoints, own leaf removed, members.json or an earlier contract gaining the leaf, and late replies
+endpoints and no request started after it during failover, own leaf removed, members.json or an
+earlier contract gaining the leaf, and late replies
 from an older epoch's check or full load, or after the check deadline, when the reload succeeded or
 failed).
 

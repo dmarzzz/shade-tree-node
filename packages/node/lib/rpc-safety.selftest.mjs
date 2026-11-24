@@ -290,4 +290,59 @@ await assert.rejects(ep.send("eth_blockNumber", []));
 assert.equal(sleeps.length, 1, "ethers path stops at retries + 1 attempts without a wasted final sleep");
 ep.destroy();
 
-console.log("PASS: RPC keys, request and receipt deadlines, bounded ethers bootstrap, endpoint failover, and 429 backoff");
+// A caller's absolute `deadline` and `signal` bound the whole call, failover included: no endpoint
+// starts after the deadline, the request in flight is cut to the time left or cancelled by the
+// signal, and the stop is RPC_STOPPED, not a failover.
+{
+  const starts = [];
+  const hangAll = async (url, options) => {
+    starts.push({ host: new URL(url).host, at: Date.now() });
+    return new Promise((_resolve, reject) => {
+      const hold = setTimeout(() => reject(new Error("test transport was not aborted")), 2000);
+      options.signal.addEventListener("abort", () => { clearTimeout(hold); reject(options.signal.reason); }, { once: true });
+    });
+  };
+  const t0 = Date.now();
+  await assert.rejects(
+    jsonRpcCall("https://h1.example,https://h2.example,https://h3.example", "eth_call", [], { fetchImpl: hangAll, timeoutMs: 1000, deadline: t0 + 60 }),
+    (error) => error.code === "RPC_STOPPED" && /deadline passed/.test(error.message),
+  );
+  await new Promise((r) => setTimeout(r, 150));
+  assert.deepEqual(starts.map((s) => s.host), ["h1.example"], "deadline: no endpoint after the first starts once the deadline passed");
+  assert.ok(Date.now() - t0 < 1000, "deadline: the first request is cut to the time left, not its 1000 ms timeout");
+
+  starts.length = 0;
+  const ctl = new AbortController();
+  setTimeout(() => ctl.abort(new Error("caller gave up")), 40);
+  const t1 = Date.now();
+  await assert.rejects(
+    jsonRpcCall("https://s1.example,https://s2.example", "eth_call", [], { fetchImpl: hangAll, timeoutMs: 1000, signal: ctl.signal }),
+    (error) => error.code === "RPC_STOPPED" && /cancelled by the caller/.test(error.message),
+  );
+  await new Promise((r) => setTimeout(r, 100));
+  assert.deepEqual(starts.map((s) => s.host), ["s1.example"], "signal: aborting cancels the request in flight and starts no other endpoint");
+  assert.ok(Date.now() - t1 < 500, "signal: the abort ends the call at once");
+
+  starts.length = 0;
+  await assert.rejects(
+    jsonRpcCall("https://p1.example", "eth_call", [], { fetchImpl: hangAll, signal: AbortSignal.abort(new Error("already")) }),
+    (error) => error.code === "RPC_STOPPED",
+  );
+  await assert.rejects(
+    jsonRpcCall("https://p2.example", "eth_call", [], { fetchImpl: hangAll, deadline: Date.now() - 1 }),
+    (error) => error.code === "RPC_STOPPED",
+  );
+  assert.equal(starts.length, 0, "an aborted signal or a passed deadline starts no request at all");
+
+  // a fast failure before the deadline still fails over, and a throttle wait that would end past the
+  // deadline is not taken
+  calls.length = 0;
+  assert.equal(await jsonRpcCall("https://down.example,https://up.example", "eth_chainId", [], { fetchImpl: flaky, deadline: Date.now() + 5000, signal: new AbortController().signal }), "0xaa36a7");
+  assert.deepEqual(calls, ["down.example", "up.example"], "with a deadline, an early endpoint failure still fails over");
+  sleeps = [];
+  t = scripted([() => throttled(429), ok]);
+  await assert.rejects(jsonRpcCall("https://tdly-deadline.example", "eth_call", [], { fetchImpl: t.fetchImpl, sleep, deadline: Date.now() + 100 }), /HTTP 429/);
+  assert.equal(sleeps.length, 0, "a throttle wait longer than the time left is not taken");
+}
+
+console.log("PASS: RPC keys, request and receipt deadlines, bounded ethers bootstrap, endpoint failover, 429 backoff, and caller deadline/cancel across failover");

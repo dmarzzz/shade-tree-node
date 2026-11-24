@@ -8,6 +8,7 @@
 //   - adversarial answers (malformed words, missing block, zero slot, counter lies, revert,
 //     a forged `prev`, non-boolean check results) never reuse a group
 //   - paid sets are checked on the root alone; members.json groups are never revalidated
+//   - the whole-check deadline also bounds endpoint failover: no request starts after it
 //   - generation fence: a check or full load from an older epoch that settles after a newer
 //     epoch's reload (successful or failed) publishes nothing into the current cache
 //
@@ -440,7 +441,9 @@ async function main() {
     ok(/timed out/.test(msg || "") && took >= BUDGET - 20 && took < BUDGET + 250, `3 hanging endpoints: the check rejects at its ${BUDGET} ms budget (took ${took} ms), not once per endpoint`);
     const until = Date.now() + 1500;
     while (hung.some((h) => h.closedAt == null) && Date.now() < until) await new Promise((r) => setTimeout(r, 20));
-    ok(hung.length >= 1 && hung.every((h) => h.closedAt != null), `every hung request is aborted by the client within the budget's per-call deadline (${hung.length} hung, ${hung.filter((h) => h.closedAt != null).length} closed)`);
+    // the deadline also bounds failover: endpoints 2 and 3 never get a request
+    await new Promise((r) => setTimeout(r, 2 * BUDGET));
+    ok(hung.length === 1 && hung.every((h) => h.closedAt != null && h.closedAt - t0 < BUDGET + 250), `only the first endpoint got a request, and it was aborted at the deadline (${hung.length} hung, closed after ${hung.map((h) => h.closedAt == null ? "never" : h.closedAt - t0 + " ms").join(", ")})`);
     fault = null;
 
     // in the pool: the hang costs the budget, then the fallback full load runs
@@ -459,6 +462,104 @@ async function main() {
     ok(b !== a && count("eth_getLogs") === 1 && s5.reloadedError === 1 && s5.reused === 0, "a hanging counter read: the check gives up and the full load runs (reloadedError 1)");
     ok(took2 >= BUDGET - 20 && took2 < BUDGET + 1500, `time from rollover to the reloaded group ${took2} ms: the budget plus one local full load`);
     fault = null;
+  }
+
+  // 4d'. no request starts after the deadline, at any endpoint (fetch stubbed: zero network). Every
+  // request start and abort is recorded until well after the budget, across the failover that
+  // follows the aborted request. Two shapes: every endpoint hangs on the root read, and the first
+  // endpoint fails fast so the deadline lands on the second one mid-failover.
+  console.log("\ncheck deadline covers endpoint failover (stub fetch):");
+  {
+    const realFetch = globalThis.fetch;
+    const prevGroup = { group: { members: [] }, root: "1", count: 0 };
+    for (const shape of ["all hang", "first fails fast"]) {
+      const BUDGET = 120;
+      const events = [];
+      const t0 = Date.now();
+      const mark = (what, extra) => events.push({ what, ms: Date.now() - t0, ...extra });
+      // fresh URLs per shape: the sticky-endpoint memory is keyed by the list
+      const urls = [1, 2, 3].map((i) => `http://stub-${shape.replace(/ /g, "-")}-${i}.invalid`);
+      globalThis.fetch = async (url, opts) => {
+        const { method } = JSON.parse(opts.body);
+        mark("start", { url, method });
+        if (method === "eth_getBlockByNumber") return { json: async () => ({ result: { number: "0x64" } }) };
+        if (shape === "first fails fast" && url === urls[0]) throw new TypeError("fetch failed");
+        return new Promise((_, reject) => {
+          opts.signal.addEventListener("abort", () => { mark("abort", { url, method, reason: String(opts.signal.reason?.message ?? opts.signal.reason) }); reject(opts.signal.reason); }, { once: true });
+        });
+      };
+      let returned = null;
+      try {
+        try { await revalidateContractGroup({ contract: STAKED, prev: prevGroup, rpcUrl: urls, timeoutMs: BUDGET }); }
+        catch (e) { returned = { ms: Date.now() - t0, msg: e.message }; }
+        await new Promise((r) => setTimeout(r, 4 * BUDGET)); // past where endpoints 2 and 3 would have started
+      } finally { globalThis.fetch = realFetch; }
+      const starts = events.filter((e) => e.what === "start");
+      const firstAbort = events.findIndex((e) => e.what === "abort");
+      // by order, not only by clock: a start recorded after the deadline's abort is late even in the same ms
+      const late = events.filter((e, i) => e.what === "start" && ((firstAbort !== -1 && i > firstAbort) || e.ms > BUDGET));
+      const aborts = events.filter((e) => e.what === "abort");
+      ok(returned && /timed out after 120ms/.test(returned.msg) && returned.ms < BUDGET + 250, `(${shape}) the check rejects at its ${BUDGET} ms budget (took ${returned && returned.ms} ms)`);
+      ok(starts.length >= 2 && late.length === 0, `(${shape}) no request starts after the deadline: ${starts.length} starts, last at ${starts.length ? starts[starts.length - 1].ms : "-"} ms, ${late.length} after the expiry`);
+      ok(aborts.length === 1 && aborts[0].ms < BUDGET + 250, `(${shape}) the one outstanding request is cancelled at the deadline (${aborts.length} aborts at ${aborts.map((a) => a.ms).join(",")} ms, reason: ${aborts[0] ? aborts[0].reason.slice(0, 60) : "-"})`);
+    }
+    // A per-request RPC timeout shorter than the budget (SHADE_TREE_RPC_TIMEOUT_MS=70): failover really
+    // happens inside the budget (endpoint 2 starts at ~70 ms), and without the shared deadline it
+    // would go on to endpoint 3 at ~140 ms. Every request must be closed by the deadline.
+    {
+      const BUDGET = 120;
+      const prevEnv = process.env.SHADE_TREE_RPC_TIMEOUT_MS;
+      process.env.SHADE_TREE_RPC_TIMEOUT_MS = "70";
+      const events = [];
+      const t0 = Date.now();
+      const urls = [1, 2, 3].map((i) => `http://stub-short-${i}.invalid`);
+      globalThis.fetch = async (url, opts) => {
+        const { method } = JSON.parse(opts.body);
+        events.push({ what: "start", url, method, ms: Date.now() - t0 });
+        if (method === "eth_getBlockByNumber") return { json: async () => ({ result: { number: "0x64" } }) };
+        return new Promise((_, reject) => {
+          opts.signal.addEventListener("abort", () => { events.push({ what: "abort", url, ms: Date.now() - t0 }); reject(opts.signal.reason); }, { once: true });
+        });
+      };
+      let msg = null;
+      try {
+        try { await revalidateContractGroup({ contract: STAKED, prev: prevGroup, rpcUrl: urls, timeoutMs: BUDGET }); } catch (e) { msg = e.message; }
+        await new Promise((r) => setTimeout(r, 4 * BUDGET));
+      } finally {
+        globalThis.fetch = realFetch;
+        if (prevEnv === undefined) delete process.env.SHADE_TREE_RPC_TIMEOUT_MS; else process.env.SHADE_TREE_RPC_TIMEOUT_MS = prevEnv;
+      }
+      const starts = events.filter((e) => e.what === "start" && e.method === "eth_getStorageAt");
+      const aborts = events.filter((e) => e.what === "abort");
+      const late = starts.filter((e) => e.ms > BUDGET);
+      ok(/timed out after 120ms/.test(msg || "") && starts.length === 2 && late.length === 0 && aborts.length === 2 && aborts.every((a) => a.ms < BUDGET + 50), `(70 ms per request) failover to endpoint 2 inside the budget, none after it: ${starts.length} root reads at ${starts.map((s) => s.ms).join(",")} ms, aborts at ${aborts.map((a) => a.ms).join(",")} ms, ${late.length} after ${BUDGET} ms`);
+    }
+    // The request deadline is cut to the time left, so it normally ends with the budget anyway. With
+    // the clock frozen that cut is a full budget from the request's own start, which here is 60 ms
+    // late: only the check's cancel signal can stop the request at the budget.
+    {
+      const BUDGET = 120;
+      const realNow = Date.now;
+      const t0 = realNow();
+      const events = [];
+      const urls = [1, 2].map((i) => `http://stub-frozen-${i}.invalid`);
+      globalThis.fetch = async (url, opts) => {
+        const { method } = JSON.parse(opts.body);
+        events.push({ what: "start", method, ms: realNow() - t0 });
+        if (method === "eth_getBlockByNumber") { await new Promise((r) => setTimeout(r, 60)); return { json: async () => ({ result: { number: "0x64" } }) }; }
+        return new Promise((_, reject) => {
+          opts.signal.addEventListener("abort", () => { events.push({ what: "abort", ms: realNow() - t0, reason: String(opts.signal.reason?.message ?? opts.signal.reason) }); reject(opts.signal.reason); }, { once: true });
+        });
+      };
+      Date.now = () => t0;
+      try {
+        try { await revalidateContractGroup({ contract: STAKED, prev: prevGroup, rpcUrl: urls, timeoutMs: BUDGET }); } catch { /* timed out */ }
+        await new Promise((r) => setTimeout(r, 2 * BUDGET));
+      } finally { Date.now = realNow; globalThis.fetch = realFetch; }
+      const aborts = events.filter((e) => e.what === "abort");
+      const starts = events.filter((e) => e.what === "start");
+      ok(aborts.length === 1 && aborts[0].ms < BUDGET + 30 && /check timed out/.test(aborts[0].reason) && starts.length === 2, `(clock frozen) the check's expiry itself cancels the request in flight (${aborts.length} aborts at ${aborts.map((a) => a.ms).join(",")} ms, reason: ${aborts[0] ? aborts[0].reason.slice(0, 60) : "-"}; ${starts.length} starts)`);
+    }
   }
 
   // 4e. a check that times out, then its LAST read (activeCount) answers late "unchanged" after the
