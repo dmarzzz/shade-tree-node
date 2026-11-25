@@ -1,6 +1,6 @@
 [package]
 name = "shadenet-service"
-version = "0.7.5"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
@@ -9,7 +9,7 @@ repository = "https://github.com/dmarzzz/shade-tree-node"
 publish = false
 
 [dependencies]
-shadenet-proto = { path = "../shadenet-proto", version = "0.7.5" }
+shadenet-proto = { path = "../shadenet-proto", version = "0.8.0" }
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", default-features = false, features = ["rt-multi-thread", "macros", "io-util", "net", "sync", "time"] }

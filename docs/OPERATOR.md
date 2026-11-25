@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > Public-host deployment is open: the proof keys come from the adopted PSE trusted setup
-> (`docs/ceremony/PSE-VERIFICATION.md`) and the Sepolia canopy runs `v0.7.5`. Still a research
+> (`docs/ceremony/PSE-VERIFICATION.md`) and the Sepolia canopy runs `v0.8.0`. Still a research
 > preview on a testnet; see [DEPLOYMENT-PLAN.md](DEPLOYMENT-PLAN.md).
 
 For running a Shade Tree node or Elder Tree. Every command here exists in
@@ -80,7 +80,7 @@ identity, Tor state, spent set and `status.json` in the `/state` volume.
 docker run -d --name shadenet-node --restart unless-stopped \
   -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
   -v shadenet-node:/state \
-  ghcr.io/dmarzzz/shadenet-node:0.7.5
+  ghcr.io/dmarzzz/shadenet-node:0.8.0
 docker logs -f shadenet-node        # "heartbeat accepted" once per Elder means the node is listed
 ```
 
@@ -90,7 +90,7 @@ reads each Elder's `/health`.
 
 ```bash
 docker run --rm -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
-  ghcr.io/dmarzzz/shadenet-node:0.7.5 check --probe
+  ghcr.io/dmarzzz/shadenet-node:0.8.0 check --probe
 ```
 
 The Sepolia canopy's Elders admit staked operators (`elder.admission = stake`): the operator
@@ -102,7 +102,7 @@ lives (the same image does both), hand the node the two values:
 
 ```bash
 # on the node's box: mint the onion identity into the volume
-docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.7.5 identity
+docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.8.0 identity
 #   -> { "onion": "<56 chars>.onion", ... }
 
 # where the operator key lives (operator.key: one line, 64 hex, chmod 600)
@@ -112,7 +112,7 @@ docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/s
 read -s KEY && SHADE_TREE_REGISTER_KEY="$KEY" node packages/node/bin/shade-tree.mjs register-gateway \
   --gateway-registry 0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868 --rpc-url https://rpc.sepolia.ethpandaops.io; unset KEY
 # per node: sign its onion
-docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.5 authorize --onion <onion> --key-file /k/operator.key
+docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.8.0 authorize --onion <onion> --key-file /k/operator.key
 #   -> { "SHADENET_OPERATOR": "0x…", "SHADENET_OPERATOR_SIG": "0x…" }
 
 # back on the node's box
@@ -120,7 +120,7 @@ docker run -d --name shadenet-node --restart unless-stopped \
   --security-opt no-new-privileges:true --cap-drop ALL --read-only --tmpfs /tmp \
   --memory 1g --log-opt max-size=20m \
   -e SHADENET_RECORD=... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… \
-  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.5
+  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.8.0
 docker exec shadenet-node shadenet-node status   # "listed": Elders that accepted
 ```
 
