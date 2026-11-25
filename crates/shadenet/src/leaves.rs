@@ -3,6 +3,8 @@
 //! Replays the same StakedReputationSet/PaidAccessSet events as
 //! `lib/root-provider.mjs`, preserving append order and zero-in-place removals.
 
+use std::io::Read;
+
 use num_bigint::BigUint;
 use serde_json::{json, Value};
 use shadenet_rln::replay::range_error;
@@ -12,6 +14,9 @@ pub use shadenet_rln::replay::{
 };
 
 const MIN_CHUNK: u64 = 64;
+const DEFAULT_CHUNK: u64 = 10_000;
+const MAX_STAKED_CHUNK: u64 = 500_000;
+const MAX_RPC_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// A minimal blocking JSON-RPC client (public within the crate for `doctor`).
 pub(crate) struct Rpc {
@@ -40,12 +45,33 @@ impl Rpc {
             .post(&self.url)
             .json(&json!({"jsonrpc":"2.0","id":self.id,"method":method,"params":params}))
             .send()
-            .map_err(|e| format!("{method}: RPC transport failed: {e}"))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    format!("{method}: RPC request timed out")
+                } else {
+                    format!("{method}: RPC transport failed: {e}")
+                }
+            })?;
         if !response.status().is_success() {
             return Err(format!("{method}: RPC HTTP {}", response.status()));
         }
-        let body: Value = response
-            .json()
+        // Wide log pages can produce large bodies. Enforce the limit even without Content-Length.
+        let too_large = || format!("{method}: RPC response size exceeds 64 MiB");
+        if response
+            .content_length()
+            .is_some_and(|bytes| bytes > MAX_RPC_RESPONSE_BYTES)
+        {
+            return Err(too_large());
+        }
+        let mut bytes = Vec::new();
+        response
+            .take(MAX_RPC_RESPONSE_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("{method}: RPC response failed: {e}"))?;
+        if bytes.len() as u64 > MAX_RPC_RESPONSE_BYTES {
+            return Err(too_large());
+        }
+        let body: Value = serde_json::from_slice(&bytes)
             .map_err(|e| format!("{method}: invalid RPC JSON: {e}"))?;
         if let Some(error) = body.get("error") {
             return Err(format!("{method}: RPC error {error}"));
@@ -116,7 +142,13 @@ pub fn fetch_members(
     }
 
     let counters = contract_counters(&mut rpc, &address, to_hex)?;
-    let mut chunk = 10_000u64;
+    // Public staking emits few events across many blocks. A wide page saves RPC quota,
+    // and the pinned block's counters detect missing events before the replay is accepted.
+    let mut chunk = if counters.is_some() && to - from_block >= DEFAULT_CHUNK {
+        MAX_STAKED_CHUNK
+    } else {
+        DEFAULT_CHUNK
+    };
     loop {
         let logs = scan_logs(&mut rpc, &address, from_block, to, &mut chunk)?;
         let outcome = reconstruct(&logs, rln_identifier).and_then(|set| match counters {
@@ -136,7 +168,7 @@ pub fn fetch_members(
             // A public RPC pool can answer a wide eth_getLogs with a silently empty page: smaller
             // pages reach a backend that has the history. Give up only at the floor.
             Err(error) if is_incomplete(&error) && chunk > MIN_CHUNK => {
-                chunk = (chunk / 2).max(MIN_CHUNK);
+                chunk = smaller_chunk(chunk).max(MIN_CHUNK);
             }
             Err(error) if is_incomplete(&error) => {
                 return Err(format!("{error}; {rpc_url} returned partial history even in {chunk}-block pages, use another RPC"));
@@ -144,6 +176,10 @@ pub fn fetch_members(
             Err(error) => return Err(error),
         }
     }
+}
+
+fn smaller_chunk(chunk: u64) -> u64 {
+    (chunk / 2).min(DEFAULT_CHUNK)
 }
 
 fn scan_logs(
@@ -169,8 +205,12 @@ fn scan_logs(
                 cursor = end.saturating_add(1);
             }
             Ok(_) => return Err("eth_getLogs returned a non-array result".into()),
-            Err(e) if range_error(&e) && *chunk > 8 => {
-                *chunk = (*chunk / 2).max(8);
+            Err(e)
+                if *chunk > 8
+                    && (range_error(&e)
+                        || (*chunk > DEFAULT_CHUNK && e.ends_with("RPC request timed out"))) =>
+            {
+                *chunk = smaller_chunk(*chunk).max(8);
             }
             Err(e) => return Err(e),
         }
