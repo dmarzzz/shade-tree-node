@@ -52,7 +52,22 @@ export function heartbeatListing(metricsText) {
   const total = read("shade_tree_heartbeat_elders_total");
   if (accepted === null || total === null) return null;
   const last = read("shade_tree_heartbeat_last_success_timestamp_seconds");
-  return { eldersAccepted: accepted, eldersTotal: total, lastAcceptedAt: last ? new Date(last * 1000).toISOString() : null };
+  const listing = { eldersAccepted: accepted, eldersTotal: total, lastAcceptedAt: last ? new Date(last * 1000).toISOString() : null };
+  // Elders that have not answered yet (issue 428). Absent on a heartbeat older than this field, so the
+  // listing keeps its old shape there.
+  const pending = read("shade_tree_heartbeat_elders_pending");
+  if (pending !== null) listing.eldersPending = pending;
+  return listing;
+}
+
+// The line `status` prints about the Elder listing, or null when there is nothing to warn about.
+// While an Elder has not answered, say so instead of reading the pending Elder as a refusal.
+export function listingNotice(listed) {
+  if (!listed) return null;
+  const pending = listed.eldersPending || 0;
+  if (pending > 0) return `${listed.eldersAccepted} of ${listed.eldersTotal} Elder Trees accepted, ${pending} pending (the first announce is still in progress)`;
+  if (listed.eldersAccepted === 0) return `no Elder Tree lists this node yet (0 of ${listed.eldersTotal} accepted the last announce); \`docker logs\` shows each Elder's answer on the \`heartbeat rejected\` lines`;
+  return null;
 }
 
 // One line per Elder for `check --probe`: fetch /health over Tor (fetch returns parsed JSON).

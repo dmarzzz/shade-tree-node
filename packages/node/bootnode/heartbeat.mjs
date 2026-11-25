@@ -85,13 +85,46 @@ const M = {
   // ADR 0012 fan-out: how many Elder Trees this heartbeat announces to, and how many accepted the
   // latest cycle. accepted < total while the fleet is healthy means one Elder is unreachable.
   eldersTotal: metrics.gauge("shade_tree_heartbeat_elders_total", "Elder Trees this heartbeat announces to (ADR 0012)."),
-  eldersAccepted: metrics.gauge("shade_tree_heartbeat_elders_accepted", "Elder Trees that accepted the latest heartbeat cycle."),
+  eldersAccepted: metrics.gauge("shade_tree_heartbeat_elders_accepted", "Elder Trees whose latest answer to this heartbeat was an acceptance (updated as each answer arrives)."),
+  // Issue 428: Elders that have not answered since this heartbeat started. Each Elder's answer is
+  // recorded when it arrives, so during the first cycle a slow Elder reads as pending, not refused.
+  eldersPending: metrics.gauge("shade_tree_heartbeat_elders_pending", "Elder Trees that have not answered an announce since this heartbeat started."),
   // Operator drain flag (lib/drain.mjs): 1 while the node announces `draining: true`.
   draining: metrics.gauge("shade_tree_heartbeat_draining", "1 while the operator drain flag is set and announced in the signed caps."),
 };
 M.eldersTotal.set(0);
 M.eldersAccepted.set(0);
+M.eldersPending.set(0);
 M.lastSuccess.set(0);
+
+// The latest answer of each Elder, published to the gauges the moment it arrives (issue 428).
+// Before, the accepted count was set once every Elder of the cycle had answered, so a slow Elder
+// held `status` at "0 of 2" after the other had already accepted. An Elder keeps its previous
+// answer until its next one arrives, so the counts do not dip at the start of every cycle, and
+// once a cycle ends `elders_accepted` is the same number the old end-of-cycle code set.
+// Accepted means `ok === true`, the test the cycle result uses, whatever else the reply carries.
+function makeElderTally(count) {
+  const last = new Array(count).fill("pending");
+  const publish = () => {
+    M.eldersAccepted.set(last.filter((s) => s === "accepted").length);
+    M.eldersPending.set(last.filter((s) => s === "pending").length);
+  };
+  const classify = (r) => (r?.ok === true ? "accepted" : "answered");
+  publish();
+  return {
+    record(i, r) { last[i] = classify(r); publish(); },
+    // A cycle has ended: its answers replace every entry at once. Cycles can overlap (the interval
+    // timer and a drain-triggered beat), so an answer from an older cycle can land after a newer
+    // cycle has ended. Without this the gauge could mix the two cycles and differ from the count
+    // the cycle itself returns.
+    finish(results) { results.forEach((r, i) => { last[i] = classify(r); }); publish(); },
+    // Egress down: nothing was announced, nothing is in flight, nobody is waiting on an answer.
+    skipAll() { last.fill("answered"); publish(); },
+  };
+}
+
+// The heartbeat's scrape text, for selftests that read the gauges the way `status` does.
+export function heartbeatMetricsText() { return metrics.render(); }
 
 function writeLog(logger, level, message, fields, legacyMessage = message) {
   if (typeof logger === "function") return logger(legacyMessage);
@@ -454,28 +487,31 @@ export function makeFanoutBeat({ bootnodes, announce, egress, enabled = egressCh
   };
   const beats = bootnodes.map((bootnode) => makeBeat({ announce: () => announce(bootnode), egress: async () => ({ healthy: true }), enabled: false, log: tagged(bootnode), now }));
   M.eldersTotal.set(bootnodes.length);
+  const tally = makeElderTally(bootnodes.length);
   return async () => {
     if (enabled) {
       let r;
       try { r = await egress(); }
       catch (e) {
         M.egressUp.set(0);
-        M.eldersAccepted.set(0);
+        tally.skipAll();
         M.attempts.inc({ outcome: "transport-error" });
         writeLog(log, "warn", "heartbeat transport failed; will retry", { reason: "transport-error" }, `announce failed: ${e.message} (will retry next interval)`);
         return { failed: true, err: e.message };
       }
       M.egressUp.set(r.healthy ? 1 : 0);
       if (!r.healthy) {
-        M.eldersAccepted.set(0);
+        tally.skipAll();
         M.attempts.inc({ outcome: "egress-unhealthy" });
         writeLog(log, "warn", "egress check failed; skipping heartbeat", { reason: "egress-unhealthy" }, `egress DOWN (${r.target} ${r.reason}); SKIP announce; gateway ages out of the bootnode via TTL`);
         return { skipped: true, egress: r };
       }
     }
-    const results = await Promise.all(beats.map((beat) => beat()));
+    // Each Elder's answer is recorded as it arrives (makeBeat never rejects), so a slow or hung
+    // Elder delays only its own entry, not the others'.
+    const results = await Promise.all(beats.map((beat, i) => beat().then((r) => { tally.record(i, r); return r; })));
+    tally.finish(results);
     const accepted = results.filter((r) => r && r.ok === true);
-    M.eldersAccepted.set(accepted.length);
     const perElder = results.map((r, i) => ({ bootnode: bootnodes[i], ...(r || {}) }));
     if (accepted.length === 0) {
       const first = results.find((r) => r && (r.err || r.failed)) || {};
@@ -538,9 +574,10 @@ export async function runHeartbeat({
   const relayEnabled = env.SHADE_TREE_RELAY_TELEMETRY === "1";
   const counterPath = env.SHADE_TREE_RELAY_TELEMETRY_STATE || join(HERE, "../../..", "tor", "hs", "relay-telemetry.local.json");
   const reportStatePath = env.SHADE_TREE_RELAY_REPORT_STATE || join(HERE, "../../..", "tor", "hs", "relay-report.local.json");
+  const single = bootnodes.length === 1 ? makeElderTally(1) : null;
   const beat = async () => {
     const result = await announceBeat();
-    if (bootnodes.length === 1) M.eldersAccepted.set(result?.ok === true ? 1 : 0);
+    if (single) single.record(0, result);
     // Bind reports to an already-authenticated live announcement: only report after this cycle's
     // /announce was accepted. Telemetry remains best-effort and cannot make the liveness heartbeat
     // fail; the Elder independently verifies the onion signature and live registry membership.

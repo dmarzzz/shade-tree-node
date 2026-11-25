@@ -26,7 +26,7 @@ import { generateOnionIdentity } from "../bootnode/keygen.mjs";
 import { verifyOperatorSig } from "../bootnode/announce.mjs";
 import { fetchOverTor } from "../bootnode/fetch.mjs";
 import { resolveBuildCommit } from "../lib/build-info.mjs";
-import { torInfo, startTor, supervise, writeStatus, heartbeatListing, probeElders } from "../lib/node-supervisor.mjs";
+import { torInfo, startTor, supervise, writeStatus, heartbeatListing, listingNotice, probeElders } from "../lib/node-supervisor.mjs";
 import { rpcUrlsOf, eldersOf, recordDrift } from "../lib/network-record.mjs";
 import { registerOwnNode } from "../lib/own-nodes.mjs";
 
@@ -301,7 +301,8 @@ async function status() {
   if (running && hbPort) { try { const r = await fetch(`http://127.0.0.1:${hbPort}/metrics`, { signal: AbortSignal.timeout(3000) }); if (r.ok) listed = heartbeatListing(await r.text()); } catch {} }
   if (!flag("quiet")) {
     console.log(JSON.stringify({ running: !!running, ready, listed, ...st }, null, 2));
-    if (listed && listed.eldersAccepted === 0) log(`no Elder Tree lists this node yet (0 of ${listed.eldersTotal} accepted the last announce); \`docker logs\` shows each Elder's answer on the \`heartbeat rejected\` lines`);
+    const notice = listingNotice(listed);
+    if (notice) log(notice);
   }
   process.exit(running ? 0 : 1);
 }

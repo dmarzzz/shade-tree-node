@@ -4,6 +4,24 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### `shadenet-node status` shows Elders that have not answered yet as pending (#428)
+
+- The heartbeat announces to every Elder Tree at once but set `shade_tree_heartbeat_elders_accepted` only
+  after every Elder had answered. During first startup, while one Elder had accepted and the other
+  was still answering, `status` printed `no Elder Tree lists this node yet (0 of 2 accepted the
+  last announce)` next to a `lastAcceptedAt` the first acceptance had already set.
+- Each Elder's answer is now recorded as it arrives, and a slow or hung Elder no longer holds the
+  others' count. A new gauge, `shade_tree_heartbeat_elders_pending`, counts the Elders that have not
+  answered since the heartbeat started. `status` adds `eldersPending` to `listed` and, while it is
+  above 0, prints `1 of 2 Elder Trees accepted, 1 pending (the first announce is still in
+  progress)`.
+- What counts as accepted does not change (`ok: true`, whatever else the reply carries), and once
+  a cycle has finished `elders_accepted` has the same value as before, also when two cycles
+  overlap (the interval and a drain-triggered announce): the cycle that finishes last sets it,
+  as the old code did. An Elder keeps its previous answer until its next one arrives, so the
+  count no longer drops to the old value for the length of every cycle. The `ElderPartial` webhook
+  alert does not count a pending Elder as a refusal.
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative

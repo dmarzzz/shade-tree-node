@@ -114,6 +114,13 @@ received.length = 0; egress.set(1); acc.set(1); await hbEval.tick(); await hbEva
 ok(received.some((r) => r.body.alert === "EgressDown" && r.body.status === "resolved") && received.some((r) => r.body.alert === "ElderPartial" && /1 of 2/.test(r.body.summary)), "EgressDown resolves; ElderPartial names the count");
 received.length = 0; acc.set(2); drain.set(1); await hbEval.tick();
 ok(received.some((r) => r.body.alert === "Draining" && r.body.severity === "info") && received.some((r) => r.body.alert === "ElderPartial" && r.body.status === "resolved"), "Draining is an info alert; partial resolves");
+// Issue 428: an Elder that has not answered yet is pending, not a refusal, so no ElderPartial.
+const pend = hb.gauge("shade_tree_heartbeat_elders_pending", "h");
+drain.set(0); acc.set(1); pend.set(1); await hbEval.tick(); received.length = 0; await hbEval.tick(); await hbEval.tick();
+ok(!received.some((r) => r.body.alert === "ElderPartial"), "ElderPartial stays quiet while the other Elder has not answered (1 accepted, 1 pending)");
+pend.set(0); await hbEval.tick(); await hbEval.tick();
+ok(received.some((r) => r.body.alert === "ElderPartial" && r.body.status !== "resolved" && /1 of 2/.test(r.body.summary)), "ElderPartial fires once that Elder answered without accepting");
+acc.set(2); await hbEval.tick();
 const never = makeRegistry();
 never.gauge("shade_tree_process_uptime_seconds", "h").set(1000);
 never.gauge("shade_tree_heartbeat_last_success_timestamp_seconds", "h").set(0);
