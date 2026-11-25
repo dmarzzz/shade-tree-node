@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { identityCommitmentOf, identityFor, rateCommitmentOf } from "../lib/rln.mjs";
 import {
+  GATEWAY_ENVELOPE_TIMEOUT_REFUSAL,
   ShadeTreeClient,
   ShadeTreeEpochBudgetError,
   buildEnvelope,
@@ -15,6 +16,7 @@ import {
   retryableGatewayRefusal,
 } from "./shade-tree-client.mjs";
 import { proxyFailureLabel } from "./shim.mjs";
+import { readEnvelope } from "../gateway/gateway.mjs";
 
 let failures = 0;
 const slotWork = mkdtempSync(join(tmpdir(), "shade-tree-safety-slots-"));
@@ -26,7 +28,8 @@ async function test(name, fn) {
 }
 
 const fakeGroup = async () => ({ group: {}, source: "members.json" });
-const fakeProve = async (_secret, epoch, slot, signal, opts = {}) => ({
+let proveCalls = 0;
+const fakeProve = async (_secret, epoch, slot, signal, opts = {}) => (proveCalls++, {
   proof: {
     epoch: String(epoch),
     rlnIdentifier: "1",
@@ -66,6 +69,7 @@ class FakeSocket extends EventEmitter {
       else if (this.mode === "policy") this.emit("data", Buffer.from('{"ok":false,"err":"bad-target-policy"}\n'));
       else if (this.mode === "version-mismatch") this.emit("data", Buffer.from('{"ok":false,"err":"unsupported-version:4","proto":{"min":5,"max":5}}\n'));
       else if (this.mode === "artifact-mismatch") this.emit("data", Buffer.from('{"ok":false,"err":"gate:artifact-unknown:test-artifact","artifacts":["other-artifact"]}\n'));
+      else if (this.mode.startsWith("refuse:")) this.emit("data", Buffer.from(JSON.stringify({ ok: false, err: this.mode.slice(7) }) + "\n"));
       else if (this.mode === "success-with-rest") {
         this.emit("data", Buffer.concat([Buffer.from('{"ok":true}\n'), Buffer.alloc(256, 0x61)]));
       } else this.emit("data", Buffer.from('{"ok":true}\n'));
@@ -324,6 +328,112 @@ await test("protocol and artifact rejects are onion-local and fail over with one
     { onion: "node-2", ok: true },
   ]);
   second.destroy();
+});
+
+console.log("\nenvelope-timeout refusal fails over (exact string only):");
+
+const ENVELOPE_TIMEOUT = "refuse:" + GATEWAY_ENVELOPE_TIMEOUT_REFUSAL;
+
+await test("the client constant matches the gateway reader's deadline error and the hardening selftest's pinned reply", async () => {
+  assert.equal(GATEWAY_ENVELOPE_TIMEOUT_REFUSAL, "bad-envelope:envelope timeout");
+  // Drive the real gateway reader into its deadline and prepend `bad-envelope:` here. This pins the
+  // reader error and the client constant; the complete wire reply from the handler is pinned by the
+  // gateway hardening integration tests (checked below to carry the same text).
+  const silent = new EventEmitter();
+  let wireErr = null;
+  try { await readEnvelope(silent, { timeoutMs: 5 }); } catch (error) { wireErr = "bad-envelope:" + error.message; }
+  assert.equal(wireErr, GATEWAY_ENVELOPE_TIMEOUT_REFUSAL);
+  const hardening = readFileSync(new URL("../gateway/hardening.selftest.mjs", import.meta.url), "utf8");
+  assert.ok(hardening.includes(`"${GATEWAY_ENVELOPE_TIMEOUT_REFUSAL}"`), "the gateway hardening selftest pins the same wire text");
+});
+
+await test("the existing retryable set is unchanged and a proof refusal stays terminal", () => {
+  for (const err of ["too-many-connections", "nullifier-conn-limit", "gateway-error", "bad-target-dns", "upstream:ETIMEDOUT"]) {
+    assert.equal(retryableGatewayRefusal({ err }), true, err);
+  }
+  assert.equal(retryableGatewayRefusal({ err: "gate:invalid-proof" }), false);
+  assert.equal(retryableGatewayRefusal({ err: GATEWAY_ENVELOPE_TIMEOUT_REFUSAL }), true);
+  assert.equal(retryableGatewayRefusal({}), false, "a missing err is not retryable");
+  assert.equal(retryableGatewayRefusal({ err: [GATEWAY_ENVELOPE_TIMEOUT_REFUSAL] }), false, "a non-string err is not retryable");
+});
+
+await test("an envelope timeout fails over with the identical envelope and one proof, health negative then positive", async () => {
+  const p0 = proveCalls;
+  const h = clientHarness([ENVELOPE_TIMEOUT, "success"], { ackMaxBytes: 128 });
+  const tunnel = await h.connect();
+  assert.equal(tunnel.shadeTree.onion, "node-1");
+  assert.deepEqual(h.calls, ["node-0", "node-1"]);
+  assert.equal(h.writes.length, 2);
+  assert.equal(h.writes[0], h.writes[1], "the failover reused the byte-identical envelope");
+  assert.equal(proveCalls - p0, 1, "no second proof or reservation");
+  assert.deepEqual(h.reports.map(({ onion, ok }) => ({ onion, ok })), [
+    { onion: "node-0", ok: false }, { onion: "node-1", ok: true },
+  ]);
+  assert.ok(h.events.some((event) => event.phase === "dial" && event.status === "failover" && event.onion === "node-0"));
+  assert.equal(h.sockets[0].destroyed, true, "the refusing socket was destroyed");
+  tunnel.destroy();
+});
+
+// Adversarial: every other bad-envelope reply and every near miss of the exact string stays
+// terminal. A prefix match (`startsWith("bad-envelope:")`) or a case-folding match fails here.
+const NOT_ENVELOPE_TIMEOUT = [
+  "bad-envelope:envelope too large",
+  "bad-envelope:closed before envelope",
+  "bad-envelope:Unexpected token x in JSON at position 0",
+  "gate:invalid-proof",
+  "gate:stale-external-nullifier",
+  "bad-envelope:envelope timeout ",
+  " bad-envelope:envelope timeout",
+  "BAD-ENVELOPE:envelope timeout",
+  "bad-envelope:envelope timeout\n",
+  "bad-envelope:envelope timeoutx",
+  "bad-envelope:",
+  "envelope-timeout",
+  "envelope timeout",
+];
+
+await test("other bad-envelope replies and near misses of the exact string stay terminal after one write", async () => {
+  for (const err of NOT_ENVELOPE_TIMEOUT) {
+    assert.equal(retryableGatewayRefusal({ err }), false, `predicate true for ${JSON.stringify(err)}`);
+    const h = clientHarness(["refuse:" + err, "success"], { ackMaxBytes: 128 });
+    let error = null;
+    try { (await h.connect()).destroy(); } catch (caught) { error = caught; }
+    assert.ok(error, `no throw for ${JSON.stringify(err)}`);
+    assert.deepEqual(h.calls, ["node-0"], `${JSON.stringify(err)} swept the fleet`);
+    assert.equal(h.writes.length, 1, `${JSON.stringify(err)} writes`);
+    assert.deepEqual(h.reports, [], `${JSON.stringify(err)} became health evidence`);
+  }
+});
+
+await test("envelope timeouts at every candidate throw the last refusal after one write each and one proof", async () => {
+  const p0 = proveCalls;
+  const h = clientHarness([ENVELOPE_TIMEOUT, ENVELOPE_TIMEOUT, ENVELOPE_TIMEOUT], { ackMaxBytes: 128 });
+  let error = null;
+  try { (await h.connect()).destroy(); } catch (caught) { error = caught; }
+  assert.match(String(error?.message || ""), /gate refused: bad-envelope:envelope timeout/);
+  assert.deepEqual(h.calls, ["node-0", "node-1", "node-2"]);
+  assert.equal(h.writes.length, 3);
+  assert.ok(h.writes.every((wire) => wire === h.writes[0]));
+  assert.equal(proveCalls - p0, 1);
+});
+
+await test("a single candidate still throws the envelope timeout after one write", async () => {
+  const h = clientHarness([ENVELOPE_TIMEOUT], { ackMaxBytes: 128 });
+  let error = null;
+  try { (await h.connect()).destroy(); } catch (caught) { error = caught; }
+  assert.match(String(error?.message || ""), /gate refused: bad-envelope:envelope timeout/);
+  assert.equal(h.writes.length, 1);
+  assert.deepEqual(h.calls, ["node-0"]);
+});
+
+await test("after an envelope-timeout failover, a terminal refusal at the next candidate still ends the attempt", async () => {
+  const h = clientHarness([ENVELOPE_TIMEOUT, "refuse:gate:stale-external-nullifier", "success"], { ackMaxBytes: 128 });
+  let error = null;
+  try { (await h.connect()).destroy(); } catch (caught) { error = caught; }
+  assert.match(String(error?.message || ""), /stale-external-nullifier/);
+  assert.deepEqual(h.calls, ["node-0", "node-1"]);
+  assert.equal(h.writes.length, 2);
+  assert.deepEqual(h.reports.map(({ onion, ok }) => ({ onion, ok })), [{ onion: "node-0", ok: false }]);
 });
 
 rmSync(slotWork, { recursive: true, force: true });

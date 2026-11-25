@@ -501,6 +501,15 @@ async function exchangeGatewayAck(socket, wire, options) {
   }
 }
 
+// The gateway's envelope-deadline reply (`readEnvelope` timer in gateway.mjs plus the
+// `bad-envelope:` reply prefix). The gateway writes it when the envelope reader's deadline fires,
+// before a complete newline-terminated envelope was read and before any parsing, verification or
+// admission. Partial bytes may have arrived; they are discarded. Nothing was admitted or spent
+// there, so the identical wire is safe at the next candidate. Matched exactly. The other
+// `bad-envelope:` replies (too large, closed before the newline, JSON errors) describe the
+// envelope itself and stay terminal.
+export const GATEWAY_ENVELOPE_TIMEOUT_REFUSAL = "bad-envelope:envelope timeout";
+
 // Only node-local, plausibly transient refusals are safe to route around. Candidate capability
 // mismatches are handled separately: they are safe to route around without becoming health
 // evidence. Other cryptographic, policy, or replay refusals remain terminal.
@@ -510,6 +519,7 @@ export function retryableGatewayRefusal(ack) {
     || reason === "nullifier-conn-limit"
     || reason === "gateway-error"
     || reason === "bad-target-dns"
+    || reason === GATEWAY_ENVELOPE_TIMEOUT_REFUSAL
     || reason.startsWith("upstream:");
 }
 
