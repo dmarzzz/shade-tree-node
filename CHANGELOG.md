@@ -4,6 +4,19 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Member-log replay builds the tree once instead of once per log
+
+- `reconstructGroup` (the gateway's root poll and the client's group load) no longer updates a
+  depth-20 Merkle path for every register and removal it replays. Logs that need no intermediate
+  root (all of them at startup, everything before the new suffix on an incremental poll) are folded
+  into a leaf array and the tree is built from it in one bottom-up pass. Logs in the tracked suffix
+  still go through the tree one at a time, so every transition root is unchanged.
+- Same leaves, same indices, same root, same Merkle paths: the replay rules (append at the next
+  index, zero value at a vacated index, skip a duplicate register or an unknown removal) did not
+  change. `packages/node/lib/root-provider-bottomup.selftest.mjs` checks the new replay against
+  the old per-log one on interleaved register/removal histories at every `trackFrom`.
+- New `rln.mjs` helpers `groupFromLeafArray(leaves)` and `groupZeroValue()`.
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative

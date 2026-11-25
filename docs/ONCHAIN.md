@@ -330,7 +330,10 @@ trust the node's log view. Both paths now work against the same contract.
 at 10k, Alchemy free at 2k), resolve the head block once per refresh so every page is consistent,
 start each contract at its deploy block from the network record (`deployBlocks`, or
 `SHADE_TREE_FROM_BLOCK` / `SHADE_TREE_FROM_BLOCKS`), and on finalized reads keep the replayed log and only fetch
-new blocks afterwards. The gateway fails SOFT at startup when the chain is unreadable but
+new blocks afterwards. The replay itself (`reconstructGroup`) builds the tree once, bottom-up, from
+the leaf array of every log before the new suffix, and walks only the new suffix log by log for its
+intermediate roots; the leaves, indices and root are the same as a per-log replay
+(`packages/node/lib/root-provider-bottomup.selftest.mjs`). The gateway fails SOFT at startup when the chain is unreadable but
 `members.json` gives a root (`shade_tree_gateway_root_source_degraded`), and closed when nothing would be
 trusted. `docs/OPERATOR.md` "Public RPC log-range caps"; `docs/CONFIG.md`.
 
