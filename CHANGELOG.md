@@ -4,6 +4,15 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### Rust client: reduce Sepolia membership history requests
+
+- When the staking contract exposes its member counters, the client starts
+  with wider event-log pages. It shrinks the range when the endpoint rejects
+  it or the replay is incomplete, and checks the counters at the same block
+  before accepting the replay.
+- The bundled Sepolia record uses Tenderly's public gateway path as its
+  fallback RPC.
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative

@@ -98,6 +98,11 @@ Nodes accept only finalized registrations. `shadenet status` distinguishes
 `not_admitted` from `not_finalized`; `shadenet status --wait` returns when the
 member is `ready`.
 
+The Rust client reads staking events in wider block ranges when the contract
+exposes membership counters. It uses smaller ranges if the RPC rejects a wide
+query or the replay disagrees with the counters. Run `shadenet doctor --rpc`
+to check the bundled Sepolia endpoints and their event history.
+
 To leave: `shadenet exit-member --identity … --key-file gas.key`, wait out the
 unbonding period shown by `shadenet member-status`, then
 `shadenet withdraw-member --identity … --recipient 0xFRESH --key-file gas.key`.

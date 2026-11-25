@@ -967,6 +967,18 @@ mod tests {
     /// A fake JSON-RPC endpoint on loopback that answers each method with a canned response,
     /// so the RPC verdicts for the rehearsal's three failure modes are pinned.
     fn fake_rpc(script: Vec<(&'static str, Value)>, status: u16) -> String {
+        fake_rpc_with(move |request| {
+            let method = request["method"].as_str().unwrap_or("");
+            let result = script
+                .iter()
+                .find(|(m, _)| *m == method)
+                .map(|(_, r)| r.clone())
+                .unwrap_or(Value::Null);
+            (status, json!({"result": result}))
+        })
+    }
+
+    fn fake_rpc_with(mut reply: impl FnMut(&Value) -> (u16, Value) + Send + 'static) -> String {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -1000,13 +1012,10 @@ mod tests {
                 let body_start = text.find("\r\n\r\n").map(|i| i + 4).unwrap_or(text.len());
                 let request: Value =
                     serde_json::from_str(&text[body_start..]).unwrap_or(Value::Null);
-                let method = request["method"].as_str().unwrap_or("");
-                let result = script
-                    .iter()
-                    .find(|(m, _)| *m == method)
-                    .map(|(_, r)| r.clone())
-                    .unwrap_or(Value::Null);
-                let body = json!({"jsonrpc":"2.0","id":request["id"],"result":result}).to_string();
+                let (status, mut body) = reply(&request);
+                body["jsonrpc"] = json!("2.0");
+                body["id"] = request["id"].clone();
+                let body = body.to_string();
                 let reason = if status == 200 {
                     "OK"
                 } else {
@@ -1032,6 +1041,92 @@ mod tests {
         profile.deploy_block = 10;
         net.name.clear();
         profile
+    }
+
+    #[test]
+    fn staked_history_uses_one_wide_page_when_the_counters_match() {
+        let (ranges, received) = std::sync::mpsc::channel();
+        let url = fake_rpc_with(move |request| {
+            let result = match request["method"].as_str().unwrap() {
+                "eth_getBlockByNumber" => {
+                    assert_eq!(request["params"], json!(["finalized", false]));
+                    json!({"number": "0x59682"})
+                }
+                "eth_call" => {
+                    assert_eq!(request["params"][1], "0x59682");
+                    json!(format!("0x{:064x}", 0))
+                }
+                "eth_getLogs" => {
+                    let filter = &request["params"][0];
+                    ranges.send(filter.clone()).unwrap();
+                    json!([])
+                }
+                method => panic!("unexpected method {method}"),
+            };
+            (200, json!({"result": result}))
+        });
+        let profile = profile_for(&url);
+        let set = leaves::fetch_members(&url, &profile.contract, 10, "finalized", 1).unwrap();
+        assert_eq!(set.live_count, 0);
+        let ranges: Vec<_> = received.try_iter().collect();
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0]["fromBlock"], "0xa");
+        assert_eq!(ranges[0]["toBlock"], "0x59682");
+    }
+
+    #[test]
+    fn staked_history_uses_smaller_pages_after_rejection_or_missing_events() {
+        use shadenet_rln::replay::REGISTERED;
+
+        let wide_replies = [
+            json!({"error": {"code": -32602, "message": "block range exceeds limit"}}),
+            json!({"result": []}),
+        ];
+        for wide_reply in wide_replies {
+            let (ranges, received) = std::sync::mpsc::channel();
+            let url = fake_rpc_with(move |request| {
+                let result = match request["method"].as_str().unwrap() {
+                    "eth_getBlockByNumber" => json!({"number": "0x4e2a"}),
+                    "eth_call" => json!(format!("0x{:064x}", 1)),
+                    "eth_getLogs" => {
+                        let filter = &request["params"][0];
+                        let start = filter["fromBlock"].as_str().unwrap();
+                        let end = filter["toBlock"].as_str().unwrap();
+                        let start = u64::from_str_radix(&start[2..], 16).unwrap();
+                        let end = u64::from_str_radix(&end[2..], 16).unwrap();
+                        ranges.send((start, end)).unwrap();
+                        if end - start >= 10_000 {
+                            return (200, wide_reply.clone());
+                        }
+                        if (start..=end).contains(&20_000) {
+                            json!([{
+                                "topics": [REGISTERED[1], format!("0x{:064x}", 3), format!("0x{:064x}", 0)],
+                                "blockNumber": "0x4e20",
+                                "logIndex": "0x0",
+                            }])
+                        } else {
+                            json!([])
+                        }
+                    }
+                    method => panic!("unexpected method {method}"),
+                };
+                (200, json!({"result": result}))
+            });
+            let profile = profile_for(&url);
+            let set = leaves::fetch_members(&url, &profile.contract, 10, "finalized", 1).unwrap();
+            assert_eq!(set.live_count, 1);
+            assert_eq!(set.document.members, ["3"]);
+            let ranges: Vec<_> = received.try_iter().collect();
+            assert_eq!(
+                ranges,
+                [
+                    (10, 20_010),
+                    (10, 10_009),
+                    (10_010, 20_009),
+                    (20_010, 20_010)
+                ]
+            );
+        }
     }
 
     #[test]
