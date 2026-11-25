@@ -1,15 +1,15 @@
 # Prometheus alerting rules for Shade Tree (T-MON-3).
 #
 # Every expr references a metric that actually exists:
-#   - shade_tree_bootnode_announces_total{result,reason}   (counter, packages/node/bootnode/server.mjs)
-#   - shade_tree_bootnode_directory_fetches_total           (counter, packages/node/bootnode/server.mjs)
-#   - shade_tree_bootnode_live_gateways                     (gauge,   packages/node/bootnode/server.mjs)
-#   - shade_tree_gateway_tunnels_total{result,reason}      (counter, packages/node/gateway/gateway.mjs)
-#   - shade_tree_gateway_slashes_total                      (counter, packages/node/gateway/gateway.mjs)
-#   - shade_tree_gateway_active_tunnels                     (gauge,   packages/node/gateway/gateway.mjs)
-#   - shade_tree_gateway_root_source_degraded               (gauge,   packages/node/gateway/gateway.mjs)
-#   - shade_tree_gateway_verify_seconds_bucket/_sum/_count  (histogram, packages/node/gateway/gateway.mjs)
-#   - shade_tree_heartbeat_last_success_timestamp_seconds   (gauge,   packages/node/bootnode/heartbeat.mjs)
+#   - shade_tree_bootnode_announces_total{result,reason}   (counter, crates/shadenet-elder)
+#   - shade_tree_bootnode_directory_fetches_total           (counter, crates/shadenet-elder)
+#   - shade_tree_bootnode_live_gateways                     (gauge,   crates/shadenet-elder)
+#   - shade_tree_gateway_tunnels_total{result,reason}      (counter, crates/shadenet-node)
+#   - shade_tree_gateway_slashes_total                      (counter, crates/shadenet-node)
+#   - shade_tree_gateway_active_tunnels                     (gauge,   crates/shadenet-node)
+#   - shade_tree_gateway_root_source_degraded               (gauge,   crates/shadenet-node)
+#   - shade_tree_gateway_verify_seconds_bucket/_sum/_count  (histogram, crates/shadenet-node)
+#   - shade_tree_heartbeat_last_success_timestamp_seconds   (gauge,   crates/shadenet-node, on the node's port)
 #   - up                                              (synthetic, from the scrape itself)
 #
 # Thresholds are grounded in docs/SLO.md. Numbers flagged [NEEDS DATA] in the SLO doc
@@ -17,8 +17,8 @@
 # Operational meaning of each alert is cross-referenced to docs/SLO.md and docs/INCIDENT.md.
 #
 # IMPORTANT: adjust the job matchers below to the job names you use in prometheus.yml.
-# This file assumes jobs named shade-tree-bootnode, shade-tree-gateway, and
-# shade-tree-heartbeat (see monitoring/README.md).
+# This file assumes jobs named shade-tree-bootnode and shade-tree-gateway (see
+# monitoring/README.md); the node serves its heartbeat series on the gateway job.
 
 groups:
   - name: shade-tree-bootnode
@@ -152,7 +152,7 @@ groups:
       # drift (a role left on another release) still fires. Off-pin commits on one host are the
       # probe's CanopyOffRecordPin.
       - alert: CanopyPinDrift
-        expr: count(count by (version) (shade_tree_build_info{job=~"shade-tree-(bootnode|gateway|heartbeat)"})) > 1
+        expr: count(count by (version) (shade_tree_build_info{job=~"shade-tree-(bootnode|gateway)"})) > 1
         for: 30m
         labels:
           severity: warning
@@ -160,8 +160,8 @@ groups:
         annotations:
           summary: "Canopy roles run more than one release"
           description: >-
-            shade_tree_build_info reports different version labels across the Elder, nodes and
-            heartbeats. Deploy every role from the release in the deployment record (a container
+            shade_tree_build_info reports different version labels across the Elder and the
+            nodes. Deploy every role from the release in the deployment record (a container
             image of that release is fine: it is built at the tag's commit).
       - alert: SlashSpike
         expr: sum by (instance) (rate(shade_tree_gateway_slashes_total{job="shade-tree-gateway"}[15m])) > 0.1
@@ -253,10 +253,10 @@ groups:
       # the Elder. This catches that split-brain state before the local process itself exits.
       - alert: HeartbeatStale
         expr: >-
-          shade_tree_heartbeat_last_success_timestamp_seconds{job="shade-tree-heartbeat"} > 0
+          shade_tree_heartbeat_last_success_timestamp_seconds{job="shade-tree-gateway"} > 0
           and on(instance)
-          (time() - shade_tree_heartbeat_last_success_timestamp_seconds{job="shade-tree-heartbeat"}) > 900
-          and on(instance) up{job="shade-tree-heartbeat"} == 1
+          (time() - shade_tree_heartbeat_last_success_timestamp_seconds{job="shade-tree-gateway"}) > 900
+          and on(instance) up{job="shade-tree-gateway"} == 1
         for: 5m
         labels:
           severity: critical
@@ -264,17 +264,17 @@ groups:
         annotations:
           summary: "Node heartbeat is stale on {{ $labels.instance }}"
           description: >-
-            The heartbeat process is scrapeable, but its last accepted announce was more than
+            The node is scrapeable, but its last accepted announce was more than
             15 minutes ago. Check Tor reachability, the Elder address, egress self-check, and
             announce rejection logs. Adjust the threshold if the heartbeat interval is above
             the default five minutes.
 
       - alert: HeartbeatNeverAccepted
         expr: >-
-          shade_tree_heartbeat_last_success_timestamp_seconds{job="shade-tree-heartbeat"} == 0
+          shade_tree_heartbeat_last_success_timestamp_seconds{job="shade-tree-gateway"} == 0
           and on(instance)
-          (time() - shade_tree_process_start_time_seconds{job="shade-tree-heartbeat"}) > 900
-          and on(instance) up{job="shade-tree-heartbeat"} == 1
+          (time() - shade_tree_process_start_time_seconds{job="shade-tree-gateway"}) > 900
+          and on(instance) up{job="shade-tree-gateway"} == 1
         for: 5m
         labels:
           severity: critical
@@ -282,19 +282,7 @@ groups:
         annotations:
           summary: "Node heartbeat has never been accepted on {{ $labels.instance }}"
           description: >-
-            The heartbeat process has run for more than 15 minutes without one accepted
+            The node has run for more than 15 minutes without one accepted
             announce. Check Tor reachability, the Elder address and signer, egress self-check,
             and announce rejection logs.
 
-      - alert: HeartbeatDown
-        expr: up{job="shade-tree-heartbeat"} == 0
-        for: 5m
-        labels:
-          severity: warning
-          component: heartbeat
-        annotations:
-          summary: "Heartbeat metrics are unavailable on {{ $labels.instance }}"
-          description: >-
-            Prometheus cannot scrape the loopback heartbeat endpoint. Check
-            shade-tree-heartbeat.service and local port 9103. Fleet membership will age out if
-            announces are also stopped.

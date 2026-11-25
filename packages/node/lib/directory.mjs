@@ -674,7 +674,7 @@ export async function loadDirectory({ path, pinnedSigner, cachePath } = {}) {
 // is the only option left, so the fleet degrades rather than dead-ending.
 
 // Selection weight is gateway-attested, so the CLIENT must bound it too, not just the bootnode:
-// the bootnode clamps `weight` at announce (packages/node/bootnode/server.mjs MAX_WEIGHT), but a STATIC signed
+// the bootnode clamps `weight` at announce (crates/shadenet-elder MAX_WEIGHT), but a STATIC signed
 // directory or a compromised directory signer bypasses that path. Clamping here means no directory
 // source can concentrate a member's traffic on one gateway (a deanonymization lever). Undefined/NaN
 // weight defaults to 1; negative floors at 0; anything huge caps at MAX_WEIGHT.

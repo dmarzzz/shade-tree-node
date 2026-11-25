@@ -69,12 +69,13 @@ Elder half of `packages/node/lib/relay-telemetry.mjs`.
 
 ## Consequences
 
-- The JavaScript Elder stays one release, as the node did, and is deleted with the JavaScript
+- The JavaScript Elder stayed one release (0.8.0), as the node did, and was deleted with the JavaScript
   node. Its consumers (the clients' selection, the uptime probe, the status page, the fleet
   tally, the grove snapshot) keep working because the wire does not move.
 - The release workflow packages a third binary and the node image carries it; `shade-tree-node
-  elder` runs it. The deploy (`bootstrap.sh`) keeps rendering the JavaScript Elder's unit until
-  the deletion of the JavaScript node gives it a binary source, exactly as for the node.
+  elder` runs it. The deploy (`bootstrap.sh`) renders `shadenet-elder run` since the deletion
+  of the JavaScript node (2026-11-25); the release binaries are sha256-pinned in
+  `packages/node/bootnode/deploy/binaries.sh`.
 - `shadenet-node` loses its own copies of the shared modules and its build script; its
   `--version` commit comes from `shadenet-service`.
 - The registrar is the last JavaScript service and is not covered by this decision.

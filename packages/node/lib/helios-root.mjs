@@ -23,7 +23,7 @@
 //   * Helios has no block for the tag (null / out of window)  -> throw
 //   * header without a 32-byte stateRoot / number             -> throw
 // The chain check runs once, on the first call ("startup" from the provider's point of view:
-// packages/node/gateway/gateway.mjs awaits the first currentRoots() before serving), and is retried on the
+// the node awaits the first currentRoots() before serving), and is retried on the
 // next call if it failed, so a sidecar that is still booting delays start rather than poisoning
 // it. Expected chain: `chainId` option, else SHADE_TREE_HELIOS_CHAIN_ID, else the upstream RPC's own
 // eth_chainId (both endpoints must agree on the chain; either unreachable -> throw).

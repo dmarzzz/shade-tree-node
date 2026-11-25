@@ -269,9 +269,9 @@ Then turn on staking end to end (per `packages/node/bootnode/deploy/README.md`):
 
 1. Deploy (this runbook) and set the four vars above on the `shade-tree-bootnode` unit.
 2. Stake the operator: `shade-tree register-gateway` with the operator key funded on that chain.
-3. Put `SHADE_TREE_GW_OPERATOR_KEY=<operator-key>` in a root-readable mode-0600 environment file
-   referenced by the `shade-tree-heartbeat` unit so the key is not placed in its command or shell
-   history; the heartbeat uses it to sign the durable onion↔operator authorization.
+3. Install the operator key as the systemd credential `/etc/credstore/SHADE_TREE_GW_OPERATOR_KEY`
+   (root, mode 0600) so the key is not placed in the node's command or shell history; the node
+   uses it to sign the durable onion↔operator authorization.
 
 ## 8. Composition with T-DEPLOY-3 (infra-as-code)
 
@@ -283,8 +283,8 @@ This is the on-chain half of the deploy; the fleet half is the OpenTofu + Ansibl
    systemd units. Set `SHADE_TREE_GATEWAY_REGISTRY` / `SHADE_TREE_RPC_URL` / `SHADE_TREE_STAKE_MODE` /
    `SHADE_TREE_BOOTNODE_ADMISSION` as host/group vars so the generated `shade-tree-bootnode` unit
    comes up pointed at the deployed contract — not by hand-ssh.
-3. **Register + heartbeat** → `shade-tree register-gateway` from a funded operator key, then the
-   heartbeat signs the onion↔operator binding.
+3. **Register + announce** → `shade-tree register-gateway` from a funded operator key, then the
+   node signs the onion↔operator binding.
 
 Keep the contract address in the agent-devops inventory (group vars) as the single source of
 truth for the fleet; `contracts/deployed.local.json` stays the deployer-box local cache.

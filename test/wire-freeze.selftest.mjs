@@ -64,7 +64,7 @@ const FROZEN = [
   ["RGOE gateway capabilities v1\\n", ["packages/node/lib/directory.mjs"]],
   // Rate-policy scope inside onion-signed caps and the bundled network record.
   ['"grove-v4"', [
-    "packages/node/lib/directory.mjs", "packages/node/lib/network-record.mjs", "packages/node/bootnode/heartbeat.mjs", "packages/node/client/shade-tree-client.mjs",
+    "packages/node/lib/directory.mjs", "packages/node/lib/network-record.mjs", "crates/shadenet-node/src/config.rs", "packages/node/client/shade-tree-client.mjs",
     "deploy/v4/preflight.mjs", "crates/shadenet/src/dircache.rs",
   ]],
   ['"scope": "grove-v4"', ["network/sepolia/deployment.json"]],

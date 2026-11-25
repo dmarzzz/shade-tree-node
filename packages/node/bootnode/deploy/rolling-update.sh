@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Zero-downtime rolling update for ONE deployed shade-tree box (T-DEPLOY-6).
 #
-# Updates the code at $SHADE_TREE_DIR to a new git ref and restarts the three systemd
-# units (shade-tree-bootnode, shade-tree-gateway, shade-tree-heartbeat) in a SAFE order, with a
-# health wait between each so a broken update is caught before it takes the next
-# service down. Run it ON the box, or drive it over ssh:
+# Updates the code at $SHADE_TREE_DIR to a new git ref, installs that ref's release binaries
+# (shadenet-node + shadenet-elder, sha256-pinned by its binaries.sh) and restarts the two systemd
+# units (shade-tree-bootnode, shade-tree-gateway) in a SAFE order, with a health wait between
+# each so a broken update is caught before it takes the next service down. Run it ON the box,
+# or drive it over ssh:
 #
 #     ssh root@<droplet> 'sudo bash /opt/shade-tree/packages/node/bootnode/deploy/rolling-update.sh <new-ref>'
 #     # or, on the box:
@@ -20,7 +21,7 @@
 # Core flow: capture the CURRENT ref  ->  update  ->  staged restart w/ health
 # gates  ->  verify (services active, bootnode /health ok on loopback AND over
 # Tor, onion still resolves). If anything fails, the exact one-line rollback
-# (checkout the previous ref + reinstall + restart) is printed. The previous ref
+# (checkout the previous ref + reinstall its binaries + restart) is printed. The previous ref
 # is captured and pinned as a git tag BEFORE the update, so rollback is reliable
 # even against a shallow clone.
 #
@@ -41,6 +42,7 @@
 #   SHADE_TREE_TOR_PORT       local Tor SOCKS port       (default: 9050)
 #   SHADE_TREE_HEALTH_TIMEOUT per-service health wait, s  (default: 60)
 #   SHADE_TREE_ONION_TIMEOUT  onion /health wait, s       (default: 120)
+#   SHADENET_VERSION / SHADENET_*_SHA256 / SHADENET_*_BIN   as binaries.sh reads them
 set -euo pipefail
 
 SHADE_TREE_DIR="${SHADE_TREE_DIR:-/opt/shade-tree}"
@@ -54,7 +56,7 @@ NEW_REF="${1:-${SHADE_TREE_REF:-}}"
 
 BOOTNODE_UNIT="shade-tree-bootnode"
 GATEWAY_UNIT="shade-tree-gateway"
-HEARTBEAT_UNIT="shade-tree-heartbeat"
+BINARIES="$SHADE_TREE_DIR/packages/node/bootnode/deploy/binaries.sh"
 
 log()  { echo -e "\n\033[1;36m== $*\033[0m"; }
 warn() { echo -e "\033[1;33mWARN: $*\033[0m" >&2; }
@@ -87,7 +89,7 @@ git -C "$SHADE_TREE_DIR" tag -f "$ROLLBACK_TAG" "$PREV_SHA" >/dev/null
 
 # The one-liner an operator runs to undo this update. Printed on ANY failure
 # below (via the ERR trap) and again in the success banner for reference.
-ROLLBACK_CMD="git -C ${SHADE_TREE_DIR} checkout -q ${PREV_SHA} && ( cd ${SHADE_TREE_DIR} && npm install --omit=dev --no-audit --no-fund ) && systemctl restart ${BOOTNODE_UNIT} ${GATEWAY_UNIT} ${HEARTBEAT_UNIT}"
+ROLLBACK_CMD="git -C ${SHADE_TREE_DIR} checkout -q ${PREV_SHA} && ( cd ${SHADE_TREE_DIR} && npm install --omit=dev --no-audit --no-fund ) && bash -c 'source ${BINARIES} && install_shadenet_binaries ${SHADE_TREE_DIR}' && systemctl restart ${BOOTNODE_UNIT} ${GATEWAY_UNIT}"
 
 print_rollback() {
   cat >&2 <<EOF
@@ -140,8 +142,7 @@ wait_active() {
   return 1
 }
 
-# The gateway is a raw TCP/TLS tunnel (net.createServer), not HTTP -- there is no
-# /health to curl. Liveness = unit active AND the loopback backend is accepting
+# The gateway is a raw TCP/TLS tunnel, not HTTP -- there is no /health to curl. Liveness = unit active AND the loopback backend is accepting
 # connections. Use bash's /dev/tcp so we need no extra tooling.
 wait_gateway_ready() {
   wait_active "$GATEWAY_UNIT" || return 1
@@ -156,7 +157,7 @@ wait_gateway_ready() {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Update the code (mirrors bootstrap.sh: fetch the ref, checkout, install).
+# 1. Update the code (mirrors bootstrap.sh: fetch the ref, checkout, install, binaries).
 #    --depth 100 (not 1) leaves headroom; the rollback tag above is the real
 #    guarantee the previous commit survives. deploy-state is never touched.
 # ---------------------------------------------------------------------------
@@ -179,20 +180,23 @@ log "npm install --omit=dev"
 ( cd "$SHADE_TREE_DIR" && npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 ) \
   || die "npm install failed at ${NEW_DESC}"
 
+log "shadenet-node + shadenet-elder for ${NEW_DESC}"
+# shellcheck source=binaries.sh
+source "$BINARIES"
+install_shadenet_binaries "$SHADE_TREE_DIR" || die "could not install the shadenet binaries at ${NEW_DESC}"
+
 # ---------------------------------------------------------------------------
 # 2. Staged restart in SAFE order, health-gated between each step:
-#      bootnode  -> gateway -> heartbeat
+#      bootnode  -> gateway
 #
 #    bootnode FIRST: it reloads its persisted live-set (SHADE_TREE_BOOTNODE_STORE) on
 #    boot, so the fleet directory survives the bounce. Bringing it up (and
 #    confirming /health) before the gateway means the gateway's heartbeat has a
 #    live bootnode to re-announce to.
 #
-#    gateway SECOND: the actual egress. We confirm the unit is active and the
-#    loopback backend accepts a TCP connection before proceeding.
-#
-#    heartbeat LAST: re-announces the (now-updated) gateway to the bootnode.
-#    Restarting it last means it announces against an already-healthy pair.
+#    gateway SECOND: the actual egress, which re-announces itself to the bootnode
+#    from inside the process. We confirm the unit is active and the loopback
+#    backend accepts a TCP connection before proceeding.
 #
 #    A failed health wait aborts here (ERR trap prints rollback) so a broken
 #    update never cascades past the first service.
@@ -207,21 +211,16 @@ systemctl restart "$GATEWAY_UNIT"
 wait_gateway_ready || die "${GATEWAY_UNIT} not active/accepting on 127.0.0.1:${SHADE_TREE_GATEWAY_PORT} within ${SHADE_TREE_HEALTH_TIMEOUT}s -- see: journalctl -u ${GATEWAY_UNIT} -n 50"
 echo "  gateway active + accepting on 127.0.0.1:${SHADE_TREE_GATEWAY_PORT}"
 
-log "restart ${HEARTBEAT_UNIT} (re-announce gateway to bootnode)"
-systemctl restart "$HEARTBEAT_UNIT"
-wait_active "$HEARTBEAT_UNIT" || die "${HEARTBEAT_UNIT} not active within ${SHADE_TREE_HEALTH_TIMEOUT}s -- see: journalctl -u ${HEARTBEAT_UNIT} -n 50"
-echo "  heartbeat active"
-
 # ---------------------------------------------------------------------------
 # 3. Post-update verification.
-#    - all three units active
+#    - both units active
 #    - bootnode /health ok on loopback (already gated above; re-checked)
 #    - bootnode /health ok OVER THE ONION via local Tor SOCKS (proves the onion
 #      still resolves and the descriptor is still published; tor was NOT
 #      restarted and the onion is reused, so this should come back quickly)
 # ---------------------------------------------------------------------------
 log "verify"
-for u in "$BOOTNODE_UNIT" "$GATEWAY_UNIT" "$HEARTBEAT_UNIT"; do
+for u in "$BOOTNODE_UNIT" "$GATEWAY_UNIT"; do
   systemctl is-active --quiet "$u" || die "${u} is not active after update"
   echo "  active: ${u}"
 done
@@ -270,8 +269,7 @@ rolling update complete on this box.
   to   : ${NEW_DESC} (${NEW_SHA})
 
   bootnode : active, /health ok (loopback${BN_ONION:+ + onion})
-  gateway  : active, accepting on 127.0.0.1:${SHADE_TREE_GATEWAY_PORT}
-  heartbeat: active (re-announcing)
+  gateway  : active, accepting on 127.0.0.1:${SHADE_TREE_GATEWAY_PORT} (re-announcing)
 
 If a problem surfaces, roll back with:
   sudo ${ROLLBACK_CMD}

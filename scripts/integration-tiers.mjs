@@ -46,10 +46,11 @@ import {
   currentEpoch, requestSignal, proveForSlot, toField, EPOCH_SECONDS,
 } from "../packages/node/lib/rln.mjs";
 import { makeSlotPool, buildEnvelope } from "../packages/node/client/shade-tree-client.mjs";
+import { rustBinary } from "../packages/node/lib/rust-binary.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = join(ROOT, "packages", "node", "bin", "shade-tree.mjs");
-const GATEWAY_PORT = 8443; // packages/node/gateway/gateway.mjs LISTEN_PORT (fixed; Tor maps the onion here)
+const GATEWAY_PORT = 8443; // the node's listen port (fixed; Tor maps the onion here)
 
 export const SET_ABI = [
   "function SLASH_REWARD_DIVISOR() view returns (uint256)",
@@ -115,7 +116,7 @@ export function sendEnvelope(envelope, { port = GATEWAY_PORT, timeoutMs = 90000 
 export function startGateway(env, { log, timeoutMs = 60000 } = {}) {
   const st = { proc: null, out: "" };
   st.ready = new Promise((resolve, reject) => {
-    st.proc = spawn(process.execPath, [join(ROOT, "packages", "node", "gateway", "gateway.mjs")], { cwd: ROOT, env: { ...process.env, ...env } });
+    st.proc = spawn(rustBinary(ROOT, "shadenet-node") ?? "shadenet-node", ["run"], { cwd: ROOT, env: { ...process.env, ...env } });
     const onData = (d) => {
       const s = d.toString(); st.out += s;
       s.split("\n").filter(Boolean).forEach((l) => log && log("gateway", l));

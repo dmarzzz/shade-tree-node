@@ -43,7 +43,7 @@ const bootstrap = readFileSync(join(HERE, "..", "packages/node/bootnode/deploy/b
 const defaultPort = (v) => (bootstrap.match(new RegExp(`${v}="\\$\\{${v}:-(\\d+)\\}"`)) || [])[1];
 const compose = readFileSync(join(HERE, "compose/prometheus.yml"), "utf8");
 const scraped = (job) => (compose.match(new RegExp(`job_name: ${job}\\s+static_configs:\\s+- targets: \\["127\\.0\\.0\\.1:(\\d+)"\\]`)) || [])[1];
-for (const [job, v] of [["shade-tree-bootnode", "SHADE_TREE_ELDER_METRICS_PORT"], ["shade-tree-gateway", "SHADE_TREE_NODE_METRICS_PORT"], ["shade-tree-heartbeat", "SHADE_TREE_HEARTBEAT_METRICS_PORT"]]) {
+for (const [job, v] of [["shade-tree-bootnode", "SHADE_TREE_ELDER_METRICS_PORT"], ["shade-tree-gateway", "SHADE_TREE_NODE_METRICS_PORT"]]) {
   ok(defaultPort(v) && scraped(job) === defaultPort(v), `compose scrapes ${job} on ${defaultPort(v)} (got ${scraped(job)})`);
 }
 

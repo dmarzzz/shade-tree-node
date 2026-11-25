@@ -5,17 +5,17 @@
 //
 // What is asserted:
 //   1. DEFAULT (no tunables) is frozen against packages/node/bootnode/deploy/golden/default/** — any drift in
-//      the torrc include or the three units is a deliberate, reviewed change (regenerate with
+//      the torrc include or the two units is a deliberate, reviewed change (regenerate with
 //      SHADE_TREE_UPDATE_GOLDEN=1 node packages/node/bootnode/deploy/bootstrap.selftest.mjs and commit the diff).
 //   2. SHADE_TREE_ENABLE_POW=1 / =0 (GAP-3): valid torrc in both states; the PoW line is a PER-SERVICE
 //      option and must sit inside each HiddenServiceDir block right after its HiddenServicePort;
 //      nothing else changes; a garbage value is rejected before anything would be installed.
 //   3. SHADE_TREE_BOOTNODE_ONION=<onion> (GAP-6, gateway-only): NO shade-tree-bootnode unit, NO bootnode HS
-//      block, the heartbeat announces to the REMOTE onion (with/without .onion suffix accepted),
-//      the gateway unit is byte-identical to the default one, a malformed onion is rejected.
+//      block, the node announces to the REMOTE onion (with/without .onion suffix accepted),
+//      the gateway unit is otherwise identical to the default one, a malformed onion is rejected.
 //   3b. SHADE_TREE_ELDER_ONLY=1: ONLY the Elder hidden service + unit are rendered; no gateway
-//      identity, gateway unit, or heartbeat exists, and incompatible gateway tunables fail closed.
-//   4. SHADE_TREE_GATEWAY_REGION passthrough into the heartbeat unit; invalid bucket rejected.
+//      identity or gateway unit exists, and incompatible gateway tunables fail closed.
+//   4. SHADE_TREE_GATEWAY_REGION passthrough into the node unit; invalid bucket rejected.
 //   5. Nothing outside <dir> is touched (the render dir is the only side effect).
 //   6. SHADE_TREE_HELIOS=1 (T-DEV-9b, opt-in): a 4th unit shade-tree-helios.service (hardened, loopback-only,
 //      endpoints via env not argv, W^X on) and the gateway unit ordered after it carrying
@@ -31,14 +31,14 @@
 //   8. SHADE_TREE_FROM_BLOCK / SHADE_TREE_FROM_BLOCKS (eth_getLogs start blocks, fleet crash-loop 2026-08-17):
 //      passed verbatim into the gateway unit when set, validated up front, everything else
 //      byte-identical; unset == default (golden unchanged).
-//   9. SHADE_TREE_ADMIT (T-FEAT-9, docs/adr/0008): DEFAULT `invited` (the golden gateway + heartbeat units
-//      carry Environment=SHADE_TREE_ADMIT=invited -- regenerated for this); staked/paid opt-in renders the
+//   9. SHADE_TREE_ADMIT (T-FEAT-9, docs/adr/0008): DEFAULT `invited` (the golden gateway unit
+//      carries Environment=SHADE_TREE_ADMIT=invited); staked/paid opt-in renders the
 //      contracts + RPC into the gateway unit and is fail-closed on a missing companion; canonical
 //      order; SHADE_TREE_PAY_PROTOCOLS subset normalized into registrar + both adverts; SHADE_TREE_REGISTRAR=1
 //      requires `paid` admitted; a GATEWAY-ONLY box may run the registrar on the GATEWAY onion.
-//  10. SHADE_TREE_ZK_ARTIFACTS: an explicit accepted vkey set is rendered into the gateway and
-//      heartbeat (so verification and signed capability advertisement agree); the optional legacy
-//      id is gateway-only; malformed ids/paths and a legacy id without a set fail closed.
+//  10. SHADE_TREE_ZK_ARTIFACTS: an explicit accepted vkey set is rendered into the gateway unit
+//      (the node verifies and advertises the same set); malformed ids/paths and a legacy id
+//      without a set fail closed.
 //  11. SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES: the 40 MiB protocol default is pinned in the gateway
 //      unit; a bounded non-negative override is passed verbatim and malformed values fail closed.
 //
@@ -126,6 +126,10 @@ async function main() {
     ok(/systemctl is-active --quiet shade-tree-gateway/.test(bootstrapSource) && /if \[ "\$WITH_GATEWAY" = "1" \] && \[ "\$GATEWAY_WAS_ACTIVE" = "1" \]; then\s+systemctl restart shade-tree-gateway/.test(bootstrapSource), "an idempotent re-run restarts an already-running gateway so tally rotation or disablement takes effect");
     ok(/systemctl is-active --quiet shade-tree-bootnode/.test(bootstrapSource) && /if \[ "\$WITH_BOOTNODE" = "1" \] && \[ "\$BOOTNODE_WAS_ACTIVE" = "1" \]; then\s+systemctl restart shade-tree-bootnode/.test(bootstrapSource), "a re-run restarts an already-running Elder onto the new checkout (fleet roll)");
     ok(/mktemp \/etc\/shade-tree\/\.fleet-tally\.env\.XXXXXX/.test(bootstrapSource) && /mv -f "\$FLEET_TALLY_ENV_TMP" "\$FLEET_TALLY_ENV_FILE"/.test(bootstrapSource), "fleet tally token rotation replaces the root-only environment file atomically");
+    const binariesSource = await readFile(join(HERE, "binaries.sh"), "utf8");
+    ok(/source "\$SHADE_TREE_DIR\/packages\/node\/bootnode\/deploy\/binaries\.sh"/.test(bootstrapSource) && /install_shadenet_binaries "\$SHADE_TREE_DIR" \|\| die/.test(bootstrapSource), "live bootstrap installs the two Rust binaries from the checkout's binaries.sh after the clone");
+    ok(/shadenet_pinned_sha256\(\)/.test(binariesSource) && /sha256sum -c --quiet/.test(binariesSource) && /no pinned sha256 for shadenet-\$name/.test(binariesSource) && !/curl[^\n]*\|\s*(ba)?sh/.test(binariesSource), "binaries.sh downloads only against a pinned or given sha256 and never pipes a download into a shell");
+    ok(!/keygen\.mjs|gateway\.mjs|server\.mjs|heartbeat\.mjs/.test(bootstrapSource) && /"\$SHADENET_ELDER_PATH" identity "\$BN_HS" --label bootnode/.test(bootstrapSource) && /"\$SHADENET_ELDER_PATH" identity "\$GW_HS" --label gateway/.test(bootstrapSource), "the onion identities are minted by shadenet-elder identity; no JavaScript service file is referenced");
     ok(/safe `shade-tree proxy` template/.test(deployReadme) && /exact\s+enrolled tier/.test(deployReadme) && !/shade-tree client/.test(deployReadme), "deploy README promises a template and names the operator values it cannot invent");
 
     // ---------------------------------------------------------------- 1. default == golden
@@ -134,8 +138,8 @@ async function main() {
     ok(def.status === 0, `render exits 0 (${(def.stdout || "").trim()})`);
     const got = await readAll(def.out);
     ok(
-      [...got.keys()].join(",") === "etc/systemd/system/shade-tree-bootnode.service,etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/tor/torrc.d-shade-tree",
-      `emits exactly torrc + 3 units (${[...got.keys()].join(", ")})`,
+      [...got.keys()].join(",") === "etc/systemd/system/shade-tree-bootnode.service,etc/systemd/system/shade-tree-gateway.service,etc/tor/torrc.d-shade-tree",
+      `emits exactly torrc + 2 units (${[...got.keys()].join(", ")})`,
     );
     if (process.env.SHADE_TREE_UPDATE_GOLDEN === "1") {
       await rm(GOLDEN, { recursive: true, force: true });
@@ -154,20 +158,21 @@ async function main() {
         `${b.dir}: HiddenServicePort, PoW 0 (default OFF), MaxStreams 32 + close-circuit, nothing else`);
     }
     ok(blocks[0].lines[0].endsWith(":8877") && blocks[1].lines[0].endsWith(":8443"), "default ports 8877 (bootnode) / 8443 (gateway)");
-    const hbDef = got.get("etc/systemd/system/shade-tree-heartbeat.service");
-    ok(unitEnv(hbDef, "SHADE_TREE_BOOTNODE_ONION")?.endsWith(".onion") && /^After=shade-tree-bootnode\.service tor\.service$/m.test(hbDef), "default heartbeat -> LOCAL bootnode, ordered after shade-tree-bootnode.service");
-    ok(unitEnv(hbDef, "SHADE_TREE_GATEWAY_REGION") === null, "default heartbeat advertises no region");
     const elderDef = got.get("etc/systemd/system/shade-tree-bootnode.service");
     const nodeDef = got.get("etc/systemd/system/shade-tree-gateway.service");
+    ok(unitEnv(nodeDef, "SHADE_TREE_BOOTNODE_ONION")?.endsWith(".onion") && /^After=network-online\.target tor\.service shade-tree-bootnode\.service$/m.test(nodeDef), "default node announces to the LOCAL bootnode, ordered after shade-tree-bootnode.service");
+    ok(unitEnv(nodeDef, "SHADE_TREE_GATEWAY_REGION") === null, "default node advertises no region");
+    ok(unitEnv(nodeDef, "SHADE_TREE_GW_IDENTITY") === "/opt/shade-tree/deploy-state/gateway-hs/identity.local.json" && unitEnv(nodeDef, "SHADE_TREE_TOR_HOST") === "127.0.0.1" && unitEnv(nodeDef, "SHADE_TREE_TOR_PORT") === "9050", "default node signs with the minted gateway identity and announces over the system Tor");
+    ok(/^ExecStart=\/usr\/local\/bin\/shadenet-node run$/m.test(nodeDef) && /^ExecStart=\/usr\/local\/bin\/shadenet-elder run$/m.test(elderDef) && /^MemoryDenyWriteExecute=true$/m.test(nodeDef) && /^MemoryDenyWriteExecute=true$/m.test(elderDef), "both units run the Rust binaries (ADR 0014, ADR 0015) with W^X on");
+    ok(unitEnv(elderDef, "SHADENET_STATE") === "/opt/shade-tree/deploy-state" && !/\/usr\/bin\/node|\.mjs/.test(elderDef + nodeDef), "the Elder keeps its state files under deploy-state; neither unit runs Node");
     ok(unitEnv(nodeDef, "SHADE_TREE_GATEWAY_PORT") === "8443", "gateway unit and Tor backend share the default node port");
     ok(unitEnv(nodeDef, "SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES") === "41943040", "default gateway unit explicitly pins the 40 MiB protocol parameter");
-    ok(unitEnv(nodeDef, "SHADE_TREE_EPOCH_SECONDS") === "120" && unitEnv(hbDef, "SHADE_TREE_EPOCH_SECONDS") === "120", "gateway and heartbeat share the fixed epoch");
-    ok(unitEnv(nodeDef, "SHADE_TREE_TIERS") === "8" && unitEnv(hbDef, "SHADE_TREE_TIERS") === "8", "gateway and heartbeat share the admitted tier table");
+    ok(unitEnv(nodeDef, "SHADE_TREE_EPOCH_SECONDS") === "120", "node pins the fixed epoch");
+    ok(unitEnv(nodeDef, "SHADE_TREE_TIERS") === "8", "node pins the admitted tier table");
     ok(unitEnv(nodeDef, "SHADE_TREE_ROOT_FRESHNESS_SECONDS") === "120", "gateway pins a wall-clock root freshness bound");
     const publicRate = render(work, "public-rate", { SHADE_TREE_EPOCH_SECONDS: "60", SHADE_TREE_TIERS: "1,8", SHADE_TREE_ROOT_FRESHNESS_SECONDS: "60" });
     const publicRateGateway = await readFile(join(publicRate.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
-    const publicRateHeartbeat = await readFile(join(publicRate.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
-    ok(publicRate.status === 0 && [publicRateGateway, publicRateHeartbeat].every((unit) => unitEnv(unit, "SHADE_TREE_EPOCH_SECONDS") === "60" && unitEnv(unit, "SHADE_TREE_TIERS") === "1,8"), "public 60-second tier-1 policy is rendered identically into enforcement and advertisement");
+    ok(publicRate.status === 0 && unitEnv(publicRateGateway, "SHADE_TREE_EPOCH_SECONDS") === "60" && unitEnv(publicRateGateway, "SHADE_TREE_TIERS") === "1,8", "public 60-second tier-1 policy is rendered into the node unit (enforced and advertised by one process)");
     const payloadOverride = render(work, "payload-override", { SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES: "1048576" });
     const payloadOverrideGateway = await readFile(join(payloadOverride.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
     ok(payloadOverride.status === 0 && unitEnv(payloadOverrideGateway, "SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES") === "1048576", "payload ceiling override is rendered verbatim");
@@ -179,20 +184,19 @@ async function main() {
       const bad = render(work, "payload-bad", { SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES: value });
       ok(bad.status !== 0 && re.test(bad.stderr), `bad payload ceiling rejected up front: ${JSON.stringify(value)}`);
     }
-    // 12. SHADE_TREE_SESSION_TICKETS (ADR 0011): off by default (golden unchanged); =1 lands in BOTH the
-    //     gateway and the heartbeat unit so the signed `session` cap matches what the node enforces.
-    ok(unitEnv(nodeDef, "SHADE_TREE_SESSION_TICKETS") === null && unitEnv(hbDef, "SHADE_TREE_SESSION_TICKETS") === null, "default units carry no session-ticket switch");
+    // 12. SHADE_TREE_SESSION_TICKETS (ADR 0011): off by default (golden unchanged); =1 lands in the
+    //     node unit, which enforces the books and advertises the signed `session` cap.
+    ok(unitEnv(nodeDef, "SHADE_TREE_SESSION_TICKETS") === null, "default unit carries no session-ticket switch");
     const tickets = render(work, "session-tickets", { SHADE_TREE_SESSION_TICKETS: "1" });
     const ticketsGateway = await readFile(join(tickets.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
-    const ticketsHeartbeat = await readFile(join(tickets.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
-    ok(tickets.status === 0 && unitEnv(ticketsGateway, "SHADE_TREE_SESSION_TICKETS") === "1" && unitEnv(ticketsHeartbeat, "SHADE_TREE_SESSION_TICKETS") === "1", "SHADE_TREE_SESSION_TICKETS=1 reaches the gateway and the heartbeat units");
-    ok(unitEnv(ticketsGateway, "SHADE_TREE_GW_IDENTITY") !== null && unitEnv(ticketsGateway, "SHADE_TREE_GW_IDENTITY") === unitEnv(ticketsHeartbeat, "SHADE_TREE_GW_IDENTITY") && unitEnv(nodeDef, "SHADE_TREE_GW_IDENTITY") === null, "with tickets on the gateway binds books to the same onion identity file the heartbeat signs with (absent by default)");
+    ok(tickets.status === 0 && unitEnv(ticketsGateway, "SHADE_TREE_SESSION_TICKETS") === "1", "SHADE_TREE_SESSION_TICKETS=1 reaches the node unit");
+    ok(unitEnv(ticketsGateway, "SHADE_TREE_GW_IDENTITY") === unitEnv(nodeDef, "SHADE_TREE_GW_IDENTITY"), "with tickets on the node binds books to the onion identity it already signs announces with");
     const ticketsBad = render(work, "session-tickets-bad", { SHADE_TREE_SESSION_TICKETS: "maybe" });
     ok(ticketsBad.status !== 0 && /SHADE_TREE_SESSION_TICKETS must be 1 or 0/.test(ticketsBad.stderr), "bad session-ticket switch rejected up front");
 
     // 12b. SHADE_TREE_SOCKET_ACTIVATION (zero-downtime restarts): off by default (golden unchanged, no
     // .socket file); =1 renders shade-tree-gateway.socket on the gateway port and makes the service
-    // Require/After it; the heartbeat unit is untouched; a bad value is rejected up front.
+    // Require/After it; a bad value is rejected up front.
     console.log("socket activation:");
     ok(!(await listFiles(def.out)).some((f) => f.endsWith("shade-tree-gateway.socket")), "default render has no .socket unit");
     const sock = render(work, "socket-activation", { SHADE_TREE_SOCKET_ACTIVATION: "1" });
@@ -202,24 +206,20 @@ async function main() {
     ok(sock.status === 0 && /^ListenStream=127\.0\.0\.1:8443$/m.test(sockUnit) && /^Service=shade-tree-gateway\.service$/m.test(sockUnit) && /^WantedBy=sockets\.target$/m.test(sockUnit) && /^Backlog=1024$/m.test(sockUnit), "=1 renders the loopback .socket unit on the gateway port, bound to the service");
     ok(/^Requires=shade-tree-gateway\.socket$/m.test(sockGateway) && /^After=shade-tree-gateway\.socket$/m.test(sockGateway), "the gateway service requires and follows the socket");
     ok(sockGateway.replace(/^Requires=shade-tree-gateway\.socket\n|^After=shade-tree-gateway\.socket\n/gm, "") === got.get("etc/systemd/system/shade-tree-gateway.service"), "apart from those two lines the gateway unit is byte-identical to the golden one");
-    ok(sockFiles.get("etc/systemd/system/shade-tree-heartbeat.service") === got.get("etc/systemd/system/shade-tree-heartbeat.service"), "the heartbeat unit is unchanged by socket activation");
     const sockPort = render(work, "socket-activation-port", { SHADE_TREE_SOCKET_ACTIVATION: "1", SHADE_TREE_GATEWAY_PORT: "9443" });
     ok(sockPort.status === 0 && /^ListenStream=127\.0\.0\.1:9443$/m.test((await readAll(sockPort.out)).get("etc/systemd/system/shade-tree-gateway.socket") || ""), "the socket follows SHADE_TREE_GATEWAY_PORT");
     const sockBad = render(work, "socket-activation-bad", { SHADE_TREE_SOCKET_ACTIVATION: "maybe" });
     ok(sockBad.status !== 0 && /SHADE_TREE_SOCKET_ACTIVATION must be 1 or 0/.test(sockBad.stderr), "bad socket-activation switch rejected up front");
     ok(/systemctl is-active --quiet shade-tree-gateway\.socket/.test(bootstrapSource) && /systemctl stop shade-tree-gateway\s+fi\s+systemctl enable --now shade-tree-gateway\.socket/.test(bootstrapSource), "live path: first enablement stops the self-binding gateway once, then enables the socket");
 
-    // 12c. SHADE_TREE_ALERT_WEBHOOK (lib/alerts.mjs): unset = golden unchanged; set = URL + format
-    // reach BOTH the gateway and the heartbeat units; a non-https / non-loopback URL and a bad
-    // format are rejected up front.
+    // 12c. SHADE_TREE_ALERT_WEBHOOK: unset = golden unchanged; set = URL + format reach the node
+    // unit; a non-https / non-loopback URL and a bad format are rejected up front.
     console.log("alert webhook:");
-    ok(unitEnv(nodeDef, "SHADE_TREE_ALERT_WEBHOOK") === null && unitEnv(hbDef, "SHADE_TREE_ALERT_WEBHOOK") === null, "default units carry no alert webhook");
+    ok(unitEnv(nodeDef, "SHADE_TREE_ALERT_WEBHOOK") === null, "default unit carries no alert webhook");
     const hook = render(work, "alert-hook", { SHADE_TREE_ALERT_WEBHOOK: "https://hooks.example/abc", SHADE_TREE_ALERT_WEBHOOK_FORMAT: "slack" });
     const hookFiles = await readAll(hook.out);
     const hookGw = hookFiles.get("etc/systemd/system/shade-tree-gateway.service") || "";
-    const hookHb = hookFiles.get("etc/systemd/system/shade-tree-heartbeat.service") || "";
-    ok(hook.status === 0 && unitEnv(hookGw, "SHADE_TREE_ALERT_WEBHOOK") === "https://hooks.example/abc" && unitEnv(hookGw, "SHADE_TREE_ALERT_WEBHOOK_FORMAT") === "slack", "webhook URL + format reach the gateway unit");
-    ok(unitEnv(hookHb, "SHADE_TREE_ALERT_WEBHOOK") === "https://hooks.example/abc" && unitEnv(hookHb, "SHADE_TREE_ALERT_WEBHOOK_FORMAT") === "slack", "and the heartbeat unit");
+    ok(hook.status === 0 && unitEnv(hookGw, "SHADE_TREE_ALERT_WEBHOOK") === "https://hooks.example/abc" && unitEnv(hookGw, "SHADE_TREE_ALERT_WEBHOOK_FORMAT") === "slack", "webhook URL + format reach the node unit");
     const hookAlias = render(work, "alert-hook-alias", { SHADENET_ALERT_WEBHOOK: "http://127.0.0.1:9194/alert" });
     ok(hookAlias.status === 0 && unitEnv((await readAll(hookAlias.out)).get("etc/systemd/system/shade-tree-gateway.service") || "", "SHADE_TREE_ALERT_WEBHOOK") === "http://127.0.0.1:9194/alert", "SHADENET_ALERT_WEBHOOK alias and a loopback http relay are accepted");
     const hookPlain = render(work, "alert-hook-plain", { SHADE_TREE_ALERT_WEBHOOK: "http://hooks.example/abc" });
@@ -230,8 +230,8 @@ async function main() {
       const bad = render(work, `rate-bad-${key}`, { [key]: value });
       ok(bad.status !== 0 && bad.stderr.includes(key), `bad public rate parameter rejected up front: ${key}=${value}`);
     }
-    ok(unitEnv(elderDef, "SHADE_TREE_METRICS_PORT") === "9100" && unitEnv(nodeDef, "SHADE_TREE_METRICS_PORT") === "9101" && unitEnv(hbDef, "SHADE_TREE_HEARTBEAT_METRICS_PORT") === "9103", "default operator metrics use distinct loopback ports for Elder, Node, and heartbeat");
-    ok([elderDef, nodeDef, hbDef].every((u) => unitEnv(u, "SHADE_TREE_LOG_LEVEL") === "info" && unitEnv(u, "SHADE_TREE_LOG_FORMAT") === "json" && unitEnv(u, "SHADE_TREE_BANNER") === "never"), "systemd defaults to structured info logs without terminal art");
+    ok(unitEnv(elderDef, "SHADE_TREE_METRICS_PORT") === "9100" && unitEnv(nodeDef, "SHADE_TREE_METRICS_PORT") === "9101" && !/HEARTBEAT_METRICS_PORT/.test(nodeDef), "default operator metrics use distinct loopback ports for Elder and Node (the heartbeat series ride the node's)");
+    ok([elderDef, nodeDef].every((u) => unitEnv(u, "SHADE_TREE_LOG_LEVEL") === "info" && unitEnv(u, "SHADE_TREE_LOG_FORMAT") === "json" && unitEnv(u, "SHADE_TREE_BANNER") === "never"), "systemd defaults to structured info logs without terminal art");
     for (const f of got.keys()) if (f.endsWith(".service")) {
       const u = got.get(f);
       ok(/^NoNewPrivileges=true$/m.test(u) && /^ProtectSystem=strict$/m.test(u) && /^CapabilityBoundingSet=$/m.test(u) && /^SystemCallFilter=@system-service$/m.test(u), `${f}: sandbox lines present (T-DEPLOY-4)`);
@@ -268,31 +268,30 @@ async function main() {
     const gw = render(work, "gw-only", { SHADE_TREE_BOOTNODE_ONION: `${ONION}.onion` });
     ok(gw.status === 0 && /gateway-only/.test(gw.stdout), `gateway-only renders (${(gw.stdout || "").trim()})`);
     const gwFiles = await readAll(gw.out);
-    ok([...gwFiles.keys()].join(",") === "etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/tor/torrc.d-shade-tree",
-      `emits torrc + gateway + heartbeat ONLY (${[...gwFiles.keys()].join(", ")})`);
+    ok([...gwFiles.keys()].join(",") === "etc/systemd/system/shade-tree-gateway.service,etc/tor/torrc.d-shade-tree",
+      `emits torrc + gateway ONLY (${[...gwFiles.keys()].join(", ")})`);
     const gwBlocks = hsBlocks(gwFiles.get("etc/tor/torrc.d-shade-tree"));
     ok(gwBlocks.length === 1 && gwBlocks[0].dir === "/var/lib/tor/shade-tree-gateway", "torrc: gateway HS block only (no bootnode HS)");
     ok(!/shade-tree-bootnode/.test(gwFiles.get("etc/tor/torrc.d-shade-tree").split("\n").filter((l) => !l.startsWith("#")).join("\n")), "torrc: no bootnode dir anywhere");
     ok(gwBlocks[0].lines[0] === "HiddenServicePort 80 127.0.0.1:8443" && gwBlocks[0].lines[1] === "HiddenServicePoWDefensesEnabled 0" && gwBlocks[0].lines[2] === "HiddenServiceMaxStreams 32" && gwBlocks[0].lines[3] === "HiddenServiceMaxStreamsCloseCircuit 1", "gateway block: port then PoW (default off)");
-    ok(gwFiles.get("etc/systemd/system/shade-tree-gateway.service") === got.get("etc/systemd/system/shade-tree-gateway.service"), "gateway unit byte-identical to the default one");
-    const hb = gwFiles.get("etc/systemd/system/shade-tree-heartbeat.service");
-    ok(unitEnv(hb, "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "heartbeat announces to the REMOTE bootnode onion");
-    ok(!/shade-tree-bootnode\.service/.test(hb) && /^After=network-online\.target tor\.service$/m.test(hb), "heartbeat no longer ordered after a (non-existent) local shade-tree-bootnode unit");
-    ok(unitEnv(hb, "SHADE_TREE_GW_IDENTITY") === unitEnv(hbDef, "SHADE_TREE_GW_IDENTITY") && unitEnv(hb, "SHADE_TREE_TOR_PORT") === "9050", "heartbeat identity/Tor SOCKS unchanged");
-    const stripUnit = (u) => u.split("\n").filter((l) => !/^(Description=|After=|Wants=|Environment=SHADE_TREE_BOOTNODE_ONION=)/.test(l)).join("\n");
-    ok(stripUnit(hb) === stripUnit(hbDef), "heartbeat unit otherwise identical to the default (sandbox, exec, restart)");
+    const hb = gwFiles.get("etc/systemd/system/shade-tree-gateway.service");
+    ok(unitEnv(hb, "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "node announces to the REMOTE bootnode onion");
+    ok(!/shade-tree-bootnode\.service/.test(hb) && /^After=network-online\.target tor\.service$/m.test(hb), "node no longer ordered after a (non-existent) local shade-tree-bootnode unit");
+    ok(unitEnv(hb, "SHADE_TREE_GW_IDENTITY") === unitEnv(nodeDef, "SHADE_TREE_GW_IDENTITY") && unitEnv(hb, "SHADE_TREE_TOR_PORT") === "9050", "node identity/Tor SOCKS unchanged");
+    const stripUnit = (u) => u.split("\n").filter((l) => !/^(After=|Environment=SHADE_TREE_BOOTNODE_ONION=)/.test(l)).join("\n");
+    ok(stripUnit(hb) === stripUnit(nodeDef), "gateway unit otherwise identical to the default (sandbox, exec, restart)");
     const gwBare = render(work, "gw-only-bare", { SHADE_TREE_BOOTNODE_ONION: ONION });
-    ok(gwBare.status === 0 && unitEnv(await readFile(join(gwBare.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8"), "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "bare 56-char onion (no suffix) is normalised to <onion>.onion");
+    ok(gwBare.status === 0 && unitEnv(await readFile(join(gwBare.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8"), "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "bare 56-char onion (no suffix) is normalised to <onion>.onion");
     for (const bad of ["not-an-onion", `${ONION.slice(0, 55)}.onion`, `${ONION}1.onion`, "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVWX.onion", `${ONION}.onion;rm -rf /`]) {
       const r = render(work, "gw-bad", { SHADE_TREE_BOOTNODE_ONION: bad });
       ok(r.status !== 0 && /SHADE_TREE_BOOTNODE_ONION must be a v3 onion/.test(r.stderr), `malformed bootnode onion rejected: ${JSON.stringify(bad)}`);
     }
-    // ADR 0012: every Elder Tree of the canopy reaches the heartbeat unit; absent == default.
-    ok(!/SHADE_TREE_BOOTNODE_ONIONS/.test(hb), "no SHADE_TREE_BOOTNODE_ONIONS -> the heartbeat unit carries no fan-out line (golden unchanged)");
+    // ADR 0012: every Elder Tree of the canopy reaches the node unit; absent == default.
+    ok(!/SHADE_TREE_BOOTNODE_ONIONS/.test(hb), "no SHADE_TREE_BOOTNODE_ONIONS -> the node unit carries no fan-out line (golden unchanged)");
     const SECOND = "b".repeat(56);
     const fan = render(work, "gw-fan", { SHADE_TREE_BOOTNODE_ONION: `${ONION}.onion`, SHADE_TREE_BOOTNODE_ONIONS: `${ONION}, ${SECOND}` });
-    const fanHb = fan.status === 0 ? await readFile(join(fan.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8") : "";
-    ok(fan.status === 0 && unitEnv(fanHb, "SHADE_TREE_BOOTNODE_ONIONS") === `${ONION}.onion,${SECOND}.onion` && unitEnv(fanHb, "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "SHADE_TREE_BOOTNODE_ONIONS is normalised (suffix, whitespace) into the heartbeat unit next to the primary");
+    const fanHb = fan.status === 0 ? await readFile(join(fan.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8") : "";
+    ok(fan.status === 0 && unitEnv(fanHb, "SHADE_TREE_BOOTNODE_ONIONS") === `${ONION}.onion,${SECOND}.onion` && unitEnv(fanHb, "SHADE_TREE_BOOTNODE_ONION") === `${ONION}.onion`, "SHADE_TREE_BOOTNODE_ONIONS is normalised (suffix, whitespace) into the node unit next to the primary");
     const fanNoPrimary = render(work, "gw-fan-bad", { SHADE_TREE_BOOTNODE_ONIONS: `${ONION}.onion,${SECOND}.onion` });
     ok(fanNoPrimary.status !== 0 && /needs SHADE_TREE_BOOTNODE_ONION/.test(fanNoPrimary.stderr), "SHADE_TREE_BOOTNODE_ONIONS without the primary is rejected");
     const fanBad = render(work, "gw-fan-bad2", { SHADE_TREE_BOOTNODE_ONION: `${ONION}.onion`, SHADE_TREE_BOOTNODE_ONIONS: `${ONION}.onion,not-an-onion` });
@@ -316,20 +315,18 @@ async function main() {
     const pre = render(work, "preset", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath });
     ok(pre.status === 0 && /gateway-only/.test(pre.stdout), `SHADENET_NETWORK=sepolia renders a gateway-only join (${(pre.stdout || pre.stderr || "").trim()})`);
     const preGw = await readFile(join(pre.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
-    const preHb = await readFile(join(pre.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
     const st = record.admission.roots.staked;
     ok(unitEnv(preGw, "SHADE_TREE_GROUP_CONTRACT") === st.contract && unitEnv(preGw, "SHADE_TREE_FROM_BLOCK") === String(st.deployBlock), "preset: staked contract + deploy block from the record");
     ok(unitEnv(preGw, "SHADE_TREE_EPOCH_SECONDS") === String(record.ratePolicy.epochSeconds) && unitEnv(preGw, "SHADE_TREE_TIERS") === st.tiers.map((t) => t.limit).join(","), "preset: epoch + tiers from the record");
     ok(unitEnv(preGw, "SHADE_TREE_ADMIT") === "staked", "preset: a joiner without a members file admits staked only");
-    ok(unitEnv(preHb, "SHADE_TREE_BOOTNODE_ONION") === record.elder.onion, "preset: heartbeat announces to the record's Elder");
-    // ADR 0011: the record's H2 switch reaches both units through the preset.
+    ok(unitEnv(preGw, "SHADE_TREE_BOOTNODE_ONION") === record.elder.onion, "preset: the node announces to the record's Elder");
+    // ADR 0011: the record's H2 switch reaches the node unit through the preset.
     ok(unitEnv(preGw, "SHADE_TREE_SESSION_TICKETS") === (record.sessionTickets === true ? "1" : null), "preset: session-ticket switch mirrors the record");
     const ticketRecordPath = join(await mkdtemp(join(work, "..", "record-tickets-")), "record.json"); // outside <work>: the stray-file check scans it
     await writeFile(ticketRecordPath, JSON.stringify({ ...record, sessionTickets: true }));
     const preTickets = render(work, "preset-tickets", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: ticketRecordPath });
     const preTicketsGw = await readFile(join(preTickets.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
-    const preTicketsHb = await readFile(join(preTickets.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8");
-    ok(preTickets.status === 0 && unitEnv(preTicketsGw, "SHADE_TREE_SESSION_TICKETS") === "1" && unitEnv(preTicketsHb, "SHADE_TREE_SESSION_TICKETS") === "1", "preset: a record with sessionTickets true starts gateway and heartbeat with the switch on");
+    ok(preTickets.status === 0 && unitEnv(preTicketsGw, "SHADE_TREE_SESSION_TICKETS") === "1", "preset: a record with sessionTickets true starts the node with the switch on");
     const preOverride = render(work, "preset-override", { SHADENET_NETWORK: "sepolia", SHADENET_NETWORK_RECORD: recordPath, SHADE_TREE_EPOCH_SECONDS: "120", SHADE_TREE_ROOT_FRESHNESS_SECONDS: "120" });
     ok(unitEnv(await readFile(join(preOverride.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8"), "SHADE_TREE_EPOCH_SECONDS") === "120", "preset: explicit env wins over the record");
     const retired = join(tmpdir(), `shade-retired-${process.pid}.json`);
@@ -347,7 +344,7 @@ async function main() {
     ok(render(work, "peers-bad", { SHADE_TREE_BOOTNODE_PEERS: "nope.onion" }).status !== 0, "malformed federation peer rejected");
     // --render <dir> CLI form == env form.
     const cli = render(work, "cli", { SHADE_TREE_BOOTNODE_ONION: ONION }, ["--render", join(work, "cli")]);
-    ok(cli.status === 0 && (await readAll(join(work, "cli"))).get("etc/systemd/system/shade-tree-heartbeat.service") === hb, "`--render <dir>` == SHADE_TREE_RENDER_ONLY=<dir>");
+    ok(cli.status === 0 && (await readAll(join(work, "cli"))).get("etc/systemd/system/shade-tree-gateway.service") === hb, "`--render <dir>` == SHADE_TREE_RENDER_ONLY=<dir>");
 
     // ---------------------------------------------------------------- 3b. dedicated Elder mode
     console.log("SHADE_TREE_ELDER_ONLY dedicated control plane:");
@@ -378,7 +375,7 @@ async function main() {
     // ---------------------------------------------------------------- 4. region passthrough
     console.log("SHADE_TREE_GATEWAY_REGION passthrough:");
     const reg = render(work, "region", { SHADE_TREE_GATEWAY_REGION: "eu" });
-    ok(reg.status === 0 && unitEnv(await readFile(join(reg.out, "etc/systemd/system/shade-tree-heartbeat.service"), "utf8"), "SHADE_TREE_GATEWAY_REGION") === "eu", "SHADE_TREE_GATEWAY_REGION=eu lands in the heartbeat unit");
+    ok(reg.status === 0 && unitEnv(await readFile(join(reg.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8"), "SHADE_TREE_GATEWAY_REGION") === "eu", "SHADE_TREE_GATEWAY_REGION=eu lands in the node unit");
     const regT = await readAll(reg.out);
     ok(regT.get("etc/tor/torrc.d-shade-tree") === torrc && regT.get("etc/systemd/system/shade-tree-bootnode.service") === got.get("etc/systemd/system/shade-tree-bootnode.service"), "region does not touch torrc / bootnode unit");
     const regBad = render(work, "region-bad", { SHADE_TREE_GATEWAY_REGION: "mars" });
@@ -392,8 +389,8 @@ async function main() {
     const hel = render(work, "helios", HEL);
     ok(hel.status === 0 && /helios=1/.test(hel.stdout), `SHADE_TREE_HELIOS=1 renders (${(hel.stdout || "").trim()})`);
     const helFiles = await readAll(hel.out);
-    ok([...helFiles.keys()].join(",") === "etc/systemd/system/shade-tree-bootnode.service,etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/systemd/system/shade-tree-helios.service,etc/tor/torrc.d-shade-tree",
-      `emits torrc + 3 units + shade-tree-helios.service (${[...helFiles.keys()].join(", ")})`);
+    ok([...helFiles.keys()].join(",") === "etc/systemd/system/shade-tree-bootnode.service,etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-helios.service,etc/tor/torrc.d-shade-tree",
+      `emits torrc + 2 units + shade-tree-helios.service (${[...helFiles.keys()].join(", ")})`);
     const hu = helFiles.get("etc/systemd/system/shade-tree-helios.service");
     ok(/^ExecStart=\/usr\/local\/bin\/helios ethereum --network sepolia --rpc-bind-ip 127\.0\.0\.1 --rpc-port 8546 --data-dir \/opt\/shade-tree\/deploy-state\/helios --load-external-fallback$/m.test(hu), "helios ExecStart: sepolia, loopback bind, port 8546, data-dir under deploy-state, external checkpoint fallback (no SHADE_TREE_HELIOS_CHECKPOINT)");
     ok(unitEnv(hu, "EXECUTION_RPC") === HEL.SHADE_TREE_RPC_URL && unitEnv(hu, "CONSENSUS_RPC") === HEL.SHADE_TREE_HELIOS_CONSENSUS_RPC, "helios endpoints passed via EXECUTION_RPC / CONSENSUS_RPC env (not argv)");
@@ -401,12 +398,11 @@ async function main() {
     ok(/^User=shade-tree$/m.test(hu) && /^MemoryDenyWriteExecute=true$/m.test(hu) && /^NoNewPrivileges=true$/m.test(hu) && /^ProtectSystem=strict$/m.test(hu) && /^CapabilityBoundingSet=$/m.test(hu) && /^SystemCallFilter=@system-service$/m.test(hu) && /^Restart=always$/m.test(hu), "helios unit: sandbox lines + W^X (Rust binary) + Restart=always");
     ok(unitEnv(hu, "CHECKPOINT") === null, "no CHECKPOINT env when SHADE_TREE_HELIOS_CHECKPOINT unset");
     const gwH = helFiles.get("etc/systemd/system/shade-tree-gateway.service");
-    ok(/^After=network-online\.target tor\.service shade-tree-helios\.service$/m.test(gwH) && /^Wants=network-online\.target shade-tree-helios\.service$/m.test(gwH), "gateway unit ordered after + wants shade-tree-helios.service");
+    ok(/^After=network-online\.target tor\.service shade-tree-bootnode\.service shade-tree-helios\.service$/m.test(gwH) && /^Wants=network-online\.target shade-tree-helios\.service$/m.test(gwH), "gateway unit ordered after + wants shade-tree-helios.service");
     ok(unitEnv(gwH, "SHADE_TREE_ROOT_PROVIDER") === "light" && unitEnv(gwH, "SHADE_TREE_HELIOS_RPC_URL") === "http://127.0.0.1:8546" && unitEnv(gwH, "SHADE_TREE_RPC_URL") === HEL.SHADE_TREE_RPC_URL && unitEnv(gwH, "SHADE_TREE_GROUP_CONTRACT") === HEL.SHADE_TREE_GROUP_CONTRACT, "gateway unit: SHADE_TREE_ROOT_PROVIDER=light + SHADE_TREE_HELIOS_RPC_URL + SHADE_TREE_RPC_URL + SHADE_TREE_GROUP_CONTRACT");
     const stripGw = (u) => u.split("\n").filter((l) => !/^(After=|Wants=|Environment=SHADE_TREE_(GROUP_CONTRACT|RPC_URL|ROOT_PROVIDER|HELIOS_RPC_URL)=)/.test(l)).join("\n").replace("Environment=SHADE_TREE_ADMIT=invited,staked", "Environment=SHADE_TREE_ADMIT=invited");
     ok(stripGw(gwH) === stripGw(got.get("etc/systemd/system/shade-tree-gateway.service")), "gateway unit otherwise identical to the default (sandbox, exec, restart)");
     for (const f of ["etc/tor/torrc.d-shade-tree", "etc/systemd/system/shade-tree-bootnode.service"]) ok(helFiles.get(f) === got.get(f), `helios=1 leaves ${f} byte-identical`);
-    ok(helFiles.get("etc/systemd/system/shade-tree-heartbeat.service").split("\n").filter((l) => !/^Environment=SHADE_TREE_GROUP_CONTRACT=/.test(l)).join("\n").replace("Environment=SHADE_TREE_ADMIT=invited,staked", "Environment=SHADE_TREE_ADMIT=invited") === got.get("etc/systemd/system/shade-tree-heartbeat.service") && unitEnv(helFiles.get("etc/systemd/system/shade-tree-heartbeat.service"), "SHADE_TREE_GROUP_CONTRACT") === HEL.SHADE_TREE_GROUP_CONTRACT, "helios=1 leaves the heartbeat unit byte-identical apart from advertising SHADE_TREE_ADMIT=invited,staked and the contract list (caps.sets)");
     // companions + checkpoint + port + network
     const helCp = render(work, "helios-cp", { ...HEL, SHADE_TREE_HELIOS_CHECKPOINT: "0x" + "ab".repeat(32), SHADE_TREE_HELIOS_PORT: "9545", SHADE_TREE_HELIOS_NETWORK: "mainnet" });
     const huCp = await readFile(join(helCp.out, "etc/systemd/system/shade-tree-helios.service"), "utf8");
@@ -441,7 +437,7 @@ async function main() {
     // composes with gateway-only
     const helGw = render(work, "helios-gw-only", { ...HEL, SHADE_TREE_BOOTNODE_ONION: ONION });
     const helGwFiles = await readAll(helGw.out);
-    ok(helGw.status === 0 && [...helGwFiles.keys()].join(",") === "etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/systemd/system/shade-tree-helios.service,etc/tor/torrc.d-shade-tree" && helGwFiles.get("etc/systemd/system/shade-tree-helios.service") === hu, "gateway-only + helios: gateway + heartbeat + helios units, helios unit identical");
+    ok(helGw.status === 0 && [...helGwFiles.keys()].join(",") === "etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-helios.service,etc/tor/torrc.d-shade-tree" && helGwFiles.get("etc/systemd/system/shade-tree-helios.service") === hu, "gateway-only + helios: gateway + helios units, helios unit identical");
 
     // ---------------------------------------------------------------- 7. 402 registrar (opt-in)
     console.log("SHADE_TREE_REGISTRAR (T-FEAT-7):");
@@ -451,8 +447,8 @@ async function main() {
     const reg1 = render(work, "registrar", REG);
     ok(reg1.status === 0 && /registrar=1/.test(reg1.stdout), `SHADE_TREE_REGISTRAR=1 renders (${(reg1.stdout || "").trim()})`);
     const regFiles = await readAll(reg1.out);
-    ok([...regFiles.keys()].join(",") === "etc/systemd/system/shade-tree-bootnode.service,etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/systemd/system/shade-tree-registrar.service,etc/tor/torrc.d-shade-tree",
-      `emits torrc + 3 units + shade-tree-registrar.service (${[...regFiles.keys()].join(", ")})`);
+    ok([...regFiles.keys()].join(",") === "etc/systemd/system/shade-tree-bootnode.service,etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-registrar.service,etc/tor/torrc.d-shade-tree",
+      `emits torrc + 2 units + shade-tree-registrar.service (${[...regFiles.keys()].join(", ")})`);
     const rgT = hsBlocks(regFiles.get("etc/tor/torrc.d-shade-tree"));
     ok(rgT.length === 2 && rgT[0].dir === "/var/lib/tor/shade-tree-bootnode" && rgT[0].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8877|HiddenServicePort 8878 127.0.0.1:8878|HiddenServicePoWDefensesEnabled 0|HiddenServiceMaxStreams 32|HiddenServiceMaxStreamsCloseCircuit 1", "bootnode HS block: port 80 + EXTRA port 8878 -> 127.0.0.1:8878, then the PoW line (registrar rides the bootnode onion)");
     ok(rgT[1].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePoWDefensesEnabled 0|HiddenServiceMaxStreams 32|HiddenServiceMaxStreamsCloseCircuit 1", "gateway HS block unchanged");
@@ -466,13 +462,13 @@ async function main() {
     ok(unitEnv(bnR, "SHADE_TREE_PAY_PROTOCOLS") === "x402,mpp" && unitEnv(ru, "SHADE_TREE_PAY_PROTOCOLS") === "x402,mpp", "default rails x402,mpp rendered into the bootnode advert + the registrar unit (SHADE_TREE_PAY_PROTOCOLS, T-FEAT-9)");
     const stripBn = (u) => u.split("\n").filter((l) => !/^Environment=SHADE_TREE_(REGISTRAR_ADVERTISE|REGISTRAR_PORT|PAY_ASSET|PAY_PRICES|PAY_CHAIN_ID|PAY_PROTOCOLS)=/.test(l)).join("\n");
     ok(stripBn(bnR) === got.get("etc/systemd/system/shade-tree-bootnode.service"), "bootnode unit otherwise byte-identical to the default");
-    // T-FEAT-9: the gateway unit admits invited,paid (+ the paid set + RPC it needs); the heartbeat
-    // advertises the SAME policy + the offer as signed caps (SHADE_TREE_REGISTRAR_ADVERTISE + SHADE_TREE_PAY_* + onion).
-    const gwR = regFiles.get("etc/systemd/system/shade-tree-gateway.service"), hbR = regFiles.get("etc/systemd/system/shade-tree-heartbeat.service");
+    // T-FEAT-9: the node unit admits invited,paid (+ the paid set + RPC it needs) and advertises
+    // the offer as signed caps (SHADE_TREE_REGISTRAR_ADVERTISE + SHADE_TREE_PAY_* + onion).
+    const gwR = regFiles.get("etc/systemd/system/shade-tree-gateway.service");
     ok(unitEnv(gwR, "SHADE_TREE_ADMIT") === "invited,paid" && unitEnv(gwR, "SHADE_TREE_PAID_ACCESS_CONTRACT") === REG.SHADE_TREE_PAID_ACCESS_CONTRACT && unitEnv(gwR, "SHADE_TREE_RPC_URL") === REG.SHADE_TREE_RPC_URL && unitEnv(gwR, "SHADE_TREE_GROUP_CONTRACT") === null, "gateway unit: SHADE_TREE_ADMIT=invited,paid + SHADE_TREE_PAID_ACCESS_CONTRACT + SHADE_TREE_RPC_URL (no staked contract)");
-    ok(unitEnv(hbR, "SHADE_TREE_ADMIT") === "invited,paid" && unitEnv(hbR, "SHADE_TREE_REGISTRAR_ADVERTISE") === "1" && unitEnv(hbR, "SHADE_TREE_REGISTRAR_ONION") === unitEnv(ru, "SHADE_TREE_REGISTRAR_ONION") && unitEnv(hbR, "SHADE_TREE_PAY_ASSET") === REG.SHADE_TREE_PAY_ASSET && unitEnv(hbR, "SHADE_TREE_PAY_PRICES") === REG.SHADE_TREE_PAY_PRICES && unitEnv(hbR, "SHADE_TREE_PAY_PROTOCOLS") === "x402,mpp" && unitEnv(hbR, "SHADE_TREE_PAY_CHAIN_ID") === "11155111" && unitEnv(hbR, "SHADE_TREE_REGISTRAR_PORT") === "8878", "heartbeat unit: same SHADE_TREE_ADMIT + the pay advert env (advertised as signed caps.pay; registrar onion = the bootnode's)");
+    ok(unitEnv(gwR, "SHADE_TREE_REGISTRAR_ADVERTISE") === "1" && unitEnv(gwR, "SHADE_TREE_REGISTRAR_ONION") === unitEnv(ru, "SHADE_TREE_REGISTRAR_ONION") && unitEnv(gwR, "SHADE_TREE_PAY_ASSET") === REG.SHADE_TREE_PAY_ASSET && unitEnv(gwR, "SHADE_TREE_PAY_PRICES") === REG.SHADE_TREE_PAY_PRICES && unitEnv(gwR, "SHADE_TREE_PAY_PROTOCOLS") === "x402,mpp" && unitEnv(gwR, "SHADE_TREE_PAY_CHAIN_ID") === "11155111" && unitEnv(gwR, "SHADE_TREE_REGISTRAR_PORT") === "8878", "gateway unit: the pay advert env too (advertised as signed caps.pay; registrar onion = the bootnode's)");
     const stripAdm = (u) => u.split("\n").filter((l) => !/^Environment=SHADE_TREE_(PAID_ACCESS_CONTRACT|RPC_URL|REGISTRAR_ADVERTISE|REGISTRAR_PORT|REGISTRAR_ONION|PAY_ASSET|PAY_PRICES|PAY_CHAIN_ID|PAY_PROTOCOLS)=/.test(l)).join("\n").replace("Environment=SHADE_TREE_ADMIT=invited,paid", "Environment=SHADE_TREE_ADMIT=invited");
-    for (const f of ["etc/systemd/system/shade-tree-gateway.service", "etc/systemd/system/shade-tree-heartbeat.service"]) ok(stripAdm(regFiles.get(f)) === got.get(f), `registrar=1 leaves ${f} otherwise byte-identical`);
+    ok(stripAdm(gwR) === got.get("etc/systemd/system/shade-tree-gateway.service"), "registrar=1 leaves the gateway unit otherwise byte-identical");
     const regPT = render(work, "registrar-payto", { ...REG, SHADE_TREE_PAY_TO: "0x2222222222222222222222222222222222222222", SHADE_TREE_REGISTRAR_PORT: "9878", SHADE_TREE_PAY_CHAIN_ID: "1" });
     const ruPT = await readFile(join(regPT.out, "etc/systemd/system/shade-tree-registrar.service"), "utf8");
     ok(regPT.status === 0 && unitEnv(ruPT, "SHADE_TREE_PAY_TO") === "0x2222222222222222222222222222222222222222" && unitEnv(ruPT, "SHADE_TREE_REGISTRAR_PORT") === "9878" && hsBlocks(await readFile(join(regPT.out, "etc/tor/torrc.d-shade-tree"), "utf8"))[0].lines[1] === "HiddenServicePort 9878 127.0.0.1:9878" && unitEnv(await readFile(join(regPT.out, "etc/systemd/system/shade-tree-bootnode.service"), "utf8"), "SHADE_TREE_PAY_CHAIN_ID") === "1", "SHADE_TREE_PAY_TO / SHADE_TREE_REGISTRAR_PORT / SHADE_TREE_PAY_CHAIN_ID passthrough (unit + torrc + advert)");
@@ -500,7 +496,7 @@ async function main() {
       ok(r.status === 0 && files.size === got.size && [...got].every(([f, b]) => files.get(f) === b), `SHADE_TREE_REGISTRAR=${off} == default (opt-in; golden untouched)`);
     }
     const regHel = render(work, "registrar-helios", { ...REG, ...HEL, SHADE_TREE_ADMIT: "invited,staked,paid" });
-    ok(regHel.status === 0 && (await readAll(regHel.out)).size === 6, "composes with SHADE_TREE_HELIOS=1 (6 files; SHADE_TREE_ADMIT=invited,staked,paid admits both what helios anchors and what the registrar sells)");
+    ok(regHel.status === 0 && (await readAll(regHel.out)).size === 5, "composes with SHADE_TREE_HELIOS=1 (5 files; SHADE_TREE_ADMIT=invited,staked,paid admits both what helios anchors and what the registrar sells)");
     const regHelNoPaid = render(work, "registrar-helios-nopaid", { ...REG, ...HEL });
     ok(regHelNoPaid.status !== 0 && /SHADE_TREE_REGISTRAR=1 sells paid leaves but SHADE_TREE_ADMIT=invited,staked does not admit them/.test(regHelNoPaid.stderr), "…and SHADE_TREE_HELIOS=1's invited,staked WITHOUT paid is refused when the registrar sells");
 
@@ -514,7 +510,7 @@ async function main() {
     ok(unitEnv(gwFb, "SHADE_TREE_FROM_BLOCK") === FB.SHADE_TREE_FROM_BLOCK && unitEnv(gwFb, "SHADE_TREE_FROM_BLOCKS") === FB.SHADE_TREE_FROM_BLOCKS, "gateway unit carries SHADE_TREE_FROM_BLOCK + SHADE_TREE_FROM_BLOCKS verbatim");
     const stripFb = (u) => u.split("\n").filter((l) => !/^Environment=SHADE_TREE_FROM_BLOCKS?=/.test(l)).join("\n");
     ok(stripFb(gwFb) === got.get("etc/systemd/system/shade-tree-gateway.service"), "gateway unit otherwise byte-identical to the default");
-    for (const f of ["etc/tor/torrc.d-shade-tree", "etc/systemd/system/shade-tree-bootnode.service", "etc/systemd/system/shade-tree-heartbeat.service"]) ok(fbFiles.get(f) === got.get(f), `from-block leaves ${f} byte-identical`);
+    for (const f of ["etc/tor/torrc.d-shade-tree", "etc/systemd/system/shade-tree-bootnode.service"]) ok(fbFiles.get(f) === got.get(f), `from-block leaves ${f} byte-identical`);
     const fbOne = render(work, "fromblock-one", { SHADE_TREE_FROM_BLOCK: "11510541" });
     const gwOne = await readFile(join(fbOne.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
     ok(fbOne.status === 0 && unitEnv(gwOne, "SHADE_TREE_FROM_BLOCK") === "11510541" && unitEnv(gwOne, "SHADE_TREE_FROM_BLOCKS") === null, "decimal SHADE_TREE_FROM_BLOCK alone -> one line, no SHADE_TREE_FROM_BLOCKS");
@@ -541,8 +537,8 @@ async function main() {
 
     // ---------------------------------------------------------------- 9. admission policy + rails (T-FEAT-9)
     console.log("SHADE_TREE_ADMIT / SHADE_TREE_PAY_PROTOCOLS / registrar on a gateway-only box (T-FEAT-9):");
-    // default = invited: both units carry Environment=SHADE_TREE_ADMIT=invited (this IS the golden now)
-    ok(unitEnv(got.get("etc/systemd/system/shade-tree-gateway.service"), "SHADE_TREE_ADMIT") === "invited" && unitEnv(got.get("etc/systemd/system/shade-tree-heartbeat.service"), "SHADE_TREE_ADMIT") === "invited", "default render: gateway + heartbeat units carry SHADE_TREE_ADMIT=invited (max-anon default; golden regenerated for T-FEAT-9)");
+    // default = invited: the node unit carries Environment=SHADE_TREE_ADMIT=invited (this IS the golden)
+    ok(unitEnv(got.get("etc/systemd/system/shade-tree-gateway.service"), "SHADE_TREE_ADMIT") === "invited", "default render: the gateway unit carries SHADE_TREE_ADMIT=invited (max-anon default)");
     ok(!/SHADE_TREE_(GROUP_CONTRACT|PAID_ACCESS_CONTRACT|RPC_URL)=/.test(got.get("etc/systemd/system/shade-tree-gateway.service")), "default gateway unit carries no contract / RPC (invited needs none)");
     for (const spelling of ["invited", "INVITED", " invited ", ""]) {
       const r = render(work, "admit-inv", { SHADE_TREE_ADMIT: spelling });
@@ -552,12 +548,11 @@ async function main() {
     const STK = { SHADE_TREE_ADMIT: "paid,staked,invited", SHADE_TREE_GROUP_CONTRACT: "0xdAE242AE3eCD18e5F74d5e96332fCD4682EB20FC", SHADE_TREE_PAID_ACCESS_CONTRACT: "0x1111111111111111111111111111111111111111", SHADE_TREE_RPC_URL: "https://rpc.example/v1/KEY" };
     const stk = render(work, "admit-all", STK);
     const stkFiles = await readAll(stk.out);
-    const gwS = stkFiles.get("etc/systemd/system/shade-tree-gateway.service"), hbS = stkFiles.get("etc/systemd/system/shade-tree-heartbeat.service");
-    ok(stk.status === 0 && /admit=invited,staked,paid/.test(stk.stdout) && unitEnv(gwS, "SHADE_TREE_ADMIT") === "invited,staked,paid" && unitEnv(hbS, "SHADE_TREE_ADMIT") === "invited,staked,paid", "SHADE_TREE_ADMIT=paid,staked,invited -> normalized to the canonical anonymity order invited,staked,paid in both units");
+    const gwS = stkFiles.get("etc/systemd/system/shade-tree-gateway.service");
+    ok(stk.status === 0 && /admit=invited,staked,paid/.test(stk.stdout) && unitEnv(gwS, "SHADE_TREE_ADMIT") === "invited,staked,paid", "SHADE_TREE_ADMIT=paid,staked,invited -> normalized to the canonical anonymity order invited,staked,paid");
     ok(unitEnv(gwS, "SHADE_TREE_GROUP_CONTRACT") === STK.SHADE_TREE_GROUP_CONTRACT && unitEnv(gwS, "SHADE_TREE_PAID_ACCESS_CONTRACT") === STK.SHADE_TREE_PAID_ACCESS_CONTRACT && unitEnv(gwS, "SHADE_TREE_RPC_URL") === STK.SHADE_TREE_RPC_URL && unitEnv(gwS, "SHADE_TREE_ROOT_PROVIDER") === null, "gateway unit carries the staked + paid contracts + RPC (node provider; helios off)");
-    ok(unitEnv(hbS, "SHADE_TREE_GROUP_CONTRACT") === STK.SHADE_TREE_GROUP_CONTRACT && !/SHADE_TREE_(PAID_ACCESS_CONTRACT|RPC_URL)=/.test(hbS), "heartbeat unit carries the policy and the staked contract list it advertises as caps.sets (no paid contract, no RPC)");
     const stripAll = (u) => u.split("\n").filter((l) => !/^Environment=SHADE_TREE_(GROUP_CONTRACT|PAID_ACCESS_CONTRACT|RPC_URL)=/.test(l)).join("\n").replace("Environment=SHADE_TREE_ADMIT=invited,staked,paid", "Environment=SHADE_TREE_ADMIT=invited");
-    ok(stripAll(gwS) === got.get("etc/systemd/system/shade-tree-gateway.service") && stripAll(hbS) === got.get("etc/systemd/system/shade-tree-heartbeat.service"), "…otherwise byte-identical to the default units");
+    ok(stripAll(gwS) === got.get("etc/systemd/system/shade-tree-gateway.service"), "…otherwise byte-identical to the default unit");
     ok(stkFiles.get("etc/tor/torrc.d-shade-tree") === torrc && stkFiles.get("etc/systemd/system/shade-tree-bootnode.service") === got.get("etc/systemd/system/shade-tree-bootnode.service"), "policy does not touch torrc / bootnode unit");
     const stkOnly = render(work, "admit-staked", { SHADE_TREE_ADMIT: "staked", SHADE_TREE_GROUP_CONTRACT: STK.SHADE_TREE_GROUP_CONTRACT, SHADE_TREE_RPC_URL: STK.SHADE_TREE_RPC_URL });
     const gwSO = await readFile(join(stkOnly.out, "etc/systemd/system/shade-tree-gateway.service"), "utf8");
@@ -575,20 +570,20 @@ async function main() {
       const r = render(work, "admit-bad", env);
       ok(r.status !== 0 && re.test(r.stderr), `rejected up front (fail closed): ${JSON.stringify(env)}`);
     }
-    // rails subset -> registrar unit + bootnode advert + heartbeat advert all carry it, normalized
+    // rails subset -> registrar unit + bootnode advert + node advert all carry it, normalized
     const mppOnly = render(work, "pay-mpp", { ...REG, SHADE_TREE_PAY_PROTOCOLS: "MPP" });
     const mppFiles = await readAll(mppOnly.out);
-    ok(mppOnly.status === 0 && /pay=mpp/.test(mppOnly.stdout) && ["shade-tree-registrar", "shade-tree-bootnode", "shade-tree-heartbeat"].every((u) => unitEnv(mppFiles.get(`etc/systemd/system/${u}.service`), "SHADE_TREE_PAY_PROTOCOLS") === "mpp"), "SHADE_TREE_PAY_PROTOCOLS=MPP -> `mpp` in the registrar unit, the bootnode advert and the heartbeat advert");
+    ok(mppOnly.status === 0 && /pay=mpp/.test(mppOnly.stdout) && ["shade-tree-registrar", "shade-tree-bootnode", "shade-tree-gateway"].every((u) => unitEnv(mppFiles.get(`etc/systemd/system/${u}.service`), "SHADE_TREE_PAY_PROTOCOLS") === "mpp"), "SHADE_TREE_PAY_PROTOCOLS=MPP -> `mpp` in the registrar unit, the bootnode advert and the node advert");
     const both = render(work, "pay-both", { ...REG, SHADE_TREE_PAY_PROTOCOLS: "mpp,x402" });
     ok(both.status === 0 && unitEnv(await readFile(join(both.out, "etc/systemd/system/shade-tree-registrar.service"), "utf8"), "SHADE_TREE_PAY_PROTOCOLS") === "x402,mpp", "SHADE_TREE_PAY_PROTOCOLS=mpp,x402 -> canonical order x402,mpp");
-    // registrar on a GATEWAY-ONLY box: rides the gateway onion; heartbeat advertises it; no bootnode unit
+    // registrar on a GATEWAY-ONLY box: rides the gateway onion; the node advertises it; no bootnode unit
     const gwReg = render(work, "registrar-gw-only", { ...REG, SHADE_TREE_BOOTNODE_ONION: ONION });
     const gwRegFiles = await readAll(gwReg.out);
-    ok(gwReg.status === 0 && [...gwRegFiles.keys()].join(",") === "etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-heartbeat.service,etc/systemd/system/shade-tree-registrar.service,etc/tor/torrc.d-shade-tree", `gateway-only + registrar renders gateway + heartbeat + registrar units, no bootnode (${[...gwRegFiles.keys()].join(", ")})`);
+    ok(gwReg.status === 0 && [...gwRegFiles.keys()].join(",") === "etc/systemd/system/shade-tree-gateway.service,etc/systemd/system/shade-tree-registrar.service,etc/tor/torrc.d-shade-tree", `gateway-only + registrar renders gateway + registrar units, no bootnode (${[...gwRegFiles.keys()].join(", ")})`);
     const gwRegT = hsBlocks(gwRegFiles.get("etc/tor/torrc.d-shade-tree"));
     ok(gwRegT.length === 1 && gwRegT[0].dir === "/var/lib/tor/shade-tree-gateway" && gwRegT[0].lines.join("|") === "HiddenServicePort 80 127.0.0.1:8443|HiddenServicePort 8878 127.0.0.1:8878|HiddenServicePoWDefensesEnabled 0|HiddenServiceMaxStreams 32|HiddenServiceMaxStreamsCloseCircuit 1", "torrc: ONE HS block (gateway) with port 80 + EXTRA port 8878 (the registrar rides the GATEWAY onion), then the PoW line");
-    const ruG = gwRegFiles.get("etc/systemd/system/shade-tree-registrar.service"), hbG = gwRegFiles.get("etc/systemd/system/shade-tree-heartbeat.service");
-    ok(unitEnv(ruG, "SHADE_TREE_REGISTRAR_ONION") === "gatewayplaceholderplaceholderplaceholderplaceholderplace.onion" && unitEnv(hbG, "SHADE_TREE_REGISTRAR_ONION") === "gatewayplaceholderplaceholderplaceholderplaceholderplace.onion" && unitEnv(hbG, "SHADE_TREE_REGISTRAR_ADVERTISE") === "1" && unitEnv(hbG, "SHADE_TREE_BOOTNODE_ONION") === ONION + ".onion", "registrar + heartbeat name the GATEWAY onion as the registrar onion; heartbeat still announces to the remote bootnode");
+    const ruG = gwRegFiles.get("etc/systemd/system/shade-tree-registrar.service"), gwG = gwRegFiles.get("etc/systemd/system/shade-tree-gateway.service");
+    ok(unitEnv(ruG, "SHADE_TREE_REGISTRAR_ONION") === "gatewayplaceholderplaceholderplaceholderplaceholderplace.onion" && unitEnv(gwG, "SHADE_TREE_REGISTRAR_ONION") === "gatewayplaceholderplaceholderplaceholderplaceholderplace.onion" && unitEnv(gwG, "SHADE_TREE_REGISTRAR_ADVERTISE") === "1" && unitEnv(gwG, "SHADE_TREE_BOOTNODE_ONION") === ONION + ".onion", "registrar + node name the GATEWAY onion as the registrar onion; the node still announces to the remote bootnode");
     ok(unitEnv(gwRegFiles.get("etc/systemd/system/shade-tree-gateway.service"), "SHADE_TREE_ADMIT") === "invited,paid", "gateway-only gateway unit admits invited,paid");
 
     console.log("explicit ZK artifact set:");
@@ -601,14 +596,13 @@ async function main() {
     });
     const artifactFiles = await readAll(artifacts.out);
     const artifactGateway = artifactFiles.get("etc/systemd/system/shade-tree-gateway.service");
-    const artifactHeartbeat = artifactFiles.get("etc/systemd/system/shade-tree-heartbeat.service");
-    ok(artifacts.status === 0 && unitEnv(artifactGateway, "SHADE_TREE_ZK_ARTIFACTS") === artifactSpec && unitEnv(artifactHeartbeat, "SHADE_TREE_ZK_ARTIFACTS") === artifactSpec,
-      "gateway verifies and heartbeat advertises the same explicit artifact set");
-    ok(unitEnv(artifactGateway, "SHADE_TREE_ZK_ARTIFACT_LEGACY") === artifactId && unitEnv(artifactHeartbeat, "SHADE_TREE_ZK_ARTIFACT_LEGACY") === null,
-      "legacy envelope mapping is verifier-only and is not leaked into heartbeat configuration");
+    ok(artifacts.status === 0 && unitEnv(artifactGateway, "SHADE_TREE_ZK_ARTIFACTS") === artifactSpec,
+      "the node verifies and advertises the explicit artifact set");
+    ok(unitEnv(artifactGateway, "SHADE_TREE_ZK_ARTIFACT_LEGACY") === artifactId,
+      "legacy envelope mapping reaches the verifier");
     const stripArtifacts = (u) => u.split("\n").filter((l) => !/^Environment=SHADE_TREE_ZK_ARTIFACT/.test(l)).join("\n");
-    ok(stripArtifacts(artifactGateway) === got.get("etc/systemd/system/shade-tree-gateway.service") && stripArtifacts(artifactHeartbeat) === got.get("etc/systemd/system/shade-tree-heartbeat.service"),
-      "explicit artifact configuration otherwise leaves the default units byte-identical");
+    ok(stripArtifacts(artifactGateway) === got.get("etc/systemd/system/shade-tree-gateway.service"),
+      "explicit artifact configuration otherwise leaves the default unit byte-identical");
     for (const [name, env, re] of [
       ["bad-id", { SHADE_TREE_ZK_ARTIFACTS: "RLN-BAD=circuits/rln/verification_key.json" }, /SHADE_TREE_ZK_ARTIFACTS must be/],
       ["missing-path", { SHADE_TREE_ZK_ARTIFACTS: `${artifactId}=` }, /SHADE_TREE_ZK_ARTIFACTS must be/],
@@ -669,13 +663,20 @@ async function main() {
     ok(metricsCollision.status !== 0 && /operator metrics ports must be distinct/.test(metricsCollision.stderr), "operator metrics port collisions are rejected before install");
     const badBackend = render(work, "backend-port-bad", { SHADE_TREE_GATEWAY_PORT: "abc" });
     ok(badBackend.status !== 0 && /bootnode and gateway ports must be in 1024\.\.65535/.test(badBackend.stderr), "malformed gateway backend ports are rejected before install");
+    for (const [name, env, re] of [
+      ["version", { SHADENET_VERSION: "latest" }, /SHADENET_VERSION must be a release version/],
+      ["node-sha", { SHADENET_NODE_SHA256: "nothex" }, /SHADENET_NODE_SHA256 must be 64 hex chars/],
+      ["elder-bin", { SHADENET_ELDER_BIN: "target/release/shadenet-elder" }, /SHADENET_ELDER_BIN must be an absolute path to an executable/],
+    ]) {
+      const bad = render(work, `binaries-bad-${name}`, env);
+      ok(bad.status !== 0 && re.test(bad.stderr), `binary install tunable rejected up front: ${JSON.stringify(env)}`);
+    }
     const sameBackends = render(work, "backend-port-collision", { SHADE_TREE_GATEWAY_PORT: "8877" });
     ok(sameBackends.status !== 0 && /active local service ports must be distinct/.test(sameBackends.stderr), "bootnode and gateway cannot share a local backend port");
     for (const [name, env] of [
       ["elder-metrics-vs-bootnode", { SHADE_TREE_ELDER_METRICS_PORT: "8877" }],
       ["elder-metrics-vs-gateway", { SHADE_TREE_ELDER_METRICS_PORT: "8443" }],
       ["node-metrics-vs-gateway", { SHADE_TREE_NODE_METRICS_PORT: "8443" }],
-      ["heartbeat-metrics-vs-tor", { SHADE_TREE_HEARTBEAT_METRICS_PORT: "9050" }],
       ["registrar-metrics-vs-backend", { ...REG, SHADE_TREE_REGISTRAR_METRICS_PORT: "8878" }],
       ["node-metrics-vs-helios", { ...HEL, SHADE_TREE_NODE_METRICS_PORT: "8546" }],
     ]) {

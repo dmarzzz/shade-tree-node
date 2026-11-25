@@ -24,9 +24,8 @@ cover them. The `mutate` glob in the config is:
 | Mutated file | Why it is high-value | Covering fast selftest(s) |
 | --- | --- | --- |
 | `packages/node/lib/gateway-registry.mjs` | Stake gate — decides which gateways an `admission=stake` policy admits (mock + on-chain `eth_call` encode/decode). | `packages/node/lib/gateway-registry.selftest.mjs` |
-| `packages/node/gateway/gateway.mjs` | Egress guard — `makeEgressPolicy` + `validTarget` (allow/deny host:port matching) and `makeSpentSet` (proof replay defense). | `packages/node/gateway/egress-policy.selftest.mjs`, `packages/node/gateway/replay-cache.selftest.mjs` |
 | `packages/node/lib/directory.mjs` | Signed gateway directory — verification, onion→pubkey derivation. | `packages/node/lib/directory.selftest.mjs`, `packages/node/lib/directory-rotation.selftest.mjs` |
-| `packages/node/bootnode/announce.mjs` | Announce record build/verify — canonical bytes, operator sig, staleness/replay checks. | `packages/node/bootnode/selftest.mjs` (exercises `buildAnnounce`/`verifyAnnounce` via `makeServer`) |
+| `packages/node/bootnode/announce.mjs` | Announce record build/verify — canonical bytes, operator sig, staleness/replay checks. | `test/vectors.selftest.mjs` (pins `buildAnnounce`/`verifyAnnounce` bytes) |
 
 **Deliberately excluded:** `packages/node/lib/rln.mjs` (and the `rln`, `rln-slash`, `timing` suites).
 Mutating RLN forces the slow real-Groth16 proof suites, which would make a run take

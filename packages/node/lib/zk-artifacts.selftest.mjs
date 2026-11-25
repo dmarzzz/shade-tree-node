@@ -26,7 +26,6 @@
 //   node packages/node/lib/zk-artifacts.selftest.mjs
 
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
 import { Duplex } from "node:stream";
 import { tmpdir } from "node:os";
@@ -36,12 +35,9 @@ import {
   resolveArtifact, selectArtifact, loadProverSets, lockArtifactIds, BUILTIN_VKEY_PATH, RLN_DIR, LOCK_PATH,
 } from "./zk-artifacts.mjs";
 import { canonicalCaps, hasCaps, signCaps, verifyCapsSig, canonicalCapsBytes, MAX_CAPS_ARTIFACTS, pubkeyToOnion, ed25519PrivateKey } from "./directory.mjs";
-import { buildGatewayCaps } from "../bootnode/heartbeat.mjs";
 import {
   verifyEnvelope, currentEpoch, externalNullifierFor, calculateSignalHash, requestSignal, _setArtifactSet, getArtifactSet, cleanUp,
 } from "./rln.mjs";
-import { makeHandler, _setRecentRoots } from "../gateway/gateway.mjs";
-import { registry as metrics } from "./metrics.mjs";
 import { buildEnvelope, ShadeTreeClient } from "../client/shade-tree-client.mjs";
 import { createPublicKey } from "node:crypto";
 
@@ -208,61 +204,6 @@ await test("verifyEnvelope with an ACCEPTED artifact proceeds to the SNARK (whic
   assert.ok(!/artifact/.test(legacyOpen.reason), "field-less inside the window reaches step 4, got " + legacyOpen.reason);
 });
 
-// ---- gateway handler reply + metrics label ------------------------------------------------
-class FakeSocket extends EventEmitter {
-  constructor() { super(); this.written = []; this.destroyed = false; }
-  setNoDelay() {}
-  write(s) { this.written.push(String(s)); }
-  destroy() { this.destroyed = true; this.emit("close"); }
-  pipe() {}
-}
-function metricValue(name, labels) {
-  const m = metrics.render().split("\n").find((l) => l.startsWith(name + "{") && Object.entries(labels).every(([k, v]) => l.includes(`${k}="${v}"`)));
-  return m ? Number(m.split(" ").pop()) : 0;
-}
-await test("gateway handler: artifact reject replies {ok:false, err:'gate:<reason>', artifacts:[accepted]} and counts the BOUNDED label", async () => {
-  _setArtifactSet(CLOSED);       // process-wide set the handler's verifyEnvelope reads (window closed)
-  _setRecentRoots(["999"]);      // so the consistent envelope gets PAST the root check to 3b
-  try {
-    const spent = { admit: async () => ({ ok: true, action: "first" }) };
-    const handle = makeHandler(spent);
-    const drive = async (envelope) => {
-      const sock = new FakeSocket();
-      const p = handle(sock);
-      sock.emit("data", Buffer.from(JSON.stringify(envelope) + "\n"));
-      await p;
-      return { ack: JSON.parse(sock.written[0]), sock };
-    };
-    const before = metricValue("shade_tree_gateway_tunnels_total", { result: "drop", reason: "artifact-retired" });
-    // field-less (old client) envelope outside the window
-    const legacy = await drive(consistentEnvelope(undefined));
-    assert.deepEqual(legacy.ack, { ok: false, err: `gate:artifact-retired:${BUILTIN}`, artifacts: [ALT] });
-    assert.equal(legacy.sock.destroyed, true);
-    // explicit unknown id
-    const unk = await drive(consistentEnvelope(UNKNOWN));
-    assert.deepEqual(unk.ack, { ok: false, err: `gate:artifact-unknown:${UNKNOWN}`, artifacts: [ALT] });
-    // garbage
-    const bad = await drive(consistentEnvelope("Not An Id"));
-    assert.equal(bad.ack.err, 'gate:bad-artifact:"Not An Id"');
-    assert.deepEqual(bad.ack.artifacts, [ALT]);
-    // metrics: bounded label, never the id-bearing reason
-    assert.equal(metricValue("shade_tree_gateway_tunnels_total", { result: "drop", reason: "artifact-retired" }), before + 1);
-    assert.equal(metricValue("shade_tree_gateway_tunnels_total", { result: "drop", reason: "artifact-unknown" }) >= 1, true);
-    assert.equal(metricValue("shade_tree_gateway_tunnels_total", { result: "drop", reason: "bad-artifact" }) >= 1, true);
-    assert.ok(!metrics.render().includes(`reason="artifact-retired:${BUILTIN}"`), "no id-bearing label leaked into metrics");
-    // a non-artifact reject carries NO artifacts field (reply shape unchanged for every other
-    // reason); a root reject advertises the roots this node accepts instead (`roots`), so the
-    // client can name the stale side.
-    const root = await drive({ ...consistentEnvelope(ALT), proof: { ...consistentEnvelope(ALT).proof, snarkProof: { proof: {}, publicSignals: { ...consistentEnvelope(ALT).proof.snarkProof.publicSignals, root: "1" } } } });
-    assert.deepEqual({ ...root.ack, roots: undefined }, { ok: false, err: "gate:wrong-group-root", roots: undefined });
-    assert.ok(!("artifacts" in root.ack), "no artifacts field on a root reject");
-    assert.deepEqual(root.ack.roots, ["999"]);
-  } finally {
-    _setArtifactSet(null);
-    _setRecentRoots([]);
-  }
-});
-
 // ---- caps ---------------------------------------------------------------------------------
 await test("canonicalCaps.artifacts: sorted, deduped, grammar-checked, count-bounded, appended LAST; absent => byte-identical", () => {
   const base = { ports: [443], proto: { min: 3, max: 3 } };
@@ -288,16 +229,6 @@ await test("signed artifact ad round-trips; grafting an id breaks capsSig (unfor
   assert.equal(verifyCapsSig(onion, { ...caps, artifacts: [BUILTIN, ALT] }, sig), false, "grafted id => bad sig");
   assert.equal(verifyCapsSig(onion, { ports: [443] }, sig), false, "stripped ad => bad sig");
   assert.ok(canonicalCapsBytes(onion, caps).toString("utf8").endsWith(`"artifacts":["${BUILTIN}"]}}`));
-});
-
-await test("heartbeat buildGatewayCaps: advertises accepted ids only when SHADE_TREE_ZK_ARTIFACTS is set (default stays cap-free)", () => {
-  assert.equal(buildGatewayCaps({}), null, "unconfigured => no caps (byte-identical announce)");
-  const c = buildGatewayCaps({ SHADE_TREE_ZK_ARTIFACTS: `${ALT}=${ALT_VKEY_PATH},${BUILTIN}=${BUILTIN_VKEY_PATH}` });
-  assert.deepEqual(c.artifacts, [ALT, BUILTIN].sort());
-  assert.deepEqual(c.proto, { min: 4, max: 4 }, "proto rides along with a real cap");
-  assert.equal(c.ports, undefined);
-  assert.throws(() => buildGatewayCaps({ SHADE_TREE_ZK_ARTIFACTS: `${UNKNOWN}=${BUILTIN_VKEY_PATH}` }), /artifact id mismatch/, "a mis-pointed set aborts the heartbeat too (never advertise what we can't verify)");
-  assert.deepEqual(buildGatewayCaps({}, { artifactIds: [BUILTIN] }).artifacts, [BUILTIN], "injection seam");
 });
 
 // ---- client pick + envelope ---------------------------------------------------------------

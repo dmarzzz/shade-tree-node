@@ -9,7 +9,9 @@
 #      (bootstrap.sh drives systemctl; a plain `docker run` has no init, so we
 #       give it one -- see packages/node/bootnode/deploy/E2E-CONTAINER.md for the rationale),
 #   2. runs bootstrap.sh against THIS checkout (cloned from a read-only bind mount,
-#      not from GitHub, so you test your working branch, not origin),
+#      not from GitHub, so you test your working branch, not origin) with the shadenet-node
+#      and shadenet-elder binaries built from it (release profile, passed in as the local
+#      builds instead of a release download),
 #   3. asserts tor + the shade-tree units are active, both onion hostname files were
 #      written, and the bootnode answers /health on loopback,
 #   4. best-effort: dials the bootnode onion over Tor SOCKS (needs live descriptor
@@ -23,10 +25,12 @@
 # (default ubuntu:24.04), E2E_KEEP=1 (leave the container running for inspection),
 # E2E_MODE=gateway-only (exercise bootstrap.sh's SHADE_TREE_BOOTNODE_ONION gateway-only mode:
 # a syntactically valid but unreachable bootnode onion is handed in; assert tor + gateway
-# are up, NO shade-tree-bootnode unit / bootnode HS exist, and the heartbeat unit points at the
-# remote onion. The heartbeat itself restart-loops -- there is no bootnode to reach -- which
+# are up, NO shade-tree-bootnode unit / bootnode HS exist, and the gateway unit announces to
+# the remote onion. The announce itself keeps failing -- there is no bootnode to reach -- which
 # is the same best-effort caveat the default mode already carries), SHADE_TREE_ENABLE_POW (passed
-# through; default = bootstrap.sh's default).
+# through; default = bootstrap.sh's default), SHADENET_NODE_BIN / SHADENET_ELDER_BIN (binaries
+# to hand in, as paths under this checkout, instead of building them; a host whose glibc is
+# newer than the container's builds them for x86_64-unknown-linux-musl).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,6 +60,21 @@ if [ -z "$REF" ]; then
   git -C "$SRC" tag -f "$REF" HEAD >/dev/null
   CREATED_TAG="$REF"
 fi
+
+# The binaries the units run: built from this checkout unless handed in. The container sees
+# the checkout at /mnt/src, so a path under $SRC is rewritten to it.
+if [ -z "${SHADENET_NODE_BIN:-}" ] || [ -z "${SHADENET_ELDER_BIN:-}" ]; then
+  log "build shadenet-node + shadenet-elder from this checkout"
+  ( cd "$SRC" && cargo build --release --locked -p shadenet-node -p shadenet-elder ) || fail "cargo build failed"
+  SHADENET_NODE_BIN="${SHADENET_NODE_BIN:-$SRC/target/release/shadenet-node}"
+  SHADENET_ELDER_BIN="${SHADENET_ELDER_BIN:-$SRC/target/release/shadenet-elder}"
+fi
+for bin in "$SHADENET_NODE_BIN" "$SHADENET_ELDER_BIN"; do
+  case "$bin" in "$SRC"/*) ;; *) fail "$bin is not under this checkout ($SRC); the container only sees /mnt/src" ;; esac
+  [ -x "$bin" ] || fail "$bin is not an executable file"
+done
+NODE_BIN_IN_CONTAINER="/mnt/src${SHADENET_NODE_BIN#"$SRC"}"
+ELDER_BIN_IN_CONTAINER="/mnt/src${SHADENET_ELDER_BIN#"$SRC"}"
 
 cleanup() {
   if [ "${E2E_KEEP:-0}" = "1" ]; then
@@ -129,6 +148,8 @@ EXTRA_ENV=()
 docker exec \
   -e SHADE_TREE_REPO="file:///mnt/src" \
   -e SHADE_TREE_REF="$REF" \
+  -e SHADENET_NODE_BIN="$NODE_BIN_IN_CONTAINER" \
+  -e SHADENET_ELDER_BIN="$ELDER_BIN_IN_CONTAINER" \
   -e SHADE_TREE_MEMBERS_FILE="/mnt/src/group/members.json" \
   -e SHADE_TREE_ADMISSION="open" \
   -e SHADE_TREE_BOOTNODE_PORT="$BOOTNODE_PORT" \
@@ -140,6 +161,8 @@ log "re-run bootstrap from its root-owned canonical members copy"
 docker exec \
   -e SHADE_TREE_REPO="file:///mnt/src" \
   -e SHADE_TREE_REF="$REF" \
+  -e SHADENET_NODE_BIN="$NODE_BIN_IN_CONTAINER" \
+  -e SHADENET_ELDER_BIN="$ELDER_BIN_IN_CONTAINER" \
   -e SHADE_TREE_MEMBERS_FILE="/etc/shade-tree/members.json" \
   -e SHADE_TREE_ADMISSION="open" \
   -e SHADE_TREE_BOOTNODE_PORT="$BOOTNODE_PORT" \
@@ -148,7 +171,7 @@ docker exec \
   "$CONTAINER" bash /mnt/src/packages/node/bootnode/deploy/bootstrap.sh
 
 if [ "$MODE" = "gateway-only" ]; then
-log "assert gateway-only: tor + gateway up, NO bootnode unit/HS, heartbeat -> remote onion"
+log "assert gateway-only: tor + gateway up, NO bootnode unit/HS, gateway announces -> remote onion"
 docker exec -i "$CONTAINER" env GW_PORT="$GATEWAY_PORT" REMOTE="$REMOTE_BN_ONION" bash -s <<'CHECK'
 set -euo pipefail
 echo "-- unit state --"
@@ -170,12 +193,13 @@ n="$(grep -c '^HiddenServiceDir ' /etc/tor/torrc.d-shade-tree)"
 [ "$n" = "1" ] && grep -q '^HiddenServiceDir /var/lib/tor/shade-tree-gateway$' /etc/tor/torrc.d-shade-tree || { cat /etc/tor/torrc.d-shade-tree; exit 1; }
 cat /etc/tor/torrc.d-shade-tree
 
-echo "-- heartbeat unit points at the remote bootnode --"
-grep -q "^Environment=SHADE_TREE_BOOTNODE_ONION=${REMOTE}$" /etc/systemd/system/shade-tree-heartbeat.service || { cat /etc/systemd/system/shade-tree-heartbeat.service; exit 1; }
-grep -q '^After=network-online.target tor.service$' /etc/systemd/system/shade-tree-heartbeat.service
-echo "heartbeat -> ${REMOTE}"
+echo "-- the gateway unit announces to the remote bootnode (no heartbeat unit) --"
+grep -q "^Environment=SHADE_TREE_BOOTNODE_ONION=${REMOTE}$" /etc/systemd/system/shade-tree-gateway.service || { cat /etc/systemd/system/shade-tree-gateway.service; exit 1; }
+grep -q '^After=network-online.target tor.service$' /etc/systemd/system/shade-tree-gateway.service
+test ! -e /etc/systemd/system/shade-tree-heartbeat.service || { echo "shade-tree-heartbeat unit must NOT exist"; exit 1; }
+echo "gateway announces -> ${REMOTE}"
 
-echo "-- gateway TCP listener on loopback (waits up to 90s: the gateway loads the zk artifacts before it binds) --"
+echo "-- gateway TCP listener on loopback (waits up to 90s: the node loads the zk artifacts before it binds) --"
 # The default mode gets this wait for free (bootstrap.sh sleeps 15s for the bootnode signer);
 # gateway-only mode has no such pause, so poll instead of racing the bind.
 bound=0
@@ -198,6 +222,8 @@ echo "-- unit state --"
 systemctl is-active tor           || { journalctl -u tor           --no-pager | tail -20; exit 1; }
 systemctl is-active shade-tree-bootnode || { journalctl -u shade-tree-bootnode --no-pager | tail -20; exit 1; }
 systemctl is-active shade-tree-gateway  || { journalctl -u shade-tree-gateway  --no-pager | tail -20; exit 1; }
+test ! -e /etc/systemd/system/shade-tree-heartbeat.service || { echo "shade-tree-heartbeat unit must NOT exist (the node announces itself)"; exit 1; }
+/usr/local/bin/shadenet-node --version && /usr/local/bin/shadenet-elder --version
 
 echo "-- onion hostname files --"
 for hs in shade-tree-bootnode shade-tree-gateway; do

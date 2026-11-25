@@ -441,7 +441,7 @@ that reveals nothing, exactly as any staking system's account is linkable to its
   `SHADE_TREE_RPC_URL` / `SHADE_TREE_GROUP_ID`, with the JSON path kept as an offline cache whose
   root is verified against chain. The RLN message becomes request-bound (target +
   anti-replay salt), not the constant `1n`.
-- **`packages/node/gateway/gateway.mjs`** → `TRUSTED_ROOT` becomes a refreshed recent-roots set fed
+- **`crates/shadenet-node/src/roots.rs`** → `TRUSTED_ROOT` becomes a refreshed recent-roots set fed
   by a `RootProvider` (below); `spend()` becomes a share-collecting spent-set that
   reconstructs and slashes on threshold; add an on-chain slash submitter behind
   `SHADE_TREE_SLASH_KEY` (an operational hot key, deliberately separate from any member
@@ -505,7 +505,7 @@ redeploy (`network/sepolia/contracts.json`, release `rln-v4-tiers`,
    either deployment; `currentRoot` stays at storage slot 3 (the tier mappings are declared
    after the tree state), so the light-client / freshness-window paths are untouched.
 
-**Gateway slash path (`packages/node/gateway/gateway.mjs`).** `resolveSlashTier(secret)` names the leaf
+**Gateway slash path (`crates/shadenet-node/src/slash.rs`).** `resolveSlashTier(secret)` names the leaf
 + tier locally (members.json leaves, `SHADE_TREE_TIERS`); in on-chain root mode (no local leaves)
 the on-chain slasher (`makeOnchainSlasher`) probes the contract once at startup
 (`DEFAULT_LIMIT()` => rln-v4 tiered ABI; else the rln-v3 three-argument ABI), unions

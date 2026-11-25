@@ -6,13 +6,6 @@
     daemon_reload: true
   when: shade_tree_runs_node | bool
 
-- name: Restart Shade Tree heartbeat
-  ansible.builtin.systemd_service:
-    name: shade-tree-heartbeat
-    state: restarted
-    daemon_reload: true
-  when: shade_tree_runs_node | bool
-
 - name: Restart Elder Tree
   ansible.builtin.systemd_service:
     name: shade-tree-bootnode

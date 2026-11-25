@@ -1,9 +1,9 @@
 # Deploy: a bootnode + gateway on a fresh droplet
 
 One command on a rented Ubuntu 24.04 box brings up the whole thing: Tor (Tor Project build,
-`pow: yes` available), the discovery [bootnode](../../../../docs/BOOTNODE.md), a Shade Tree
-[gateway](../../gateway/gateway.mjs), and a heartbeat that keeps the gateway announced. You rent
-the box; `bootstrap.sh` does the rest. Set `SHADE_TREE_BOOTNODE_ONION` to get a **gateway-only** box
+`pow: yes` available), the discovery [bootnode](../../../../docs/BOOTNODE.md) (`shadenet-elder`)
+and a Shade Tree gateway (`shadenet-node`, which keeps itself announced). You rent the box;
+`bootstrap.sh` does the rest. Set `SHADE_TREE_BOOTNODE_ONION` to get a **gateway-only** box
 that joins an existing bootnode instead (see Tunables).
 
 ## Run it
@@ -31,15 +31,18 @@ supplies the exact enrolled tier and admission inputs. Re-running is safe (keys 
 
 ## What it installs
 
-- **Node 24** (NodeSource; a pre-installed Node < 24 is upgraded — under the units'
-  `SystemCallFilter=@system-service` Node 20 dies with `SIGSYS` on `pkey_alloc`, Node 24 does not)
-  and **Tor** (official Tor Project repo, so the onion PoW DoS
+- The **`shadenet-node` and `shadenet-elder` release binaries** (ADR 0014, ADR 0015) at
+  `/usr/local/bin`, downloaded for the checkout's version and verified against the sha256 pinned
+  in `binaries.sh` (`SHADENET_VERSION` + `SHADENET_*_SHA256` for another release;
+  `SHADENET_*_BIN` installs local builds, as the e2e containers do).
+- **Node 24** (a pinned nodejs.org tarball under `/opt/node-v<version>`, for the operator tooling
+  and the optional 402 registrar) and **Tor** (official Tor Project repo, so the onion PoW DoS
   defense is *available*; it is **off by default**, `SHADE_TREE_ENABLE_POW=1` turns it on).
-- A `shade-tree` service user and the repo at `/opt/shade-tree`.
+- A `shade-tree` service user and the repo at `/opt/shade-tree` (the proof keys and the tooling).
 - Onion identities minted once into `/opt/shade-tree/deploy-state/` and copied into Tor's own HS
-  dirs (`packages/node/bootnode/keygen.mjs`).
-- Three systemd units: `shade-tree-bootnode`, `shade-tree-gateway`, `shade-tree-heartbeat` — all `Restart=always`.
-  (Gateway-only mode: two units, no `shade-tree-bootnode`. `SHADE_TREE_HELIOS=1` adds a fourth,
+  dirs (`shadenet-elder identity`).
+- Two systemd units: `shade-tree-bootnode` and `shade-tree-gateway` — both `Restart=always`.
+  (Gateway-only mode: one unit, no `shade-tree-bootnode`. `SHADE_TREE_HELIOS=1` adds
   `shade-tree-helios`, plus the sha256-pinned `helios` binary at `/usr/local/bin/helios`.)
 - A `torrc` include publishing two onion services on virtual port `80`: the bootnode maps to
   `127.0.0.1:8877` and the gateway maps to `127.0.0.1:8443`. Each block carries
@@ -62,9 +65,9 @@ the script exits before installing anything on a bad one.
 | `SHADE_TREE_ENABLE_POW` | `0` | `1` = `HiddenServicePoWDefensesEnabled 1` on every HS block this box publishes; `0` = off. **Default off** because a client tor built without the `pow` module (the Homebrew bottle reports `pow: no`) could not reach a PoW-enabled onion at all (`docs/DEPLOYMENT.md` "PoW capability mismatch"), and the `agent-devops` fleet role defaults `shade_tree_enable_pow: false` for the same reason. Turn it on once every client you serve runs a pow-capable tor. Flip later by editing `/etc/tor/torrc.d-shade-tree` + `systemctl reload tor` (onions/keys unchanged). Also accepts `true/false/yes/no/on/off`. |
 | `SHADE_TREE_HS_MAX_STREAMS` | `32` | Per-rendezvous-circuit stream cap on every onion service this box publishes (`HiddenServiceMaxStreams`, with `HiddenServiceMaxStreamsCloseCircuit 1`). A Proxy uses one stream per tunnel and a node allows 8 tunnels per nullifier, so 32 leaves headroom; a circuit that exceeds it is closed. Integer 1..65535. |
 | `SHADE_TREE_ENABLE_POW` | `0` | `1` = `HiddenServicePoWDefensesEnabled 1` on every HS block this box publishes; `0` = off. **Default off** because a client tor built without the `pow` module (the Homebrew bottle reports `pow: no`) could not reach a PoW-enabled onion at all (`docs/history/DEPLOYMENT.md` "PoW capability mismatch"), and the `agent-devops` fleet role defaults `shade_tree_enable_pow: false` for the same reason. Turn it on once every client you serve runs a pow-capable tor. Flip later by editing `/etc/tor/torrc.d-shade-tree` + `systemctl reload tor` (onions/keys unchanged). Also accepts `true/false/yes/no/on/off`. |
-| `SHADE_TREE_BOOTNODE_ONION` | *(unset = run our own bootnode)* | **Gateway-only mode.** A v3 onion (56 base32 chars, `.onion` optional): the box installs ONLY tor + `shade-tree-gateway` + `shade-tree-heartbeat`, mints only the gateway identity, publishes only the gateway HS, and the heartbeat announces to *that* remote bootnode. Re-running a former bootnode+gateway box in this mode disables and removes its `shade-tree-bootnode` unit. |
-| `SHADE_TREE_BOOTNODE_SIGNER` | *(unset)* | gateway-only only: the remote bootnode's pinned signer pubkey, printed into the client command at the end. The heartbeat itself does not need it. |
-| `SHADE_TREE_GATEWAY_REGION` | *(unset = not advertised)* | `na sa eu af as oc aq unknown`: coarse region bucket the heartbeat advertises in signed caps (`docs/CONFIG.md`). Written as `Environment=` into `shade-tree-heartbeat.service`. |
+| `SHADE_TREE_BOOTNODE_ONION` | *(unset = run our own bootnode)* | **Gateway-only mode.** A v3 onion (56 base32 chars, `.onion` optional): the box installs ONLY tor + `shade-tree-gateway`, mints only the gateway identity, publishes only the gateway HS, and the node announces to *that* remote bootnode. Re-running a former bootnode+gateway box in this mode disables and removes its `shade-tree-bootnode` unit. |
+| `SHADE_TREE_BOOTNODE_SIGNER` | *(unset)* | gateway-only only: the remote bootnode's pinned signer pubkey, printed into the client command at the end. The node itself does not need it. |
+| `SHADE_TREE_GATEWAY_REGION` | *(unset = not advertised)* | `na sa eu af as oc aq unknown`: coarse region bucket the node advertises in signed caps (`docs/CONFIG.md`). Written as `Environment=` into `shade-tree-gateway.service`. |
 | `SHADE_TREE_HELIOS` | `0` | **Opt-in Helios light-client sidecar** (T-DEV-9b, `docs/LIGHT-CLIENT.md`). `1` = download the pinned [a16z/helios](https://github.com/a16z/helios) release (`SHADE_TREE_HELIOS_VERSION`, default `0.11.1`; `helios_linux_{amd64,arm64}.tar.gz`, sha256 verified against the table in `bootstrap.sh` before install), render + start a hardened `shade-tree-helios.service` (loopback `127.0.0.1:SHADE_TREE_HELIOS_PORT`, endpoints via `EXECUTION_RPC`/`CONSENSUS_RPC` env so keys stay out of `ps`, same sandbox as the other units plus `MemoryDenyWriteExecute`), and set `SHADE_TREE_ROOT_PROVIDER=light` + `SHADE_TREE_HELIOS_RPC_URL` + `SHADE_TREE_RPC_URL` + `SHADE_TREE_GROUP_CONTRACT` on `shade-tree-gateway.service` (ordered after the sidecar). The admission root is then anchored to the beacon sync committee — the RPC can withhold but not lie. Re-running with `0` disables and removes the unit. Also accepts `true/false/yes/no/on/off`. |
 | `SHADE_TREE_HELIOS_CONSENSUS_RPC` | *(unset)* | **required with `SHADE_TREE_HELIOS=1`**: beacon API URL serving the light-client endpoints (`/eth/v1/beacon/light_client/…`). Sepolia has no built-in default; `https://lodestar-sepolia.chainsafe.io` worked on 2026-08-17 (publicnode's beacon API did not). |
 | `SHADE_TREE_RPC_URL` | *(unset)* | **required with `SHADE_TREE_HELIOS=1`**: execution JSON-RPC (http(s)/ws(s)); the sidecar's `EXECUTION_RPC` and the gateway's `SHADE_TREE_RPC_URL`. Must serve `eth_getProof` at the **finalized** block (own node / archive-capable provider; public RPCs' ~32-block proof windows are shorter than finality). If the URL carries an API key, prefer a root-only drop-in (`systemctl edit shade-tree-helios` / `shade-tree-gateway`) over the world-readable unit. |
@@ -73,9 +76,9 @@ the script exits before installing anything on a bad one.
 | `SHADE_TREE_HELIOS_PORT` | `8546` | sidecar loopback RPC port (1024..65535); `8545` is left free for a local node. `SHADE_TREE_HELIOS_RPC_URL` on the gateway follows it. |
 | `SHADE_TREE_HELIOS_CHECKPOINT` | *(unset)* | weak-subjectivity checkpoint: a recent **finalized** beacon block root (`0x` + 64 hex, e.g. `GET <beacon>/eth/v1/beacon/headers/finalized` → `data.root`, cross-checked against a second source). Unset = helios `--load-external-fallback` (fetches one from public checkpoint services). Pinning is the more trust-minimized bootstrap. |
 | `SHADE_TREE_HELIOS_VERSION` / `SHADE_TREE_HELIOS_SHA256` | `0.11.1` / *(pinned table)* | release to install; a version without a pinned sha256 in `bootstrap.sh` must pass `SHADE_TREE_HELIOS_SHA256=<sha256 of helios_linux_<arch>.tar.gz>` — there is no unpinned download. Unsupported arch (only amd64/arm64 are pinned) ⇒ the script stops and tells you to install `helios` at `/usr/local/bin/helios` by hand and re-run. |
-| `SHADE_TREE_ADMIT` | `invited` | **Admission policy** (T-FEAT-9, `docs/adr/0008`): `invited[,staked][,paid]`, normalized to the canonical anonymity order (`invited,staked,paid`). Rendered into BOTH `shade-tree-gateway.service` (enforced by `packages/node/gateway/gateway.mjs`: these are the ONLY root sources + slash targets; a named path whose contract is missing fails closed at startup) and `shade-tree-heartbeat.service` (advertised as signed `caps.admits`, so clients route only to gateways that admit their leaf source). Default `invited` alone = the maximum-anonymity mode (members.json only, no contract, no RPC). `staked` needs `SHADE_TREE_GROUP_CONTRACT`, `paid` needs `SHADE_TREE_PAID_ACCESS_CONTRACT`, either needs `SHADE_TREE_RPC_URL` — validated up front and rendered into the gateway unit. `SHADE_TREE_HELIOS=1` requires `staked`; `SHADE_TREE_REGISTRAR=1` requires `paid`. The default golden render gained `Environment=SHADE_TREE_ADMIT=invited` in both units. |
+| `SHADE_TREE_ADMIT` | `invited` | **Admission policy** (T-FEAT-9, `docs/adr/0008`): `invited[,staked][,paid]`, normalized to the canonical anonymity order (`invited,staked,paid`). Rendered into `shade-tree-gateway.service` (enforced by the node: these are the ONLY root sources + slash targets; a named path whose contract is missing fails closed at startup; advertised as signed `caps.admits`, so clients route only to gateways that admit their leaf source). Default `invited` alone = the maximum-anonymity mode (members.json only, no contract, no RPC). `staked` needs `SHADE_TREE_GROUP_CONTRACT`, `paid` needs `SHADE_TREE_PAID_ACCESS_CONTRACT`, either needs `SHADE_TREE_RPC_URL` — validated up front and rendered into the gateway unit. `SHADE_TREE_HELIOS=1` requires `staked`; `SHADE_TREE_REGISTRAR=1` requires `paid`. The default golden render gained `Environment=SHADE_TREE_ADMIT=invited` in both units. |
 | `SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES` | `41943040` | Combined opaque payload relayed in both directions per RLN epoch slot. Same-node retries share the allowance; `0` explicitly disables the ceiling. Validated and rendered into `shade-tree-gateway.service`. |
-| `SHADE_TREE_ZK_ARTIFACTS` | *(unset = built-in development key)* | Explicit accepted verifier set as `<artifact-id>=<verification-key-path>[,...]`. Paths are absolute or relative to `SHADE_TREE_DIR`. The exact setting is rendered into both the gateway (verification) and heartbeat (signed `caps.artifacts` advertisement), and runtime startup derives each id from the vkey bytes before accepting it. The v4 Ansible preflight always sets this from the reviewed deployment record; a public rollout must not rely on the unset development fallback. |
+| `SHADE_TREE_ZK_ARTIFACTS` | *(unset = built-in development key)* | Explicit accepted verifier set as `<artifact-id>=<verification-key-path>[,...]`. Paths are absolute or relative to `SHADE_TREE_DIR`. The exact setting is rendered into the node unit (verified, and advertised as signed `caps.artifacts`).artifacts` advertisement), and runtime startup derives each id from the vkey bytes before accepting it. The v4 Ansible preflight always sets this from the reviewed deployment record; a public rollout must not rely on the unset development fallback. |
 | `SHADE_TREE_ZK_ARTIFACT_LEGACY` | *(runtime default)* | Optional bounded artifact id implied by old envelopes that omit the artifact field during a dual-key window. Requires an explicit `SHADE_TREE_ZK_ARTIFACTS` set and is rendered only into the gateway verifier. |
 | `SHADE_TREE_MEMBERS_FILE` | *(required in live mode when `invited` is admitted)* | Absolute path to the operator-owned v2 member set. The bootstrap validates it, installs a root-owned, node-readable copy at `/etc/shade-tree/members.json`, and points the node there. The node cannot rewrite its own admission root. The committed `group/members.json` is demo data and is never selected implicitly by a live bootstrap. |
 | `SHADE_TREE_FLEET_TALLY_PEERS` | *(unset = off)* | Optional comma-separated tally peers as `<56-char-v3-onion>.onion:8879`. The bootstrap accepts onion peers only, routes pushes through local Tor, and publishes this node's authenticated tally listener on the same virtual port. List the other nodes, not this node. Re-run without this setting to disable tally, remove its stored token, remove the onion port mapping, and restart the gateway so the listener stops. |
@@ -92,8 +95,8 @@ the script exits before installing anything on a bad one.
 | `SHADE_TREE_FROM_BLOCK` / `SHADE_TREE_FROM_BLOCKS` | *(unset = not rendered)* | `eth_getLogs` start block(s) for the gateway's on-chain root scans (`<block>` / `<0xaddr>=<block>,…`), written as `Environment=` into `shade-tree-gateway.service` when given. Usually unnecessary: the gateway pages the scan and starts at each contract's deploy block from the network record (`docs/OPERATOR.md` "Public RPC log-range caps"). |
 | `SHADE_TREE_RENDER_ONLY` | *(unset)* | `<dir>`: **render mode** — write the torrc include + units under `<dir>/etc/…` with placeholder onions and exit; no root, no apt, no tor/node install, no clone, no `systemctl`. `bootstrap.sh --render <dir>` is the same. This is what `bootstrap.selftest.mjs` drives. |
 
-`SHADE_TREE_GW_OPERATOR_KEY` (staked bootnodes) is a secret and deliberately **not** a tunable: add it
-to the heartbeat unit by hand after staking (see "Turn on staking"). Likewise
+`SHADE_TREE_GW_OPERATOR_KEY` (staked bootnodes) is a secret and deliberately **not** a tunable: install
+it as a systemd credential after staking (see "Turn on staking"). Likewise
 `SHADE_TREE_REGISTRAR_KEY` (the 402 registrar's operator key): after `SHADE_TREE_REGISTRAR=1`, install it as a
 0600 drop-in via stdin and start the unit —
 
@@ -112,7 +115,7 @@ curl --socks5-hostname 127.0.0.1:9050 "http://<bootnode-onion>:8878/pay/quote?li
 ```bash
 SHADE_TREE_BOOTNODE_ONION=<bootnode>.onion SHADE_TREE_BOOTNODE_SIGNER=<pinned-signer> SHADE_TREE_MEMBERS_FILE=/root/operator-members.json \
   bash packages/node/bootnode/deploy/bootstrap.sh
-journalctl -u shade-tree-heartbeat -f          # 'announced (...)' once the descriptors propagate
+journalctl -u shade-tree-gateway -f            # 'heartbeat accepted' once the descriptors propagate
 ```
 
 Same idempotence rules: re-running reuses the gateway identity and units.
@@ -124,7 +127,7 @@ access on its own onion, with its own `PaidAccessSet`:
 ```bash
 SHADE_TREE_BOOTNODE_ONION=<bootnode>.onion SHADE_TREE_BOOTNODE_SIGNER=<pinned-signer> SHADE_TREE_MEMBERS_FILE=/root/operator-members.json SHADE_TREE_ADMIT=invited,paid SHADE_TREE_REGISTRAR=1 SHADE_TREE_PAY_PROTOCOLS=x402 SHADE_TREE_PAID_ACCESS_CONTRACT=0x… SHADE_TREE_PAY_ASSET=0x… SHADE_TREE_PAY_PRICES=8=100000,32=400000 SHADE_TREE_RPC_URL=https://…   bash packages/node/bootnode/deploy/bootstrap.sh
 # -> torrc: HiddenServicePort 8878 inside the GATEWAY HS block; shade-tree-registrar.service on this box;
-#    the heartbeat advertises admits=[invited,paid] + pay{protocols:[x402],…} as signed caps
+#    the node advertises admits=[invited,paid] + pay{protocols:[x402],…} as signed caps
 ```
 
 ### Render mode (review / tests, no root)
@@ -135,7 +138,7 @@ SHADE_TREE_ENABLE_POW=1 SHADE_TREE_BOOTNODE_ONION=<onion> bash packages/node/boo
 SHADE_TREE_HELIOS=1 SHADE_TREE_ADMIT=invited,staked SHADE_TREE_HELIOS_CONSENSUS_RPC=https://… SHADE_TREE_RPC_URL=https://… SHADE_TREE_GROUP_CONTRACT=0x… \
   bash packages/node/bootnode/deploy/bootstrap.sh --render /tmp/r3     # + shade-tree-helios.service, gateway unit pointed at it
 SHADE_TREE_ADMIT=invited,staked,paid SHADE_TREE_GROUP_CONTRACT=0x… SHADE_TREE_PAID_ACCESS_CONTRACT=0x… SHADE_TREE_RPC_URL=https://… \
-  bash packages/node/bootnode/deploy/bootstrap.sh --render /tmp/r4     # gateway + heartbeat units carry SHADE_TREE_ADMIT; gateway unit carries the contracts + RPC
+  bash packages/node/bootnode/deploy/bootstrap.sh --render /tmp/r4     # the gateway unit carries SHADE_TREE_ADMIT, the contracts + RPC
 node packages/node/bootnode/deploy/bootstrap.selftest.mjs   # golden default + PoW on/off + gateway-only + helios + registrar + admission assertions
 ```
 
@@ -145,18 +148,19 @@ and reviewed as a diff.
 
 ## Systemd hardening
 
-All units (the optional `shade-tree-helios` too, which additionally sets `MemoryDenyWriteExecute=true`
-since helios is a Rust binary with no JIT) run under a sandboxed `[Service]` section: `NoNewPrivileges`,
+All units run under a sandboxed `[Service]` section: `NoNewPrivileges`,
 `ProtectSystem=strict` (with `ReadWritePaths=/opt/shade-tree/deploy-state` so the minted signer key,
 persistence store, and onion identities stay writable), `ProtectHome`, `PrivateTmp`,
 `ProtectKernel{Tunables,Modules}`, `ProtectControlGroups`,
-`RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX` (Node + the Tor SOCKS socket),
+`RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX` (the Tor SOCKS socket),
 `RestrictNamespaces`, `LockPersonality`, `SystemCallFilter=@system-service` (a vetted allowlist
 that excludes `@privileged`/`@mount`/`@module`/etc.), an empty `CapabilityBoundingSet=` (all caps
 dropped — the services bind only loopback high ports), and role-specific CPU, memory, swap and
 task caps (`MemoryMax=256M`–`512M`, `MemorySwapMax=0`, `TasksMax=96`–`128`). `Nice=5` and
 `CPUWeight=25` keep these research-preview services subordinate to deadline-sensitive validator
-or local inference work. `MemoryDenyWriteExecute` is intentionally omitted because it breaks V8's JIT.
+or local inference work. The Rust units (`shade-tree-bootnode`, `shade-tree-gateway`, the optional
+`shade-tree-helios`) also set `MemoryDenyWriteExecute=true`; the Node registrar omits it because
+it breaks V8's JIT.
 
 For a host that already runs a validator or GPU workload, prefer the Compose deployment above:
 it is easier to keep lifecycle and resources separate. This bootstrap installs host packages and
@@ -165,8 +169,8 @@ keys, engine JWTs, Docker socket access, model credentials, or GPU devices; neve
 Shade Tree unit. A gateway also shares the host's outbound bandwidth and public-IP reputation, so
 move it off a validator host if duties, peer quality, or workload latency show pressure.
 
-Verify after deploy with e.g. `systemd-analyze security shade-tree-bootnode` (same for `shade-tree-gateway`
-and `shade-tree-heartbeat`) — expect an "OK"/hardened exposure score around ~2.x, down from the ~9.6
+Verify after deploy with e.g. `systemd-analyze security shade-tree-bootnode` (same for `shade-tree-gateway`)
+— expect an "OK"/hardened exposure score around ~2.x, down from the ~9.6
 "UNSAFE" default of an unsandboxed unit.
 
 ## Firewall
@@ -184,8 +188,9 @@ loopback backends (8877 / 8443) to the internet.
    `SHADE_TREE_BOOTNODE_ADMISSION=stake`.
 2. Stake the gateway operator: `shade-tree register-gateway` with the operator key funded on that
    chain.
-3. Add `SHADE_TREE_GW_OPERATOR_KEY=<operator-key>` to the `shade-tree-heartbeat` unit so the heartbeat
-   signs the durable onion↔operator authorization.
+3. Install the operator key as the systemd credential `/etc/credstore/SHADE_TREE_GW_OPERATOR_KEY`
+   (root, 0600) and restart `shade-tree-gateway`, so the node signs the durable onion↔operator
+   authorization.
 
 See [docs/BOOTNODE.md](../../../../docs/BOOTNODE.md) and [docs/CONFIG.md](../../../../docs/CONFIG.md).
 
@@ -194,8 +199,9 @@ See [docs/BOOTNODE.md](../../../../docs/BOOTNODE.md) and [docs/CONFIG.md](../../
 | file | purpose |
 |---|---|
 | `bootstrap.sh` | the one-command bring-up (idempotent); `--render <dir>` = write configs only |
+| `binaries.sh` | sourced by `bootstrap.sh` and `rolling-update.sh`: installs the sha256-pinned `shadenet-node` + `shadenet-elder` release binaries |
 | `bootstrap.selftest.mjs` | offline render assertions: golden default, `SHADE_TREE_ENABLE_POW` on/off, gateway-only mode, `SHADE_TREE_HELIOS` sidecar render, input validation |
-| `golden/default/` | the frozen default render (torrc include + 3 units) |
+| `golden/default/` | the frozen default render (torrc include + 2 units) |
 | `e2e-container.sh` | systemd-in-container e2e (`E2E_MODE=gateway-only` for the remote-bootnode mode) |
 
 Systemd units and the `torrc` include are generated by `bootstrap.sh` (self-contained; no

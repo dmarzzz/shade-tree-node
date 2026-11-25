@@ -4,6 +4,34 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### The JavaScript node and Elder Tree are gone (ADR 0014, ADR 0015)
+
+- `packages/node/gateway/`, the JavaScript Elder (`bootnode/server.mjs`, `federation.mjs`,
+  `incidents.mjs`, `heartbeat.mjs`), the JavaScript node supervisor (`bin/shadenet-node.mjs`,
+  `lib/node-config.mjs`, `lib/node-supervisor.mjs`) and the suites that drove them are deleted.
+  `shadenet-node` and `shadenet-elder` (0.8.0) are the node and the Elder. What the clients and
+  the tooling still need stays: `bootnode/announce.mjs`, `bootnode/fetch.mjs`, `bootnode/keygen.mjs`
+  (`shade-tree keygen`, `join`), the incident feed verifier (now `lib/incidents.mjs`) and the
+  registrar's token bucket and graceful shutdown (now `lib/service.mjs`). The conformance harness
+  keeps the JavaScript client, announce and verifiers against the Rust binaries; the Elder leg
+  federates two Rust Elders.
+- The deploy runs the binaries. `bootstrap.sh` installs the `shadenet-node` and `shadenet-elder`
+  release assets of the checkout's version, verified against the sha256 pinned in the new
+  `packages/node/bootnode/deploy/binaries.sh` (another release brings `SHADENET_VERSION` +
+  `SHADENET_NODE_SHA256` + `SHADENET_ELDER_SHA256`; `SHADENET_NODE_BIN` + `SHADENET_ELDER_BIN`
+  install local builds, as the systemd-container e2e now does), and renders two units:
+  `shade-tree-bootnode` (`shadenet-elder run`, `SHADENET_STATE` under `deploy-state`) and
+  `shade-tree-gateway` (`shadenet-node run`, which announces itself: the `shade-tree-heartbeat`
+  unit and its `SHADE_TREE_HEARTBEAT_METRICS_PORT` are gone, the node's `/metrics` carries the
+  heartbeat series). Both Rust units set `MemoryDenyWriteExecute`. The onion identities are minted
+  by `shadenet-elder identity`. A re-run removes a heartbeat unit a previous bootstrap wrote;
+  `rolling-update.sh` reinstalls the binaries for the new ref and restarts the two units; the
+  Ansible role, the alert rules and the compose scrape config follow (the `HeartbeatDown` alert
+  goes with the unit; `HeartbeatStale` and `HeartbeatNeverAccepted` read the gateway job). Node
+  stays installed for the operator tooling and the 402 registrar until those are ported.
+- Release and roll: after the release workflow publishes the two binaries, their sha256 per target
+  go into `binaries.sh` and the record's service commit points at that commit (runbook step 4).
+
 ## 0.8.0 — the node and the Elder Tree are Rust binaries
 
 `shadenet-node` and `shadenet-elder` replace the JavaScript node, heartbeat and Elder Tree (ADR 0014, ADR 0015): one Rust process each, the same wire, knobs, files and metrics, packaged for every release target and in the node image. Also: a node at home (`SHADENET_PROFILE=home`, the bandwidth cap, the canary and the deny file), `shadenet init --dir` writes a config that loads, and the test runner reports skipped suites.

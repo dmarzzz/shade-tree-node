@@ -130,7 +130,7 @@ async function main() {
 
   h("3. gateway share-collecting spent-set: replay vs over-spend");
   // The gateway keys shares by `nullifier` alone (there is no public slot). Model it
-  // exactly as gateway.mjs does.
+  // exactly as the node does.
   const spent = new Map();      // nullifier -> firstShare
   const seenSignal = new Set(); // (nullifier + share.x) for replay dedup
   let slashed = null;

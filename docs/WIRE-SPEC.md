@@ -11,7 +11,7 @@ Golden fixtures: [`testdata/vectors.json`](../testdata/vectors.json). See [Confo
 | Tag | Value | Meaning | Source |
 | --- | --- | --- | --- |
 | `ANNOUNCE_VERSION` | `1` | announce record `v` field | `packages/node/bootnode/announce.mjs:34` |
-| directory `version` | `1` | signed-directory `version` field | `packages/node/bootnode/server.mjs:127` |
+| directory `version` | `1` | signed-directory `version` field | `crates/shadenet-elder/src/canopy.rs` |
 | envelope `v` | `4` | egress-envelope `v` field | `packages/node/client/shade-tree-client.mjs` `buildEnvelope` |
 | signal prefix | `shade-tree:v4` | tunnel-signal line 1 | `packages/node/lib/rln.mjs` `requestSignal` |
 | onion | v3 | Tor onion address version byte `0x03` | `packages/node/lib/directory.mjs:104` |
@@ -150,7 +150,7 @@ then confirmed via `GatewayRegistry.isStaked(operator)` (`packages/node/lib/gate
 - Nonce replay (`:97`,`:124`): the replay key is the string `` `${onion}:${nonce}` ``. If a
   `seenNonce` guard is supplied and already `has` the key, reject; otherwise `add` it only on
   full success. The bootnode's guard is a bounded `Map` swept on the TTL
-  (`packages/node/bootnode/server.mjs:59` `makeNonceGuard`).
+  (`crates/shadenet-elder/src/registry.rs`, the nonce guard).
 
 ### 3.4 `verifyAnnounce` reason codes: `packages/node/bootnode/announce.mjs:80`
 
@@ -177,7 +177,7 @@ present. If `isStaked` is omitted, stake is not checked and `staked` stays `fals
 
 ## 4. Signed directory
 
-Built by `packages/node/bootnode/server.mjs:118` `directory()` -> `signDirectory` (`packages/node/lib/directory.mjs:143`);
+Built by `crates/shadenet-elder/src/canopy.rs` -> `signDirectory` (`packages/node/lib/directory.mjs:143`);
 verified by `:152` `verifyDirectory`.
 
 ### 4.1 Shape
@@ -209,16 +209,16 @@ verified by `:152` `verifyDirectory`.
 and `capsSig` is re-verified per entry against the entry's OWN onion key (`bad-caps-sig:<onion>`),
 so neither the bootnode nor the directory signer can alter a gateway's advertised policy/offer.
 The bootnode stores the verified caps + capsSig from the announce and emits them unchanged
-(`packages/node/bootnode/server.mjs directory()`); an entry announced with caps but no standalone `capsSig`
+(`crates/shadenet-elder/src/canopy.rs`); an entry announced with caps but no standalone `capsSig`
 is listed cap-free. The delta protocol (`/directory/delta`) re-ships an entry whose body changed
 in place (e.g. its `admits`) in `added`.
-`health` is `"up"` for every live entry the bootnode emits (`packages/node/bootnode/server.mjs:123`);
+`health` is `"up"` for every live entry the bootnode emits (`crates/shadenet-elder/src/canopy.rs`);
 clients still probe and fail over (`packages/node/lib/directory.mjs:264` `reportHealth`).
 
 ### 4.2 Pinned-signer model
 
 The client pins ONE signer pubkey (`SHADE_TREE_DIR_SIGNER`, printed at bootnode startup,
-`packages/node/bootnode/server.mjs:197`). `verifyDirectory(dir, pinnedSignerHex)`:
+`crates/shadenet-elder/src/server.rs`). `verifyDirectory(dir, pinnedSignerHex)`:
 
 1. `dir.signature` must exist.
 2. If `dir.signer` is present, it must equal `pinnedSignerHex` (case-insensitive).
@@ -323,7 +323,7 @@ few padded announces could push a directory past a client's 2 MiB response limit
 | --- | --- | --- |
 | `MAX_ENTRY_AGE` | `900` seconds | an entry is fresh while `now < announce.ts + MAX_ENTRY_AGE` (the Elder's default TTL) |
 | `FUTURE_SKEW` | `600` seconds | an entry is refused when `announce.ts > now + FUTURE_SKEW` |
-| `MAX_ENTRY_WEIGHT` | `1000` | the weight clamp the Elder already applies (`packages/node/bootnode/server.mjs` `MAX_WEIGHT`) |
+| `MAX_ENTRY_WEIGHT` | `1000` | the weight clamp the Elder already applies (`crates/shadenet-elder/src/registry.rs` `MAX_WEIGHT`) |
 | `MAX_LISTED_ANNOUNCE_BYTES` | `4096` | the largest announce an Elder copies into an entry |
 
 `MAX_ENTRY_AGE` is a protocol constant, not the Elder's `--ttl`: an Elder configured with a
@@ -387,8 +387,8 @@ rows 3 and 4).
 
 ## 5. Bootnode HTTP API
 
-Server: `packages/node/bootnode/server.mjs:151` `makeServer`; the Rust Elder
-(`crates/shadenet-elder/src/server.rs`, ADR 0015) serves the same routes, bodies and status codes.
+Server: `crates/shadenet-elder/src/server.rs` (ADR 0015; the routes, bodies and status codes
+of the JavaScript Elder it replaced).
 All responses `content-type: application/json`. Listens on loopback (`127.0.0.1:SHADE_TREE_BOOTNODE_PORT`, default
 `8877`) behind its own onion service.
 
@@ -444,7 +444,7 @@ events and the public canopy animation are interface behavior, not additional wi
 
 ### 5.3 Admission modes + DoS caps
 
-Registry: `packages/node/bootnode/server.mjs:76` `makeRegistry`.
+Registry: `crates/shadenet-elder/src/registry.rs`.
 
 | Control | Default | Env | Effect |
 | --- | --- | --- | --- |

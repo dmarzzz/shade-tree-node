@@ -14,7 +14,7 @@ The JavaScript client and node each declare one inclusive range:
 | Side | Source of truth | Current range |
 | --- | --- | --- |
 | Client | `CLIENT_PROTO_MIN`, `CLIENT_PROTO_MAX` in `packages/node/client/shade-tree-client.mjs` | `4..4` |
-| Node | `PROTO_MIN`, `PROTO_MAX` in `packages/node/gateway/gateway.mjs` | `4..4` |
+| Node | `PROTO_MIN`, `PROTO_MAX` in `crates/shadenet-proto/src/lib.rs` | `4..4` |
 
 Signed node capabilities advertise `caps.proto = {min,max}`. The client selects the
 highest overlapping version before it proves or dials. With no advertisement it tries

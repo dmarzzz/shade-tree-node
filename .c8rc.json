@@ -5,7 +5,6 @@
     "packages/node/bootnode/**",
     "packages/node/client/**",
     "group/**",
-    "packages/node/gateway/**",
     "packages/node/bin/**"
   ],
   "exclude": [
@@ -16,9 +15,7 @@
     "node_modules/**",
     "experiments/**",
     "demo/**",
-    "out/**",
-    "packages/node/lib/entry-shim.mjs",
-    "packages/node/lib/node-supervisor.mjs"
+    "out/**"
   ],
   "reporter": [
     "text",

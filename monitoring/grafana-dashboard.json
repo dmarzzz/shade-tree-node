@@ -28,7 +28,7 @@
       }
     ]
   },
-  "description": "Shade Tree: bootnode discovery + gateway fleet health. Every panel is built only on metrics emitted by packages/node/lib/metrics.mjs and registered in packages/node/bootnode/server.mjs and packages/node/gateway/gateway.mjs (T-MON-2).",
+  "description": "Shade Tree: bootnode discovery + gateway fleet health. Every panel is built only on metrics the Rust Elder (crates/shadenet-elder) and node (crates/shadenet-node) register on the shared registry (T-MON-2).",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -422,7 +422,7 @@
     {
       "type": "timeseries",
       "title": "Gateway tunnel rate by result / reason",
-      "description": "rate(shade_tree_gateway_tunnels_total[5m]) split by result (pass|drop) and reason. Drop reasons come from gateway.mjs (no-share, rate-slashed, bad-target, over-spend-slashed, and verifyEnvelope reasons e.g. root-not-recent). Gate DROPs are correct rejections, not egress-success failures (SLO 2.1).",
+      "description": "rate(shade_tree_gateway_tunnels_total[5m]) split by result (pass|drop) and reason. Drop reasons come from the node (no-share, rate-slashed, bad-target, over-spend-slashed, and verifyEnvelope reasons e.g. root-not-recent). Gate DROPs are correct rejections, not egress-success failures (SLO 2.1).",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "id": 9,

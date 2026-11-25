@@ -32,7 +32,7 @@ apt's output is in `docker logs`, which the script prints if systemd does not co
 systemd — so every `systemctl` call fails and the script (which runs `set -euo
 pipefail`) aborts. Two ways out:
 
-1. **Adapt the check** — skip systemd, launch `node packages/node/bootnode/server.mjs` etc. by
+1. **Adapt the check** — skip systemd, launch `shadenet-elder run` etc. by
    hand, assert they bind. This is easy but it would test *a paraphrase* of
    `bootstrap.sh`, not `bootstrap.sh` itself: the units, the sandbox directives, the
    Tor include, the enable/restart ordering — none of it would be exercised.
@@ -86,13 +86,18 @@ and the bootnode + gateway **actually binding and serving on loopback**.
 - **Gateway-only mode (`E2E_MODE=gateway-only`, a CI matrix entry).** Hands `bootstrap.sh`
   a well-formed but unreachable `SHADE_TREE_BOOTNODE_ONION` and asserts: tor + `shade-tree-gateway`
   active, **no** `shade-tree-bootnode` unit / bootnode HS dir / bootnode identity, exactly one
-  `HiddenServiceDir` in the torrc include, and the heartbeat unit pointing at the remote
-  onion. The heartbeat's actual announce to a *real* remote bootnode is not exercised
+  `HiddenServiceDir` in the torrc include, and the gateway unit announcing to the remote
+  onion. The node's actual announce to a *real* remote bootnode is not exercised
   (there is none in the container) — that is the same over-Tor caveat as above, and the
-  announce path itself is covered by the bootnode/heartbeat selftests.
-- **`shade-tree-heartbeat`** is installed by `bootstrap.sh` but intentionally **not**
-  asserted active: it dials the bootnode *over the onion via Tor*, so until a
-  descriptor propagates it restart-loops — the same best-effort caveat as above.
+  announce path itself is covered by the Elder conformance harness
+  (`crates/shadenet-rln/interop/elder-run.sh`).
+- **The node's heartbeat** dials the bootnode *over the onion via Tor*, so until a
+  descriptor propagates its announces fail (logged, retried) — the same best-effort
+  caveat as above; the unit itself is asserted active.
+- **The binaries come from this checkout.** The runner builds `shadenet-node` and
+  `shadenet-elder` (release profile) and hands them to `bootstrap.sh` as
+  `SHADENET_NODE_BIN` / `SHADENET_ELDER_BIN` instead of a release download, so a branch is
+  tested with its own code; the sha256-pinned download path is what a droplet takes.
 - **Container ≠ droplet.** systemd runs `--privileged` (seccomp off), so the seccomp
   side of `SystemCallFilter` is not enforced exactly as on a locked-down droplet; and
   `--cgroupns=host` is a container concession. The unit *definitions* and startup are

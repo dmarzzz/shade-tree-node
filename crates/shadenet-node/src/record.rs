@@ -477,11 +477,6 @@ pub(crate) fn derive_env(
     );
     put(
         &mut out,
-        "SHADE_TREE_HEARTBEAT_METRICS_PORT",
-        metrics.map_or("0".to_string(), |p| (u32::from(p) + 2).to_string()),
-    );
-    put(
-        &mut out,
         "SHADE_TREE_GATEWAY_PORT",
         GATEWAY_PORT.to_string(),
     );
@@ -675,7 +670,6 @@ mod tests {
         );
         assert_eq!(env["SHADE_TREE_TIERS"], "8");
         assert_eq!(env["SHADE_TREE_METRICS_PORT"], "9101");
-        assert_eq!(env["SHADE_TREE_HEARTBEAT_METRICS_PORT"], "9103");
         assert_eq!(
             env["SHADE_TREE_GW_IDENTITY"],
             "/state/hs-gateway/identity.local.json"

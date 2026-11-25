@@ -415,8 +415,7 @@
     path: "{{ item }}"
   loop: >-
     {{ ['/etc/tor/torrc.d-shade-tree']
-       + (['/etc/systemd/system/shade-tree-gateway.service',
-           '/etc/systemd/system/shade-tree-heartbeat.service'] if shade_tree_runs_node else [])
+       + (['/etc/systemd/system/shade-tree-gateway.service'] if shade_tree_runs_node else [])
        + (['/etc/systemd/system/shade-tree-bootnode.service'] if shade_tree_runs_elder else []) }}
   register: shade_tree_rendered_files
 
@@ -467,7 +466,6 @@
     SHADE_TREE_FLEET_TALLY_PORT: "{{ shade_tree_fleet_tally_port | string }}"
     SHADE_TREE_ELDER_METRICS_PORT: "{{ shade_tree_elder_metrics_port | string }}"
     SHADE_TREE_NODE_METRICS_PORT: "{{ shade_tree_node_metrics_port | string }}"
-    SHADE_TREE_HEARTBEAT_METRICS_PORT: "{{ shade_tree_heartbeat_metrics_port | string }}"
   when: >-
     shade_tree_force_reconcile | bool
     or not shade_tree_reconcile_marker.stat.exists
@@ -525,7 +523,7 @@
     - shade_tree_runs_node | bool
     - shade_tree_deployment.elder.admission == 'stake'
   no_log: true
-  notify: Restart Shade Tree heartbeat
+  notify: Restart Shade Tree node
 
 - name: Remove role secrets that no longer apply
   ansible.builtin.file:
@@ -560,17 +558,16 @@
     - not shade_tree_onchain_admission | bool
   notify: Restart Shade Tree node
 
-- name: Create Elder and heartbeat drop-in directories
+- name: Create the Elder drop-in directory
   ansible.builtin.file:
-    path: "/etc/systemd/system/{{ item }}.service.d"
+    path: /etc/systemd/system/shade-tree-bootnode.service.d
     state: directory
     owner: root
     group: root
     mode: "0755"
-  loop: >-
-    {{ (['shade-tree-bootnode'] if shade_tree_runs_elder else [])
-       + (['shade-tree-heartbeat'] if shade_tree_runs_node else []) }}
-  when: shade_tree_deployment.elder.admission == 'stake'
+  when:
+    - shade_tree_runs_elder | bool
+    - shade_tree_deployment.elder.admission == 'stake'
 
 - name: Install stake-gated Elder configuration
   ansible.builtin.template:
@@ -585,12 +582,11 @@
   no_log: true
   notify: Restart Elder Tree
 
-- name: Remove the old heartbeat operator key drop-in (the key is a credential now)
+- name: Remove the old heartbeat drop-ins (the heartbeat runs inside the node)
   ansible.builtin.file:
-    path: /etc/systemd/system/shade-tree-heartbeat.service.d/v4-operator.conf
+    path: /etc/systemd/system/shade-tree-heartbeat.service.d
     state: absent
   when: shade_tree_runs_node | bool
-  notify: Restart Shade Tree heartbeat
 
 - name: Remove stale Elder stake configuration
   ansible.builtin.file:
@@ -640,7 +636,7 @@
     state: started
     daemon_reload: true
   loop: >-
-    {{ (['shade-tree-gateway', 'shade-tree-heartbeat'] if shade_tree_runs_node else [])
+    {{ (['shade-tree-gateway'] if shade_tree_runs_node else [])
        + (['shade-tree-bootnode'] if shade_tree_runs_elder else []) }}
 
 - name: Verify the checked-out commit
@@ -661,7 +657,7 @@
       - is-active
       - "{{ item }}"
   loop: >-
-    {{ (['shade-tree-gateway', 'shade-tree-heartbeat'] if shade_tree_runs_node else [])
+    {{ (['shade-tree-gateway'] if shade_tree_runs_node else [])
        + (['shade-tree-bootnode'] if shade_tree_runs_elder else []) }}
   changed_when: false
 
@@ -669,12 +665,11 @@
   ansible.builtin.shell:
     cmd: |
       set -eu
-      for unit in{% if shade_tree_runs_node %} shade-tree-gateway shade-tree-heartbeat{% endif %}{% if shade_tree_runs_elder %} shade-tree-bootnode{% endif %}; do
+      for unit in{% if shade_tree_runs_node %} shade-tree-gateway{% endif %}{% if shade_tree_runs_elder %} shade-tree-bootnode{% endif %}; do
         systemctl show "$unit" --property=Environment --value | grep -q 'SHADE_TREE_LOG_FORMAT=json'
       done
       {% if shade_tree_runs_node %}
       systemctl show shade-tree-gateway --property=Environment --value | grep -Fq {{ ('SHADE_TREE_ZK_ARTIFACTS=' ~ (shade_tree_artifact_specs | join(','))) | quote }}
-      systemctl show shade-tree-heartbeat --property=Environment --value | grep -Fq {{ ('SHADE_TREE_ZK_ARTIFACTS=' ~ (shade_tree_artifact_specs | join(','))) | quote }}
       {% endif %}
   args:
     executable: /bin/bash
@@ -692,11 +687,6 @@
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FROM_BLOCK=' ~ (([shade_tree_staked_deploy_block | int] + (shade_tree_extra_sets | map(attribute='deployBlock') | map('int') | list)) | min | string)) | quote }}
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FLEET_TALLY_PEERS=' ~ shade_tree_fleet_tally_peers) | quote }}
       printf '%s\n' "$environment" | grep -Fq {{ ('SHADE_TREE_FLEET_TALLY_LISTEN=127.0.0.1:' ~ (shade_tree_fleet_tally_port | string)) | quote }}
-      heartbeat_environment="$(systemctl show shade-tree-heartbeat --property=Environment --value)"
-      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_EPOCH_SECONDS=' ~ (shade_tree_epoch_seconds | string)) | quote }}
-      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_TIERS=' ~ shade_tree_rate_tiers) | quote }}
-      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_ROOT_FRESHNESS_SECONDS=' ~ (shade_tree_root_freshness_seconds | string)) | quote }}
-      printf '%s\n' "$heartbeat_environment" | grep -Fq {{ ('SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=' ~ (shade_tree_policy_payload_bytes | string)) | quote }}
       test "$(stat -c '%a:%U:%G' /etc/shade-tree/fleet-tally.env)" = '600:root:root'
       grep -q '^SHADE_TREE_FLEET_TALLY_TOKEN=[-A-Za-z0-9._~]\{32,128\}$' /etc/shade-tree/fleet-tally.env
       grep -Fq {{ ('HiddenServicePort ' ~ (shade_tree_fleet_tally_port | string) ~ ' 127.0.0.1:' ~ (shade_tree_fleet_tally_port | string)) | quote }} /etc/tor/torrc.d-shade-tree
@@ -717,7 +707,7 @@
   ansible.builtin.shell:
     cmd: |
       set -eu
-      ports='{{ shade_tree_bootnode_port }}|{{ shade_tree_gateway_port }}|{{ shade_tree_elder_metrics_port }}|{{ shade_tree_node_metrics_port }}|{{ shade_tree_heartbeat_metrics_port }}{% if shade_tree_runs_node and shade_tree_public_stake_profile %}|{{ shade_tree_fleet_tally_port }}{% endif %}'
+      ports='{{ shade_tree_bootnode_port }}|{{ shade_tree_gateway_port }}|{{ shade_tree_elder_metrics_port }}|{{ shade_tree_node_metrics_port }}{% if shade_tree_runs_node and shade_tree_public_stake_profile %}|{{ shade_tree_fleet_tally_port }}{% endif %}'
       if ss -H -lnt | awk -v ports="$ports" '$4 ~ (":" ports "$") && $4 !~ /^127[.]0[.]0[.]1:/ && $4 !~ /^\[::1\]:/ { print; bad=1 } END { exit bad ? 1 : 0 }'; then
         exit 0
       fi
@@ -738,15 +728,13 @@
            {'path': '/var/lib/tor/shade-tree-bootnode/hs_ed25519_secret_key', 'onion': shade_tree_deployment.elder.onion}
          ] if shade_tree_runs_elder else []) }}
 
-# bootstrap.sh installs Node privately (/opt/node-v<version>) and the units run it by absolute path;
-# a fresh host has no `node` on PATH. Use the binary the services run.
-- name: Locate the Node binary the services run
+# bootstrap.sh installs Node privately (/opt/node-v<version>) for the operator tooling; a fresh
+# host has no `node` on PATH. Use the newest one it installed.
+- name: Locate the Node binary bootstrap installed
   ansible.builtin.shell: |
     set -o pipefail
-    for unit in shade-tree-gateway shade-tree-heartbeat shade-tree-bootnode; do
-      n="$(systemctl show -p ExecStart --value "$unit" 2>/dev/null | grep -oE '/opt/node-v[0-9.]+/bin/node' | head -n 1 || true)"
-      if [ -n "$n" ] && [ -x "$n" ]; then echo "$n"; exit 0; fi
-    done
+    n="$(ls -d /opt/node-v*/bin/node 2>/dev/null | sort -V | tail -n 1 || true)"
+    if [ -n "$n" ] && [ -x "$n" ]; then echo "$n"; exit 0; fi
     command -v node
   args:
     executable: /bin/bash
@@ -813,7 +801,7 @@
     cmd: |
       set -eu
       since=0
-      for unit in tor@default.service{% if shade_tree_runs_node %} shade-tree-gateway.service shade-tree-heartbeat.service{% endif %}{% if shade_tree_runs_elder %} shade-tree-bootnode.service{% endif %}; do
+      for unit in tor@default.service{% if shade_tree_runs_node %} shade-tree-gateway.service{% endif %}{% if shade_tree_runs_elder %} shade-tree-bootnode.service{% endif %}; do
         entered="$(systemctl show "$unit" --property=ActiveEnterTimestamp --value)"
         test -n "$entered" || continue
         at="$(date -d "$entered" +%s)"
@@ -823,7 +811,7 @@
         --tor-port {{ shade_tree_tor_socks_port | int }} \
         --timeout {{ shade_tree_ready_timeout_seconds | int }} \
         --since "$since" \
-        {% for onion in shade_tree_remote_identity_checks | map(attribute='onion') | unique %}--onion {{ onion | quote }} {% endfor %}{% if shade_tree_runs_node %}--heartbeat-metrics {{ ('http://127.0.0.1:' ~ (shade_tree_heartbeat_metrics_port | string) ~ '/metrics') | quote }} --elders {{ shade_tree_ready_elders | quote }}{% endif %}
+        {% for onion in shade_tree_remote_identity_checks | map(attribute='onion') | unique %}--onion {{ onion | quote }} {% endfor %}{% if shade_tree_runs_node %}--heartbeat-metrics {{ ('http://127.0.0.1:' ~ (shade_tree_node_metrics_port | string) ~ '/metrics') | quote }} --elders {{ shade_tree_ready_elders | quote }}{% endif %}
 
   args:
     executable: /bin/bash

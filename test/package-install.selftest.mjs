@@ -38,7 +38,6 @@ try {
     "packages/node/bin/shade-tree.mjs",
     "packages/node/bootnode/fetch.mjs",
     "packages/node/client/shim.mjs",
-    "packages/node/gateway/gateway.mjs",
     "group/join.mjs",
     "scripts/doctor.mjs",
     "specs/README.md",
@@ -53,8 +52,6 @@ try {
     "packages/node/lib/rln.mjs",
     "packages/node/client/selection.mjs",
     "packages/node/client/shim.mjs",
-    "packages/node/gateway/gateway.mjs",
-    "packages/node/bootnode/server.mjs",
   ].map((path) => pathToFileURL(join(installed, path)).href);
   run(process.execPath, ["--input-type=module", "-e", `await Promise.all(${JSON.stringify(imports)}.map((url) => import(url)))`], { cwd: work });
 

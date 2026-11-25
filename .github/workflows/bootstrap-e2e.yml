@@ -33,7 +33,7 @@ jobs:
   bootstrap-e2e:
     name: deploy bootstrap e2e (systemd container, ${{ matrix.mode }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -48,11 +48,20 @@ jobs:
         id: gate
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/ci-changes.sh '^(packages/node/|group/|network/|tor/|package(-lock)?\.json$|\.github/workflows/bootstrap-e2e\.yml$|scripts/ci-changes\.sh$)'
+        run: bash scripts/ci-changes.sh '^(crates/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|packages/node/|group/|network/|tor/|package(-lock)?\.json$|\.github/workflows/bootstrap-e2e\.yml$|scripts/ci-changes\.sh$)'
 
       - name: No bootstrap inputs changed
         if: steps.gate.outputs.run != 'true'
         run: echo "No bootstrap input changed in this PR; reporting success without booting the fleet."
+
+      # The units run the shadenet-node and shadenet-elder binaries; the runner script builds
+      # them from this checkout and hands them to bootstrap.sh in place of a release download.
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        if: steps.gate.outputs.run == 'true'
+        with:
+          toolchain: 1.98.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: steps.gate.outputs.run == 'true'
 
       # ubuntu-latest ships Docker and can run privileged containers, which is what
       # systemd-in-container needs. The runner script does everything else.

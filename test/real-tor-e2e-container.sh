@@ -111,10 +111,24 @@ done
   fail "systemd never came up in container"
 }
 
+# The binaries the units run: built from this checkout unless handed in (as in e2e-container.sh).
+if [ -z "${SHADENET_NODE_BIN:-}" ] || [ -z "${SHADENET_ELDER_BIN:-}" ]; then
+  log "build shadenet-node + shadenet-elder from this checkout"
+  ( cd "$SRC" && cargo build --release --locked -p shadenet-node -p shadenet-elder ) || fail "cargo build failed"
+  SHADENET_NODE_BIN="${SHADENET_NODE_BIN:-$SRC/target/release/shadenet-node}"
+  SHADENET_ELDER_BIN="${SHADENET_ELDER_BIN:-$SRC/target/release/shadenet-elder}"
+fi
+for bin in "$SHADENET_NODE_BIN" "$SHADENET_ELDER_BIN"; do
+  case "$bin" in "$SRC"/*) ;; *) fail "$bin is not under this checkout ($SRC); the container only sees /mnt/src" ;; esac
+  [ -x "$bin" ] || fail "$bin is not an executable file"
+done
+
 log "run bootstrap.sh inside the container (clone file:///mnt/src @ $REF)"
 docker exec \
   -e SHADE_TREE_REPO="file:///mnt/src" \
   -e SHADE_TREE_REF="$REF" \
+  -e SHADENET_NODE_BIN="/mnt/src${SHADENET_NODE_BIN#"$SRC"}" \
+  -e SHADENET_ELDER_BIN="/mnt/src${SHADENET_ELDER_BIN#"$SRC"}" \
   -e SHADE_TREE_MEMBERS_FILE="/mnt/src/group/members.json" \
   -e SHADE_TREE_ADMISSION="open" \
   -e SHADE_TREE_BOOTNODE_PORT="$BOOTNODE_PORT" \

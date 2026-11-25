@@ -193,7 +193,7 @@ make the newline-delimited `requestSignal` non-injective) and failing closed (`u
 Two distinct public `x` values under the *same* nullifier are two points on the degree-1 line, so
 the `identitySecret` is Shamir-reconstructed and the gateway attempts to slash the leaf at most once
 per in-memory nullifier. **Enforced** by
-`packages/node/gateway/gateway.mjs:makeSpentSet` (`admit` → the "distinct public x under the same nullifier"
+`crates/shadenet-node/src/spent.rs` (`admit` → the "distinct public x under the same nullifier"
 branch → `reconstruct`/`derive`/`slash`), `packages/node/lib/rln.mjs:reconstructSecret` +
 `packages/node/lib/rln.mjs:deriveCommitment`, and on chain `contracts/StakedReputationSet.sol:slash`
 (**permissionless** — the secret is a cryptographic proof of over-spend; `slash` re-derives
@@ -204,7 +204,7 @@ on-chain slashing is not guaranteed. Adversary A5.
 ### 4.6 Per-gateway replay handling
 An exact-envelope resend to the *same* gateway is accepted within a short window without counting
 as an over-spend, and rejected after it. The current handler can open another upstream tunnel for
-that accepted replay, so this is not side-effect idempotence. **Enforced** by `packages/node/gateway/gateway.mjs:makeSpentSet`:
+that accepted replay, so this is not side-effect idempotence. **Enforced** by `crates/shadenet-node/src/spent.rs`:
 the `seenEnv` fingerprint `nullifier|share.x|nonce` plus `replayWindowMs` (default 5s) →
 `replay` (accept) vs `replayed-envelope` (drop). **Scope limit:** this is per-process, per-gateway
 only; there is no shared spent-set across non-colluding gateways (residual T-FEAT-20, §5). Adversary
@@ -253,7 +253,7 @@ An ed25519 directory signature is valid forever, so a hostile/replaying bootnode
 Selection weight is gateway-attested, so a poisoned static directory or compromised signer could
 try to concentrate a member's traffic on one gateway (a deanonymization lever). **Enforced** on the
 client by `packages/node/lib/directory.mjs:clampWeight` (`MAX_WEIGHT = 1000`, negatives floored, NaN → 1),
-independent of the bootnode's own announce-time clamp (`packages/node/bootnode/server.mjs` `MAX_WEIGHT`). Adversary
+independent of the bootnode's own announce-time clamp (`crates/shadenet-elder/src/registry.rs` `MAX_WEIGHT`). Adversary
 A1/A2/A6.
 
 ### 4.11 Operator↔onion binding + live stake (stake mode)
@@ -300,7 +300,7 @@ Adversary A2.
 ### 4.14b Multi-root admission: static + staked + paid sets (T-FEAT-7)
 The gateway admits a proof under ANY root in the union of its configured sources — the static
 `members.json`, each `StakedReputationSet` in `SHADE_TREE_GROUP_CONTRACT`, the `PaidAccessSet` in
-`SHADE_TREE_PAID_ACCESS_CONTRACT` (`packages/node/gateway/gateway.mjs:initRoots`, `packages/node/lib/root-provider.mjs:
+`SHADE_TREE_PAID_ACCESS_CONTRACT` (`crates/shadenet-node/src/roots.rs`, `packages/node/lib/root-provider.mjs:
 CompositeRootProvider`). Soundness per source is unchanged (§4.2: the proof still opens a leaf under
 one trusted root); what the union changes is WHO can add a leaf: the operator (members.json, and the
 paid set's operator-only `insert` after an off-chain 402 payment) and anyone who posts a bond
@@ -311,7 +311,7 @@ static, staked or paid member, and nothing finer — the paid set's crowd is its
 logged against `SHADE_TREE_PAID_MIN_LEAVES` (WARN, never refuse; the floor is a parameter, not a bound).
 Slashing routes to the contract that holds the leaf (`limitOf`), so a paid over-spender loses its
 leaf on the paid set and a staked one its bond; a members.json member is only ever dry-run/primary
-slashed as before. **Enforced** in `packages/node/gateway/gateway.mjs:makeRoutingSlasher`; tested in
+slashed as before. **Enforced** in `crates/shadenet-node/src/slash.rs`; tested in
 `test/paid-access.selftest.mjs`, `packages/node/gateway/root-sources.selftest.mjs`. Adversaries A1, A2, A4.
 
 ### 4.14c Per-gateway admission policy + `--max-anon` (T-FEAT-9, ADR [0008](adr/0008-per-gateway-admission-and-payment-choice.md))
@@ -327,7 +327,7 @@ three different weights (the ANONYMITY ORDER, most → least):
 Consequences and what is enforced:
 - A gateway that admits several paths MIXES these crowds; a member's proof still shows only its
   root, but a member who wants the strongest guarantee should route only to gateways whose whole
-  population is invited. Hence `SHADE_TREE_ADMIT` on the gateway (`packages/node/gateway/gateway.mjs:resolveAdmission`;
+  population is invited. Hence `SHADE_TREE_ADMIT` on the gateway (`crates/shadenet-node/src/roots.rs`;
   the DEFAULT is `invited` ALONE, even when contract addresses are configured; a named path whose
   contract is missing fails CLOSED at startup) and the client's `--max-anon` (`packages/node/client/selection.mjs
   filterByAdmission`: keep ONLY gateways whose SIGNED `admits` is exactly `["invited"]`; a
@@ -349,15 +349,15 @@ Consequences and what is enforced:
   `400 protocol-disabled` before any parsing (one less parser reachable by an unauthenticated peer).
 - Slashing routes only over ADMITTED contracts (`makeSlasher({ rootContracts })`): a leaf in an
   un-admitted set could never have egressed here.
-**Enforced** in `packages/node/gateway/gateway.mjs:resolveAdmission/initRoots`, `packages/node/client/selection.mjs:
+**Enforced** in `crates/shadenet-node/src/roots.rs`, `packages/node/client/selection.mjs:
 filterByAdmission`, `packages/node/client/shade-tree-client.mjs:_admission`, `packages/node/lib/directory.mjs:canonicalAdmits`;
-tested in `packages/node/gateway/admission.selftest.mjs`, `packages/node/client/admission-filter.selftest.mjs`,
-`packages/node/lib/admission-caps.selftest.mjs`, `test/paid-access.selftest.mjs` §7. Adversaries A1, A2, A4.
+tested in the `crates/shadenet-node` roots and heartbeat tests, `packages/node/client/admission-filter.selftest.mjs`,
+`test/paid-access.selftest.mjs` §7. Adversaries A1, A2, A4.
 
 ### 4.15 Version-negotiation downgrade resistance
 The gateway declares an inclusive envelope-version range and checks the incoming `v` **before any
 field is read**, so a garbage or out-of-range version never reaches `verifyEnvelope`. **Enforced** by
-`packages/node/gateway/gateway.mjs:acceptEnvelopeVersion` (sole version authority; `bad-version` for
+`crates/shadenet-proto` `accept_envelope_version` (sole version authority; `bad-version` for
 non-integers, `unsupported-version` for out-of-range; absent `v` == legacy v3). The advertised range
 rides back on rejection so a client can re-select. Capability advertisement (incl. the proto
 range) is signed into the announce and directory entry with an onion-bound `capsSig`
@@ -370,31 +370,31 @@ Adversary A1.
 ### 4.16 Endpoint DoS levers (slow-loris, connection pinning, verify floods) — CLOSED (T-HARD-4)
 Both listeners bound what an *unauthenticated* peer can cost before it has proven anything, and
 what a member can cost with one proof. **Enforced** by:
-- `packages/node/gateway/gateway.mjs:readEnvelope` — absolute envelope deadline (`SHADE_TREE_ENVELOPE_TIMEOUT_MS`,
+- `crates/shadenet-node/src/envelope.rs` — absolute envelope deadline (`SHADE_TREE_ENVELOPE_TIMEOUT_MS`,
   30 s from connect, not re-armed by dribbled bytes) => drop `envelope-timeout`; size cap =>
   `envelope-too-large`.
-- `packages/node/gateway/gateway.mjs:makeHandler` — relay idle timeout on both sockets (`SHADE_TREE_TUNNEL_IDLE_TIMEOUT_MS`,
+- `crates/shadenet-node/src/tunnel.rs` — relay idle timeout on both sockets (`SHADE_TREE_TUNNEL_IDLE_TIMEOUT_MS`,
   5 min; either socket idle == no bytes in either direction) => `tunnel_closes{idle-timeout}`; a
   black-holed upstream connect is bounded by the same timer (`upstream-timeout`); a permanent
   socket error sink closes the **half-close crash** (a partial envelope + FIN used to raise an
   unhandled `EPIPE` on the error reply and kill the whole gateway process — one connection, full
   outage; found by the T-HARD-4 selftest, confirmed against `main` before the fix).
-- `packages/node/gateway/gateway.mjs:makePayloadBudget` — both opaque relay directions share a 40 MiB
+- `crates/shadenet-node/src/tunnel.rs` (the payload budget) — both opaque relay directions share a 40 MiB
   `(externalNullifier, nullifier)` allowance (`SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES`); same-node
   retries cannot reset it, and the exact boundary closes both sockets with `payload-limit`.
   Cross-node concurrency remains subject to the asynchronous, fail-open fleet-tally residual.
-- `packages/node/gateway/gateway.mjs:makeConnLimiter` — `SHADE_TREE_MAX_CONNS` (1024) concurrent sockets, refused at
+- `crates/shadenet-node/src/node.rs` (the accept loop) — `SHADE_TREE_MAX_CONNS` (1024) concurrent sockets, refused at
   accept before any read (`too-many-connections`); `SHADE_TREE_MAX_CONNS_PER_NULLIFIER` (8) concurrent
   tunnels per nullifier (`nullifier-conn-limit`), checked *after* `spentSet.admit` so a slashable
   second distinct share is never hidden by the cap. Slots released on close; the per-nullifier map
   is bounded by open sockets.
-- `packages/node/bootnode/server.mjs:makeAnnounceBucket` — GLOBAL announce token bucket, the last gate before
+- `crates/shadenet-elder/src/bucket.rs` — GLOBAL announce token bucket, the last gate before
   `verifyAnnounce` (`SHADE_TREE_BOOTNODE_ANNOUNCE_RATE`/`_BURST`, default 66.7/s, burst 1000 = 2×maxEntries/
   heartbeat and maxEntries/10): an attacker minting fresh onions gets at most `burst` ed25519 verifies
   in an instant, then `rate`/s (was: up to `maxEntries` in one burst); `429` + `Retry-After`; cheap
   per-onion/full rejects are checked first and consume no token; legit heartbeats at default cadence
   never hit it (`docs/BOOTNODE.md` "Endpoint hardening" for the math).
-- `packages/node/bootnode/server.mjs:HTTP_LIMITS` — headers 10 s / request 30 s (`408`), keep-alive idle 5 s,
+- `crates/shadenet-elder/src/server.rs` — headers 10 s / request 30 s (`408`), keep-alive idle 5 s,
   headers <= 8 KiB (`431`), enforced every 1 s (Node defaults 60 s / 300 s / 16 KiB / 30 s).
 Proven in `packages/node/gateway/hardening.selftest.mjs`, `packages/node/bootnode/hardening.selftest.mjs` (real sockets, verify
 spy) and `test/adversarial.selftest.mjs` scenarios 6–7. **Limit:** these bound *this process*; Tor
@@ -481,7 +481,7 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
 
 - **Cross-fleet replay / rate is fleet-wide only when the tally is on (T-FEAT-20/20b, ROADMAP-v1
   #1/#3).** §4.6 defends *one* gateway. The shared per-epoch nullifier tally
-  (`packages/node/gateway/fleet-tally.mjs`, `SHADE_TREE_FLEET_TALLY_PEERS`, authenticated by
+  (`crates/shadenet-node/src/tally.rs`, `SHADE_TREE_FLEET_TALLY_PEERS`, authenticated by
   `SHADE_TREE_FLEET_TALLY_TOKEN`) rejects a replay at a second gateway and
   shares only `(nullifier, epoch)` (RLN's per-tunnel nullifiers keep it from being a linkability
   channel), but it is **opt-in and fail-open**: a fleet without it lets a malicious gateway fan a
@@ -523,7 +523,7 @@ These are documented limitations, not new findings. Cross-referenced to `docs/hi
   controls when its response bytes leave. If it delays them in a pattern, the pattern survives Tor
   (jitter, same order, rough timing) and reaches the member's side as cell timing on one circuit.
   ShadeNet v0 does nothing to stop this: the node forwards destination bytes as they arrive, and the
-  per-session token bucket (`packages/node/gateway/session.mjs:makeTokenBucket`) is a rate cap, not
+  per-session token bucket (`crates/shadenet-node/src/session.rs`) is a rate cap, not
   a pacer, so timing below the cap passes through unchanged. Per-tunnel nullifiers (§4.3) bound one
   hit to one request; they do not hide the link. The vectors, none of which needs a global
   adversary (so the A3 exclusion below does not cover them):
@@ -587,14 +587,14 @@ Highest-value review targets, roughly in order of trust concentration:
 2. **`packages/node/lib/rln.mjs:verifyEnvelope`** — walk checks 1→4 in order and confirm 2b (target binding) is
    never trusted without 4 (Groth16 verify), and that `nullifier`/`share` come from `publicSignals`,
    not the envelope. Confirm `signalFieldSafe` runs before hashing. Beside `packages/node/lib/rln.selftest.mjs`.
-3. **`packages/node/gateway/gateway.mjs:makeSpentSet`** — the over-spend/slash and replay control flow. Confirm
-   slash-exactly-once, the `seenEnv` replay window, and that failures don't crash the path. Confirm
-   `acceptEnvelopeVersion` is the sole version gate. In `makeHandler`, confirm the socket error sink,
+3. **`crates/shadenet-node/src/spent.rs`** — the over-spend/slash and replay control flow. Confirm
+   slash-exactly-once, the replay window, and that failures don't crash the path. Confirm
+   `accept_envelope_version` is the sole version gate. In `tunnel.rs`, confirm the error sink,
    the envelope deadline, the connection caps and the idle timeout (§4.16) bracket every exit path.
 4. **`packages/node/bootnode/announce.mjs:verifyAnnounce`** — the discovery loop's admission. Confirm onion-sig +
    operator-sig + `isStaked` ordering, freshness/skew, nonce replay, and that a chain-read failure
-   hard-rejects under `requireStake`. Beside `packages/node/bootnode/selftest.mjs`. In `packages/node/bootnode/server.mjs`,
-   confirm the global announce bucket is the last gate before verify and reload is its only exemption
+   hard-rejects under `requireStake`. Beside `crates/shadenet-elder/src/registry.rs` and its tests. In
+   `crates/shadenet-elder/src/server.rs`, confirm the global announce bucket is the last gate before verify and reload is its only exemption
    (§4.16).
 5. **`packages/node/client/selection.mjs:ensureLoaded`** — the rollback floor + max-age bound + last-known-good
    fallback; and `reverifyGateway`/`filterReverified` for the zero-trust stake path.

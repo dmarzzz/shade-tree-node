@@ -65,13 +65,13 @@ published.
 env/tor/deps. Confirm gateways can reach `POST /announce` (a network partition looks like a dead
 bootnode from the client side only).
 
-**Recovery.** Restart `packages/node/bootnode/server.mjs` (on a bootstrapped box: `systemctl restart
+**Recovery.** Restart `shadenet-elder` (on a bootstrapped box: `systemctl restart
 shade-tree-bootnode`). If the bootnode runs with `SHADE_TREE_BOOTNODE_STORE` set (the `bootstrap.sh` unit sets it
 to `deploy-state/bootnode-state.json`), the live set is mirrored to that JSON file on every accepted
 announce and reloaded on boot: `loadPersisted()` re-runs each stored record through the real announce
 path (onion control + operator/stake re-verified; tampered, forged, or past-TTL entries are dropped),
 so `/directory` is populated immediately and no re-announce settling window is needed (T-DEV-4;
-`packages/node/bootnode/server.mjs`, `docs/BOOTNODE.md` "Surviving a restart"). Without the store the registry is
+`crates/shadenet-elder/src/registry.rs`, `docs/BOOTNODE.md` "Surviving a restart"). Without the store the registry is
 in-memory only, and a restart drops the fleet until every gateway re-announces on its next heartbeat
 (up to `SHADE_TREE_BOOTNODE_HEARTBEAT`, default 300s). Either way the signer key persists on disk
 (`SHADE_TREE_BOOTNODE_SIGNER_KEY`), so the pinned signer is unchanged and clients accept the rebuilt
@@ -79,7 +79,7 @@ directory with no re-pin.
 
 **Prevention.** Set `SHADE_TREE_BOOTNODE_STORE` so a restart is not a fleet blank. Run redundant bootnodes,
 federated with `SHADE_TREE_BOOTNODE_PEERS` so each learns the others' gateways (T-FEAT-1,
-`packages/node/bootnode/federation.mjs`); since ADR 0012 clients read every Elder the record lists
+`crates/shadenet-elder/src/federation.rs`); since ADR 0012 clients read every Elder the record lists
 and merge each one's canopy, so a failed Elder falls back to the others without a manual re-point. Keep the LKG cache path
 writable so degradation actually works. Publish a static signed directory as a cold fallback.
 
@@ -143,9 +143,9 @@ tampering, downtime).
 - Replay an exact envelope. Against the SAME gateway this fails: `makeSpentSet` fingerprints
   `(nullifier, share.x, nonce)`, and an identical envelope seen again after `SHADE_TREE_REPLAY_WINDOW_MS`
   (5s, the honest-retry window) is rejected `replayed-envelope` (T-FEAT-12,
-  `packages/node/gateway/gateway.mjs`). Against OTHER gateways it fails only when the fleet runs the shared
+  `crates/shadenet-node/src/spent.rs`). Against OTHER gateways it fails only when the fleet runs the shared
   per-epoch nullifier tally (`SHADE_TREE_FLEET_TALLY_PEERS` plus `SHADE_TREE_FLEET_TALLY_TOKEN`,
-  T-FEAT-20/20b, `packages/node/gateway/fleet-tally.mjs`;
+  T-FEAT-20/20b, `crates/shadenet-node/src/tally.rs`;
   off by default, fail-open); a fleet without the tally lets a captured envelope be fanned to
   peers, each of which sees it once and egresses it. Amplification is therefore bounded to
   one egress per non-tallying gateway per captured envelope, and it never slashes (identical `x`
@@ -329,7 +329,7 @@ gateway clocks.
 bond drained you did not expect.
 
 **What a legitimate slash requires.** A member over-spend is a cryptographic fact, not a judgment:
-the gateway's spent-set (`packages/node/gateway/gateway.mjs` `makeSpentSet`) sees TWO DISTINCT signals (distinct
+the gateway's spent-set (`crates/shadenet-node/src/spent.rs`) sees TWO DISTINCT signals (distinct
 public `x`) under the SAME `nullifier`. That is the L+1-th RLN evaluation point, which reconstructs
 the identity secret (Shamir) and derives the rate-commitment leaf. An IDENTICAL replay (same
 `share.x`) is deduped and is NEVER slashed. So a slash means two genuinely different points were
@@ -380,8 +380,8 @@ proof). Do not promise the provider data the node cannot hold.
 
 - **Block a destination fleet-wide.** The egress policy is an allow/deny list per gateway:
   `SHADE_TREE_EGRESS_ALLOW` (default `*:443`, default-deny beyond it) and `SHADE_TREE_EGRESS_DENY`
-  (empty by default). **Deny wins over allow** (`makeEgressPolicy` / `validTarget` in
-  `packages/node/gateway/gateway.mjs`, `docs/CONFIG.md`). Add the reported `host:port` pattern
+  (empty by default). **Deny wins over allow** (`crates/shadenet-node/src/egress.rs`,
+  `docs/CONFIG.md`). Add the reported `host:port` pattern
   (`host:*`, or `*.suffix:*` for subdomains) to `SHADE_TREE_EGRESS_DENY` on **every** gateway through
   the agent-devops Ansible role (config-as-code; do not hand-edit a live droplet), then restart the
   gateways. A tunnel to the denied host is then refused at the gate before any dial. This is a gateway

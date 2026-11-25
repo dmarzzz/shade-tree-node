@@ -2,7 +2,7 @@
 //
 // A gateway PROVIDER chooses which membership roots it honours (`SHADE_TREE_ADMIT`) and, if it sells
 // access, which payment rails (`SHADE_TREE_PAY_PROTOCOLS`). These are the pure, dependency-free
-// parsers shared by the gateway (packages/node/gateway/gateway.mjs resolveAdmission — which ALSO checks the
+// parsers shared by the gateway (crates/shadenet-node — which ALSO checks the
 // named contracts are configured and fails closed), the heartbeat (advertises the policy as
 // signed caps), the bootnode (/health `pay` advert), the registrar (which rails to serve) and
 // the client (which gateways admit ITS leaf; `--max-anon`).

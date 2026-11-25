@@ -264,7 +264,7 @@ async function main() {
     const ev = rcpt.logs.map((l) => { try { return iface.parseLog(l); } catch { return null; } }).find((p) => p && p.name === "GatewayExiting");
     const wAt = ev ? ev.args.withdrawableAt : st.now + st.UNBONDING;
     console.log(`  mined in block ${rcpt.blockNumber}; exiting. Bond withdrawable at ${wAt} (${iso(wAt)}) via: shade-tree-node withdraw-gateway`);
-    console.log(`  next:     stop announcing — systemctl disable --now shade-tree-heartbeat shade-tree-gateway (docs/OPERATOR.md section 6)`);
+    console.log(`  next:     stop announcing — systemctl disable --now shade-tree-gateway (docs/OPERATOR.md section 6)`);
   } else {
     console.log(`  mined in block ${rcpt.blockNumber}; bond ${st.bond} wei paid to ${recipient}. Stake record cleared.`);
   }

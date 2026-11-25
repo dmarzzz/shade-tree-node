@@ -270,7 +270,7 @@ export function validatePinnedCheckout(record, { repoRoot }) {
   const commitCheck = git("cat-file", "-e", `${commit}^{commit}`);
   if (commitCheck.status !== 0) return { ok: false, errors: [{ field: "services.node.commit", problem: "is not a commit available in the controller checkout" }] };
 
-  for (const path of ["packages/node/bootnode/server.mjs", "packages/node/gateway/gateway.mjs", "packages/node/bootnode/heartbeat.mjs", "packages/node/bootnode/deploy/bootstrap.sh"]) {
+  for (const path of ["crates/shadenet-node/Cargo.toml", "crates/shadenet-elder/Cargo.toml", "packages/node/bootnode/deploy/bootstrap.sh"]) {
     if (git("cat-file", "-e", `${commit}:${path}`).status !== 0) bad("services", `pinned commit does not contain ${path}`);
   }
   if (record?.admission?.roots?.staked?.profile === "public-stake-v1" && git("cat-file", "-e", `${commit}:${PUBLIC_STAKE_BYTECODE_MANIFEST}`).status !== 0) {

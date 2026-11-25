@@ -51,7 +51,7 @@ The node is a Rust binary, `shadenet-node`, in `crates/shadenet-node`. It replac
 
 - `shadenet-rln` grows a `verify` module and a `prove` feature, so a node links Groth16
   verification without the witness calculator and wasmer.
-- The JavaScript node is deleted at the end of the port. The JavaScript SDK keeps
+- The JavaScript node is deleted at the end of the port (done 2026-11-25, with the Elder). The JavaScript SDK keeps
   `lib/directory.mjs`, the verify path of `lib/rln.mjs` and `bootnode/announce.mjs` for the
   Elder and the browser. The conformance guard stays: vectors plus the harness, with the Rust
   client and the JavaScript client both talking to the Rust node until the latter is retired.

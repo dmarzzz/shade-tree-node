@@ -28,8 +28,8 @@
 //      newest mutual id in the envelope's `artifact` field. No ad => it optimistically sends
 //      its newest; the gateway's precise reject then carries the accepted list.
 //
-// This file is deliberately LIGHT (fs + crypto only, no rlnjs/snarkjs) so packages/node/bootnode/heartbeat.mjs
-// and the client can compute ids/sets without loading circuits; packages/node/lib/rln.mjs imports from here.
+// This file is deliberately LIGHT (fs + crypto only, no rlnjs/snarkjs) so the client can compute
+// ids/sets without loading circuits; packages/node/lib/rln.mjs imports from here.
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";

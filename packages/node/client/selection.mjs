@@ -38,7 +38,7 @@ applyClientNetworkEnv(process.env);
 
 // Two directory SOURCES, same signed shape and same pinned-signer verification:
 //   - SHADE_TREE_BOOTNODE_ONION : live discovery. Fetch /directory from the bootnode onion over Tor
-//                           (packages/node/bootnode/server.mjs). The pinned signer (SHADE_TREE_DIR_SIGNER) is the
+//                           (crates/shadenet-elder). The pinned signer (SHADE_TREE_DIR_SIGNER) is the
 //                           bootnode's signer key. This is the dynamic fleet.
 //   - SHADE_TREE_DIRECTORY      : static signed JSON file (group/sign-directory.mjs). The offline path.
 // Bootnode wins if both are set. Either way, verifyDirectory + last-known-good caching apply.
