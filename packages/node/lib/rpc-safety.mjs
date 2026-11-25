@@ -1,3 +1,4 @@
+import { isDeepStrictEqual, types as utilTypes } from "node:util";
 import { registry } from "./metrics.mjs";
 
 // SHADE_TREE_RPC_URL may name several endpoints, comma-separated, tried in order (OPS-8). One
@@ -197,21 +198,121 @@ function retryableRpcError(error) {
   return /rate|limit|too many|unavailable|header not found|timeout|busy|overload/i.test(String(error?.message || ""));
 }
 
+// Keep-alive for JSON-RPC fetches. Node's default fetch dispatcher closes an idle socket after 4 s,
+// and the root provider polls every 12 s, so the first request of every poll opened a new TCP and
+// TLS connection to the RPC provider. RPC requests made through the global fetch therefore use
+// their own dispatcher that keeps an idle connection for SHADE_TREE_RPC_KEEPALIVE_MS (default 30 s,
+// above the poll interval). This changes only how long an idle RPC socket is kept: requests,
+// deadlines, retries and failover are unchanged, and no other fetch in the process is affected
+// (the global dispatcher is not replaced). A socket the server closed while it sat idle is not
+// reused: the next request opens a new connection, as it did before this change.
+export const DEFAULT_RPC_KEEPALIVE_MS = 30_000;
+export const MAX_RPC_KEEPALIVE_MS = 600_000;
+const GLOBAL_DISPATCHER = Symbol.for("undici.globalDispatcher.1");
+
+// Decimal milliseconds; `0` turns the dedicated dispatcher off (RPC uses the global one, as before).
+// Surrounding whitespace is trimmed. Accepted: 1 to 10 ASCII digits; values above 600000 are capped.
+// Anything else falls back to the default, including a digit string longer than 10 digits (so
+// "99999999999" gives 30000, not the cap) and signs, decimals, exponents and unit suffixes.
+export function rpcKeepAliveMs(env = process.env) {
+  const raw = env.SHADE_TREE_RPC_KEEPALIVE_MS;
+  if (raw === undefined || raw === "") return DEFAULT_RPC_KEEPALIVE_MS;
+  const text = String(raw).trim();
+  if (!/^\d{1,10}$/.test(text)) return DEFAULT_RPC_KEEPALIVE_MS;
+  return Math.min(Number(text), MAX_RPC_KEEPALIVE_MS);
+}
+
+// One dispatcher per (dispatcher class, keep-alive) pair. A superseded one is not closed: fetch
+// hands a request to its dispatcher asynchronously, so closing it could fail a request that already
+// chose it. Its idle sockets close on their own after its keep-alive.
+let rpcAgentCache = null;
+
+const KEEPALIVE_OPTION_KEYS = new Set(["keepAliveTimeout", "keepAliveMaxTimeout"]);
+const ownSymbol = (obj, description) => Object.getOwnPropertySymbols(obj).find((s) => s.description === description);
+function optionsWithoutKeepAlive(options) {
+  return Object.fromEntries(Object.entries(options).filter(([key]) => !KEEPALIVE_OPTION_KEYS.has(key)));
+}
+
+// True only when `base` (already known to be a non-Proxy instance of `agent`'s own class) routes
+// like `agent` apart from the two keep-alive options, as far as can be read: the same own
+// properties (no per-instance override such as a replaced dispatch), the same connection factory,
+// and the same construction options (connect function or TLS options, connection limits, and so
+// on). It reads undici's internal `options` and `factory` slots; when they cannot be found the
+// answer is false.
+function routesLike(base, agent) {
+  const baseKeys = Reflect.ownKeys(base).map(String).sort();
+  const agentKeys = Reflect.ownKeys(agent).map(String).sort();
+  if (!isDeepStrictEqual(baseKeys, agentKeys)) return false;
+  const kOptions = ownSymbol(base, "options");
+  const kFactory = ownSymbol(base, "factory");
+  if (!kOptions || !kFactory || kOptions !== ownSymbol(agent, "options") || kFactory !== ownSymbol(agent, "factory")) return false;
+  if (base[kFactory] !== agent[kFactory]) return false;
+  const baseOptions = base[kOptions];
+  const agentOptions = agent[kOptions];
+  if (!baseOptions || typeof baseOptions !== "object" || !agentOptions || typeof agentOptions !== "object") return false;
+  return isDeepStrictEqual(baseOptions, optionsWithoutKeepAlive(agentOptions));
+}
+
+// The dispatcher for RPC fetches, or null to use the global one. Built from the class of Node's
+// own fetch dispatcher, so it needs no dependency. Returns null when the operator turned it off,
+// and whenever it cannot be established that the global dispatcher is an Agent with nothing
+// configured but what this one changes. A proxy dispatcher (for example the EnvHttpProxyAgent
+// that NODE_USE_ENV_PROXY=1 installs), an Agent built with its own connect function, TLS options,
+// factory or limits, a composed (intercepted) one, any subclass of Agent at any depth, or one whose
+// internals cannot be read: RPC then uses the global dispatcher, as before this change. The
+// check runs on every call, so a global dispatcher installed later is honoured from the next call.
+export function rpcDispatcher({ env = process.env } = {}) {
+  const keepAliveMs = rpcKeepAliveMs(env);
+  if (keepAliveMs === 0) return null;
+  void globalThis.Response; // loads Node's bundled undici, which installs the default dispatcher
+  const base = globalThis[GLOBAL_DISPATCHER];
+  if (!base || typeof base !== "object" || utilTypes.isProxy(base)) return null;
+  const Dispatcher = base.constructor;
+  // Only an Agent-shaped dispatcher (undici's options and factory slots) is ever constructed, so a
+  // proxy agent or any other dispatcher class is never instantiated here.
+  if (typeof Dispatcher !== "function" || Object.getPrototypeOf(base) !== Dispatcher.prototype) return null;
+  if (!ownSymbol(base, "options") || !ownSymbol(base, "factory")) return null;
+  // Only undici's Agent class itself, never a subclass at any depth: a subclass can route through
+  // its own methods or instance state that this check cannot read. undici's Agent is the one class
+  // on the chain that defines its internal dispatch slot. So that slot must be defined on the
+  // global's own class and on nothing above it. A subclass that does not redefine the slot fails
+  // the first test, and one that does fails the second, however deep it sits.
+  if (!ownSymbol(Dispatcher.prototype, "dispatch")) return null;
+  for (let proto = Object.getPrototypeOf(Dispatcher.prototype); proto; proto = Object.getPrototypeOf(proto)) {
+    if (ownSymbol(proto, "dispatch")) return null;
+  }
+  if (rpcAgentCache?.Dispatcher !== Dispatcher || rpcAgentCache.keepAliveMs !== keepAliveMs) {
+    let agent;
+    try {
+      agent = new Dispatcher({ keepAliveTimeout: keepAliveMs, keepAliveMaxTimeout: keepAliveMs });
+    } catch {
+      return null;
+    }
+    rpcAgentCache = { Dispatcher, keepAliveMs, agent };
+  }
+  // Checked against the current global on every call: only the built Agent is cached, never the
+  // decision, so an operator-configured Agent installed later (same class) is still left alone.
+  return routesLike(base, rpcAgentCache.agent) ? rpcAgentCache.agent : null;
+}
+
 // A small raw JSON-RPC call used both by the root provider and by the bounded ethers bootstrap.
 // The AbortSignal covers connection, response headers and response-body decoding. With several
 // configured endpoints, a transport failure, timeout, HTTP error, malformed body or retryable
 // JSON-RPC error moves to the next endpoint; the last error is thrown only when all fail. A
 // throttled endpoint is not waited on while another is untried: only the last endpoint in the
 // rotation backs off and retries, so a list fails over first and waits only when all are limited.
+// `dispatcher` defaults to rpcDispatcher() when the request goes through the global fetch; pass
+// null to use the global dispatcher. An injected fetchImpl gets no dispatcher unless one is given.
 export async function jsonRpcCall(url, method, params = [], {
   timeoutMs = rpcTimeoutMs(),
   fetchImpl = globalThis.fetch,
   id = 1,
   retries = rpcRetries(),
   sleep = sleepMs,
+  dispatcher = fetchImpl === globalThis.fetch ? rpcDispatcher() : null,
 } = {}) {
   const urls = rpcUrlList(url);
-  if (urls.length <= 1) return jsonRpcCallOne(urls[0] ?? url, method, params, { timeoutMs, fetchImpl, id, retries, sleep });
+  if (urls.length <= 1) return jsonRpcCallOne(urls[0] ?? url, method, params, { timeoutMs, fetchImpl, id, retries, sleep, dispatcher });
   const key = urls.join(",");
   const start = stickyEndpoint.get(key) ?? 0;
   let lastError;
@@ -219,7 +320,7 @@ export async function jsonRpcCall(url, method, params = [], {
     const index = (start + step) % urls.length;
     try {
       const result = await jsonRpcCallOne(urls[index], method, params, {
-        timeoutMs, fetchImpl, id, retries: step === urls.length - 1 ? retries : 0, sleep,
+        timeoutMs, fetchImpl, id, retries: step === urls.length - 1 ? retries : 0, sleep, dispatcher,
       });
       stickyEndpoint.set(key, index);
       return result;
@@ -232,7 +333,7 @@ export async function jsonRpcCall(url, method, params = [], {
   throw new Error(`${method}: all ${urls.length} RPC endpoints failed; last: ${lastError?.message || lastError}`, { cause: lastError });
 }
 
-async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, retries = 0, sleep = sleepMs }) {
+async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, retries = 0, sleep = sleepMs, dispatcher = null }) {
   let response;
   let json;
   let waited = 0;
@@ -245,6 +346,7 @@ async function jsonRpcCallOne(url, method, params, { timeoutMs, fetchImpl, id, r
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
         signal,
+        ...(dispatcher ? { dispatcher } : {}),
       });
       // `ok` is present on real Fetch Responses. Some injected/test transports expose only
       // `json()`; retain that supported seam while still refusing explicit HTTP errors.
