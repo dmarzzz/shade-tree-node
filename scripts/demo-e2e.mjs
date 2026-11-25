@@ -194,9 +194,10 @@ async function main() {
 
 // Pack a proveForSlot result into the explicit v4 wire envelope the gateway consumes.
 // target + nonce ride along so the gateway can BIND the proof to this target (verifyEnvelope 2b);
-// they MUST be the same pair the signal was built from.
+// they MUST be the same pair the signal was built from. `artifact` names the set the proof was made
+// with: without it a gateway reads the lock's retired previous set (artifact-retired).
 async function pack(p, target, nonce) {
-  return { v: 4, target, nonce, proof: p.proof, nullifier: p.nullifier, externalNullifier: p.externalNullifier, share: p.share };
+  return { v: 4, target, nonce, artifact: p.artifact, proof: p.proof, nullifier: p.nullifier, externalNullifier: p.externalNullifier, share: p.share };
 }
 const short = (s) => String(s).slice(0, 10) + "…";
 

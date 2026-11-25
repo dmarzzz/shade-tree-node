@@ -219,7 +219,7 @@ async function main() {
     const epoch = currentEpoch();
     const nx = "x-" + randomBytes(4).toString("hex");
     const ex = await proveForSlot(X.seed, epoch, 0, requestSignal(targetList[0], nx), { group: gX, limit: 8 });
-    const ackX = await sendEnvelope({ v: 4, target: targetList[0], nonce: nx, proof: ex.proof, nullifier: ex.nullifier, externalNullifier: ex.externalNullifier, share: ex.share });
+    const ackX = await sendEnvelope({ v: 4, target: targetList[0], nonce: nx, artifact: ex.artifact, proof: ex.proof, nullifier: ex.nullifier, externalNullifier: ex.externalNullifier, share: ex.share });
     ok(ackX.ok === false && ackX.err === "gate:wrong-group-root", `a proof under an unknown root is dropped -> ${JSON.stringify(ackX)}`);
 
     // ---- 6. paid over-spend -> slash routed to the PAID contract --------------------------------
@@ -230,7 +230,8 @@ async function main() {
     // slot 5: a fresh nullifier (slot 0 was P's normal request above); two DISTINCT signals under it.
     const e1 = await proveForSlot(P.seed, epoch, 5, requestSignal(targetList[0], n1), { group: dP.group, limit: 32 });
     const e2 = await proveForSlot(P.seed, epoch, 5, requestSignal(targetList[0], n2), { group: dP.group, limit: 32 });
-    const mk = (n, e) => ({ v: 4, target: targetList[0], nonce: n, proof: e.proof, nullifier: e.nullifier, externalNullifier: e.externalNullifier, share: e.share });
+    // `artifact` as buildEnvelope sends it; a field-less envelope is read as the lock's retired previous set.
+    const mk = (n, e) => ({ v: 4, target: targetList[0], nonce: n, artifact: e.artifact, proof: e.proof, nullifier: e.nullifier, externalNullifier: e.externalNullifier, share: e.share });
     const a1 = await sendEnvelope(mk(n1, e1));
     const a2 = await sendEnvelope(mk(n2, e2), { timeoutMs: 180000 });
     ok(a1.ok === true && a2.ok === false && a2.err === "over-spend-slashed", `P's second distinct signal on slot 5 is dropped over-spend-slashed (${JSON.stringify(a1)} then ${JSON.stringify(a2)})`);

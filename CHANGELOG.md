@@ -4,6 +4,18 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+### On-chain over-spend selftests pass with Foundry (#439)
+
+- With `anvil` and `forge` on `PATH`, `test/onchain-tiers.selftest.mjs` failed 10 checks and
+  `test/paid-access.selftest.mjs` failed 5. Their over-spend steps built the v4 envelope by hand
+  and left out `artifact`. The proof itself was made with the current set, but a gateway reads a
+  field-less envelope as the lock's `previousArtifactId` (`rln-0b25f824a04da3a8`, since #214),
+  which is retired, so both sends were refused `gate:artifact-retired` and no slash was submitted.
+- Those envelopes now carry `artifact` (the id `proveForSlot` returns), as `buildEnvelope` does.
+  So do the wrong-root step in `paid-access` (which passed only because the root check runs
+  first) and the same hand-built envelopes in `scripts/integration-sepolia.mjs` and
+  `scripts/demo-e2e.mjs`.
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative
