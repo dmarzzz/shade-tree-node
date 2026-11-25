@@ -1,6 +1,6 @@
 [package]
 name = "shadenet-elder"
-version = "0.7.5"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.98"
 license = "MIT"
@@ -17,9 +17,9 @@ name = "shadenet-elder"
 path = "src/main.rs"
 
 [dependencies]
-shadenet-proto = { path = "../shadenet-proto", version = "0.7.5" }
-shadenet-service = { path = "../shadenet-service", version = "0.7.5" }
-shadenet = { path = "../shadenet", version = "0.7.5", default-features = false }
+shadenet-proto = { path = "../shadenet-proto", version = "0.8.0" }
+shadenet-service = { path = "../shadenet-service", version = "0.8.0" }
+shadenet = { path = "../shadenet", version = "0.8.0", default-features = false }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-graceful"] }
 http-body-util = "0.1"

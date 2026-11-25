@@ -4,6 +4,10 @@ ShadeNet was formerly Shade Tree Grove; entries below keep the names they shippe
 
 ## Unreleased
 
+## 0.8.0 — the node and the Elder Tree are Rust binaries
+
+`shadenet-node` and `shadenet-elder` replace the JavaScript node, heartbeat and Elder Tree (ADR 0014, ADR 0015): one Rust process each, the same wire, knobs, files and metrics, packaged for every release target and in the node image. Also: a node at home (`SHADENET_PROFILE=home`, the bandwidth cap, the canary and the deny file), `shadenet init --dir` writes a config that loads, and the test runner reports skipped suites.
+
 ### `shadenet init --dir <relative path>` writes a config that loads (#436)
 
 - `init` wrote the `--dir` value into `config.toml` as given, while the loader resolves relative
