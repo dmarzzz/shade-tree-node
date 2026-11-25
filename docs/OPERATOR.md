@@ -124,6 +124,19 @@ docker run -d --name shadenet-node --restart unless-stopped \
 docker exec shadenet-node shadenet-node status   # "listed": Elders that accepted
 ```
 
+The Rust node image above still reports the accepted count after all Elders have answered;
+it does not expose `eldersPending` yet. The following pending display applies only to the
+JavaScript reference node (`node packages/node/bin/shadenet-node.mjs status`).
+
+For the JavaScript node, `listed` records each Elder's answer as it arrives:
+`eldersAccepted`, `eldersPending` (no answer yet since startup), and `eldersTotal`.
+An Elder in neither count refused, could not be reached, or was skipped because the
+egress check failed. During the first announce, `status` can print
+`1 of 2 Elder Trees accepted, 1 pending (the first announce is still in progress)`.
+When a cycle completes, its answers replace the counts, including when cycles overlap.
+Once all Elders have answered and none accepted, the existing no-Elder-listed warning
+is shown instead.
+
 The hardening flags are the ones `examples/node/compose.yml` sets: no privilege escalation, no
 capabilities, a read-only root with `/tmp` in memory, a memory cap and bounded logs. The node needs
 none of what they take away. One bond backs every onion an operator signs; the key file is read

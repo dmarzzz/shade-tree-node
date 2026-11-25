@@ -117,7 +117,9 @@ export function heartbeatRules({ intervalSec = 300 } = {}) {
     { name: "ElderPartial", severity: "warning", forTicks: 2, when: (c) => {
       const total = first(c.values("shade_tree_heartbeat_elders_total")) ?? 0;
       const acc = first(c.values("shade_tree_heartbeat_elders_accepted")) ?? 0;
-      return (total > 1 && acc > 0 && acc < total) ? `${acc} of ${total} Elder Trees accept this node's heartbeat` : false;
+      // An Elder that has not answered its first announce yet is not a refusal (issue 428).
+      const pending = first(c.values("shade_tree_heartbeat_elders_pending")) ?? 0;
+      return (total > 1 && acc > 0 && acc + pending < total) ? `${acc} of ${total} Elder Trees accept this node's heartbeat` : false;
     } },
     { name: "Draining", severity: "info", forTicks: 1, when: (c) => (first(c.values("shade_tree_heartbeat_draining")) === 1 ? "node announced draining; clients deprioritise it until the flag is removed" : false) },
   ];

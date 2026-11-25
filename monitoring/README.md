@@ -46,6 +46,7 @@ Files:
 | `shade_tree_heartbeat_attempts_total` | counter | `outcome` (accepted\|rejected\|egress-unhealthy\|transport-error) | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
 | `shade_tree_heartbeat_egress_check_up` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
+| `shade_tree_heartbeat_elders_pending` | gauge | none | `packages/node/bootnode/heartbeat.mjs` (Elders that have not answered since the heartbeat started) |
 | `shade_tree_heartbeat_draining` | gauge | none | `packages/node/bootnode/heartbeat.mjs` (1 while the operator drain flag is announced) |
 | `shade_tree_canary_probes_total` | counter | `outcome` (`clean`, `challenged`, `unknown`) | `crates/shadenet-node/src/canary.rs` (reputation canary probes from the node's own address) |
 | `shade_tree_canary_challenged` | gauge | none | `crates/shadenet-node/src/canary.rs` (1 when the latest round was blocked or challenged) |
