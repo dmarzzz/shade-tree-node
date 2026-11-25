@@ -37,7 +37,7 @@ runner can see it (`scripts/suite-skips.mjs`).
 ### What CI runs
 
 Required on every pull request: Rust workspace check, test and interop; `cargo fmt` and
-strict Clippy; the full Node suite on Node 24 under c8 coverage (lines 90, functions 91,
+strict Clippy; the full Node suite on Node 24 under c8 coverage (lines 88, functions 91,
 branches 82); Foundry; ESLint; the supply-chain gate (`npm audit`, `cargo deny`,
 `cargo audit`); the site browser checks; the Rust embedded-Tor client against the JS
 gateway over real Tor; the real-Tor fleet run; and `bootstrap.sh` in a systemd container
