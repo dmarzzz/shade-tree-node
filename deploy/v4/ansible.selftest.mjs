@@ -43,7 +43,7 @@ ok(/ufw default deny incoming/.test(TASKS) && /shade-tree-v4-admin/.test(TASKS) 
 ok(/shade_tree_manage_firewall:\s*true/.test(DEFAULTS) && /when: shade_tree_manage_firewall \| bool/.test(TASKS), "external IaC can own SSH policy without the application role rewriting UFW");
 ok(/SHADE_TREE_LOG_FORMAT: json/.test(TASKS) && /SHADE_TREE_BANNER: never/.test(TASKS), "bootstrap is pinned to JSON logs without terminal decoration");
 ok(/shade_tree_tunnel_max_payload_bytes:\s*41943040/.test(DEFAULTS) && /SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES/.test(TASKS), "gateway deployment pins the provisional 40 MiB combined payload ceiling");
-ok(/SHADE_TREE_ZK_ARTIFACTS/.test(TASKS) && /shade_tree_artifact_specs \| join/.test(TASKS), "node and heartbeat receive the record-derived explicit artifact set");
+ok(/SHADE_TREE_ZK_ARTIFACTS/.test(TASKS) && /shade_tree_artifact_specs \| join/.test(TASKS), "the node receives the record-derived explicit artifact set");
 ok(/Refuse public service or metrics listeners/.test(TASKS) && /127\[\.\]0\[\.\]0\[\.\]1/.test(TASKS), "postflight rejects non-loopback service or metrics sockets");
 ok(/shade_tree_reconcile_fingerprint/.test(TASKS) && /\.applied/.test(TASKS) && /only after every check passes/.test(TASKS), "re-runs use a configuration fingerprint written only after postflight success");
 ok(/hosts: shade_tree_v4/.test(PLAYBOOK) && !/(ansible_host|[0-9]{1,3}(?:\.[0-9]{1,3}){3})/.test(PLAYBOOK), "playbook contains no target or provider address");
@@ -54,7 +54,7 @@ const readyAt = TASKS.indexOf("Wait until this host's onion answers through Tor 
 const readyTask = readyAt >= 0 ? TASKS.slice(readyAt) : "";
 ok(markerAt >= 0 && readyAt > markerAt && !/\n- name:/.test(readyTask.slice(1)), "the wait is the last task, after the reconciliation marker (a slow descriptor never forces a second bootstrap)");
 ok(/scripts\/onion-ready\.mjs/.test(readyTask) && /--onion \{\{ onion \| quote \}\}/.test(readyTask) && /shade_tree_remote_identity_checks \| map\(attribute='onion'\) \| unique/.test(readyTask), "it dials every onion this host serves, the same list the identity postflight verified");
-ok(/\{% if shade_tree_runs_node %\}--heartbeat-metrics/.test(readyTask) && /shade_tree_heartbeat_metrics_port/.test(readyTask) && /--elders \{\{ shade_tree_ready_elders \| quote \}\}/.test(readyTask), "a node also needs its heartbeat accepted by the Elder Trees");
+ok(/\{% if shade_tree_runs_node %\}--heartbeat-metrics/.test(readyTask) && /shade_tree_node_metrics_port/.test(readyTask) && /--elders \{\{ shade_tree_ready_elders \| quote \}\}/.test(readyTask), "a node also needs its heartbeat accepted by the Elder Trees (the Rust node serves the heartbeat series on its own port)");
 ok(/ActiveEnterTimestamp/.test(readyTask) && /tor@default\.service/.test(readyTask) && /--since "\$since"/.test(readyTask), "an announce from before the Tor or unit restart does not count");
 ok(/--timeout \{\{ shade_tree_ready_timeout_seconds \| int \}\}/.test(readyTask) && /async: "\{\{ \(shade_tree_ready_timeout_seconds \| int\) \+ 120 \}\}"/.test(readyTask) && /poll: 10/.test(readyTask), "the wait is bounded on the host and on the controller");
 ok(/when: shade_tree_wait_ready \| bool/.test(readyTask) && !/no_log|ignore_errors|failed_when: false/.test(readyTask), "a timeout fails the play with the script's message; the gate can be switched off explicitly");

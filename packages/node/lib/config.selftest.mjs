@@ -126,8 +126,6 @@ function main() {
     ok(errFor(validateConfig("gateway", { SHADE_TREE_ROOT_PROVIDER: "helios" }), "SHADE_TREE_ROOT_PROVIDER"), "bad root-provider enum fails on SHADE_TREE_ROOT_PROVIDER");
     ok(errFor(validateConfig("gateway", { SHADE_TREE_EPOCH_SECONDS: "0" }), "SHADE_TREE_EPOCH_SECONDS"), "non-positive epoch fails on SHADE_TREE_EPOCH_SECONDS");
     ok(errFor(validateConfig("gateway", { SHADE_TREE_GATEWAY_PORT: "70000" }), "SHADE_TREE_GATEWAY_PORT"), "out-of-range gateway port fails on SHADE_TREE_GATEWAY_PORT");
-    ok(validateConfig("gateway", { SHADE_TREE_HEARTBEAT_METRICS_PORT: "9103" }).ok, "heartbeat metrics port is valid in the gateway-side role");
-    ok(errFor(validateConfig("gateway", { SHADE_TREE_HEARTBEAT_METRICS_PORT: "nope" }), "SHADE_TREE_HEARTBEAT_METRICS_PORT"), "bad heartbeat metrics port is rejected");
     ok(errFor(validateConfig("gateway", { SHADE_TREE_GATEWAY_PORT: "8443", SHADE_TREE_METRICS_PORT: "8443" }), "SHADE_TREE_METRICS_PORT"), "node metrics cannot reuse its Tor-mapped backend port");
   }
 

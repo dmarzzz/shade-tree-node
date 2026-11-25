@@ -8,8 +8,10 @@
 #   # or, if you already cloned the repo on the box:
 #   sudo bash packages/node/bootnode/deploy/bootstrap.sh
 #
-# It installs Node + Tor (from the official Tor Project repo, so `pow: yes` is available),
-# mints the bootnode and gateway onion identities, writes systemd units, starts everything,
+# It installs the shadenet-node and shadenet-elder release binaries (ADR 0014, ADR 0015), Node
+# (for the operator tooling and the 402 registrar) and Tor (from the official Tor Project repo,
+# so `pow: yes` is available), mints the bootnode and gateway onion identities, writes systemd
+# units, starts everything,
 # and prints the bootnode onion + pinned signer + gateway onion + the exact client command.
 # Re-running it is safe: existing keys/units are reused, not regenerated.
 #
@@ -17,18 +19,23 @@
 #   SHADE_TREE_REPO        git URL            (default: the public repo)
 #   SHADE_TREE_REF         branch/tag/sha     (default: main)
 #   SHADE_TREE_DIR         install dir        (default: /opt/shade-tree)
+#   SHADENET_VERSION       release whose shadenet-node + shadenet-elder binaries to install
+#                    (default: the checkout's version; sha256-pinned in binaries.sh). Another
+#                    version needs SHADENET_NODE_SHA256 + SHADENET_ELDER_SHA256; SHADENET_NODE_BIN +
+#                    SHADENET_ELDER_BIN install local builds instead (the e2e containers do).
 #   SHADE_TREE_ADMISSION   open | stake       (default: open)
 #   SHADE_TREE_BOOTNODE_PORT / SHADE_TREE_GATEWAY_PORT   loopback backends (default 8877 / 8443)
 #   SHADE_TREE_ELDER_METRICS_PORT / SHADE_TREE_NODE_METRICS_PORT   local Prometheus endpoints
-#                    (default 9100 / 9101). Registrar and heartbeat use 9102 / 9103. All four
-#                    stay on loopback and must be distinct from each other and active service ports.
+#                    (default 9100 / 9101; the node serves its heartbeat series on its own port).
+#                    The registrar uses 9102. All three stay on loopback and must be distinct from
+#                    each other and active service ports.
 #   SHADE_TREE_LOG_LEVEL   debug | info | warn | error | off   (default: info)
 #   SHADE_TREE_LOG_FORMAT  auto | pretty | text | json          (default: json under systemd)
 #   SHADE_TREE_BANNER      auto | always | never                 (default: never under systemd)
 #   SHADE_TREE_ENABLE_POW  1 | 0              (default: 0) onion PoW DoS defense
 #                    (HiddenServicePoWDefensesEnabled) on every HS block this box publishes.
 #   SHADE_TREE_SESSION_TICKETS 1 | 0          (default: 0) session-ticket books (ADR 0011), rendered into
-#                    the gateway AND heartbeat units so the signed session cap matches enforcement.
+#                    the node unit so the signed session cap matches enforcement.
 #   SHADE_TREE_HS_MAX_STREAMS  per-circuit stream cap on every HS block (default 32; OPS-10).
 #                    Default OFF: a client tor built without the pow module (e.g. the Homebrew
 #                    bottle, `tor --list-modules` -> `pow: no`) could NOT reach a PoW-enabled
@@ -40,19 +47,19 @@
 #   SHADE_TREE_BOOTNODE_ONION   <56-char>.onion   (default: unset = this box runs its OWN bootnode)
 #   SHADE_TREE_BOOTNODE_ONIONS  <onion>[,<onion>...] every Elder Tree of the canopy (ADR 0012; the
 #                    SHADENET_NETWORK preset fills it from the record's elders[]). Written into
-#                    the heartbeat unit so the gateway announces to each Elder every interval.
-#                    GATEWAY-ONLY mode: when set, this box installs ONLY tor + shade-tree-gateway +
-#                    shade-tree-heartbeat (no shade-tree-bootnode unit, no bootnode HS block, no bootnode
-#                    identity) and the heartbeat announces the gateway to THAT remote bootnode.
+#                    the node unit so the node announces to each Elder every interval.
+#                    GATEWAY-ONLY mode: when set, this box installs ONLY tor + shade-tree-gateway
+#                    (no shade-tree-bootnode unit, no bootnode HS block, no bootnode identity) and
+#                    the node announces itself to THAT remote bootnode.
 #                    Use it to add a second/third gateway to an existing bootnode (docs/OPERATOR.md
 #                    section 2). Optional companions, only read in this mode:
 #     SHADE_TREE_BOOTNODE_SIGNER   the remote bootnode's pinned signer pubkey -- printed into the
-#                            client command at the end (the heartbeat does not need it).
+#                            client command at the end (the node does not need it).
 #   SHADE_TREE_ELDER_ONLY     1 | 0              (default: 0) DEDICATED-ELDER mode. Publishes only
-#                    the Elder onion and runs only shade-tree-bootnode (no gateway onion, gateway,
-#                    or heartbeat). Mutually exclusive with SHADE_TREE_BOOTNODE_ONION.
+#                    the Elder onion and runs only shade-tree-bootnode (no gateway onion or
+#                    gateway). Mutually exclusive with SHADE_TREE_BOOTNODE_ONION.
 #   SHADE_TREE_GATEWAY_REGION  na|sa|eu|af|as|oc|aq|unknown  (default: unset = not advertised)
-#                    coarse region bucket the heartbeat advertises in signed caps (docs/CONFIG.md).
+#                    coarse region bucket the node advertises in signed caps (docs/CONFIG.md).
 #   SHADE_TREE_HELIOS      1 | 0              (default: 0) OPT-IN Helios light-client sidecar (T-DEV-9b,
 #                    docs/LIGHT-CLIENT.md). =1 installs the pinned a16z/helios release binary
 #                    (sha256-verified, SHADE_TREE_HELIOS_VERSION below), renders + starts a hardened
@@ -82,9 +89,9 @@
 #                    anonymity order invited (members.json, no on-chain footprint) > staked
 #                    (StakedReputationSet) > paid (PaidAccessSet). The default `invited` is the
 #                    MAXIMUM-ANONYMITY mode; opt into the others explicitly. Rendered into BOTH the
-#                    gateway unit (packages/node/gateway/gateway.mjs enforces it; a named path whose contract is
-#                    missing fails closed at startup) and the heartbeat unit (advertised as signed
-#                    `caps.admits`, so clients route only to gateways that admit their leaf).
+#                    node unit (the node enforces it; a named path whose contract is missing fails
+#                    closed at startup) and advertised by it as signed `caps.admits`, so clients
+#                    route only to gateways that admit their leaf.
 #     SHADE_TREE_MEMBERS_FILE  absolute path to an operator-owned members.json (REQUIRED when
 #                            `invited` is admitted in LIVE mode). The bootstrap validates and copies
 #                            it to root-owned /etc/shade-tree/members.json; it never serves the
@@ -102,7 +109,7 @@
 #   SHADE_TREE_ROOT_FRESHNESS_SECONDS positive integer (default: epoch length) hard wall-clock
 #                    lifetime for superseded roots and cached RPC snapshots.
 #   SHADE_TREE_ZK_ARTIFACTS <id>=<verification-key-path>[,...]  explicit verification-key set
-#                    accepted by the gateway and advertised by the heartbeat. Paths are absolute
+#                    accepted and advertised by the node. Paths are absolute
 #                    or relative to SHADE_TREE_DIR. Production automation should always set this;
 #                    an empty value preserves the built-in development artifact behavior.
 #   SHADE_TREE_ZK_ARTIFACT_LEGACY <id>  artifact implied by envelopes that omit `artifact` during
@@ -116,7 +123,7 @@
 #                    http://<bootnode-onion>:<port>/, and the bootnode advertises it in GET /health
 #                    `pay: {...}`), or -- T-FEAT-9 -- the GATEWAY onion on a gateway-only box
 #                    (SHADE_TREE_BOOTNODE_ONION set; buyers reach it at http://<gateway-onion>:<port>/).
-#                    Either way the heartbeat advertises the offer in the gateway's signed caps
+#                    Either way the node advertises the offer in its signed caps
 #                    (`caps.pay`), so a provider sells access on its own terms with its own
 #                    PaidAccessSet. The OPERATOR KEY is a secret and deliberately NOT a
 #                    tunable: after bootstrap, add it as a 0600 drop-in
@@ -212,7 +219,7 @@ if arts:
     out["SHADE_TREE_ZK_ARTIFACTS"] = ",".join(arts)
 if elder.get("admission"):
     out["SHADE_TREE_ADMISSION"] = elder["admission"]
-# ADR 0011: the H2 switch from the record; gateway and heartbeat run with the same value.
+# ADR 0011: the H2 switch from the record; the node runs with it.
 if r.get("sessionTickets") is True:
     out["SHADE_TREE_SESSION_TICKETS"] = "1"
 if elder.get("gatewayRegistry"):
@@ -280,8 +287,7 @@ SHADE_TREE_SESSION_TICKETS="${SHADE_TREE_SESSION_TICKETS:-0}"
 # gateway, so Tor's local connects queue in the kernel while the process restarts instead of
 # being refused for the 4-6 s a cold start takes. Off by default so the golden units are unchanged.
 SHADE_TREE_SOCKET_ACTIVATION="${SHADE_TREE_SOCKET_ACTIVATION:-0}"
-# Webhook alerts without Prometheus (packages/node/lib/alerts.mjs): rendered into the gateway and
-# heartbeat units only when set.
+# Webhook alerts without Prometheus: rendered into the node unit only when set.
 SHADE_TREE_ALERT_WEBHOOK="${SHADE_TREE_ALERT_WEBHOOK:-${SHADENET_ALERT_WEBHOOK:-}}"
 SHADE_TREE_ALERT_WEBHOOK_FORMAT="${SHADE_TREE_ALERT_WEBHOOK_FORMAT:-generic}"
 SHADE_TREE_BOOTNODE_ONION="${SHADE_TREE_BOOTNODE_ONION:-}"
@@ -331,7 +337,6 @@ SHADE_TREE_BANNER="${SHADE_TREE_BANNER:-never}"
 SHADE_TREE_ELDER_METRICS_PORT="${SHADE_TREE_ELDER_METRICS_PORT:-9100}"
 SHADE_TREE_NODE_METRICS_PORT="${SHADE_TREE_NODE_METRICS_PORT:-9101}"
 SHADE_TREE_REGISTRAR_METRICS_PORT="${SHADE_TREE_REGISTRAR_METRICS_PORT:-9102}"
-SHADE_TREE_HEARTBEAT_METRICS_PORT="${SHADE_TREE_HEARTBEAT_METRICS_PORT:-9103}"
 SHADE_TREE_FLEET_TALLY_PEERS="${SHADE_TREE_FLEET_TALLY_PEERS:-}"
 SHADE_TREE_FLEET_TALLY_TOKEN="${SHADE_TREE_FLEET_TALLY_TOKEN:-}"
 SHADE_TREE_FLEET_TALLY_PORT="${SHADE_TREE_FLEET_TALLY_PORT:-8879}"
@@ -355,6 +360,14 @@ node_pinned_sha256() {  # $1 = version, $2 = x64|arm64
     *) ;;
   esac
 }
+SHADENET_VERSION="${SHADENET_VERSION:-}"
+SHADENET_NODE_SHA256="${SHADENET_NODE_SHA256:-}"
+SHADENET_ELDER_SHA256="${SHADENET_ELDER_SHA256:-}"
+SHADENET_NODE_BIN="${SHADENET_NODE_BIN:-}"
+SHADENET_ELDER_BIN="${SHADENET_ELDER_BIN:-}"
+# Where the units find the two binaries once binaries.sh installed them.
+SHADENET_NODE_PATH=/usr/local/bin/shadenet-node
+SHADENET_ELDER_PATH=/usr/local/bin/shadenet-elder
 SHADE_TREE_CREDENTIALS_FROM="${SHADE_TREE_CREDENTIALS_FROM:-}"
 SHADE_TREE_JOURNAL_MAX_USE="${SHADE_TREE_JOURNAL_MAX_USE:-500M}"
 SHADE_TREE_JOURNAL_RETENTION="${SHADE_TREE_JOURNAL_RETENTION:-14day}"
@@ -401,14 +414,14 @@ for service_port in "$SHADE_TREE_BOOTNODE_PORT" "$SHADE_TREE_GATEWAY_PORT"; do
     || die "bootnode and gateway ports must be in 1024..65535 (got '$service_port')"
 done
 metrics_ports_seen=""
-for metrics_port in "$SHADE_TREE_ELDER_METRICS_PORT" "$SHADE_TREE_NODE_METRICS_PORT" "$SHADE_TREE_REGISTRAR_METRICS_PORT" "$SHADE_TREE_HEARTBEAT_METRICS_PORT"; do
+for metrics_port in "$SHADE_TREE_ELDER_METRICS_PORT" "$SHADE_TREE_NODE_METRICS_PORT" "$SHADE_TREE_REGISTRAR_METRICS_PORT"; do
   { [[ "$metrics_port" =~ ^[0-9]{4,5}$ ]] && [ "$metrics_port" -ge 1024 ] && [ "$metrics_port" -le 65535 ]; } \
     || die "operator metrics ports must be in 1024..65535 (got '$metrics_port')"
   case " $metrics_ports_seen " in *" $metrics_port "*) die "operator metrics ports must be distinct (duplicate '$metrics_port')" ;; esac
   metrics_ports_seen="$metrics_ports_seen $metrics_port"
 done
 # Mode: default is bootnode + gateway; SHADE_TREE_BOOTNODE_ONION selects gateway-only;
-#       SHADE_TREE_ELDER_ONLY=1 selects a dedicated Elder with no gateway or heartbeat.
+#       SHADE_TREE_ELDER_ONLY=1 selects a dedicated Elder with no gateway.
 WITH_BOOTNODE=1
 WITH_GATEWAY=1
 if [ "$SHADE_TREE_ELDER_ONLY" = "1" ] && [ -n "$SHADE_TREE_BOOTNODE_ONION" ]; then
@@ -585,7 +598,6 @@ reserve_runtime_port "Tor SOCKS" "9050"
 if [ "$WITH_GATEWAY" = "1" ]; then
   reserve_runtime_port "gateway backend" "$SHADE_TREE_GATEWAY_PORT"
   reserve_runtime_port "node metrics" "$SHADE_TREE_NODE_METRICS_PORT"
-  reserve_runtime_port "heartbeat metrics" "$SHADE_TREE_HEARTBEAT_METRICS_PORT"
 fi
 if [ "$WITH_BOOTNODE" = "1" ]; then
   reserve_runtime_port "bootnode backend" "$SHADE_TREE_BOOTNODE_PORT"
@@ -626,6 +638,14 @@ fi
 [[ "$SHADE_TREE_JOURNAL_RETENTION" =~ ^[0-9]{1,4}(day|week|month|h)$ ]] || die "SHADE_TREE_JOURNAL_RETENTION must look like 14day"
 [[ "$SHADE_TREE_NODE_VERSION" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || die "SHADE_TREE_NODE_VERSION must be x.y.z"
 [ -z "$SHADE_TREE_CREDENTIALS_FROM" ] || [ -d "$SHADE_TREE_CREDENTIALS_FROM" ] || die "SHADE_TREE_CREDENTIALS_FROM must be a directory"
+{ [ -z "$SHADENET_VERSION" ] || [[ "${SHADENET_VERSION#v}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; } \
+  || die "SHADENET_VERSION must be a release version like 0.8.0 (got '$SHADENET_VERSION')"
+for sha_var in SHADENET_NODE_SHA256 SHADENET_ELDER_SHA256; do
+  { [ -z "${!sha_var}" ] || [[ "${!sha_var}" =~ ^[0-9a-fA-F]{64}$ ]]; } || die "$sha_var must be 64 hex chars"
+done
+for bin_var in SHADENET_NODE_BIN SHADENET_ELDER_BIN; do
+  { [ -z "${!bin_var}" ] || { [[ "${!bin_var}" = /* ]] && [ -x "${!bin_var}" ]; }; } || die "$bin_var must be an absolute path to an executable (got '${!bin_var}')"
+done
 
 for peer in ${SHADE_TREE_BOOTNODE_PEERS//,/ }; do
   [[ "${peer%.onion}" =~ ^[a-z2-7]{56}$ ]] || die "SHADE_TREE_BOOTNODE_PEERS must be comma-separated v3 onions"
@@ -669,11 +689,12 @@ render_torrc() {  # $1 = output file
   } > "$1"
 }
 
-# Sandbox rationale (applied identically to every unit below). Each is a plain Node
-# process that needs: outbound network (bootnode/heartbeat over Tor SOCKS on loopback, Node
-# fetch), read access to the repo, and write access ONLY to ${SHADE_TREE_DIR}/deploy-state (the
-# bootnode mints its signer key there at runtime; the gateway/heartbeat read the minted onion
-# identities from there; persistence writes there too) plus a private /tmp.
+# Sandbox rationale (applied identically to every unit below). Each is a service process (the
+# Rust node and Elder, the Node registrar) that needs: outbound network (announces, federation
+# and the registrar over Tor SOCKS on loopback, RPC), read access to the repo (the proof keys),
+# and write access ONLY to ${SHADE_TREE_DIR}/deploy-state (the Elder mints its signer key there
+# at runtime; the node reads the minted onion identity from there; persistence writes there
+# too) plus a private /tmp.
 #   NoNewPrivileges       no setuid/capability escalation ever
 #   ProtectSystem=strict  whole FS read-only; ReadWritePaths re-opens deploy-state (see above)
 #   ProtectHome           /home,/root,/run/user hidden (service user is --system, no $HOME use)
@@ -688,8 +709,8 @@ render_torrc() {  # $1 = output file
 #                          ports (>1024), so no CAP_NET_BIND_SERVICE or anything else is required
 #   CPUQuota/CPUWeight/Nice keep Shade Tree subordinate to deadline-sensitive validator or AI work
 #   MemoryMax/MemorySwapMax/TasksMax contain runaway RSS, swap pressure, and fork storms
-# MemoryDenyWriteExecute is deliberately NOT set: V8's JIT maps writable-then-executable pages,
-# so W^X enforcement would crash the Node runtime. Left off on purpose.
+# MemoryDenyWriteExecute is set by the Rust units themselves and deliberately NOT here: V8's JIT
+# maps writable-then-executable pages, so W^X enforcement would crash the Node registrar.
 render_sandbox() {
   local cpu_quota="${1:-50%}" memory_max="${2:-512M}" tasks_max="${3:-128}"
   cat <<EOF
@@ -745,6 +766,7 @@ Wants=network-online.target
 [Service]
 User=${RUN_USER}
 WorkingDirectory=${SHADE_TREE_DIR}
+Environment=SHADENET_STATE=${SHADE_TREE_DIR}/deploy-state
 Environment=SHADE_TREE_BOOTNODE_PORT=${SHADE_TREE_BOOTNODE_PORT}
 Environment=SHADE_TREE_BOOTNODE_ADMISSION=${SHADE_TREE_ADMISSION}
 Environment=SHADE_TREE_BOOTNODE_SIGNER_KEY=${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key
@@ -778,9 +800,10 @@ EOF
       echo "Environment=SHADE_TREE_PAY_PROTOCOLS=${SHADE_TREE_PAY_PROTOCOLS}"
     fi
     cat <<EOF
-ExecStart=${NODE_BIN} ${SHADE_TREE_DIR}/packages/node/bootnode/server.mjs
+ExecStart=${SHADENET_ELDER_PATH} run
 Restart=always
 RestartSec=3
+MemoryDenyWriteExecute=true
 EOF
     render_sandbox "25%" "256M" "96"
   } > "$1"
@@ -856,15 +879,22 @@ WantedBy=sockets.target
 EOF
 }
 
+# The node announces itself to the bootnode (local one by default, SHADE_TREE_BOOTNODE_ONION in
+# gateway-only mode) from inside the same process (ADR 0014). It uses the gateway onion identity
+# and the local Tor SOCKS. (For admission=stake, add SHADE_TREE_GW_OPERATOR_KEY as a systemd
+# credential after staking -- a secret, so it is deliberately NOT a bootstrap.sh tunable; see
+# packages/node/bootnode/deploy/README.md.)
 render_gateway_unit() {  # $1 = output file
   {
+    local after="network-online.target tor.service"
+    [ "$WITH_BOOTNODE" = "0" ] || after="$after shade-tree-bootnode.service"
     echo "[Unit]"
     echo "Description=Shade Tree tunnel gateway"
     if [ "$SHADE_TREE_HELIOS" = "1" ]; then
-      echo "After=network-online.target tor.service shade-tree-helios.service"
+      echo "After=$after shade-tree-helios.service"
       echo "Wants=network-online.target shade-tree-helios.service"
     else
-      echo "After=network-online.target tor.service"
+      echo "After=$after"
       echo "Wants=network-online.target"
     fi
     # Socket activation (SHADE_TREE_SOCKET_ACTIVATION=1): the .socket unit owns 127.0.0.1:<port>;
@@ -888,23 +918,23 @@ Environment=SHADE_TREE_METRICS_PORT=${SHADE_TREE_NODE_METRICS_PORT}
 Environment=SHADE_TREE_LOG_LEVEL=${SHADE_TREE_LOG_LEVEL}
 Environment=SHADE_TREE_LOG_FORMAT=${SHADE_TREE_LOG_FORMAT}
 Environment=SHADE_TREE_BANNER=${SHADE_TREE_BANNER}
+Environment=SHADE_TREE_BOOTNODE_ONION=${BN_ONION}
+Environment=SHADE_TREE_GW_IDENTITY=${GW_HS}/identity.local.json
+Environment=SHADE_TREE_TOR_HOST=127.0.0.1
+Environment=SHADE_TREE_TOR_PORT=9050
 SyslogIdentifier=shade-tree-node
 EOF
+    [ -z "$SHADE_TREE_GATEWAY_REGION" ] || echo "Environment=SHADE_TREE_GATEWAY_REGION=${SHADE_TREE_GATEWAY_REGION}"
+    # ADR 0012: every Elder Tree of the canopy; the node announces to each one.
+    [ -z "$SHADE_TREE_BOOTNODE_ONIONS" ] || echo "Environment=SHADE_TREE_BOOTNODE_ONIONS=${SHADE_TREE_BOOTNODE_ONIONS}"
     if [ "$FLEET_TALLY_ENABLED" = "1" ]; then
       echo "Environment=SHADE_TREE_FLEET_TALLY_PEERS=${SHADE_TREE_FLEET_TALLY_PEERS}"
       echo "Environment=SHADE_TREE_FLEET_TALLY_LISTEN=127.0.0.1:${SHADE_TREE_FLEET_TALLY_PORT}"
-      echo "Environment=SHADE_TREE_TOR_HOST=127.0.0.1"
-      echo "Environment=SHADE_TREE_TOR_PORT=9050"
       echo "EnvironmentFile=-/etc/shade-tree/fleet-tally.env"
     fi
     # ADR 0011: session-ticket books; off by default so the golden unit is unchanged. Books are
-    # bound to the onion, so the gateway needs the same identity file the heartbeat signs with
-    # (without it gateway.mjs fails closed: "session tickets DISABLED" while the heartbeat still
-    # advertises the cap, found on the 2026-09-30 staging roll).
-    if [ "$SHADE_TREE_SESSION_TICKETS" = "1" ]; then
-      echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
-      echo "Environment=SHADE_TREE_GW_IDENTITY=${GW_HS}/identity.local.json"
-    fi
+    # bound to the onion identity the node also signs its announces with.
+    [ "$SHADE_TREE_SESSION_TICKETS" = "1" ] && echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
     [ "$ADMIT_INVITED" = "1" ] && [ -n "$SHADE_TREE_MEMBERS_RUNTIME_FILE" ] && echo "Environment=SHADE_TREE_MEMBERS_FILE=${SHADE_TREE_MEMBERS_RUNTIME_FILE}"
     # Admission policy companions (T-FEAT-9): the contracts + RPC behind each admitted on-chain
     # path (SHADE_TREE_HELIOS=1 implies staked). Only rendered when the policy needs them.
@@ -920,11 +950,23 @@ EOF
     [ -z "$SHADE_TREE_FROM_BLOCKS" ] || echo "Environment=SHADE_TREE_FROM_BLOCKS=${SHADE_TREE_FROM_BLOCKS}"
     [ -z "$SHADE_TREE_ZK_ARTIFACTS" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACTS=${SHADE_TREE_ZK_ARTIFACTS}"
     [ -z "$SHADE_TREE_ZK_ARTIFACT_LEGACY" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACT_LEGACY=${SHADE_TREE_ZK_ARTIFACT_LEGACY}"
+    if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
+      # Advertise the offer in the gateway's SIGNED caps (`caps.pay`, T-FEAT-9) -- the same
+      # advert the bootnode puts in /health; SHADE_TREE_REGISTRAR_ONION names the onion it rides.
+      echo "Environment=SHADE_TREE_REGISTRAR_ADVERTISE=1"
+      echo "Environment=SHADE_TREE_REGISTRAR_PORT=${SHADE_TREE_REGISTRAR_PORT}"
+      echo "Environment=SHADE_TREE_REGISTRAR_ONION=${REG_ONION}"
+      echo "Environment=SHADE_TREE_PAY_ASSET=${SHADE_TREE_PAY_ASSET}"
+      echo "Environment=SHADE_TREE_PAY_PRICES=${SHADE_TREE_PAY_PRICES}"
+      echo "Environment=SHADE_TREE_PAY_CHAIN_ID=${SHADE_TREE_PAY_CHAIN_ID}"
+      echo "Environment=SHADE_TREE_PAY_PROTOCOLS=${SHADE_TREE_PAY_PROTOCOLS}"
+    fi
     render_alert_env
     cat <<EOF
-ExecStart=${NODE_BIN} ${SHADE_TREE_DIR}/packages/node/gateway/gateway.mjs
+ExecStart=${SHADENET_NODE_PATH} run
 Restart=always
 RestartSec=3
+MemoryDenyWriteExecute=true
 EOF
     render_sandbox "75%" "512M" "128"
   } > "$1"
@@ -965,71 +1007,6 @@ EOF
   } > "$1"
 }
 
-# The gateway announces itself to the bootnode (local one by default, SHADE_TREE_BOOTNODE_ONION in
-# gateway-only mode). It uses the gateway onion identity and the local Tor SOCKS. (For
-# admission=stake, add Environment=SHADE_TREE_GW_OPERATOR_KEY=... here after staking -- a secret,
-# so it is deliberately NOT a bootstrap.sh tunable; see packages/node/bootnode/deploy/README.md.)
-render_heartbeat_unit() {  # $1 = output file
-  {
-    if [ "$WITH_BOOTNODE" = "1" ]; then
-      echo "[Unit]"
-      echo "Description=shade-tree gateway heartbeat to bootnode"
-      echo "After=shade-tree-bootnode.service tor.service"
-    else
-      echo "[Unit]"
-      echo "Description=shade-tree gateway heartbeat to remote bootnode ${SHADE_TREE_BOOTNODE_ONION}"
-      echo "After=network-online.target tor.service"
-      echo "Wants=network-online.target"
-    fi
-    cat <<EOF
-[Service]
-User=${RUN_USER}
-WorkingDirectory=${SHADE_TREE_DIR}
-Environment=SHADE_TREE_BOOTNODE_ONION=${BN_ONION}
-Environment=SHADE_TREE_GW_IDENTITY=${GW_HS}/identity.local.json
-Environment=SHADE_TREE_TOR_PORT=9050
-Environment=SHADE_TREE_ADMIT=${SHADE_TREE_ADMIT}
-Environment=SHADE_TREE_EPOCH_SECONDS=${SHADE_TREE_EPOCH_SECONDS}
-Environment=SHADE_TREE_TIERS=${SHADE_TREE_TIERS}
-Environment=SHADE_TREE_ROOT_FRESHNESS_SECONDS=${SHADE_TREE_ROOT_FRESHNESS_SECONDS}
-Environment=SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES=${SHADE_TREE_TUNNEL_MAX_PAYLOAD_BYTES}
-Environment=SHADE_TREE_HEARTBEAT_METRICS_PORT=${SHADE_TREE_HEARTBEAT_METRICS_PORT}
-Environment=SHADE_TREE_LOG_LEVEL=${SHADE_TREE_LOG_LEVEL}
-Environment=SHADE_TREE_LOG_FORMAT=${SHADE_TREE_LOG_FORMAT}
-Environment=SHADE_TREE_BANNER=${SHADE_TREE_BANNER}
-SyslogIdentifier=shade-tree-heartbeat
-EOF
-    [ -z "$SHADE_TREE_GATEWAY_REGION" ] || echo "Environment=SHADE_TREE_GATEWAY_REGION=${SHADE_TREE_GATEWAY_REGION}"
-    # ADR 0012: every Elder Tree of the canopy; the heartbeat announces to each one.
-    [ -z "$SHADE_TREE_BOOTNODE_ONIONS" ] || echo "Environment=SHADE_TREE_BOOTNODE_ONIONS=${SHADE_TREE_BOOTNODE_ONIONS}"
-    # Heartbeat loads the same vkeys and advertises their content-derived ids in signed caps.
-    [ -z "$SHADE_TREE_ZK_ARTIFACTS" ] || echo "Environment=SHADE_TREE_ZK_ARTIFACTS=${SHADE_TREE_ZK_ARTIFACTS}"
-    # ADR 0011: the heartbeat advertises the signed session cap only when the node enforces it.
-    [ "$SHADE_TREE_SESSION_TICKETS" = "1" ] && echo "Environment=SHADE_TREE_SESSION_TICKETS=1"
-    # dogfood #234: the heartbeat advertises the admission sets the gateway reads (signed caps.sets),
-    # so it needs the same contract list the gateway unit carries.
-    [ "$ADMIT_STAKED" = "1" ] && echo "Environment=SHADE_TREE_GROUP_CONTRACT=${SHADE_TREE_GROUP_CONTRACT}"
-    if [ "$SHADE_TREE_REGISTRAR" = "1" ]; then
-      # Advertise the offer in the gateway's SIGNED caps (`caps.pay`, T-FEAT-9) -- the same
-      # advert the bootnode puts in /health; SHADE_TREE_REGISTRAR_ONION names the onion it rides.
-      echo "Environment=SHADE_TREE_REGISTRAR_ADVERTISE=1"
-      echo "Environment=SHADE_TREE_REGISTRAR_PORT=${SHADE_TREE_REGISTRAR_PORT}"
-      echo "Environment=SHADE_TREE_REGISTRAR_ONION=${REG_ONION}"
-      echo "Environment=SHADE_TREE_PAY_ASSET=${SHADE_TREE_PAY_ASSET}"
-      echo "Environment=SHADE_TREE_PAY_PRICES=${SHADE_TREE_PAY_PRICES}"
-      echo "Environment=SHADE_TREE_PAY_CHAIN_ID=${SHADE_TREE_PAY_CHAIN_ID}"
-      echo "Environment=SHADE_TREE_PAY_PROTOCOLS=${SHADE_TREE_PAY_PROTOCOLS}"
-    fi
-    render_alert_env
-    cat <<EOF
-ExecStart=${NODE_BIN} ${SHADE_TREE_DIR}/packages/node/bootnode/heartbeat.mjs
-Restart=always
-RestartSec=10
-EOF
-    render_sandbox "20%" "256M" "96"
-  } > "$1"
-}
-
 BN_HS="$SHADE_TREE_DIR/deploy-state/bootnode-hs"
 GW_HS="$SHADE_TREE_DIR/deploy-state/gateway-hs"
 
@@ -1045,7 +1022,6 @@ if [ -n "$SHADE_TREE_RENDER_ONLY" ]; then
   [ "$WITH_BOOTNODE" = "1" ] && render_bootnode_unit "$out/etc/systemd/system/shade-tree-bootnode.service"
   [ "$WITH_GATEWAY" = "1" ] && render_gateway_unit "$out/etc/systemd/system/shade-tree-gateway.service"
   [ "$WITH_GATEWAY" = "1" ] && [ "$SHADE_TREE_SOCKET_ACTIVATION" = "1" ] && render_gateway_socket_unit "$out/etc/systemd/system/shade-tree-gateway.socket"
-  [ "$WITH_GATEWAY" = "1" ] && render_heartbeat_unit "$out/etc/systemd/system/shade-tree-heartbeat.service"
   [ "$SHADE_TREE_HELIOS" = "1" ] && render_helios_unit "$out/etc/systemd/system/shade-tree-helios.service"
   [ "$SHADE_TREE_REGISTRAR" = "1" ] && render_registrar_unit "$out/etc/systemd/system/shade-tree-registrar.service"
   if [ "$WITH_GATEWAY" = "0" ]; then render_mode="elder-only"; elif [ "$WITH_BOOTNODE" = "1" ]; then render_mode="bootnode+gateway"; else render_mode="gateway-only"; fi
@@ -1062,7 +1038,7 @@ fi
 log "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl gnupg ca-certificates git apt-transport-https xz-utils >/dev/null
+apt-get install -y -qq curl gnupg ca-certificates git apt-transport-https xz-utils python3 >/dev/null
 
 log "node 24"
 # Node < 24 is upgraded, not tolerated: the units below run under
@@ -1131,6 +1107,11 @@ else
 fi
 ( cd "$SHADE_TREE_DIR" && PATH="$(dirname "$NODE_BIN"):$PATH" npm install --omit=dev --no-audit --no-fund >/dev/null 2>&1 )
 
+log "shadenet-node + shadenet-elder (sha256-pinned release binaries, or the local builds given)"
+# shellcheck source=binaries.sh
+source "$SHADE_TREE_DIR/packages/node/bootnode/deploy/binaries.sh"
+install_shadenet_binaries "$SHADE_TREE_DIR" || die "could not install the shadenet binaries"
+
 # A live invited gateway must trust an operator-supplied set, never the repository's demo
 # members. Validate the document with the runtime we just installed, then copy it outside every
 # service-writable directory. The root-owned file is group-readable by the node, but the node
@@ -1138,19 +1119,19 @@ fi
 # the source remains explicit, while the unit always reads the canonical protected copy.
 if [ "$WITH_GATEWAY" = "1" ] && [ "$ADMIT_INVITED" = "1" ]; then
   MEMBERS_SOURCE="$SHADE_TREE_MEMBERS_FILE"
-  "$NODE_BIN" - "$MEMBERS_SOURCE" <<'NODE'
-const { readFileSync } = require("node:fs");
-const path = process.argv[2];
-let doc;
-try { doc = JSON.parse(readFileSync(path, "utf8")); }
-catch (error) { console.error(`bootstrap.sh: invalid SHADE_TREE_MEMBERS_FILE ${path}: ${error.message}`); process.exit(1); }
-const FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-if (doc?.version !== 2 || !Array.isArray(doc.members) || doc.members.length === 0 || doc.members.length > 2 ** 20 ||
-    doc.members.some((leaf) => typeof leaf !== "string" || !/^(0|[1-9][0-9]*)$/.test(leaf) || BigInt(leaf) >= FIELD)) {
-  console.error("bootstrap.sh: SHADE_TREE_MEMBERS_FILE must contain 1..1048576 canonical decimal-string BN254 field elements");
-  process.exit(1);
-}
-NODE
+  python3 - "$MEMBERS_SOURCE" <<'PY'
+import json, re, sys
+path = sys.argv[1]
+try:
+    doc = json.load(open(path, encoding="utf-8"))
+except (OSError, ValueError) as error:
+    sys.exit(f"bootstrap.sh: invalid SHADE_TREE_MEMBERS_FILE {path}: {error}")
+FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617
+members = doc.get("members") if isinstance(doc, dict) else None
+if (not isinstance(doc, dict) or doc.get("version") != 2 or not isinstance(members, list) or not 1 <= len(members) <= 2 ** 20
+        or any(not isinstance(leaf, str) or not re.fullmatch(r"0|[1-9][0-9]*", leaf) or int(leaf) >= FIELD for leaf in members)):
+    sys.exit("bootstrap.sh: SHADE_TREE_MEMBERS_FILE must contain 1..1048576 canonical decimal-string BN254 field elements")
+PY
   install -d -o root -g "$RUN_USER" -m 0750 /etc/shade-tree
   MEMBERS_DEST="/etc/shade-tree/members.json"
   if [ -e "$MEMBERS_DEST" ] && [ "$MEMBERS_SOURCE" -ef "$MEMBERS_DEST" ]; then
@@ -1163,13 +1144,13 @@ fi
 
 log "onion identities (reused if present)"
 if [ "$WITH_BOOTNODE" = "1" ]; then
-  [ -f "$BN_HS/hostname" ] || "$NODE_BIN" "$SHADE_TREE_DIR/packages/node/bootnode/keygen.mjs" "$BN_HS" --label bootnode >/dev/null
+  [ -f "$BN_HS/hostname" ] || "$SHADENET_ELDER_PATH" identity "$BN_HS" --label bootnode >/dev/null
   BN_ONION="$(cat "$BN_HS/hostname")"
 else
   BN_ONION="$SHADE_TREE_BOOTNODE_ONION"   # remote; nothing minted here
 fi
 if [ "$WITH_GATEWAY" = "1" ]; then
-  [ -f "$GW_HS/hostname" ] || "$NODE_BIN" "$SHADE_TREE_DIR/packages/node/bootnode/keygen.mjs" "$GW_HS" --label gateway  >/dev/null
+  [ -f "$GW_HS/hostname" ] || "$SHADENET_ELDER_PATH" identity "$GW_HS" --label gateway >/dev/null
   GW_ONION="$(cat "$GW_HS/hostname")"
 else
   GW_ONION=""
@@ -1325,16 +1306,8 @@ else
   fi
 fi
 
-if [ "$WITH_GATEWAY" = "1" ]; then
-  log "gateway heartbeat -> bootnode ${BN_ONION}"
-  render_heartbeat_unit /etc/systemd/system/shade-tree-heartbeat.service
-  systemctl daemon-reload
-  # A re-run must restart an already-running heartbeat (same fix as #200 for the Elder): `enable
-  # --now` on a running unit is a no-op, which left the fleet's heartbeats on the previous commit
-  # and would ignore a changed unit (ADR 0012 adds SHADE_TREE_BOOTNODE_ONIONS to it).
-  systemctl enable shade-tree-heartbeat >/dev/null 2>&1 || true
-  systemctl restart shade-tree-heartbeat
-elif [ -f /etc/systemd/system/shade-tree-heartbeat.service ]; then
+# The heartbeat runs inside the node since ADR 0014; a unit a previous bootstrap wrote goes.
+if [ -f /etc/systemd/system/shade-tree-heartbeat.service ]; then
   systemctl disable --now shade-tree-heartbeat >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/shade-tree-heartbeat.service
   systemctl daemon-reload
@@ -1384,7 +1357,7 @@ EOF
 if [ "$WITH_GATEWAY" = "0" ]; then
   log "waiting for the Elder signer + onion descriptor (~15s)…"
   sleep 15
-  SIGNER="$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
+  SIGNER="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pub'])" "${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
   cat <<EOF
 
 ========================================================================
@@ -1403,7 +1376,7 @@ EOF
 elif [ "$WITH_BOOTNODE" = "1" ]; then
   log "waiting for the bootnode signer + onion descriptors (~15s)…"
   sleep 15
-  SIGNER="$("$NODE_BIN" -e "console.log(JSON.parse(require('fs').readFileSync('${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key')).pub)" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
+  SIGNER="$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['pub'])" "${SHADE_TREE_DIR}/deploy-state/bootnode-signer.key" 2>/dev/null || echo '<check: journalctl -u shade-tree-bootnode>')"
   cat <<EOF
 
 ========================================================================
@@ -1431,7 +1404,7 @@ REG
 $(print_client_setup "$BN_ONION" "$SIGNER")
 
 Check it:
-  systemctl status shade-tree-bootnode shade-tree-gateway shade-tree-heartbeat$([ "$SHADE_TREE_HELIOS" = "1" ] && echo " shade-tree-helios")$([ "$SHADE_TREE_REGISTRAR" = "1" ] && echo " shade-tree-registrar")
+  systemctl status shade-tree-bootnode shade-tree-gateway$([ "$SHADE_TREE_HELIOS" = "1" ] && echo " shade-tree-helios")$([ "$SHADE_TREE_REGISTRAR" = "1" ] && echo " shade-tree-registrar")
   curl --socks5-hostname 127.0.0.1:9050 http://${BN_ONION}/health   # after ~30s of descriptor propagation
 ========================================================================
 EOF
@@ -1449,16 +1422,16 @@ shade-tree gateway is up (gateway-only box; bootnode is remote).
   onion PoW      : ${SHADE_TREE_ENABLE_POW}   (SHADE_TREE_ENABLE_POW; 0 = off)
   402 registrar  : ${SHADE_TREE_REGISTRAR}   (SHADE_TREE_REGISTRAR; 1 = http://${GW_ONION}:${SHADE_TREE_REGISTRAR_PORT}/pay/quote on THIS gateway's onion, rails ${SHADE_TREE_PAY_PROTOCOLS}; operator key = 0600 drop-in shade-tree-registrar.service.d/operator.conf, then systemctl start shade-tree-registrar)
 
-The heartbeat announces this gateway to the remote bootnode over Tor. For an
-admission=stake bootnode, stake the operator first (shade-tree register-gateway), then add
-  Environment=SHADE_TREE_GW_OPERATOR_KEY=<operator-key>
-to /etc/systemd/system/shade-tree-heartbeat.service and \`systemctl daemon-reload && systemctl restart shade-tree-heartbeat\`.
+The node announces this gateway to the remote bootnode over Tor. For an
+admission=stake bootnode, stake the operator first (shade-tree register-gateway), then install
+the operator key as the systemd credential /etc/credstore/SHADE_TREE_GW_OPERATOR_KEY (root, 0600)
+and \`systemctl restart shade-tree-gateway\`.
 
 $(print_client_setup "$BN_ONION" "$SIGNER")
 
 Check it:
-  systemctl status shade-tree-gateway shade-tree-heartbeat
-  journalctl -u shade-tree-heartbeat -f      # expect 'announced (...)' once the descriptors propagate
+  systemctl status shade-tree-gateway
+  journalctl -u shade-tree-gateway -f        # expect 'heartbeat accepted' once the descriptors propagate
   curl --socks5-hostname 127.0.0.1:9050 http://${BN_ONION}/directory | grep -o "${GW_ONION%.onion}" | head -1
 ========================================================================
 EOF

@@ -1,7 +1,7 @@
 // Unit self-test for graceful shutdown / connection draining (T-DEV-8).
 //
-// Drives the exported makeGracefulShutdown() from BOTH packages/node/gateway/gateway.mjs and
-// packages/node/bootnode/server.mjs with a fake server + fake sockets + an injected clock and an
+// Drives the exported makeGracefulShutdown() from packages/node/lib/service.mjs (the registrar's
+// drain) with a fake server + fake sockets + an injected clock and an
 // injected onExit (instead of real process.exit). No real process signals, no real
 // timers, no real net listener — pure control-flow proof.
 //
@@ -16,8 +16,7 @@
 //
 // Exit 0 = all invariants held; nonzero = a check failed (prints which).
 
-import { makeGracefulShutdown as gatewayShutdown } from "../packages/node/gateway/gateway.mjs";
-import { makeGracefulShutdown as bootnodeShutdown } from "../packages/node/bootnode/server.mjs";
+import { makeGracefulShutdown } from "../packages/node/lib/service.mjs";
 
 let failures = 0;
 const ok = (cond, msg) => { if (cond) console.log(`  ok   ${msg}`); else { console.log(`  FAIL ${msg}`); failures++; } };
@@ -129,33 +128,9 @@ function runScenarios(name, makeGracefulShutdown) {
   }
 }
 
-runScenarios("gateway makeGracefulShutdown", gatewayShutdown);
-runScenarios("bootnode makeGracefulShutdown", bootnodeShutdown);
+runScenarios("makeGracefulShutdown", makeGracefulShutdown);
 
 // Gateway shutdown also stops its background runtime resources at the beginning of a drain.
-console.log("\ngateway runtime cleanup:");
-{
-  const clock = makeClock();
-  const openSockets = new Set();
-  const events = [];
-  const server = makeFakeServer(openSockets);
-  const close = server.close;
-  server.close = (cb) => { events.push("server"); close(cb); };
-  const shutdown = gatewayShutdown(server, {
-    openSockets,
-    timeoutMs: 1000,
-    onExit: () => events.push("exit"),
-    onStart: () => events.push("runtime"),
-    log: () => {},
-    setTimer: clock.setTimer,
-    clearTimer: clock.clearTimer,
-  });
-  shutdown("SIGTERM");
-  shutdown("SIGTERM");
-  ok(events.join(",") === "runtime,server,exit", "runtime resources close once, before the listener and process exit");
-}
-
-// (d) importing the modules must NOT have installed signal handlers (only main() does).
 console.log("\nimport is side-effect-free (no signal handlers on import):");
 ok(process.listenerCount("SIGTERM") === 0, "(d) no SIGTERM listener installed by import");
 ok(process.listenerCount("SIGINT") === 0, "(d) no SIGINT listener installed by import");

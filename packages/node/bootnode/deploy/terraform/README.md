@@ -4,9 +4,9 @@ Infrastructure-as-code for **standing up the droplet** that
 [`bootstrap.sh`](../bootstrap.sh) then configures. This module is a **thin
 wrapper**: it creates the DigitalOcean droplet + firewall + SSH key and, via
 cloud-init `user_data`, fetches `bootstrap.sh` at a pinned git ref and hands off.
-All real provisioning — Node 24, Tor (with `pow: yes`), the minted onion
-identities, and the three hardened systemd units (`shade-tree-bootnode`,
-`shade-tree-gateway`, `shade-tree-heartbeat`) — lives in `bootstrap.sh` and is **not**
+All real provisioning — the `shadenet-node` and `shadenet-elder` release binaries, Node 24,
+Tor (with `pow: yes`), the minted onion identities, and the two hardened systemd units
+(`shade-tree-bootnode`, `shade-tree-gateway`) — lives in `bootstrap.sh` and is **not**
 duplicated here.
 
 Works with either [OpenTofu](https://opentofu.org) (`tofu`, the SHIP-PLAN's
@@ -83,7 +83,7 @@ IP(s) in production (default is open).
 | `admission` | `open` | `open` or `stake` → `SHADE_TREE_ADMISSION` |
 | `bootnode_port` | `8877` | loopback → `SHADE_TREE_BOOTNODE_PORT` |
 | `gateway_port` | `8443` | loopback → `SHADE_TREE_GATEWAY_PORT` |
-| `tor_socks_port` | `9050` | informational; used in the `verify_command` output (bootstrap pins the heartbeat's `SHADE_TREE_TOR_PORT` to 9050) |
+| `tor_socks_port` | `9050` | informational; used in the `verify_command` output (bootstrap pins the node's `SHADE_TREE_TOR_PORT` to 9050) |
 | `ssh_allowed_cidrs` | `["0.0.0.0/0", "::/0"]` | lock down in prod |
 | `tags` | `["shade-tree","bootnode","gateway"]` | DO tags |
 

@@ -45,7 +45,7 @@ by rendezvous, so there is no exit node and the gateway never learns the client 
   fresh nullifier and a Shamir share inside one circom-rln Groth16 proof (`packages/node/lib/rln.mjs`,
   `circuits/rln/`). One share per slot egresses; a second distinct signal on the same
   nullifier is a provable over-spend, so the gateway reconstructs the identity secret and
-  slashes on whichever contract holds the leaf (`packages/node/gateway/gateway.mjs:makeRoutingSlasher`).
+  slashes on whichever contract holds the leaf (`crates/shadenet-node/src/slash.rs`).
   Proof transcripts carry no stable member identifier across slots. A gateway can still
   correlate tunnels through destination, timing, volume, or application metadata. A member's
   per-epoch budget is a tier
@@ -85,15 +85,15 @@ anonymous: invited, staked, paid.
 
 ## The Rust binary
 
-`shade-tree-0.7.5-<target>-live` needs no Node and no tor daemon; the default non-live binary
+`shade-tree-0.8.0-<target>-live` needs no Node and no tor daemon; the default non-live binary
 verifies, selects and fetches directories but does not egress ([`crates/INSTALL.md`](../crates/INSTALL.md)):
 
 ```bash
 read -s SHADE_TREE_SECRET && export SHADE_TREE_SECRET
 read -r SHADE_TREE_LIMIT && export SHADE_TREE_LIMIT                           # exact enrolled tier
-./shade-tree-0.7.5-<target>-live enroll --limit "$SHADE_TREE_LIMIT" --out identity.json
+./shade-tree-0.8.0-<target>-live enroll --limit "$SHADE_TREE_LIMIT" --out identity.json
 shade-tree leaves --contract <v4-member-set-address> --rpc-url <operator-rpc-url> --out members.json
-./shade-tree-0.7.5-<target>-live egress \
+./shade-tree-0.8.0-<target>-live egress \
   --identity identity.json --members members.json --target api.ipify.org:443
 ```
 
@@ -157,7 +157,7 @@ public evidence. Full ledger: [`THREAT-MODEL.md`](THREAT-MODEL.md) §4.14b, §5.
 | `packages/node/lib/directory.mjs`, `packages/node/lib/root-provider.mjs`, `packages/node/lib/helios-root.mjs` | Signed fleet directory + caps; on-chain root read (node / light client); Helios anchor |
 | `packages/node/lib/gateway-registry.mjs`, `packages/node/lib/zk-artifacts.mjs` | Gateway-stake verifier; ZK artifact-set lock + negotiation |
 | `contracts/` | `StakedReputationSet.sol`, `PaidAccessSet.sol`, `GatewayRegistry.sol` |
-| `packages/node/gateway/gateway.mjs` | Onion-side egress: admit set, verify, dedup/slash, tunnel, drop |
+| `crates/shadenet-node` | Onion-side egress: admit set, verify, dedup/slash, tunnel, drop |
 | `bootnode/` | Discovery server, announce, keygen, heartbeat, fetch; `deploy/` = the one-command droplet |
 | `client/` | The fleet client library (`shade-tree-client.mjs`), HTTP-CONNECT proxy (`shim.mjs`), selection |
 | `payments/` | The 402 registrar, both wire dialects, EIP-3009 typed data, test-asset deploy |

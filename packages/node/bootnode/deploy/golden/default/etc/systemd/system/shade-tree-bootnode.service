@@ -5,6 +5,7 @@ Wants=network-online.target
 [Service]
 User=shade-tree
 WorkingDirectory=/opt/shade-tree
+Environment=SHADENET_STATE=/opt/shade-tree/deploy-state
 Environment=SHADE_TREE_BOOTNODE_PORT=8877
 Environment=SHADE_TREE_BOOTNODE_ADMISSION=open
 Environment=SHADE_TREE_BOOTNODE_SIGNER_KEY=/opt/shade-tree/deploy-state/bootnode-signer.key
@@ -14,9 +15,10 @@ Environment=SHADE_TREE_LOG_LEVEL=info
 Environment=SHADE_TREE_LOG_FORMAT=json
 Environment=SHADE_TREE_BANNER=never
 SyslogIdentifier=shade-tree-elder
-ExecStart=/usr/bin/node /opt/shade-tree/packages/node/bootnode/server.mjs
+ExecStart=/usr/local/bin/shadenet-elder run
 Restart=always
 RestartSec=3
+MemoryDenyWriteExecute=true
 # --- secrets: systemd credentials (OPS-12). Files named SHADE_TREE_<SECRET> in /etc/credstore
 # (root, 0600) reach the service via $CREDENTIALS_DIRECTORY, never Environment= or systemctl show.
 ImportCredential=SHADE_TREE_*

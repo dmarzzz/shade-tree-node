@@ -29,7 +29,7 @@ have set it. The tables below are that advanced layer.
 | `SHADENET_BANDWIDTH` / `bandwidth` | (unset: unlimited) | Bytes per second this node relays in total, both directions, with an optional `k` or `m` suffix (`2m` = 2 MiB/s); `0` = unlimited | `SHADE_TREE_BANDWIDTH_BYTES_PER_SECOND` |
 | `SHADENET_CANARY` / `canary` | `off` | `on` runs the reputation canary: HTTPS probes from this host's own address that set the drain flag while they are blocked or challenged ([HOME-NODE.md](HOME-NODE.md#the-reputation-canary)) | `SHADE_TREE_CANARY` |
 | `SHADENET_REGION` / `region` | (unset) | Advertised region bucket: `na sa eu af as oc aq unknown` | `SHADE_TREE_GATEWAY_REGION` |
-| `SHADENET_METRICS` / `metrics` | `9101` | Prometheus port on loopback, or `off`. The Rust node serves its own and the heartbeat's series on this one port (`SHADE_TREE_HEARTBEAT_METRICS_PORT` is still derived for the JavaScript node) | `SHADE_TREE_METRICS_PORT`, `SHADE_TREE_HEARTBEAT_METRICS_PORT` |
+| `SHADENET_METRICS` / `metrics` | `9101` | Prometheus port on loopback, or `off`. The Rust node serves its own and the heartbeat's series on this one port | `SHADE_TREE_METRICS_PORT` |
 | `SHADENET_LOG` / `log` | `json:info` | `json`, `pretty` or `text`, with an optional `:debug|info|warn|error` | `SHADE_TREE_LOG_FORMAT`, `SHADE_TREE_LOG_LEVEL` |
 | `SHADENET_OPERATOR_KEY_FILE` / `operator_key_file` | (unset) | Owner-only file holding the staked operator key (stake-admission canopies) | `SHADE_TREE_GW_OPERATOR_KEY` |
 | `SHADENET_OPERATOR` + `SHADENET_OPERATOR_SIG` / `operator`, `operator_sig` | (unset) | The operator address and its signature over `operatorAuthMessage(onion, operator)`, made with `shadenet-node authorize` where the key lives; the key never reaches the node | `SHADE_TREE_GW_OPERATOR`, `SHADE_TREE_GW_OPERATOR_SIG` |
@@ -48,7 +48,7 @@ rejected with the line number.
 
 ## Bootnode
 
-Read by the Rust Elder (`shadenet-elder`, ADR 0015; the JavaScript `packages/node/bootnode/server.mjs` for one more release) and by the node's heartbeat.
+Read by the Rust Elder (`shadenet-elder`, ADR 0015) and by the node's heartbeat.
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
@@ -63,14 +63,14 @@ Read by the Rust Elder (`shadenet-elder`, ADR 0015; the JavaScript `packages/nod
 | `SHADE_TREE_BOOTNODE_DELTA_HISTORY` | `64` | How many directory versions the Elder keeps to answer `GET /directory/delta`; older bases get a full directory. | bootnode server | (none) |
 | `SHADE_TREE_BOOTNODE_MAX_RESP` | `2097152` | Max response bytes read from an Elder over Tor (client, heartbeat, federation), so a hostile Elder gets a bounded read. | `packages/node/bootnode/fetch.mjs` | (none) |
 | `SHADE_TREE_EGRESS_CHECK` | `1` | `0` disables the heartbeat's pre-announce egress self-check and announces unconditionally. | heartbeat | (none) |
-| `SHADE_TREE_EGRESS_CHECK_TARGET` | `1.1.1.1:443` | `host:port` the egress self-check dials. | heartbeat (via `packages/node/gateway/gateway.mjs`) | (none) |
+| `SHADE_TREE_EGRESS_CHECK_TARGET` | `1.1.1.1:443` | `host:port` the egress self-check dials. | heartbeat | (none) |
 | `SHADE_TREE_EGRESS_CHECK_TIMEOUT_MS` | `5000` | Egress self-check timeout, so a beat is never blocked for long. | heartbeat | (none) |
 | `SHADE_TREE_BOOTNODE_PORT` | `8877` | Loopback port Tor maps the bootnode onion to (listens on `127.0.0.1`). | bootnode server | `--port` |
 | `SHADE_TREE_BOOTNODE_ADMISSION` | `open` | Admission policy: `open` (onion-control only) or `stake` (require live operator stake). | bootnode server | `--admission` |
 | `SHADE_TREE_BOOTNODE_TTL` | `900` | Seconds a gateway stays live without re-announcing before it ages out. | bootnode server | `--ttl` |
 | `SHADE_TREE_BOOTNODE_SIGNER_KEY` | `<SHADENET_STATE>/bootnode-signer.key` (the JavaScript Elder: `bootnode/bootnode-signer.key`) | Path to the pinned `{pub,priv}` JSON signer; minted and persisted if absent. | bootnode server | `--signer-key` |
 | `SHADE_TREE_BOOTNODE_STORE` | (off) | Optional JSON state file for write-through persistence. When set, each accepted announce is mirrored to disk and reloaded on boot so a restart does not blank the fleet until every gateway re-announces. Reload re-verifies each record (onion control + operator stake) and drops any past its TTL, so a stale or tampered store can never admit anything a live announce would reject. | bootnode server | — |
-| `SHADE_TREE_BOOTNODE_INCIDENTS_FILE` | `<SHADENET_STATE>/incidents.local.json` (the JavaScript Elder: `bootnode/incidents.local.json`) | The operator incident list served signed at `GET /incidents` (`{ "incidents": [ { id, component, instance, severity, summary, since, until } ] }`). Re-read on every fetch, so a hand edit is live at once; the Alertmanager webhook writes it too. | bootnode server (`packages/node/bootnode/incidents.mjs`) | — |
+| `SHADE_TREE_BOOTNODE_INCIDENTS_FILE` | `<SHADENET_STATE>/incidents.local.json` | The operator incident list served signed at `GET /incidents` (`{ "incidents": [ { id, component, instance, severity, summary, since, until } ] }`). Re-read on every fetch, so a hand edit is live at once; the Alertmanager webhook writes it too. | bootnode server (`packages/node/bootnode/incidents.mjs`) | — |
 | `SHADE_TREE_BOOTNODE_INCIDENTS_TOKEN` | (unset → webhook off) | Bearer token for `POST /incidents/alertmanager`, the Alertmanager webhook receiver that turns firing and resolved alerts into incidents. Unset, the route answers 404 and only the file feeds `/incidents`. | bootnode server | — |
 | `SHADE_TREE_BOOTNODE_ONION` | (required for heartbeat / bootnode discovery) | The bootnode onion to announce to (heartbeat) / to fetch the live directory from (client). | heartbeat, client selection | `--bootnode` |
 | `SHADE_TREE_BOOTNODE_ONIONS` | (unset; `SHADE_TREE_NETWORK` fills it from the record's `elders[]`) | Every Elder Tree of the canopy, comma-separated, up to eight (ADR 0012). The heartbeat announces to each one every interval (one egress check, then one signed announce per Elder, in parallel); the cycle counts as accepted when at least one Elder accepted, and `shade_tree_heartbeat_elders_accepted` / `_elders_total` show the rest. `SHADE_TREE_BOOTNODE_ONION` stays the primary and is always first. | heartbeat, client selection | (none) |
@@ -98,7 +98,7 @@ Read by the Rust Elder (`shadenet-elder`, ADR 0015; the JavaScript `packages/nod
 
 ## Gateway
 
-Read by `packages/node/gateway/gateway.mjs` (egress proxy). See also On-chain and Common groups.
+Read by the Rust node (`shadenet-node`, ADR 0014; the egress proxy). See also On-chain and Common groups.
 
 | Env var | Default | Controls | Component | Flag |
 |---|---|---|---|---|
@@ -259,7 +259,6 @@ Read by `packages/node/payments/registrar.mjs` (the operator's HTTP-402 service 
 | `SHADE_TREE_LOG_FORMAT` | `auto` | `auto`, `pretty`, `text`, or `json`. `auto` uses compact colored output on an interactive TTY and one JSON object per line elsewhere. | long-running roles | `--log-format` |
 | `SHADE_TREE_BANNER` | `auto` | One-time ASCII tree after the role is ready: `auto`, `always`, or `never` (boolean spellings also accepted). `auto` requires an interactive TTY. JSON output always suppresses it. | long-running roles | `--banner` / `--no-banner` |
 | `SHADE_TREE_METRICS_PORT` | `0` (off) | Separate Prometheus listener for the Elder Tree, node, registrar, or Proxy. It is hard-bound to loopback and serves only `/metrics`, `/livez`, and `/readyz`. Choose a free port for each process on the host. | bootnode, gateway, registrar, client proxy | `--metrics-port` |
-| `SHADE_TREE_HEARTBEAT_METRICS_PORT` | `0` (off) | Separate loopback Prometheus listener for the heartbeat. | heartbeat | `--heartbeat-metrics-port` |
 
 ## Scoped agent runner (`shade-tree run`)
 
@@ -297,15 +296,16 @@ Read only by the one-command droplet bring-up (not by any `shade-tree` process).
 | Env var | Default | Controls |
 |---|---|---|
 | `SHADE_TREE_ENABLE_POW` | `0` | `HiddenServicePoWDefensesEnabled` on every onion this box publishes (per-HS line, right after `HiddenServicePort`). Off by default: a client tor without the `pow` module (Homebrew, `pow: no`) could not connect to a PoW onion; matches the agent-devops role default. |
-| `SHADE_TREE_BOOTNODE_ONION` | (unset = this box runs its own bootnode) | Gateway-only mode: install tor + gateway + heartbeat only, heartbeat announces to this remote bootnode. |
-| `SHADE_TREE_BOOTNODE_ONIONS` | (unset; the `SHADENET_NETWORK` preset fills it from the record's `elders[]`) | Gateway-only: every Elder Tree of the canopy, comma-separated; written into the heartbeat unit so the gateway announces to each (ADR 0012). Needs `SHADE_TREE_BOOTNODE_ONION` as well. |
+| `SHADE_TREE_BOOTNODE_ONION` | (unset = this box runs its own bootnode) | Gateway-only mode: install tor + gateway only; the node announces to this remote bootnode. |
+| `SHADE_TREE_BOOTNODE_ONIONS` | (unset; the `SHADENET_NETWORK` preset fills it from the record's `elders[]`) | Gateway-only: every Elder Tree of the canopy, comma-separated; written into the node unit so the node announces to each (ADR 0012). Needs `SHADE_TREE_BOOTNODE_ONION` as well. |
 | `SHADE_TREE_BOOTNODE_SIGNER` | (unset) | Gateway-only: remote bootnode's pinned signer, echoed into the printed client command. |
-| `SHADE_TREE_GATEWAY_REGION` | (unset) | Written into the heartbeat unit (see Bootnode/heartbeat rows above). |
+| `SHADE_TREE_GATEWAY_REGION` | (unset) | Written into the node unit (see the Bootnode rows above). |
 | `SHADE_TREE_ADMISSION` | `open` | Becomes `SHADE_TREE_BOOTNODE_ADMISSION` on the bootnode unit. |
 | `SHADE_TREE_LOG_LEVEL` / `SHADE_TREE_LOG_FORMAT` / `SHADE_TREE_BANNER` | `info` / `json` / `never` | Operator output written into every rendered service. JSON and no banner keep journald machine-readable. |
-| `SHADE_TREE_ELDER_METRICS_PORT` / `SHADE_TREE_NODE_METRICS_PORT` / `SHADE_TREE_REGISTRAR_METRICS_PORT` / `SHADE_TREE_HEARTBEAT_METRICS_PORT` | `9100` / `9101` / `9102` / `9103` | Loopback metrics ports written into the Elder Tree, node, optional registrar, and heartbeat units. All four must be distinct and cannot reuse an active service or Tor port. |
+| `SHADE_TREE_ELDER_METRICS_PORT` / `SHADE_TREE_NODE_METRICS_PORT` / `SHADE_TREE_REGISTRAR_METRICS_PORT` | `9100` / `9101` / `9102` | Loopback metrics ports written into the Elder Tree, node and optional registrar units (the node serves its heartbeat series on its own port). All three must be distinct and cannot reuse an active service or Tor port. |
 | `SHADE_TREE_REPO` / `SHADE_TREE_REF` / `SHADE_TREE_DIR` / `SHADE_TREE_BOOTNODE_PORT` / `SHADE_TREE_GATEWAY_PORT` | see script header | Clone source, install dir, loopback backend ports. |
-| `SHADE_TREE_ADMIT` | `invited` | The gateway's admission policy (T-FEAT-9), rendered into BOTH the gateway unit (enforced) and the heartbeat unit (advertised as signed `caps.admits`); normalized to the canonical order `invited,staked,paid`. `staked` requires `SHADE_TREE_GROUP_CONTRACT`, `paid` requires `SHADE_TREE_PAID_ACCESS_CONTRACT`, either requires `SHADE_TREE_RPC_URL` (validated up front; rendered into the gateway unit). `SHADE_TREE_HELIOS=1` requires `staked` (it anchors the on-chain root); `SHADE_TREE_REGISTRAR=1` requires `paid` (admit what you sell). The default render's units gained `Environment=SHADE_TREE_ADMIT=invited` (golden regenerated). |
+| `SHADENET_VERSION` / `SHADENET_NODE_SHA256` / `SHADENET_ELDER_SHA256` / `SHADENET_NODE_BIN` / `SHADENET_ELDER_BIN` | the checkout's version / pinned in `binaries.sh` / (unset) | The release whose `shadenet-node` and `shadenet-elder` binaries the units run, verified against the sha256 pinned in `packages/node/bootnode/deploy/binaries.sh` (another version brings its own two sums); the `_BIN` pair installs local builds instead (the e2e containers do). |
+| `SHADE_TREE_ADMIT` | `invited` | The gateway's admission policy (T-FEAT-9), rendered into the node unit (enforced, and advertised as signed `caps.admits`); normalized to the canonical order `invited,staked,paid`. `staked` requires `SHADE_TREE_GROUP_CONTRACT`, `paid` requires `SHADE_TREE_PAID_ACCESS_CONTRACT`, either requires `SHADE_TREE_RPC_URL` (validated up front; rendered into the gateway unit). `SHADE_TREE_HELIOS=1` requires `staked` (it anchors the on-chain root); `SHADE_TREE_REGISTRAR=1` requires `paid` (admit what you sell). The default render's units gained `Environment=SHADE_TREE_ADMIT=invited` (golden regenerated). |
 | `SHADE_TREE_FLEET_TALLY_PEERS` / `SHADE_TREE_FLEET_TALLY_TOKEN` | *(unset = off)* | Optional bootstrap-managed tally mesh. Peers must be v3 `.onion:port` addresses and share one independently generated 32 to 128 character URL-safe token. The token is written to a root-only environment file, not the unit. |
 | `SHADE_TREE_FLEET_TALLY_PORT` | `8879` | Loopback tally backend and gateway-onion virtual port. Must not collide with a service, Tor, or metrics port. |
 | `SHADE_TREE_REGISTRAR` | `0` | `1` = render + start `shade-tree-registrar.service` (the 402 registrar), publish it as an extra `HiddenServicePort SHADE_TREE_REGISTRAR_PORT` of an onion this box runs — the BOOTNODE onion (bootnode+gateway box; the bootnode advertises it in `/health`) or, T-FEAT-9, the GATEWAY onion (gateway-only box, `SHADE_TREE_BOOTNODE_ONION` set) — and make the heartbeat advertise it as signed `caps.pay`. Companions (all required with `1`): `SHADE_TREE_PAID_ACCESS_CONTRACT`, `SHADE_TREE_PAY_ASSET`, `SHADE_TREE_PAY_PRICES`, `SHADE_TREE_RPC_URL`, `paid` in `SHADE_TREE_ADMIT`; optional `SHADE_TREE_PAY_PROTOCOLS` (default `x402,mpp`; rendered into the registrar unit + both adverts), `SHADE_TREE_PAY_TO`, `SHADE_TREE_REGISTRAR_PORT`, `SHADE_TREE_PAY_CHAIN_ID`. The operator key is a secret → a 0600 drop-in, never a tunable (`docs/OPERATOR.md` "Selling access via 402"). |

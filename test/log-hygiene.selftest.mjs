@@ -37,16 +37,9 @@
 // Exit 0 = no secret ever reaches a log; nonzero = a leak (prints the file + line).
 
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { generateOnionIdentity } from "../packages/node/bootnode/keygen.mjs";
-import { buildAnnounce } from "../packages/node/bootnode/announce.mjs";
-import { makeRegistry, makeServer, loadOrMintSigner } from "../packages/node/bootnode/server.mjs";
-import { initRoots, makeSpentSet, _setRecentRoots } from "../packages/node/gateway/gateway.mjs";
-import { MockStakeVerifier } from "../packages/node/lib/gateway-registry.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
@@ -197,49 +190,14 @@ function scanFile(rel) {
 // Files that both LOG and touch secret material. announce.mjs and shade-tree-client.mjs have no sinks
 // at all (pure libs / event-emit only) — included so the test asserts that stays true.
 const FILES = [
-  "packages/node/gateway/gateway.mjs",
-  "packages/node/bootnode/server.mjs",
-  "packages/node/bootnode/heartbeat.mjs",
   "packages/node/bootnode/announce.mjs",
   "packages/node/client/shade-tree-client.mjs",
   "packages/node/client/shim.mjs",
   "packages/node/client/selection.mjs",
   "packages/node/payments/registrar.mjs",
-  "packages/node/gateway/fleet-tally.mjs",
   "group/register-gateway.mjs",
   "group/register-onchain.mjs",
 ];
-
-// ---------------------------------------------------------------------------
-// Log-capture helper (for the dynamic layer)
-// ---------------------------------------------------------------------------
-
-async function withCapture(fn) {
-  const buf = [];
-  const push = (s) => buf.push(String(s));
-  const orig = {
-    log: console.log, error: console.error, warn: console.warn, info: console.info, debug: console.debug,
-    so: process.stdout.write.bind(process.stdout), se: process.stderr.write.bind(process.stderr),
-  };
-  console.log = console.error = console.warn = console.info = console.debug = (...a) => push(a.join(" "));
-  process.stdout.write = (s) => { push(s); return true; };
-  process.stderr.write = (s) => { push(s); return true; };
-  try { await fn(); } finally {
-    console.log = orig.log; console.error = orig.error; console.warn = orig.warn;
-    console.info = orig.info; console.debug = orig.debug;
-    process.stdout.write = orig.so; process.stderr.write = orig.se;
-  }
-  return buf.join("\n");
-}
-
-async function post(base, path, body) {
-  const res = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  return { status: res.status, text: await res.text() };
-}
-async function get(base, path) {
-  const res = await fetch(base + path);
-  return { status: res.status, text: await res.text() };
-}
 
 // ---------------------------------------------------------------------------
 
@@ -292,103 +250,11 @@ async function main() {
   ok(!run.stdout.includes(secret), "the secret hex does NOT appear on stdout");
   ok(!/0x[0-9a-fA-F]{16,}/.test(run.stdout), "no long 0x-hex blob on stdout at all");
 
-  // === 2. DYNAMIC bootnode: a real announce never logs (or wires) the onion SEED ===
-  console.log("\nbootnode in-process — onion SEED never hits a log or the wire:");
-  const work = await mkdtemp(join(tmpdir(), "shade-tree-loghyg-"));
-  try {
-    const g1 = await generateOnionIdentity(join(work, "g1"), { label: "g1" });
-    const signer = await loadOrMintSigner(join(work, "signer.key"));
-    const registry = makeRegistry({ signer, stake: MockStakeVerifier({}), admission: "open", ttlSec: 900, minReannounceSec: 0 });
-    const server = makeServer(registry, { signerPub: signer.pub });
-    await new Promise((r) => server.listen(0, "127.0.0.1", r));
-    const base = `http://127.0.0.1:${server.address().port}`;
-
-    let dirText = "", gwText = "", announceOk = false;
-    const captured = await withCapture(async () => {
-      const a1 = buildAnnounce({ onion: g1.onion, weight: 100, onionSeedHex: g1.seed });
-      const rA = await post(base, "/announce", a1);
-      announceOk = JSON.parse(rA.text).ok === true;
-      dirText = (await get(base, "/directory")).text;
-      gwText = (await get(base, `/gateway/${g1.onion}`)).text;
-    });
-    await new Promise((r) => server.close(r));
-
-    ok(announceOk, "honest announce accepted (real announce->verify->store path exercised)");
-    ok(g1.seed.length === 64 && /^[0-9a-f]+$/.test(g1.seed), "the drive used a real 32-byte onion seed");
-    ok(!captured.includes(g1.seed), "onion SEED never appears in captured bootnode stdout/stderr");
-    ok(!captured.includes(g1.onion), "routine announce handling does not put the gateway onion in default logs");
-    ok(!dirText.includes(g1.seed), "onion SEED never appears in the served /directory (not on the wire)");
-    ok(!gwText.includes(g1.seed), "onion SEED never appears in the stored /gateway/<onion> announce");
-    ok(dirText.includes(g1.onion), "control: the PUBLIC onion address IS served (only the seed is withheld)");
-
-    // === 2b. DYNAMIC gateway startup: an RPC URL path key in a provider error is scrubbed ===
-    console.log("\ngateway root startup error: RPC path key never logged:");
-    const RPC_PATH_KEY = "RPC_PATH_KEY_SENTINEL_7f31c9";
-    const rpcFailure = `eth_getLogs failed at https://rpc.example/v3/${RPC_PATH_KEY}`;
-    const capturedRpcFailure = await withCapture(async () => {
-      _setRecentRoots([]);
-      const provider = {
-        contract: "0xA",
-        currentRoots: async () => { throw new Error(rpcFailure); },
-        onChange: () => () => {},
-        describe: () => ({ provider: "node", contract: "0xA" }),
-      };
-      await initRoots({
-        contracts: [{ address: "0xA", kind: "staked" }],
-        want: { static: true, onchain: true, admits: ["invited", "staked"] },
-        rpcUrl: `https://rpc.example/v3/${RPC_PATH_KEY}`,
-        loadStatic: async () => ({ root: "424242", count: 1, leaves: ["1"] }),
-        makeProvider: () => provider,
-        watchFile: () => {},
-        quiet: true,
-      });
-      _setRecentRoots([]);
-    });
-    ok(capturedRpcFailure.includes("root source UNAVAILABLE at startup"),
-      "control: the gateway emitted its recoverable root-source startup error");
-    ok(capturedRpcFailure.includes("https://rpc.example/[redacted]"),
-      "gateway logs retain the RPC origin and mark its path as redacted");
-    ok(!capturedRpcFailure.includes(RPC_PATH_KEY) && !capturedRpcFailure.includes("/v3/"),
-      "the RPC path-key sentinel does not reach the gateway default log stream");
-
-    // === 2c. DYNAMIC gateway spent-set: a reconstructed identitySecret never hits a log ===
-    console.log("\ngateway spent-set in-process — reconstructed identitySecret never logged:");
-    const KNOWN_SECRET = "0x" + "de".repeat(32) + "SENTINELSECRET";
-
-    // Over-spend on the slash path: reconstruct returns the known secret; slash succeeds.
-    const capSlash = await withCapture(async () => {
-      const ss = makeSpentSet({
-        reconstruct: () => KNOWN_SECRET,
-        derive: () => "PUBLIC_COMMITMENT_OK",
-        slash: async () => {},
-      });
-      await ss.admit("nullifier-A", { x: "1" });   // first signal
-      await ss.admit("nullifier-A", { x: "2" });   // 2nd distinct signal -> reconstruct+slash
-    });
-    ok(!capSlash.includes(KNOWN_SECRET), "identitySecret not logged on the slash path");
-    ok(!capSlash.includes("nullifier-A"), "spent-set nullifier not logged on the slash path");
-
-    // Over-spend where slash THROWS: exercises the `slash failed ...` catch-path log.
-    const capThrow = await withCapture(async () => {
-      const ss = makeSpentSet({
-        reconstruct: () => KNOWN_SECRET,
-        derive: () => "PUBLIC_COMMITMENT_OK",
-        slash: async () => { throw new Error("chain unreachable"); },
-      });
-      await ss.admit("nullifier-B", { x: "1" });
-      await ss.admit("nullifier-B", { x: "2" });
-    });
-    ok(capThrow.includes("slash failed"), "control: the slash-failed catch path did log (so absence below is real)");
-    ok(!capThrow.includes(KNOWN_SECRET), "identitySecret not logged on the slash-FAILED catch path");
-    ok(!capThrow.includes("nullifier-B"), "spent-set nullifier not logged on the slash-FAILED catch path");
-  } finally {
-    await rm(work, { recursive: true, force: true });
-  }
-
   // === Coverage note for processes not driven in-process ===
-  console.log("\ncoverage: heartbeat, shim, client/selection, registrar, fleet-tally, register-* are STATIC-only");
+  console.log("\ncoverage: shim, client/selection, registrar, register-* are STATIC-only");
   console.log("  (they need Tor / a live chain / a listening proxy to run; their log sinks are");
-  console.log("   fully covered by the static scan above — none interpolates a secret).");
+  console.log("   fully covered by the static scan above — none interpolates a secret; the Rust");
+  console.log("   node and Elder have their own log hygiene tests).");
 
   console.log(`\n${failures === 0 ? "PASS" : "FAIL"}: log-hygiene selftest (${failures} failure${failures === 1 ? "" : "s"})`);
   process.exit(failures === 0 ? 0 : 1);

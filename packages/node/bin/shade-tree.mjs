@@ -12,8 +12,9 @@
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
 import { fileURLToPath } from "node:url";
-import { delimiter, dirname, join } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { rustBinary } from "../lib/rust-binary.mjs";
 import { validateConfig, formatErrors } from "../lib/config.mjs";
 import { applyClientNetworkEnv, applyNetworkEnv, DEFAULT_CLIENT_NETWORK } from "../lib/network-record.mjs";
 
@@ -34,7 +35,6 @@ const FLAG_ENV = {
   "log-level": "SHADE_TREE_LOG_LEVEL",
   "log-format": "SHADE_TREE_LOG_FORMAT",
   "metrics-port": "SHADE_TREE_METRICS_PORT",
-  "heartbeat-metrics-port": "SHADE_TREE_HEARTBEAT_METRICS_PORT",
   // bootnode
   port: "SHADE_TREE_BOOTNODE_PORT",
   admission: "SHADE_TREE_BOOTNODE_ADMISSION",
@@ -500,12 +500,8 @@ async function main() {
 // then the one on PATH, so a developer runs what they just built and an installed CLI runs the
 // release.
 function nodeBinary(cmd, name) {
-  const built = ["release", "debug"]
-    .map((profile) => join(ROOT, "target", profile, name))
-    .find((path) => existsSync(path));
-  if (built) return built;
-  const onPath = (process.env.PATH || "").split(delimiter).some((dir) => dir && existsSync(join(dir, name)));
-  if (onPath) return name;
+  const binary = rustBinary(ROOT, name);
+  if (binary) return binary;
   console.error(`shade-tree ${cmd}: this command is the Rust \`${name}\` binary and none was found: put a release build on PATH or run \`cargo build --release -p ${name}\` in this checkout`);
   process.exit(127);
 }

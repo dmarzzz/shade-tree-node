@@ -704,7 +704,7 @@ export function LightClientRootProvider({
   if (!trustedStateRoot && heliosRpcUrl) {
     trustedStateRoot = makeHeliosTrustedStateRoot({ rpcUrl: heliosRpcUrl, upstreamRpcUrl: rpcUrl });
   }
-  // What the startup log says about the anchor (packages/node/gateway/gateway.mjs prints describe()).
+  // What the startup log says about the anchor (the node prints describe()).
   const stateRootSource = trustedStateRoot
     ? (trustedStateRoot.source || "injected trustedStateRoot hook")
     : "rpc header (TRUSTED, not verified; set SHADE_TREE_HELIOS_RPC_URL to anchor to the sync committee)";

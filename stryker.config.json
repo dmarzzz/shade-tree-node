@@ -5,15 +5,14 @@
   "packageManager": "npm",
   "testRunner": "command",
 
-  "//commandRunner": "Chain of ONLY the fast selftests that cover the scoped files. gateway.mjs -> egress-policy + replay-cache; gateway-registry.mjs -> gateway-registry; directory.mjs -> directory + directory-rotation; announce.mjs -> bootnode/selftest (exercises buildAnnounce/verifyAnnounce via makeServer). Any failing selftest short-circuits (&&) => mutant KILLED. Deliberately excludes the slow real-Groth16 suites (rln, rln-slash, timing).",
+  "//commandRunner": "Chain of ONLY the fast selftests that cover the scoped files. gateway-registry.mjs -> gateway-registry; directory.mjs -> directory + directory-rotation; announce.mjs -> test/vectors (pins buildAnnounce/verifyAnnounce bytes). Any failing selftest short-circuits (&&) => mutant KILLED. Deliberately excludes the slow real-Groth16 suites (rln, rln-slash, timing).",
   "commandRunner": {
-    "command": "node packages/node/gateway/egress-policy.selftest.mjs && node packages/node/gateway/replay-cache.selftest.mjs && node packages/node/lib/gateway-registry.selftest.mjs && node packages/node/lib/directory.selftest.mjs && node packages/node/lib/directory-rotation.selftest.mjs && node packages/node/bootnode/selftest.mjs"
+    "command": "node packages/node/lib/gateway-registry.selftest.mjs && node packages/node/lib/directory.selftest.mjs && node packages/node/lib/directory-rotation.selftest.mjs && node test/vectors.selftest.mjs"
   },
 
   "//mutate": "High-value pure files with thorough fast tests. packages/node/lib/rln.mjs is intentionally EXCLUDED — mutating it forces the slow real-proof suite. Narrow the set on the CLI for a quick smoke run, e.g. `npx stryker run --mutate packages/node/lib/gateway-registry.mjs`.",
   "mutate": [
     "packages/node/lib/gateway-registry.mjs",
-    "packages/node/gateway/gateway.mjs",
     "packages/node/lib/directory.mjs",
     "packages/node/bootnode/announce.mjs"
   ],

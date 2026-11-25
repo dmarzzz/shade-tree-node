@@ -5,7 +5,7 @@
 //
 // Usage: node elder-verify.mjs <elder-port> <signer-hex> [--via-socks <port> <onion>] [--expect <onion>...]
 import { verifyDirectory } from "../../../packages/node/lib/directory.mjs";
-import { verifyIncidents } from "../../../packages/node/bootnode/incidents.mjs";
+import { verifyIncidents } from "../../../packages/node/lib/incidents.mjs";
 import { verifyRelayAggregate } from "../../../packages/node/lib/relay-telemetry.mjs";
 import { fetchOverTor } from "../../../packages/node/bootnode/fetch.mjs";
 

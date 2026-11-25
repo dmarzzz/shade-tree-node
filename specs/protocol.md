@@ -208,7 +208,7 @@ relayed payload), 4 concurrent streams and pending connects, shared token bucket
 the proof's own per-slot payload budget (40 MiB), shared by every stream of the book and
 stopping all of them at the boundary. **research-v2** is research-v1 with a 60 s session idle
 (ADR 0013): a client that opens one connection at a time keeps its book across the gaps. Refusals: `session-unsupported | session-* | ticket-*`
-(bounded, `packages/node/gateway/session.mjs`). Every stream of a book is linkable to the serving node as
+(bounded, `crates/shadenet-node/src/session.rs`). Every stream of a book is linkable to the serving node as
 one session; the proof still hides the member. Vectors: `testdata/vectors.json` `sessionTickets`.
 
 ## Discovery and trust

@@ -42,7 +42,7 @@ agent ──► Proxy ──► guard ─► middle ─► rendezvous ─► nod
 
 Everything between the Proxy and the node is Tor cells. The node is an endpoint of the tunnel, not
 a relay: it sees TLS record sizes and timing in the clear and forwards them as they arrive. The only
-shaping today is the per-session token bucket (`packages/node/gateway/session.mjs:makeTokenBucket`,
+shaping today is the per-session token bucket (`crates/shadenet-node/src/session.rs`,
 512 KiB/s down with a 1 MiB burst). That bucket is a rate cap, and a destination's timing passes
 through it unchanged whenever the destination sends below the cap, which is nearly always. The
 destination sees the node's IP.
@@ -238,7 +238,7 @@ policy today.
 
 ### 3.5 Node pacer
 
-- `payloadTransform` in `packages/node/gateway/gateway.mjs` already holds a per-direction `shaper`
+- the relay in `crates/shadenet-node/src/tunnel.rs` already holds a per-direction `shaper`
   for session books, a token bucket that delays a chunk when the bucket is empty. Shaping turns that
   bucket into a timer-driven pacer. Node.js timers are millisecond-grained and jitter under load, so
   the pacer ticks every 10 ms and emits `floor(accumulated)` cells per tick (1 to 2 cells at
@@ -279,7 +279,7 @@ policy today.
   close to 100% padding.
 - On the node there is no Node.js binding, so v1 implements the constant-rate pacer directly (a
   timer and a queue). `maybenot-ffi` through N-API, or a small Rust shaper process between
-  `gateway.mjs` and tor, can come when the menu grows past constant rate. Any non-constant class is
+  the node and tor, can come when the menu grows past constant rate. Any non-constant class is
   gated on measured overhead: [Maybenot's implementation study](https://arxiv.org/abs/2310.10789)
   measured RegulaTor at about 2x and Surakav at over 12x their simulated bandwidth.
 - Arti's experimental `circ-padding` feature (built on `maybenot`) pads between the client and a
@@ -478,7 +478,7 @@ flag is the posture change in §4.2, and that deserves numbers from staging and 
   "Session tickets"); [`FLEET.md`](../FLEET.md#a-rogue-gateway-is-a-free-both-ends-vantage);
   [`THREAT-MODEL.md`](../THREAT-MODEL.md) §4.3, §5; ADRs [0009](../adr/0009-epoch-bandwidth-envelope.md),
   [0011](../adr/0011-session-tickets.md), [0013](../adr/0013-the-proxy-is-a-scheduler.md);
-  `packages/node/gateway/gateway.mjs:payloadTransform`, `packages/node/gateway/session.mjs:makeTokenBucket`,
+  `crates/shadenet-node/src/tunnel.rs`, `crates/shadenet-node/src/session.rs`,
   `packages/node/lib/session-tickets.mjs`; `crates/shadenet/src/transport.rs` (`Dialer::isolated`),
   `crates/shadenet/src/client.rs` (`spawn_warmer`, `warm_nodes`, `spawn_preopener`);
   [`RELAY-TELEMETRY.md`](../RELAY-TELEMETRY.md); [`LIGHT-CLIENT.md`](../LIGHT-CLIENT.md).

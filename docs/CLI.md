@@ -89,7 +89,6 @@ arguments. Prefer a hidden shell read into `SHADE_TREE_SECRET` as shown in the
 | `--log-level` | `SHADE_TREE_LOG_LEVEL` | operator output (`debug\|info\|warn\|error\|off`) |
 | `--log-format` | `SHADE_TREE_LOG_FORMAT` | operator output (`auto\|pretty\|text\|json`) |
 | `--metrics-port` | `SHADE_TREE_METRICS_PORT` | local metrics for a long-running role (the node serves its heartbeat series on the same port) |
-| `--heartbeat-metrics-port` | `SHADE_TREE_HEARTBEAT_METRICS_PORT` | local heartbeat metrics |
 | `--port` | `SHADE_TREE_BOOTNODE_PORT` | bootnode |
 | `--gateway-port` | `SHADE_TREE_GATEWAY_PORT` | node backend mapped by Tor |
 | `--admission` | `SHADE_TREE_BOOTNODE_ADMISSION` | bootnode |

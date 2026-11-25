@@ -121,7 +121,7 @@ A malformed/invalid receipt is reported (`valid:false` + `reason`) but **never**
 ## Files
 
 - `packages/node/lib/receipt.mjs` — `buildReceipt` / `verifyReceipt` / `canonicalReceiptBytes` (pure, shared).
-- `packages/node/gateway/gateway.mjs` — `receiptsEnabled()`, `successAck()`, the onion-seed signer; emits the
+- `crates/shadenet-node/src/receipt.rs` — the onion-seed signer; emits the
   receipt on egress success behind the flag.
 - `packages/node/client/shade-tree-client.mjs` — verifies + surfaces the receipt.
 - `packages/node/gateway/receipt.selftest.mjs` — round-trip, tamper, domain-separation, privacy, default-off.

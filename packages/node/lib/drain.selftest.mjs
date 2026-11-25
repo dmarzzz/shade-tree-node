@@ -6,7 +6,7 @@
 //      back to it when nothing else is left (same policy as health "down").
 //   4. The watcher reports transitions once, boots silently when not draining, and announces
 //      at once when the flag already exists at start.
-//   5. buildGatewayCaps(draining:true) adds the key; with it false the object is unchanged.
+//   (The node itself attaches `draining` to the caps it announces; crates/shadenet-node tests that.)
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +14,6 @@ import { join } from "node:path";
 import { generateKeyPairSync } from "node:crypto";
 import { canonicalCaps, hasCaps, pickGateway, signCaps, verifyCapsSig, isDraining, pubkeyToOnion } from "./directory.mjs";
 import { drainFilePath, drainPollMs, isDraining as flagSet, setDraining, makeDrainWatcher, drainingSince } from "./drain.mjs";
-import { buildGatewayCaps } from "../bootnode/heartbeat.mjs";
 
 let n = 0;
 const ok = (c, m) => { assert.ok(c, m); n += 1; console.log(`  ok   ${m}`); };
@@ -83,14 +82,5 @@ try {
   ok(seen2.length === 1 && seen2[0] === true, "starting while ALREADY draining announces it at once");
   ok(setDraining(false, env) === false, "setDraining(false) is idempotent and returns the new state");
 } finally { rmSync(tmp, { recursive: true, force: true }); }
-
-// 5. heartbeat caps builder
-const envCaps = { SHADE_TREE_ADMIT: "staked", SHADE_TREE_GATEWAY_REGION: "eu" };
-const off = buildGatewayCaps(envCaps, { draining: false });
-const on = buildGatewayCaps(envCaps, { draining: true });
-ok(JSON.stringify(buildGatewayCaps(envCaps)) === JSON.stringify(off), "draining:false leaves buildGatewayCaps output unchanged");
-ok(on.draining === true && JSON.stringify(canonicalCaps(on)).endsWith(',"draining":true}'), "draining:true rides in the heartbeat caps, last");
-ok(buildGatewayCaps({}, { draining: false }) === null, "no caps + not draining -> null (byte-identical announce)");
-ok(buildGatewayCaps({}, { draining: true })?.draining === true, "draining alone is enough to attach caps (so a default node can still drain)");
 
 console.log(`PASS: drain flag + draining caps (${n} checks)`);

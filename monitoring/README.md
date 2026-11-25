@@ -2,7 +2,7 @@
 
 Local Prometheus metrics, a Grafana dashboard, and alert rules for Shade Tree
 operators. The dashboard and alerts use series emitted by the Elder Tree and
-Shade Tree node. The Proxy, heartbeat, and registrar expose their own local
+Shade Tree node. The Proxy and the registrar expose their own local
 signals for operators who run those roles.
 
 Files:
@@ -18,23 +18,23 @@ Files:
 
 | Metric | Type | Labels | Source |
 |---|---|---|---|
-| `shade_tree_bootnode_announces_total` | counter | `result` (accepted\|rejected), `reason` (on reject) | `packages/node/bootnode/server.mjs` |
-| `shade_tree_bootnode_directory_fetches_total` | counter | none | `packages/node/bootnode/server.mjs` |
-| `shade_tree_bootnode_directory_delta_fetches_total` | counter | `result` | `packages/node/bootnode/server.mjs` |
-| `shade_tree_bootnode_live_gateways` | gauge | none | `packages/node/bootnode/server.mjs` |
-| `shade_tree_bootnode_connections` | gauge | none | `packages/node/bootnode/server.mjs` |
-| `shade_tree_gateway_tunnels_total` | counter | `result` (pass\|drop), `reason` (on drop) | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_slashes_total` | counter | none | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_tunnel_closes_total` | counter | `reason` (idle-timeout\|payload-limit\|upstream-error) | `packages/node/gateway/gateway.mjs` (separate from `tunnels_total` because these tunnels already counted as pass) |
-| `shade_tree_gateway_active_tunnels` | gauge | none | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_connections` | gauge | none | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_agent_to_destination_payload_bytes_total` | counter | none | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_destination_to_agent_payload_bytes_total` | counter | none | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_verify_seconds` | histogram | `le` (on `_bucket`) | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_upstream_connect_seconds` | histogram | `le` (on `_bucket`) | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_trusted_roots` | gauge | `source` (invited\|staked\|paid) | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_root_source_degraded` | gauge | `source` | `packages/node/gateway/gateway.mjs` |
-| `shade_tree_gateway_paid_access_leaves` | gauge | none | `packages/node/gateway/gateway.mjs` |
+| `shade_tree_bootnode_announces_total` | counter | `result` (accepted\|rejected), `reason` (on reject) | `crates/shadenet-elder/src/metrics.rs` |
+| `shade_tree_bootnode_directory_fetches_total` | counter | none | `crates/shadenet-elder/src/metrics.rs` |
+| `shade_tree_bootnode_directory_delta_fetches_total` | counter | `result` | `crates/shadenet-elder/src/metrics.rs` |
+| `shade_tree_bootnode_live_gateways` | gauge | none | `crates/shadenet-elder/src/metrics.rs` |
+| `shade_tree_bootnode_connections` | gauge | none | `crates/shadenet-elder/src/metrics.rs` |
+| `shade_tree_gateway_tunnels_total` | counter | `result` (pass\|drop), `reason` (on drop) | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_slashes_total` | counter | none | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_tunnel_closes_total` | counter | `reason` (idle-timeout\|payload-limit\|upstream-error) | `crates/shadenet-node/src/metrics.rs` (separate from `tunnels_total` because these tunnels already counted as pass) |
+| `shade_tree_gateway_active_tunnels` | gauge | none | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_connections` | gauge | none | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_agent_to_destination_payload_bytes_total` | counter | none | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_destination_to_agent_payload_bytes_total` | counter | none | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_verify_seconds` | histogram | `le` (on `_bucket`) | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_upstream_connect_seconds` | histogram | `le` (on `_bucket`) | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_trusted_roots` | gauge | `source` (invited\|staked\|paid) | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_root_source_degraded` | gauge | `source` | `crates/shadenet-node/src/metrics.rs` |
+| `shade_tree_gateway_paid_access_leaves` | gauge | none | `crates/shadenet-node/src/metrics.rs` |
 | `shade_tree_proxy_tunnels_total` | counter | `result`, bounded `reason` | `packages/node/client/shim.mjs` |
 | `shade_tree_proxy_active_tunnels` | gauge | none | `packages/node/client/shim.mjs` |
 | `shade_tree_proxy_connect_seconds` | histogram | `le` (on `_bucket`) | `packages/node/client/shim.mjs` |
@@ -43,15 +43,15 @@ Files:
 | `shade_tree_proxy_failovers_total` | counter | none | `packages/node/client/shim.mjs` |
 | `shade_tree_proxy_canopy_refresh_total` | counter | `result` (query\|verified\|cache\|error) | `packages/node/client/shim.mjs` |
 | `shade_tree_proxy_candidates` | gauge | none | `packages/node/client/shim.mjs` |
-| `shade_tree_heartbeat_attempts_total` | counter | `outcome` (accepted\|rejected\|egress-unhealthy\|transport-error) | `packages/node/bootnode/heartbeat.mjs` |
-| `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
-| `shade_tree_heartbeat_egress_check_up` | gauge | none | `packages/node/bootnode/heartbeat.mjs` |
-| `shade_tree_heartbeat_draining` | gauge | none | `packages/node/bootnode/heartbeat.mjs` (1 while the operator drain flag is announced) |
+| `shade_tree_heartbeat_attempts_total` | counter | `outcome` (accepted\|rejected\|egress-unhealthy\|transport-error) | `crates/shadenet-node/src/heartbeat.rs` (on the node's metrics port) |
+| `shade_tree_heartbeat_last_success_timestamp_seconds` | gauge | none | `crates/shadenet-node/src/heartbeat.rs` (on the node's metrics port) |
+| `shade_tree_heartbeat_egress_check_up` | gauge | none | `crates/shadenet-node/src/heartbeat.rs` (on the node's metrics port) |
+| `shade_tree_heartbeat_draining` | gauge | none | `crates/shadenet-node/src/heartbeat.rs` (1 while the operator drain flag is announced) |
 | `shade_tree_canary_probes_total` | counter | `outcome` (`clean`, `challenged`, `unknown`) | `crates/shadenet-node/src/canary.rs` (reputation canary probes from the node's own address) |
 | `shade_tree_canary_challenged` | gauge | none | `crates/shadenet-node/src/canary.rs` (1 when the latest round was blocked or challenged) |
 | `shade_tree_canary_drained` | gauge | none | `crates/shadenet-node/src/canary.rs` (1 while the canary holds the drain flag) |
 | `shade_tree_gateway_blocklist_hosts` | gauge | none | `crates/shadenet-node/src/egress.rs` (hosts loaded from `SHADE_TREE_EGRESS_DENY_FILE`) |
-| `shade_tree_alert_webhook_total` | counter | `result` (sent\|failed) | `packages/node/lib/alerts.mjs` (gateway + heartbeat, when a webhook is set) |
+| `shade_tree_alert_webhook_total` | counter | `result` (sent\|failed) | `packages/node/lib/alerts.mjs` (the node, when a webhook is set) |
 | `shade_tree_registrar_payments_total` | counter | `protocol` (unknown\|x402\|mpp), `result` (challenged\|inserted\|replayed\|rejected\|failed), bounded `reason` on non-success outcomes | `packages/node/payments/registrar.mjs` |
 | `shade_tree_registrar_quotes_total` | counter | `route` (quote\|pay) | `packages/node/payments/registrar.mjs` |
 | `shade_tree_registrar_txs_total` | counter | `kind` (settle\|insert), `result` (ok\|failed) | `packages/node/payments/registrar.mjs` |
@@ -91,11 +91,10 @@ does not enable browser CORS access.
 | Elder Tree | `SHADE_TREE_METRICS_PORT` | 9100 |
 | Shade Tree node | `SHADE_TREE_METRICS_PORT` | 9101 |
 | Registrar | `SHADE_TREE_METRICS_PORT` | 9102 |
-| Heartbeat (JavaScript node only; the Rust node serves `shade_tree_heartbeat_*` on its own port) | `SHADE_TREE_HEARTBEAT_METRICS_PORT` | 9103 |
 | Proxy | `SHADE_TREE_METRICS_PORT` | choose a free local port |
 
 The listeners are off when their port is `0` or unset in a direct invocation.
-`bootstrap.sh` enables the four service ports shown above. Set a Proxy port
+`bootstrap.sh` enables the three service ports shown above. Set a Proxy port
 explicitly, especially when it shares a host with another role.
 
 Because they bind loopback, Prometheus running elsewhere reaches them one of two ways:
@@ -153,21 +152,11 @@ scrape_configs:
         labels:
           instance: gateway-2
 
-  - job_name: shade-tree-heartbeat
-    metrics_path: /metrics
-    scheme: http
-    scrape_interval: 15s
-    static_configs:
-      # On-box target. Tunnel 9103 to a distinct local port when Prometheus is remote.
-      - targets: ["127.0.0.1:9103"]
-        labels:
-          instance: gateway-1-heartbeat
-
 rule_files:
   - /etc/prometheus/rules/shade-tree-alerts.yml   # this repo's monitoring/alerts.yml
 ```
 
-The `up` series for the bootnode, gateway, and heartbeat jobs are synthesized by
+The `up` series for the bootnode and gateway jobs are synthesized by
 Prometheus from each scrape outcome. The matching down alerts use those series.
 
 ## Import the dashboard
@@ -188,18 +177,18 @@ fraction, and `verifyEnvelope` p50/p95/p99 (histogram_quantile over
 ## Alerts without Prometheus (webhook)
 
 Set `SHADE_TREE_ALERT_WEBHOOK` (and optionally `SHADE_TREE_ALERT_WEBHOOK_FORMAT`) on the gateway
-and heartbeat units (`bootstrap.sh` renders both when the variable is set) and the node evaluates
+unit (`bootstrap.sh` renders it when the variable is set) and the node evaluates
 the rules below in-process every 30 s, POSTing one JSON document per transition and repeating a
 still-firing alert every 4 h. No Alertmanager, no Prometheus.
 
 | Rule | Role | Condition | Severity |
 |---|---|---|---|
-| `HeartbeatStale` | heartbeat | last accepted announce older than 3 intervals | critical |
-| `HeartbeatNeverAccepted` | heartbeat | no announce accepted 3 intervals after start | critical |
-| `EgressDown` | heartbeat | local egress check failing for 2 evaluations | critical |
-| `ElderPartial` | heartbeat | some but not all Elder Trees accept the announce (2 evaluations) | warning |
-| `Draining` | both | operator drain flag set | info |
-| `RootSourceDegraded` | gateway | an admission root source degraded for 2 evaluations | warning |
+| `HeartbeatStale` | node | last accepted announce older than 3 intervals | critical |
+| `HeartbeatNeverAccepted` | node | no announce accepted 3 intervals after start | critical |
+| `EgressDown` | node | local egress check failing for 2 evaluations | critical |
+| `ElderPartial` | node | some but not all Elder Trees accept the announce (2 evaluations) | warning |
+| `Draining` | node | operator drain flag set | info |
+| `RootSourceDegraded` | node | an admission root source degraded for 2 evaluations | warning |
 | `RpcEndpointFailing` | gateway | 3+ RPC failovers in 15 min | warning |
 | `HighDropRate` | gateway | more than half of 20+ tunnels dropped in 15 min | warning |
 | `GatewayStarted` / `GatewayStopping` / `HeartbeatStarted` / `HeartbeatStopping` | both | lifecycle, once | info |
@@ -264,9 +253,8 @@ Grounded in `docs/SLO.md` and cross-referenced to the runbooks in `docs/INCIDENT
 | `VerifyLatencyP99High` | warning | `verifyEnvelope` p99 > 100ms. Tail verify latency climbing; check jitter / saturation, add capacity. | SLO 2.4, section 3 |
 | `HeartbeatStale` | critical | The process is up but no announce has been accepted for 15 minutes. The node will age out of the Canopy. | INCIDENT.md #3 |
 | `HeartbeatNeverAccepted` | critical | The heartbeat has run for 15 minutes without one accepted announce. Check startup configuration and Tor reachability. | INCIDENT.md #3 |
-| `HeartbeatDown` | warning | The heartbeat metrics process is not scrapeable. Confirm the service and local port before fleet membership expires. | INCIDENT.md #3 |
 | `RpcEndpointFailing` | warning | More than 3 failovers past one `SHADE_TREE_RPC_URL` endpoint in 15 min. Roots stay fresh while another endpoint answers; replace or remove the failing one. | INCIDENT.md #6 |
-| `CanopyPinDrift` | warning | `shade_tree_build_info` reports more than one release `version` across the Elder, nodes and heartbeats for 30 min. Deploy every role from the release in the deployment record. | — |
+| `CanopyPinDrift` | warning | `shade_tree_build_info` reports more than one release `version` across the Elder and nodes for 30 min. Deploy every role from the release in the deployment record. | — |
 
 The hard line from `docs/SLO.md` section 5 applies to every response here: no alert is ever cleared by
 weakening the gate, admitting an unverified gateway, serving an unverifiable directory, narrowing the

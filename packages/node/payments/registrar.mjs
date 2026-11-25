@@ -80,7 +80,7 @@ import {
   txReceiptTimeoutMs,
   waitForTransactionReceipt,
 } from "../lib/rpc-safety.mjs";
-import { makeAnnounceBucket, makeGracefulShutdown } from "../bootnode/server.mjs";
+import { makeAnnounceBucket, makeGracefulShutdown } from "../lib/service.mjs";
 import { EIP3009_ABI, tokenDomain, recoverAuthorization, splitSignature, isAddress, isUintString, sameAddress } from "./eip3009.mjs";
 import {
   parsePrices, priceOf, tierList, caip2, contentDigest,

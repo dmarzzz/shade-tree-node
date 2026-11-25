@@ -10,7 +10,7 @@
 // testable (packages/node/lib/config.selftest.mjs drives it with hand-built envs) and safe to import anywhere.
 //
 // NOT WIRED YET (by design): a follow-up task calls `validateConfig(role)` at the top of each
-// entrypoint (packages/node/bootnode/server.mjs, packages/node/gateway/gateway.mjs, packages/node/client/shim.mjs, group/enroll.mjs) and,
+// entrypoint (packages/node/client/shim.mjs, group/enroll.mjs; the Rust node and Elder read the same names) and,
 // on `ok:false`, prints the errors and exits non-zero. This file deliberately does NOT touch
 // those entrypoints — it lands on disjoint files so it can ship independently. The `main()`-side
 // exit/print policy lives there; the truth about what is valid lives here.
@@ -257,7 +257,7 @@ const OPERATOR_FIELDS = [
 ];
 
 export const ROLE_SPECS = {
-  // BOOTNODE — packages/node/bootnode/server.mjs (discovery service) + packages/node/lib/gateway-registry.mjs stake source.
+  // BOOTNODE — crates/shadenet-elder (discovery service) + packages/node/lib/gateway-registry.mjs stake source.
   // Nothing is unconditionally required: every var has a default in code. The one real
   // conditional: an ONCHAIN stake verifier (SHADE_TREE_STAKE_MODE=onchain, or implied by a registry
   // being set) THROWS without SHADE_TREE_GATEWAY_REGISTRY, so that pairing is enforced below.
@@ -295,7 +295,7 @@ export const ROLE_SPECS = {
     },
   },
 
-  // GATEWAY — packages/node/gateway/gateway.mjs (egress proxy) + root-provider + slasher. Also fully
+  // GATEWAY — crates/shadenet-node (egress proxy) + root-provider + slasher. Also fully
   // defaulted: with NO env at all it runs chainless (members.json root, dry-run slashing,
   // mock stake). So there are no required vars; everything present is shape-checked. Setting
   // SHADE_TREE_GROUP_CONTRACT switches the root source on-chain, but SHADE_TREE_RPC_URL has a localhost
@@ -318,7 +318,6 @@ export const ROLE_SPECS = {
       ["SHADE_TREE_RPC_URL", isRpcUrls, P_URL],
       ["SHADE_TREE_HELIOS_RPC_URL", isUrl, P_URL],   // T-DEV-9b: local Helios anchor for the light provider
       ["SHADE_TREE_HELIOS_CHAIN_ID", isPosInt, P_POSINT],
-      ["SHADE_TREE_HEARTBEAT_METRICS_PORT", isPortOrOff, P_PORT0],
       ["SHADE_TREE_CONFIRMATIONS", isNonNegInt, P_NONNEG],
       ["SHADE_TREE_FRESHNESS_ROOTS", isPosInt, P_POSINT],
       ["SHADE_TREE_ROOT_FRESHNESS_SECONDS", isPosInt, P_POSINT],

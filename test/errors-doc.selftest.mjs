@@ -32,8 +32,8 @@ for (const code of [...codes, "busy", "proxy_auth_required"]) {
 }
 ok(/X-ShadeNet-Cause/.test(doc) && /problems\[\]/.test(doc) && /shadenet doctor/.test(doc), "ERRORS.md explains the cause header, problems[] and the doctor");
 
-// Node refusal reasons the gateway emits must each have an explanation branch in Rust.
-const gateway = readFileSync(join(ROOT, "packages/node/gateway/gateway.mjs"), "utf8");
+// Node refusal reasons the node emits must each have an explanation branch in Rust.
+const gateway = readFileSync(join(ROOT, "crates/shadenet-node/src/metrics.rs"), "utf8");
 const dropLabels = [...gateway.matchAll(/"(wrong-group-root|root-not-recent|stale-external-nullifier|session-unsupported|bad-version|unsupported-version|invalid-proof|payload-limit)"/g)].map((m) => m[1]);
 const explained = errorRs.slice(errorRs.indexOf("pub fn explain_reason"), errorRs.indexOf("impl Error {"));
 for (const label of new Set(dropLabels)) {

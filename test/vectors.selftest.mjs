@@ -19,7 +19,6 @@ import { ed25519Sign, ed25519PrivateKey, pubkeyToOnion, onionToPubkey, canonical
 import { canonicalAnnounceBytes, operatorAuthMessage, verifyOperatorSig, buildAnnounce, verifyAnnounce, verifyListedEntry, MAX_ENTRY_AGE, FUTURE_SKEW, MAX_ENTRY_WEIGHT } from "../packages/node/bootnode/announce.mjs";
 import { calculateSignalHash, requestSignal } from "../packages/node/lib/rln.mjs";
 import { canonicalReceiptBytes, buildReceipt, RECEIPT_DOMAIN } from "../packages/node/lib/receipt.mjs";
-import { acceptEnvelopeVersion } from "../packages/node/gateway/gateway.mjs";
 import { selectProtoVersion } from "../packages/node/client/shade-tree-client.mjs";
 import { artifactIdOf, selectArtifact, resolveArtifact, ARTIFACT_ID_RE, isArtifactId } from "../packages/node/lib/zk-artifacts.mjs";
 import { normalizeOwnNode, parseOwnNodeList, excludeOwnNodes, onlyOwnNodesMessage, REASON_ONLY_OWN_NODES } from "../packages/node/lib/own-nodes.mjs";
@@ -142,10 +141,7 @@ async function main() {
 
   console.log("\nversion-negotiation reason labels (stable public literals; runtime suffixes not pinned):");
   const pr = V.protoReasons;
-  const badRej = acceptEnvelopeVersion("3");        // garbage/non-integer => bad-version
-  ok(badRej.label === pr.badVersion, "acceptEnvelopeVersion label matches the pinned bad-version literal");
-  const unsRej = acceptEnvelopeVersion(3);          // legacy/out-of-range integer => unsupported-version
-  ok(unsRej.label === pr.unsupportedVersion, "acceptEnvelopeVersion label matches the pinned unsupported-version literal");
+  ok(pr.badVersion === "bad-version" && pr.unsupportedVersion === "unsupported-version", "the node's version-gate labels are pinned (the Rust node tests them against the same vectors)");
   const nmRej = selectProtoVersion({ min: 5, max: 6 }, { min: 1, max: 2 }); // disjoint ranges => no-mutual-version
   ok(nmRej.reason.startsWith(pr.noMutualVersion + ":"), "selectProtoVersion reason prefix matches the pinned no-mutual-version literal");
 

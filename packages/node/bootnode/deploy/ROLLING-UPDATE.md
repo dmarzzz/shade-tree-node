@@ -34,19 +34,20 @@ What it does, in order:
 1. **Capture + pin the current ref** (`git rev-parse HEAD`, pinned as a
    `shade-tree-rollback-*` tag) *before* any change, so rollback is a one-liner and the
    old commit can't be pruned from a shallow clone.
-2. **Update**: `git fetch` + checkout the new ref, `npm install --omit=dev`.
+2. **Update**: `git fetch` + checkout the new ref, `npm install --omit=dev`, then the ref's
+   `binaries.sh` installs its sha256-pinned `shadenet-node` + `shadenet-elder` release binaries.
 3. **Staged restart, health-gated between each** — safe order:
-   `shade-tree-bootnode` → `shade-tree-gateway` → `shade-tree-heartbeat`.
+   `shade-tree-bootnode` → `shade-tree-gateway`.
    - bootnode first (reloads persisted fleet state; a broken build is caught on
      its `/health` before anything else is touched),
-   - gateway second (confirmed active + accepting on its loopback port),
-   - heartbeat last (re-announces the updated gateway to a healthy bootnode).
+   - gateway second (confirmed active + accepting on its loopback port; it re-announces
+     itself to the healthy bootnode from inside the process).
    A failed health wait aborts the run before the next service is bounced.
-4. **Verify**: all three units active, bootnode `/health` ok on loopback **and**
+4. **Verify**: both units active, bootnode `/health` ok on loopback **and**
    over the local Tor SOCKS onion (the onion is reused and Tor is not restarted,
    so it should answer quickly).
 5. **On any failure**, print the exact rollback command:
-   `git checkout <previous-sha> && npm install --omit=dev && systemctl restart …`.
+   `git checkout <previous-sha> && npm install --omit=dev && <reinstall its binaries> && systemctl restart …`.
 
 Tunables (env, defaults match `bootstrap.sh`): `SHADE_TREE_DIR` (`/opt/shade-tree`),
 `SHADE_TREE_BOOTNODE_PORT` (8877), `SHADE_TREE_GATEWAY_PORT` (8443), `SHADE_TREE_TOR_PORT` (9050),
@@ -59,15 +60,16 @@ The invariant: **at least one healthy gateway stays in the signed directory at
 all times**, so clients always have a live route. Never restart two gateways at
 once, and never let the whole fleet drop out of `/directory` together.
 
-Given gateways `gw-1 … gw-N` (each a box running `shade-tree-gateway` +
-`shade-tree-heartbeat`, announcing to the bootnode), update them **serially**:
+Given gateways `gw-1 … gw-N` (each a box running `shade-tree-gateway`, which announces
+itself to the bootnode), update them **serially**:
 
 For each `gw-i`:
 
-1. **Drain** — stop the heartbeat so the gateway stops re-announcing:
+1. **Drain** — stop the node's heartbeat so the gateway stops re-announcing while its open
+   tunnels finish (SIGUSR1 is the node's retire signal, ADR 0014):
 
    ```bash
-   ssh root@gw-i 'systemctl stop shade-tree-heartbeat'
+   ssh root@gw-i 'systemctl kill -s SIGUSR1 shade-tree-gateway'
    ```
 
    Leave `shade-tree-gateway` running for now so in-flight circuits finish.
@@ -85,10 +87,9 @@ For each `gw-i`:
    (To drain faster than 900s, run the fleet with a shorter `SHADE_TREE_BOOTNODE_TTL` /
    `SHADE_TREE_BOOTNODE_HEARTBEAT` so aged-out is quick — a deliberate rollout knob.)
 
-3. **Update the box.** `shade-tree-heartbeat` is already stopped, so
-   `rolling-update.sh` will bounce `shade-tree-gateway` (drop any lingering circuits;
-   clients fail over to the still-announced peers) and then restart the
-   heartbeat, which **re-announces** `gw-i` back into the directory:
+3. **Update the box.** `rolling-update.sh` bounces `shade-tree-gateway` (drop any lingering
+   circuits; clients fail over to the still-announced peers); the restarted node
+   **re-announces** `gw-i` back into the directory:
 
    ```bash
    ssh root@gw-i 'sudo bash /opt/shade-tree/packages/node/bootnode/deploy/rolling-update.sh <ref>'
@@ -99,7 +100,7 @@ For each `gw-i`:
    ```bash
    curl --socks5-hostname 127.0.0.1:9050 http://<bootnode-onion>/directory \
      | grep -c '<gw-i-onion>'      # expect 1 (re-announced)
-   ssh root@gw-i 'systemctl is-active shade-tree-gateway shade-tree-heartbeat'
+   ssh root@gw-i 'systemctl is-active shade-tree-gateway'
    ```
 
 Only then drain the next gateway. Because at every step `N-1` gateways remain

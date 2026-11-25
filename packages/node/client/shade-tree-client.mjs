@@ -49,7 +49,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const clientEpochSeconds = () => Number(process.env.SHADE_TREE_EPOCH_SECONDS ?? semaphoreConfig.EPOCH_SECONDS ?? 120);
 
 // ---- leaf-source discovery (T-FEAT-7, docs/PAYMENTS.md) ----------------------------
-// A member's leaf lives in exactly one of the sets the gateway trusts (packages/node/gateway/gateway.mjs
+// A member's leaf lives in exactly one of the sets the gateway trusts (crates/shadenet-node
 // initRoots): the static members.json (friends), a StakedReputationSet (`shade-tree register-member`),
 // or the PaidAccessSet (paid access, docs/PAYMENTS.md). The proof must be built against THAT tree, so the client
 // looks for its own leaf: members.json first (no chain needed), then each configured contract in

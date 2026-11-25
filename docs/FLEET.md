@@ -5,7 +5,7 @@ onion-control binding, per-tunnel selection, and the shim wiring are written and
 tested (`packages/node/lib/directory.mjs`, `packages/node/client/selection.mjs`, `group/directory.example.json`,
 the `SHADE_TREE_DIRECTORY` path in `packages/node/client/shim.mjs`); live discovery through a bootnode is
 `bootnode/` (`docs/BOOTNODE.md`); the shared per-epoch spent-nullifier tally across
-gateways is `packages/node/gateway/fleet-tally.mjs` (`SHADE_TREE_FLEET_TALLY_PEERS`, T-FEAT-20/20b, opt-in,
+gateways is `crates/shadenet-node/src/tally.rs` (`SHADE_TREE_FLEET_TALLY_PEERS`, T-FEAT-20/20b, opt-in,
 authenticated with `SHADE_TREE_FLEET_TALLY_TOKEN`, fail-open, and memory-bounded — it shares only
 `(nullifier, epoch)`, so a later replay to a second gateway is rejected after propagation;
 concurrent or partitioned attempts remain fail-open, and cross-gateway *share* exchange
@@ -86,7 +86,7 @@ able to graft a hostile address:
    end of the rendezvous actually holds the advertised onion's key, closing a directory
    that lists an onion whose descriptor an attacker temporarily controls. The check
    exists in `packages/node/lib/directory.mjs`; adding the challenge to the envelope handshake is the
-   remaining integration, and it does not touch `gateway.mjs`'s verify path.
+   remaining integration, and it does not touch the node's verify path.
 
 **Distribution, in three stages.**
 
@@ -170,11 +170,11 @@ root-and-epoch scoped, not gateway-scoped.
 ## The hard cost: fleet budget does not compose
 
 This was the genuinely unbuilt part when the doc was written, and the reason it exists.
-Since then the shared nullifier tally (T-FEAT-20/20b, `packages/node/gateway/fleet-tally.mjs`) covers the
+Since then the shared nullifier tally (T-FEAT-20/20b, `crates/shadenet-node/src/tally.rs`) covers the
 replay-to-a-second-gateway case; the per-gateway `Map` below is still the local budget.
 
 Each gateway keeps its rate budget in a per-process in-memory `Map`
-(`budget` in `packages/node/gateway/gateway.mjs`): `scope -> Map<nullifier, count>`, capped at
+(the payload budget in `crates/shadenet-node/src/tunnel.rs`): `scope -> Map<nullifier, count>`, capped at
 `RATE_LIMIT` (30) redemptions per member per epoch. Nothing crosses process
 boundaries. So a member who spreads requests across `N` gateways gets **`N × RATE_LIMIT`**
 aggregate, because each gateway sees only the fraction of that nullifier's redemptions

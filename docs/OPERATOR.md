@@ -2,7 +2,7 @@
 
 > [!NOTE]
 > Public-host deployment is open: the proof keys come from the adopted PSE trusted setup
-> (`docs/ceremony/PSE-VERIFICATION.md`) and the Sepolia canopy runs `v0.7.5`. Still a research
+> (`docs/ceremony/PSE-VERIFICATION.md`) and the Sepolia canopy runs `v0.8.0`. Still a research
 > preview on a testnet; see [DEPLOYMENT-PLAN.md](DEPLOYMENT-PLAN.md).
 
 For running a Shade Tree node or Elder Tree. Every command here exists in
@@ -27,7 +27,8 @@ examples below use 9050 (droplet). Adjust for local dev.
 
 ## 1. Deploy a gateway + bootnode
 
-One command on a fresh Ubuntu 24.04 box. It installs Node 24 + Tor (official repo,
+One command on a fresh Ubuntu 24.04 box. It installs the `shadenet-node` and `shadenet-elder`
+release binaries (sha256-pinned), Node 24 (for the operator tooling) + Tor (official repo,
 so onion PoW is available), mints the onion identities, writes and starts the
 systemd units, and prints the bootnode onion, its pinned signer, the gateway onion,
 and the client command. Idempotent (re-running reuses keys and units).
@@ -44,13 +45,12 @@ Or, if the repo is already on the box:
 sudo env SHADE_TREE_MEMBERS_FILE=/root/operator-members.json bash packages/node/bootnode/deploy/bootstrap.sh
 ```
 
-It creates three `Restart=always` units:
+It creates two `Restart=always` units:
 
-| unit | what it runs | source |
+| unit | what it runs | binary |
 |---|---|---|
-| `shade-tree-bootnode` | discovery service | `packages/node/bootnode/server.mjs` |
-| `shade-tree-gateway` | access-gated egress node | `packages/node/gateway/gateway.mjs` |
-| `shade-tree-heartbeat` | announces the gateway to the local bootnode | `packages/node/bootnode/heartbeat.mjs` |
+| `shade-tree-bootnode` | discovery service (the Elder Tree) | `shadenet-elder run` |
+| `shade-tree-gateway` | access-gated egress node; announces itself to the bootnode | `shadenet-node run` |
 
 Tunables are env vars on the `curl | bash` line, e.g. `SHADE_TREE_ADMISSION=stake`,
 `SHADE_TREE_BOOTNODE_PORT`, `SHADE_TREE_GATEWAY_PORT`, `SHADE_TREE_DIR`, `SHADE_TREE_REF=<tag|sha>` to pin the
@@ -80,7 +80,7 @@ identity, Tor state, spent set and `status.json` in the `/state` volume.
 docker run -d --name shadenet-node --restart unless-stopped \
   -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
   -v shadenet-node:/state \
-  ghcr.io/dmarzzz/shadenet-node:0.7.5
+  ghcr.io/dmarzzz/shadenet-node:0.8.0
 docker logs -f shadenet-node        # "heartbeat accepted" once per Elder means the node is listed
 ```
 
@@ -90,7 +90,7 @@ reads each Elder's `/health`.
 
 ```bash
 docker run --rm -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
-  ghcr.io/dmarzzz/shadenet-node:0.7.5 check --probe
+  ghcr.io/dmarzzz/shadenet-node:0.8.0 check --probe
 ```
 
 The Sepolia canopy's Elders admit staked operators (`elder.admission = stake`): the operator
@@ -102,7 +102,7 @@ lives (the same image does both), hand the node the two values:
 
 ```bash
 # on the node's box: mint the onion identity into the volume
-docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.7.5 identity
+docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/shadenet-node:0.8.0 identity
 #   -> { "onion": "<56 chars>.onion", ... }
 
 # where the operator key lives (operator.key: one line, 64 hex, chmod 600)
@@ -112,7 +112,7 @@ docker run --rm -v shadenet-node:/state -e SHADENET_RECORD=... ghcr.io/dmarzzz/s
 read -s KEY && SHADE_TREE_REGISTER_KEY="$KEY" node packages/node/bin/shade-tree.mjs register-gateway \
   --gateway-registry 0x94ECeD0C1c7a8793a5c901c8C1995C8E7039A868 --rpc-url https://rpc.sepolia.ethpandaops.io; unset KEY
 # per node: sign its onion
-docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.7.5 authorize --onion <onion> --key-file /k/operator.key
+docker run --rm -v "$PWD":/k:ro ghcr.io/dmarzzz/shadenet-node:0.8.0 authorize --onion <onion> --key-file /k/operator.key
 #   -> { "SHADENET_OPERATOR": "0x…", "SHADENET_OPERATOR_SIG": "0x…" }
 
 # back on the node's box
@@ -120,7 +120,7 @@ docker run -d --name shadenet-node --restart unless-stopped \
   --security-opt no-new-privileges:true --cap-drop ALL --read-only --tmpfs /tmp \
   --memory 1g --log-opt max-size=20m \
   -e SHADENET_RECORD=... -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… \
-  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.5
+  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.8.0
 docker exec shadenet-node shadenet-node status   # "listed": Elders that accepted
 ```
 
@@ -161,9 +161,8 @@ stops announcing while open tunnels finish; `touch /state/draining` (the drain f
 
 ### Fresh box, one command (systemd, no container)
 
-`bootstrap.sh` with `SHADE_TREE_BOOTNODE_ONION` set installs **only** tor + `shade-tree-gateway` +
-`shade-tree-heartbeat` — no bootnode unit, no bootnode onion — and points the heartbeat at the
-existing bootnode:
+`bootstrap.sh` with `SHADE_TREE_BOOTNODE_ONION` set installs **only** tor + `shade-tree-gateway`
+— no bootnode unit, no bootnode onion — and points the node at the existing bootnode:
 
 ### Join the Sepolia canopy with bootstrap.sh
 
@@ -174,7 +173,7 @@ install -d -m 0700 /root/shadenet-creds
 install -m 0600 /dev/stdin /root/shadenet-creds/SHADE_TREE_GW_OPERATOR_KEY < /path/to/operator.key
 curl -fsSL --proto '=https' https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/packages/node/bootnode/deploy/bootstrap.sh \
   | SHADENET_NETWORK=sepolia SHADE_TREE_CREDENTIALS_FROM=/root/shadenet-creds bash
-journalctl -u shade-tree-heartbeat -f -o cat  # msg="heartbeat accepted" once Tor is ready
+journalctl -u shade-tree-gateway -f -o cat    # msg="heartbeat accepted" once Tor is ready
 ```
 
 `SHADENET_NETWORK=sepolia` reads `network/sepolia/deployment.json` and fills everything a node
@@ -241,7 +240,7 @@ and register a provider-specific operator key with `shade-tree register-gateway`
 node's announce signing key from a root-only environment file as described above. Do not reuse a slash or
 operator hot key merely because two nodes share an owner.
 
-Finish by checking `shade-tree-heartbeat` reports `accepted`, the signed canopy directory adds exactly the new
+Finish by checking `shade-tree-gateway` logs `heartbeat accepted`, the signed canopy directory adds exactly the new
 Protocol v4 onion, the node's `/readyz` is healthy on loopback, all non-SSH clearnet ports remain
 closed, and a real invited CONNECT returns the new provider address. Give the provider abuse contact
 a concise description: the public IP is an access-gated HTTPS CONNECT egress; complaints identify
@@ -408,7 +407,7 @@ Grafana dashboard in `monitoring/compose/`.
 ### Health
 
 ```bash
-systemctl status shade-tree-bootnode shade-tree-gateway shade-tree-heartbeat
+systemctl status shade-tree-bootnode shade-tree-gateway
 
 # over Tor (droplet SOCKS = 9050):
 curl --socks5-hostname 127.0.0.1:9050 http://<bootnode-onion>/health      # liveness + count + admission
@@ -426,7 +425,6 @@ identity, and whether on-chain mode is configured.
 ```bash
 journalctl -u shade-tree-gateway   -f -o cat
 journalctl -u shade-tree-bootnode  -f -o cat
-journalctl -u shade-tree-heartbeat -f -o cat
 ```
 
 The bootstrap writes newline-delimited JSON and disables decorative output for
@@ -488,8 +486,8 @@ curl --fail http://127.0.0.1:9101/metrics
 ```
 
 Direct invocations leave metrics off unless a port is set. Use
-`--metrics-port` for the Elder Tree, node, registrar, or Proxy. The heartbeat
-uses `--heartbeat-metrics-port`. Every listener is hard-bound to loopback and is
+`--metrics-port` for the Elder Tree, node, registrar, or Proxy (the node serves its
+heartbeat series on the same port). Every listener is hard-bound to loopback and is
 separate from the onion-mapped protocol port. Never publish or Tor-map it.
 
 The metrics expose process health, bounded outcomes, and latency without
@@ -608,7 +606,7 @@ outside the honest-retry window (`SHADE_TREE_REPLAY_WINDOW_MS`, default 5s) is d
 spent-set — a malicious relay could fan one captured envelope to **peer** gateways and
 each would serve it once.
 
-The optional **shared nonce tally** (`packages/node/gateway/fleet-tally.mjs`) reduces that replay
+The optional **shared nonce tally** (`crates/shadenet-node/src/tally.rs`) reduces that replay
 window on a best-effort basis. Gateways share a per-epoch spent-**nullifier** tally.
 Gateway A publishes only after the destination TCP connection succeeds, then gateway B
 rejects the same envelope `replayed-envelope` once it receives the tally. DNS and
@@ -642,8 +640,8 @@ logs `scope=fleet`.
 #### Real cross-host transport (T-FEAT-20b — HTTP push)
 
 The tally speaks to the fleet through an injectable `{ publish(nullifier, epoch),
-subscribe(cb) }` seam. The bundled real transport (`makeHttpTallyTransport` in
-`packages/node/gateway/fleet-tally.mjs`) is a tiny **HTTP push**: each gateway exposes an inbound
+subscribe(cb) }` seam. The bundled real transport (`crates/shadenet-node/src/tally.rs`)
+is a tiny **HTTP push**: each gateway exposes an inbound
 announcement endpoint and POSTs `{"nullifier":…,"epoch":…}` to each **configured peer**
 gateway. It is a direct **1-hop** push to a fixed peer set — not a forwarding flood — so a
 nullifier crosses the wire at most once per peer per established egress (no gossip storm, no loops: the
@@ -727,7 +725,7 @@ or `SHADE_TREE_REGISTER_KEY` in the environment — never on the command line.
 2. Stop the units so the gateway stops announcing:
 
    ```bash
-   systemctl disable --now shade-tree-heartbeat shade-tree-gateway
+   systemctl disable --now shade-tree-gateway
    # keep shade-tree-bootnode running if this box is also the bootnode
    ```
 
@@ -784,7 +782,6 @@ Full surface: [CONFIG.md](CONFIG.md). The knobs an operator actually changes:
 | `SHADE_TREE_LOG_LEVEL` / `SHADE_TREE_LOG_FORMAT` | `--log-level` / `--log-format` | Operator output level and format. Defaults to `info` / `auto`; bootstrap uses `info` / `json`. |
 | `SHADE_TREE_BANNER` | `--banner` / `--no-banner` | Show the one-time ASCII tree. `auto` shows it only on an interactive, non-JSON terminal. |
 | `SHADE_TREE_METRICS_PORT` | `--metrics-port` | Separate loopback metrics listener for the Elder Tree, node, registrar, or Proxy. Unset or `0` is off for direct runs. |
-| `SHADE_TREE_HEARTBEAT_METRICS_PORT` | `--heartbeat-metrics-port` | Separate loopback heartbeat metrics listener. Unset or `0` is off for direct runs. |
 | `SHADE_TREE_FLEET_TALLY_PEERS` | (none) | Comma-separated peer gateways for the cross-fleet shared nonce tally (T-FEAT-20b). `.onion:port` peers use Tor; `host:port` uses plain HTTP. **Unset = off** (per-gateway behavior, byte-identical). The bootstrap accepts onion peers only and maps port 8879 by default. |
 | `SHADE_TREE_FLEET_TALLY_TOKEN` | (none) | Required shared bearer secret for tally peers, 32..256 printable non-space characters. Generate independently of node/operator keys. Missing or invalid = tally stays off. Never log or put it in a URL. |
 | `SHADE_TREE_FLEET_TALLY_LISTEN` | (none) | Inbound tally endpoint `host:port` (or bare `port`); default `127.0.0.1:0`. Behind Tor, map the gateway onion to this local port. |
@@ -937,8 +934,8 @@ receipt, not a complete runtime preset.
 - **Set the SAME value on the heartbeat unit.** The heartbeat advertises it as signed `caps.admits`
   so clients route only to gateways that admit their leaf source (a paid buyer never dials your
   invited-only gateway; an invited member with `--max-anon` dials ONLY invited-only gateways).
-  `bootstrap.sh SHADE_TREE_ADMIT=…` renders both units; by hand, add `Environment=SHADE_TREE_ADMIT=…` to
-  `shade-tree-gateway.service.d/` AND `shade-tree-heartbeat.service.d/` drop-ins and restart both. A heartbeat
+  `bootstrap.sh SHADE_TREE_ADMIT=…` renders the node unit; by hand, add `Environment=SHADE_TREE_ADMIT=…` to
+  a `shade-tree-gateway.service.d/` drop-in and restart it. A node
   without `SHADE_TREE_ADMIT` advertises no policy: clients then assume you may admit anything and a
   mismatch costs them one `wrong-group-root` reject + failover (rollout compat, `docs/CLIENTS.md`).
 - The retired August demo fleet was heterogeneous on purpose (`network/sepolia/README.md`): gateway-1
@@ -1000,7 +997,7 @@ HS block instead), `shade-tree-registrar.service` (same sandbox as the other uni
 `deploy-state/registrar-state.json`; `SHADE_TREE_PAY_PROTOCOLS` in its env),
 `SHADE_TREE_REGISTRAR_ADVERTISE=1` on `shade-tree-bootnode.service` so `GET /health` carries `pay:{port,
 protocols, asset, chain, tiers}` (how a client discovers "this fleet sells access, here"), and the
-same advert on `shade-tree-heartbeat.service` so your gateway's SIGNED caps carry `pay` (+ `admits`) in
+same advert on `shade-tree-gateway.service` so your gateway's SIGNED caps carry `pay` (+ `admits`) in
 the directory (T-FEAT-9: how a client discovers "THIS gateway sells, and admits paid leaves").
 The registrar refuses to start if the token's on-chain `DOMAIN_SEPARATOR()` does not match its
 computed EIP-712 domain or if `PaidAccessSet.allowedLimits()` lacks a sold tier.
@@ -1079,7 +1076,7 @@ export SHADE_TREE_TIERS=8,32                       # the tiers you sell, so a pa
 Both listeners bound every lever an *unauthenticated* peer can pull. Defaults are on; you
 should not need to touch them unless you run an unusually large or slow fleet.
 
-**Gateway** (`packages/node/gateway/gateway.mjs`):
+**Gateway** (`crates/shadenet-node`):
 
 - **Envelope deadline** — the newline-terminated envelope must arrive within
   `SHADE_TREE_ENVELOPE_TIMEOUT_MS` (30 s) *of connect*. The deadline is absolute (dribbling one byte
@@ -1098,19 +1095,18 @@ should not need to touch them unless you run an unusually large or slow fleet.
   before any read (`too-many-connections`); `SHADE_TREE_MAX_CONNS_PER_NULLIFIER` (8) concurrent
   tunnels per nullifier (`nullifier-conn-limit`), so one proof replayed inside the honest-retry
   window cannot pin an unbounded number of idle tunnels. Both slots are released on close.
-- **Half-close crash fixed** — a client that sent a partial envelope and then FIN'd used to
-  crash the whole gateway process (uncaught `EPIPE` on the error reply). Fixed in the same
-  slice; `test/adversarial.selftest.mjs` scenario 6 exercises it.
+- **Half-close** — a client that sent a partial envelope and then FIN'd once crashed the
+  JavaScript gateway (uncaught `EPIPE` on the error reply); the Rust node's refusal tests
+  (`crates/shadenet-node/tests/refusals.rs`) cover it.
 
 If a *legitimate* member trips `too-many-connections` (metric climbing under normal load), raise
 `SHADE_TREE_MAX_CONNS`; the per-nullifier cap should never be hit by an honest client (one request per
 nullifier, one tunnel each; a retry replaces a dead tunnel).
 
-**Bootnode** (`packages/node/bootnode/server.mjs`):
+**Bootnode** (`crates/shadenet-elder`):
 
 - **HTTP slow-client limits** — headers within 10 s, whole request within 30 s (`408`), keep-alive
-  idle 5 s, headers <= 8 KiB (`431`), enforced every second (Node's own defaults are 60 s / 300 s
-  / 16 KiB / checked every 30 s).
+  idle 5 s, headers <= 8 KiB (`431`).
 - **Global announce bucket** — in front of the per-onion throttle's blind spot: an attacker
   minting *fresh* onions could force one ed25519 verify per onion until the registry filled. Now
   at most `SHADE_TREE_BOOTNODE_ANNOUNCE_BURST` (1000) reach verification in one instant, then

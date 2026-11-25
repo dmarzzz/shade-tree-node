@@ -88,7 +88,7 @@ docker run -d --name shadenet-node --restart unless-stopped \
   -e SHADENET_RECORD=https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/network/sepolia/deployment.json \
   -e SHADENET_PROFILE=home \
   -e SHADENET_OPERATOR=0x… -e SHADENET_OPERATOR_SIG=0x… \
-  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.7.5
+  -v shadenet-node:/state ghcr.io/dmarzzz/shadenet-node:0.8.0
 ```
 
 Metrics, when on, bind to loopback inside the container; read them with

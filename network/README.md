@@ -81,7 +81,7 @@ Resolution order everywhere: **explicit env/flag > `network/<name>/` record > `c
 `shade-tree` fails fast (exit 1) on an unknown network name or an invalid record; the library
 paths (`packages/node/lib/gateway-registry.mjs`, `group/register-gateway.mjs`) treat an unresolvable
 record as "no default". Wired today: `packages/node/bin/shade-tree.mjs` (every command), `packages/node/client/selection.mjs`
-(so `node packages/node/client/shim.mjs` and the SDK honour it), `packages/node/bootnode/heartbeat.mjs`,
+(so `node packages/node/client/shim.mjs` and the SDK honour it), the Rust node (its heartbeat),
 `packages/node/lib/gateway-registry.mjs`, `group/register-gateway.mjs`, `scripts/uptime-probe.mjs`.
 
 ```bash

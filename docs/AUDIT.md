@@ -24,7 +24,7 @@ but prints a `SKIP` line (a tool such as `anvil`/`forge` is missing) is reported
 | Suite | Covers |
 |---|---|
 | `packages/node/lib/directory.selftest.mjs` | The trust-critical module. ed25519 sign/verify, the v3 onion↔key binding, canonical signing, every `verifyDirectory` rejection (wrong signer, unsigned, tampered field, **grafted onion**, mismatched declared signer), live onion-control proofs, last-known-good fallback, weighted selection + health. |
-| `packages/node/bootnode/selftest.mjs` | The discovery loop end to end over real HTTP. Honest announce accepted; **forged onion sig, wrong key, stale ts, replayed nonce, unstaked operator, stolen operator sig all rejected**; served directory verifies against the pinned signer; TTL expiry; zero-trust re-verification. |
+| `crates/shadenet-elder` (`registry.rs` tests + `tests/http.rs`) | The discovery loop end to end over real HTTP. Honest announce accepted; **forged onion sig, wrong key, stale ts, replayed nonce, unstaked operator, stolen operator sig all rejected**; served directory verifies against the pinned signer; TTL expiry; zero-trust re-verification. |
 | `packages/node/bootnode/keygen.selftest.mjs` | Tor v3 key-format correctness: the seed we keep and the key Tor publishes derive the same onion. Asserts the expanded secret key equals `clamp(SHA512(seed)[:32]) ‖ SHA512(seed)[32:]` and the public file equals the seed's ed25519 pubkey. |
 | `packages/node/bootnode/fetch.selftest.mjs` | The HTTP response parser (`parseHttp`): well-formed 200, non-200 throws, missing terminator throws, unicode/large bodies. |
 | `packages/node/lib/gateway-registry.selftest.mjs` | The stake verifier: mock (open + allowlist), factory resolution, and the on-chain `eth_call` encode/decode (selector, address padding, bool decode, caching) against a stubbed fetch. |
@@ -95,7 +95,7 @@ but prints a `SKIP` line (a tool such as `anvil`/`forge` is missing) is reported
 
 1. `docs/BOOTNODE.md` + `docs/ONCHAIN.md` for the model, then this page.
 2. `packages/node/lib/directory.mjs` (the trust core) with `packages/node/lib/directory.selftest.mjs` beside it.
-3. `packages/node/bootnode/announce.mjs` + `packages/node/bootnode/server.mjs` + `packages/node/bootnode/selftest.mjs` (the discovery loop).
+3. `packages/node/bootnode/announce.mjs` + `crates/shadenet-elder/src/registry.rs` with its tests (the discovery loop).
 4. `contracts/StakedReputationSet.sol` + `contracts/GatewayRegistry.sol` + their `test/*.t.sol`.
-5. `packages/node/lib/rln.mjs` + `packages/node/gateway/gateway.mjs` (the spent-set / slash path) + `packages/node/lib/rln.selftest.mjs`.
+5. `packages/node/lib/rln.mjs` + `crates/shadenet-node/src/spent.rs` and `slash.rs` (the spent-set / slash path) + `packages/node/lib/rln.selftest.mjs`.
 6. `packages/node/client/shade-tree-client.mjs` + `packages/node/client/selection.mjs` (proof-per-tunnel, rotation, failover).

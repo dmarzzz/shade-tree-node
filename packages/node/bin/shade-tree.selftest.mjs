@@ -130,7 +130,6 @@ async function main() {
     ["log-level", "SHADE_TREE_LOG_LEVEL"],
     ["log-format", "SHADE_TREE_LOG_FORMAT"],
     ["metrics-port", "SHADE_TREE_METRICS_PORT"],
-    ["heartbeat-metrics-port", "SHADE_TREE_HEARTBEAT_METRICS_PORT"],
     ["gateway-port", "SHADE_TREE_GATEWAY_PORT"],
   ];
   for (const [flag, env] of pairs) {

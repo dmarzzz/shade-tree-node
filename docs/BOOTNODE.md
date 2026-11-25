@@ -10,8 +10,7 @@ dynamic realization of roadmap milestone 3.
 ## What it is
 
 A small HTTP service, the Rust `shadenet-elder` binary (`crates/shadenet-elder`,
-[ADR 0015](adr/0015-elder-in-rust.md); the JavaScript `packages/node/bootnode/server.mjs` ships
-for one more release), published as its **own v3 onion service**, so Proxies reach it through a
+[ADR 0015](adr/0015-elder-in-rust.md)), published as its **own v3 onion service**, so Proxies reach it through a
 Tor SOCKS dial with no exit node. The bootnode never learns a client IP.
 
 ```
@@ -100,7 +99,7 @@ judgment. See [`GatewayRegistry.sol`](../contracts/GatewayRegistry.sol).
 
 ## The onion identity
 
-`shade-tree keygen <hsDir>` (`packages/node/bootnode/keygen.mjs`) mints one ed25519 seed and writes both:
+`shadenet-elder identity <hsDir>` (and `shade-tree keygen <hsDir>`, `packages/node/bootnode/keygen.mjs`) mints one ed25519 seed and writes both:
 
 - Tor's HS key files (`hs_ed25519_secret_key`, `hs_ed25519_public_key`, `hostname`) so Tor
   publishes exactly this onion, and
@@ -124,8 +123,9 @@ something that is not a JSON object), or `announce failed: <err> (will retry nex
 bootnode was unreachable over Tor). Every outcome is retried on the next `--interval`; a rejected
 or unreachable gateway simply ages out via the TTL. Operator configuration is resolved once at
 startup and fails fast on any misconfiguration (see `docs/CONFIG.md`, `SHADE_TREE_GW_OPERATOR*`);
-`packages/node/bootnode/heartbeat.selftest.mjs` pins operator resolution, the announce bytes against
-`testdata/vectors.json`, every failure path, and that no seed or operator key ever reaches a log.
+the node's heartbeat tests (`crates/shadenet-node/src/heartbeat.rs`) pin operator resolution, the
+announce bytes against `testdata/vectors.json`, every failure path, and that no seed or operator
+key ever reaches a log.
 
 ### Surviving a restart
 
@@ -163,7 +163,7 @@ SHADE_TREE_BOOTNODE_FED_INTERVAL=60 \
 
 ### Gossip re-verifies announcements
 
-A pull loop (`packages/node/bootnode/federation.mjs`, a self-unref'd timer) periodically fetches each peer's
+A pull loop (`crates/shadenet-elder/src/federation.rs`) periodically fetches each peer's
 `GET /directory` over Tor, and for **each listed onion** takes the signed announce the entry carries
 (`announce`, `docs/WIRE-SPEC.md` 4.5) or, when the entry has none, pulls it from the peer's
 `GET /gateway/<onion>`. Every pulled announce is then re-run through the **same real
@@ -208,13 +208,13 @@ that shape (full table: `packages/node/bootnode/deploy/README.md`, `docs/CONFIG.
 
 | env | default | meaning |
 |---|---|---|
-| `SHADE_TREE_BOOTNODE_ONION` | *(unset → this box runs its own bootnode)* | set to an existing bootnode's onion for a **gateway-only** box: no `shade-tree-bootnode` unit, no bootnode HS; the heartbeat announces to that remote bootnode |
+| `SHADE_TREE_BOOTNODE_ONION` | *(unset → this box runs its own bootnode)* | set to an existing bootnode's onion for a **gateway-only** box: no `shade-tree-bootnode` unit, no bootnode HS; the node announces to that remote bootnode |
 | `SHADE_TREE_ENABLE_POW` | `0` | onion PoW DoS defense on the bootnode + gateway onions this box publishes (`1` = on; off by default because `pow: no` client tors cannot reach a PoW onion) |
 
 ## Endpoint hardening (T-HARD-4)
 
 The registry's DoS controls (`maxEntries`, `minReannounceSec`, the weight clamp) bound *what is
-resident*. Two more levers are bounded at the endpoint itself (`packages/node/bootnode/server.mjs`):
+resident*. Two more levers are bounded at the endpoint itself (`crates/shadenet-elder/src/server.rs`, `bucket.rs`):
 
 ### The global announce token bucket
 
@@ -281,7 +281,7 @@ gateway and slot rotation, is unchanged. The bootnode only changes *how the flee
 ## Verify it end to end (no Tor, no chain)
 
 ```bash
-node packages/node/bootnode/selftest.mjs
+cargo test -p shadenet-elder
 ```
 
 Mints real onion identities, runs the real HTTP bootnode, and asserts every adversarial case

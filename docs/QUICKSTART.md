@@ -222,7 +222,7 @@ curl -fsSL https://raw.githubusercontent.com/dmarzzz/shade-tree-node/main/packag
   | sudo env SHADE_TREE_MEMBERS_FILE=/root/operator-members.json bash
 ```
 
-It installs Tor + Node.js, mints the onions, starts the internal bootnode + gateway + heartbeat
+It installs the Rust binaries, Tor + Node.js, mints the onions, starts the internal bootnode + gateway
 systemd units, and prints the Elder Tree onion, its pinned signer, and a Proxy template. Opt-ins:
 `SHADE_TREE_BOOTNODE_ONION=<onion>` (node-only host joining an existing Elder Tree), `SHADE_TREE_REGISTRAR=1`
 (sell access over 402), `SHADE_TREE_HELIOS=1` (light-client root anchor). See

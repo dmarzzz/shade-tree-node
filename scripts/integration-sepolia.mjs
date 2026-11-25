@@ -23,6 +23,7 @@ import { ethers } from "ethers";
 import { poseidon1 } from "poseidon-lite";
 import { deriveCommitment, identitySecretOf, identityFor, currentEpoch, requestSignal, proveForSlot, loadGroup } from "../packages/node/lib/semaphore.mjs";
 import { makeSlotPool, buildEnvelope } from "../packages/node/client/shim.mjs";
+import { rustBinary } from "../packages/node/lib/rust-binary.mjs";
 
 // A member's identitySecret + rateCommitment leaf from the app seed (single-leaf model).
 const idsecOf = (seed) => identitySecretOf(identityFor(seed));
@@ -77,7 +78,7 @@ function sendEnvelope(envelope, timeoutMs = 45000) {
 let gw, gwOut = "";
 function startGateway() {
   return new Promise((resolve, reject) => {
-    gw = spawn(process.execPath, [join(ROOT, "packages", "node", "gateway", "gateway.mjs")], {
+    gw = spawn(rustBinary(ROOT, "shadenet-node") ?? "shadenet-node", ["run"], {
       cwd: ROOT,
       env: { ...process.env,
         // T-FEAT-9: the gateway admits invited (members.json) ONLY by default; this integration

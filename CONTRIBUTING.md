@@ -37,7 +37,7 @@ runner can see it (`scripts/suite-skips.mjs`).
 ### What CI runs
 
 Required on every pull request: Rust workspace check, test and interop; `cargo fmt` and
-strict Clippy; the full Node suite on Node 24 under c8 coverage (lines 90, functions 91,
+strict Clippy; the full Node suite on Node 24 under c8 coverage (lines 88, functions 91,
 branches 82); Foundry; ESLint; the supply-chain gate (`npm audit`, `cargo deny`,
 `cargo audit`); the site browser checks; the Rust embedded-Tor client against the JS
 gateway over real Tor; the real-Tor fleet run; and `bootstrap.sh` in a systemd container
@@ -92,7 +92,7 @@ need to, that is a design discussion, not a quiet edit. All are grounded in
   freshness, throttle, size cap) before an ed25519 verify or a Groth16 verify, so
   hostile input cannot force expensive work. Keep new code on this ordering.
 - **The `2b <- check4` authority invariant** in `verifyEnvelope`
-  (`packages/node/lib/rln.mjs` / `packages/node/gateway/gateway.mjs`). Target binding recomputes
+  (`packages/node/lib/rln.mjs` / `crates/shadenet-node/src/verify.rs`). Target binding recomputes
   `calculateSignalHash(requestSignal(target, nonce))` and binds it to the
   proof's committed `x`; the field-safety check (`signalFieldSafe`, rejecting a
   delimiter or over-long nonce) must run *before* hashing so `(target, nonce) ->

@@ -165,7 +165,7 @@ canopies from one node", `docs/STAGING-REHEARSAL.md` section 12]**. A client onl
 advertise its own record's set, so a v0.7.1 client (bundled record: the previous set) keeps
 working for as long as the nodes list `0xDEB2…4bBC`. Slashing on the previous set still resolves
 a tier-1 leaf: the node's slasher unions its tier list with each set's own `allowedLimits()`
-**[spec: `packages/node/gateway/gateway.mjs` `makeOnchainSlasher`]**.
+**[spec: `crates/shadenet-node/src/slash.rs`]**.
 
 Moving costs a member one more bond for a day: stake a new tier-8 identity on the new set (0.01
 ETH), exit the old seat, and withdraw its 0.01 ETH after 24 hours **[contract]**. Nothing
