@@ -77,7 +77,7 @@
     "js-sha3": "^0.16.0",
     "poseidon-lite": "^0.3.0",
     "rlnjs": "^3.3.0",
-    "socks": "^2.8.10"
+    "socks": "^2.8.11"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
