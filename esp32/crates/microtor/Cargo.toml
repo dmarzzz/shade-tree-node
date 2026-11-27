@@ -1,0 +1,27 @@
+[package]
+name = "microtor"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A minimal Tor client and v3 onion-service host sized for microcontrollers (ESP32 class)"
+
+# One RustCrypto generation (digest 0.10) on purpose: embedded-tls and arkworks are on it, and a
+# second copy of every hash would cost flash on the device.
+[dependencies]
+embedded-tls = { version = "0.19", default-features = false, features = ["alloc"] }
+embedded-io = { version = "0.7", features = ["std"] }
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "zeroize", "digest"] }
+ed25519-dalek = { version = "2", default-features = false, features = ["alloc", "hazmat"] }
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+sha1 = { version = "0.10", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
+aes = { version = "0.8", default-features = false }
+ctr = { version = "0.9", default-features = false }
+hmac = { version = "0.12", default-features = false }
+hkdf = { version = "0.12", default-features = false }
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
+num-bigint = { version = "0.4", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+getrandom = "0.2"
+log = "0.4"

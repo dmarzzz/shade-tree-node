@@ -1,0 +1,85 @@
+[package]
+name = "shadenet-esp32"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+rust-version = "1.82"
+license = "MIT"
+description = "ShadeNet Shade Tree node firmware for the ESP32 (ESP-IDF std)"
+publish = false
+
+# Standalone project: deliberately NOT a member of any parent workspace.
+[workspace]
+
+[[bin]]
+name = "shadenet-esp32"
+harness = false # no built-in test harness on the device
+
+[features]
+default = []
+# On-device platform + Groth16 RLN verifier benchmarks (src/bench.rs), run before the node
+# starts: `cargo build --release --features bench`.
+bench = [
+    "dep:ark-groth16",
+    "dep:ark-bn254",
+    "dep:ark-ec",
+    "dep:ark-ff",
+    "dep:num-bigint",
+    "dep:serde_json",
+    "dep:thiserror",
+]
+
+[dependencies]
+log = "0.4"
+anyhow = "1"
+esp-idf-svc = "0.54"
+
+# --- RLN Groth16 verifier (vendored upstream verify.rs), same majors as upstream shadenet-rln.
+# No `parallel` (rayon) and no `asm` (x86_64-only) features: plain portable Rust.
+ark-groth16 = { version = "0.5", default-features = false, optional = true }
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"], optional = true }
+ark-ec = { version = "0.5", default-features = false, optional = true }
+ark-ff = { version = "0.5", default-features = false, optional = true }
+num-bigint = { version = "0.4", optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
+
+# The node: the portable protocol crates, the same ones `../crates/host` runs on a desktop.
+microtor = { path = "../crates/microtor" }
+shadenode = { path = "../crates/shadenode" }
+
+[build-dependencies]
+embuild = "0.33"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+
+[profile.dev]
+debug = true # symbols stay in the ELF, they do not go to flash
+opt-level = "z"
+panic = "abort"
+
+# Benchmark variants (see README "opt-level trade-off"). Each custom profile gets its own
+# target/xtensa-esp32-espidf/<profile>/ directory, including its own ESP-IDF build output.
+#
+# release-crypto3: size-optimised firmware, speed-optimised arkworks crates.
+[profile.release-crypto3]
+inherits = "release"
+
+[profile.release-crypto3.package.ark-ff]
+opt-level = 3
+[profile.release-crypto3.package.ark-ec]
+opt-level = 3
+[profile.release-crypto3.package.ark-bn254]
+opt-level = 3
+[profile.release-crypto3.package.ark-groth16]
+opt-level = 3
+
+# release-o3: everything at opt-level 3 (upper bound for speed, worst case for size).
+[profile.release-o3]
+inherits = "release"
+opt-level = 3

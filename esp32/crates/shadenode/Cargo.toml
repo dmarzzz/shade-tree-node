@@ -1,0 +1,25 @@
+[package]
+name = "shadenode"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A ShadeNet Shade Tree node (proof-gated Tor egress) small enough for an ESP32"
+
+[dependencies]
+microtor = { path = "../microtor" }
+# Same proof stack as crates/shadenet-rln (ark 0.5), verification only.
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.5", default-features = false }
+ark-ff = { version = "0.5", default-features = false }
+ark-groth16 = { version = "0.5", default-features = false }
+num-bigint = { version = "0.4", default-features = false }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
+# secp256k1 signing for the one transaction a node sends: a slash.
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+log = "0.4"
+
+[dev-dependencies]
+# Reference Poseidon, to pin our fixed-width implementation and regenerate its constants.
+light-poseidon = "0.4"

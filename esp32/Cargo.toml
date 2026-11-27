@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/microtor", "crates/shadenode", "crates/host"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
