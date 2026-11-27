@@ -1,0 +1,4 @@
+# Cargo also reads the firmware's ../../.cargo/config.toml (it searches parent directories),
+# which targets the ESP32. This host tool must build for the machine it runs on.
+[build]
+target = "host-tuple"

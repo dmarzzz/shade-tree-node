@@ -42,6 +42,7 @@ A browsable HTML build of all of this: `node docs-site/build.mjs` ([`docs-site/`
 |-----|------------|
 | [`OPERATOR.md`](OPERATOR.md) | Shade Tree node and Elder Tree runbook: deploy, day-2 health, keys, slash response, retirement |
 | [`HOME-NODE.md`](HOME-NODE.md) | Running a node on a residential connection: what it does to the connection, the `home` profile, isolation, pausing, what to watch |
+| [`../esp32/README.md`](../esp32/README.md) | A second node implementation for an ESP32 microcontroller (its own Tor stack, no C Tor): what it implements, what was measured on a board, where it differs |
 | [`../packages/node/bootnode/deploy/README.md`](../packages/node/bootnode/deploy/README.md) | The one-command bootstrap and every tunable it accepts |
 | [`DEPLOYMENT-PLAN.md`](DEPLOYMENT-PLAN.md) | The v4 topology, rollout gates, safe order, and health checks |
 | [`BOOTNODE.md`](BOOTNODE.md) | Elder Tree discovery: announce, signed canopy directory, per-node capabilities, trust boundary |

@@ -1,0 +1,12 @@
+# ShadeNet ESP32 node - 4 MB flash, single factory app, no OTA.
+# The bootloader lives at 0x1000 and this table at 0x8000 (ESP-IDF defaults).
+#
+# `scratch` is raw NOR flash for the node (no filesystem). Its subtype is `undefined` (0x06,
+# ESP-IDF's "no particular format" data subtype) because espflash 4.x cannot parse a numeric
+# custom subtype such as 0x40 on a `data` partition. The firmware finds it by name.
+#
+# Name,    Type, SubType,   Offset,   Size,     Flags
+nvs,       data, nvs,       0x9000,   0x6000,
+phy_init,  data, phy,       0xf000,   0x1000,
+factory,   app,  factory,   0x10000,  0x280000,
+scratch,   data, undefined, 0x290000, 0x170000,

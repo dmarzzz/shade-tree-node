@@ -1,0 +1,3 @@
+# Host tool: the stable toolchain upstream ShadeNet pins, not the `esp` toolchain of the firmware.
+[toolchain]
+channel = "1.98.0"

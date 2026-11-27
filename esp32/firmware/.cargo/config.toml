@@ -1,0 +1,20 @@
+[build]
+target = "xtensa-esp32-espidf"
+
+[target.xtensa-esp32-espidf]
+linker = "ldproxy"
+# `cargo run --release` builds and flashes (IDF-built bootloader, our partition table, 4 MB
+# flash at 80 MHz). Run cargo from this directory; see tools/flash.sh and README.md.
+runner = "tools/flash.sh"
+rustflags = ["--cfg", "espidf_time64"]
+
+[unstable]
+build-std = ["std", "panic_abort"]
+
+[env]
+MCU = "esp32"
+# Pinned ESP-IDF release (the default the esp-idf-sys/-hal/-svc CI builds against).
+ESP_IDF_VERSION = "v5.5.5"
+# Keep ESP-IDF + its tools inside this project (./.embuild), not in ~/.espressif.
+ESP_IDF_TOOLS_INSTALL_DIR = "workspace"
+ESP_IDF_SDKCONFIG_DEFAULTS = "sdkconfig.defaults"

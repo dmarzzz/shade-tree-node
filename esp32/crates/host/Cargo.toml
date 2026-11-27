@@ -1,0 +1,18 @@
+[package]
+name = "shadenode-host"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Run the ESP32 ShadeNet node's exact protocol stack on a desktop, for development and interop tests"
+
+[[bin]]
+name = "shadenode-host"
+path = "src/main.rs"
+
+[dependencies]
+microtor = { path = "../microtor" }
+shadenode = { path = "../shadenode" }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+log = "0.4"
+# HTTPS for JSON-RPC and the canary (the device uses ESP-IDF's client instead).
+ureq = "2"

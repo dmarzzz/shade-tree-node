@@ -1,0 +1,19 @@
+# Host-side generator for ../proof.json and ../envelope.json (see ../../README.md, "Fixtures").
+# Not part of the firmware build. It links the upstream ShadeNet prover (wasmer, ark-circom),
+# from this repository.
+[package]
+name = "fixture-gen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+shadenet-rln = { path = "../../../../crates/shadenet-rln", features = ["prove", "embedded-artifacts"] }
+shadenet-proto = { path = "../../../../crates/shadenet-proto" }
+serde_json = "1"
+
+[profile.dev]
+opt-level = 1
+debug = false

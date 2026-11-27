@@ -1,0 +1,100 @@
+# ShadeNet ESP32 node - sdkconfig defaults (ESP-IDF v5.5.x, ESP32-D0WD-V3, 4 MB flash, no PSRAM).
+# Only non-default choices are listed; each has a reason. The generated `sdkconfig` is not
+# checked in. After editing this file, rebuild (esp-idf-sys re-runs the IDF configure step).
+
+# --- CPU / flash -------------------------------------------------------------------------
+# 240 MHz: the Groth16 pairing check is CPU-bound (IDF default is 160 MHz).
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+# The module has 4 MB of flash (IDF default is 2 MB, which would reject our partition table).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# All code runs from flash through a 32 KB cache, so the cost of a cache miss sets the speed
+# of everything that does not fit in it. Read the flash at 80 MHz in quad mode instead of the
+# default 40 MHz dual I/O (measured: verification 905 -> 862 ms; code that overflows the cache
+# gains up to 2.9x). The image header stays DIO; the 2nd-stage bootloader switches to QIO.
+# Flash with `--flash-freq 80mhz` (tools/flash.sh does), or espflash resets the header to 40 MHz.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# --- Radios ------------------------------------------------------------------------------
+# No Bluetooth: releases the BT controller's reserved DRAM to the heap and saves flash.
+CONFIG_BT_ENABLED=n
+
+# --- Task stacks -------------------------------------------------------------------------
+# Rust `main` runs on the IDF main task. BN254 pairing math (Fq12 temporaries) needs far more
+# than the 3.5 KB default: measured 21.7 KB used by key preparation + verification, so 32 KB
+# leaves 11 KB of margin. The firmware prints the high-water mark (BENCH_MEM main_stack_*).
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+# esp-idf-svc runs Rust event callbacks (Wi-Fi/IP events) on the system event task (default 2304).
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
+# Default for std::thread (pthread) stacks; threads that need more ask for it explicitly.
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=4096
+# Idle tasks (one per core) run task-teardown hooks. Measured use is ~0.6 KB including a Rust
+# thread exit, so 2 KB (default 1536; the esp-idf-template uses 4096) leaves margin without
+# spending 8 KB on two idle stacks.
+CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=2048
+
+# --- FreeRTOS ----------------------------------------------------------------------------
+# 1 ms tick (default 100 Hz): finer sleeps/timeouts for the networking code.
+CONFIG_FREERTOS_HZ=1000
+# The task watchdog keeps its 5 s default: at opt-level "s" one verification holds a core for
+# under 1 s. (The slow opt-level 2/3 benchmark variants, up to 14 s per verification, were run
+# with CONFIG_ESP_TASK_WDT_TIMEOUT_S=30 to keep their logs free of watchdog warnings.)
+
+# --- Size --------------------------------------------------------------------------------
+# Build the IDF C code with -Os (default is -Og).
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+# Keep assertions but drop their file/line strings from flash.
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+
+# --- lwIP --------------------------------------------------------------------------------
+# The node holds several long-lived TCP connections plus listeners (default is 10).
+CONFIG_LWIP_MAX_SOCKETS=16
+
+# --- Wi-Fi RAM -----------------------------------------------------------------------------
+# Static RX buffers are allocated at esp_wifi_init() and never freed (1.6 KB each).
+# Default 10 -> 4: measured 10.1 KB more free heap with the driver started (32.8 KB instead
+# of 42.8 KB for esp_wifi_init + start).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+# Upper bounds for buffers allocated on demand under traffic (up to 1.6 KB each, default
+# 32/32). At 16/16 a directory download was seen to take ~25 KB of heap in radio buffers at the
+# moment the consensus inflater also needed its 43 KB, and the node ran out. 8/8 caps the
+# burst at ~13 KB per direction; TCP's own window (5.7 KB by default in lwIP) is smaller than
+# that anyway, so throughput does not change.
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=8
+# AMPDU stays on (throughput), but with a smaller RX block-ack window (default 6): ESP-IDF
+# recommends a window no larger than the static RX buffer count, and each slot can hold a
+# frame waiting for reordering.
+CONFIG_ESP_WIFI_RX_BA_WIN=4
+
+# Station only: no soft-AP and no WPA2/3-Enterprise (802.1X) code. Measured: 53 KB less
+# flash, 0.8 KB more free heap.
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+
+# --- Console / logs ----------------------------------------------------------------------
+# UART0 @ 115200 (the IDF default, stated so nobody moves it by accident).
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+# Plain log lines: the serial output is parsed by scripts.
+CONFIG_LOG_COLORS=n
+
+# The node's event loop (the main task) does all the Tor cryptography. Wi-Fi and its event
+# handling are pinned to core 0, so the loop goes on core 1 and neither starves the other.
+CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y
+
+# HTTPS for chain reads and the canary (ESP-IDF's client over mbedTLS). Allocate the TLS
+# record buffers only while a record is in flight and free them between, and send with a
+# small output buffer: a JSON-RPC request is a few hundred bytes. The verifier needs the heap.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
+
+# lwIP's default TCP send buffer is 5760 bytes (4 segments, about 11 cells). Every tunnel's
+# bytes leave through the one link to the guard, whose round trip is ~100 ms, so the node
+# could send about 11 cells per round trip. Three times the buffer triples that ceiling and
+# costs heap only while the guard link actually has that much queued. The receive window
+# stays at the default: it applies to every socket, and received data is what fills RAM.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=17280
